@@ -12,6 +12,7 @@ import Campaign from "../models/Campaign";
 import Course from "../models/Course";
 import Institution from "../models/Institution";
 import InstitutionSetting from "../models/InstitutionSetting";
+import Setting from "../models/Setting";
 import Lead from "../models/Lead";
 import PoloInstitution from "../models/PoloInstitution";
 import Proposal from "../models/Proposal";
@@ -131,6 +132,8 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
     const row = await Institution.findByPk(req.params.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!row) throw new AppError("ERR_NOT_FOUND", 404);
     if (row.isDefault) throw new AppError("ERR_INSTITUTION_DEFAULT");
+    const legacy = await Setting.findByPk("legacy_institution_id", { transaction, lock: transaction.LOCK.UPDATE });
+    if (Number(legacy?.value) === row.id) throw new AppError("ERR_INSTITUTION_IN_USE");
     const refs = await Promise.all([
       Whatsapp.count({ where: { institutionId: row.id } as any, transaction }),
       Ticket.count({ where: { institutionId: row.id } as any, transaction }),

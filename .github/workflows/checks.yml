@@ -74,6 +74,7 @@ jobs:
   api-ponta-a-ponta:
     name: api-ponta-a-ponta (${{ matrix.nome }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -131,9 +132,10 @@ jobs:
         working-directory: backend
         run: node scripts/${{ matrix.script }}
 
-  # todas as telas, como administrador, coordenação, consultor e tutor, digitando nos formulários
+  # todas as telas, como os seis perfis, digitando nos formulários e repetindo a varredura em 390×844
   telas:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:16
@@ -203,7 +205,7 @@ jobs:
           BASE: http://localhost:3000
           API: http://localhost:8080
           REPORT: /tmp/telas.txt
-        run: node scripts/smoke-pages.js admin coordenacao consultor tutor
+        run: node scripts/smoke-pages.js admin coordenacao consultor tutor academico relacionamento
       - name: Relatório da varredura e registro da API
         if: always()
         run: |

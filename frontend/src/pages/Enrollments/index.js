@@ -7,6 +7,7 @@ import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
 import GoalsTabs from "../../components/GoalsTabs";
 import api from "../../services/api";
+import { ErrorState, Skeleton } from "../../components/ui";
 import toastError from "../../errors/toastError";
 import { fetchAllUsers } from "../../utils/fetchAllUsers";
 
@@ -36,14 +37,18 @@ export default function Enrollments() {
   const [polos, setPolos] = useState([]);
   const [users, setUsers] = useState([]);
   const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [again, setAgain] = useState(0);
   useEffect(() => {
     api.get("/polos").then(({ data: d }) => setPolos(d)).catch(() => undefined);
     fetchAllUsers().then((list) => setUsers(list.filter((u) => u.role === "consultor" || u.profile === "admin" || u.role === "coordenacao"))).catch(() => undefined);
   }, []);
   useEffect(() => {
     setData(null);
-    api.get("/enrollments", { params: { from, to, poloId: poloId || undefined, ownerId: ownerId || undefined } }).then(({ data: d }) => setData(d)).catch((e) => { toastError(e); setData({ rows: [], byPolo: [], total: 0, inGoal: 0, withProof: 0 }); });
-  }, [from, to, poloId, ownerId]);
+    setFailed(false);
+    // a load that failed says so and offers to try again: it is never shown as "no enrollments"
+    api.get("/enrollments", { params: { from, to, poloId: poloId || undefined, ownerId: ownerId || undefined } }).then(({ data: d }) => setData(d)).catch((e) => { toastError(e); setFailed(true); });
+  }, [from, to, poloId, ownerId, again]);
   const rows = data ? data.rows : [];
   const download = () => {
     const head = ["Aluno", "RGM", "Curso", "Polo", "Consultor", "Data", "Hora", "Dentro da meta", "Meta", "Print anexado"];
@@ -84,7 +89,7 @@ export default function Enrollments() {
             {data.byPolo.map((p) => <span key={p.polo} style={{ fontSize: 12.5, border: "1px solid var(--line-strong)", borderRadius: 999, padding: "3px 10px", background: "var(--surface)" }}>{p.polo}: <b>{p.total}</b>{p.inGoal !== p.total ? ` (${p.inGoal} na meta)` : ""}</span>)}
           </div>
         )}
-        {!data ? <div style={{ color: "var(--text-2)" }}>Carregando…</div> : (
+        {failed ? <ErrorState title="Não foi possível carregar as matrículas." onRetry={() => setAgain((n) => n + 1)} /> : !data ? <div aria-busy="true"><Skeleton height={44} style={{ marginBottom: 8 }} /><Skeleton height={44} style={{ marginBottom: 8 }} /><Skeleton height={44} /></div> : (
           <div style={{ overflowX: "auto", border: "1px solid var(--line)", borderRadius: 10, background: "var(--surface)" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr>{["Aluno", "RGM", "Curso", "Polo", "Consultor", "Quando", "Meta", "Print"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>

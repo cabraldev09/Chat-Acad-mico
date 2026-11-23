@@ -27,6 +27,7 @@ import AiAgent from "../../models/AiAgent";
 import { Effects, StageTurn, StageTurnArgs, matchPolo } from "./Engine";
 import { FlowNode } from "./Graph";
 import { cleanStage } from "./StageSpec";
+import { agentForTicketInstitution } from "../AiServices/RunAiAgent";
 import { stepsOf, takeSteps } from "./StepLock";
 import { findAgentForTicket, loadHistory, respond, resumeContextOf } from "../AiServices/RunAiAgent";
 import { signed, styleOf } from "../AiServices/Style";
@@ -92,8 +93,9 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
   // the agent a stage talks as: the one of the block, else the one of the flow, else the one that would answer this conversation
   const agentFor = async (stageAgentId?: number | null): Promise<AiAgent | null> => {
     const id = stageAgentId || flowCtx.agentId;
-    const own = id ? await AiAgent.findByPk(id) : null;
-    return own && own.active !== false ? own : findAgentForTicket(ticket);
+    const own = id ? await agentForTicketInstitution(ticket, id) : null;
+    if (id) return own && own.active !== false ? own : null;
+    return findAgentForTicket(ticket);
   };
   // the switches of the agent ("Como o agente fala"): the signature opens the answer and "one message" turns the bubbles off
   const withStyle = async (t: StageTurn, node: FlowNode): Promise<StageTurn> => {
@@ -145,12 +147,14 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
         return { text: agent.handoffMessage || DEFAULT_HANDOFF, exit: "limit" };
       }
       let history = await loadHistory(ticket, 30);
+      let latestRawInput: string | null = null;
       if (input === null) history = [...history, { role: "user", content: OPENING_HINT }];
       else {
         // The person's newest message is answered unless an earlier turn already answered it. The row of our own reply is saved after the
         // channel confirms it, so the order of the rows cannot be trusted: the time of the newest message is what counts.
         const newest = await Message.findOne({ where: { ticketId: ticket.id, fromMe: false, isDeleted: false }, order: [["createdAt", "DESC"]] });
         if (!newest) return { text: "" };
+        latestRawInput = textOfMessage(newest) || input;
         if (vars.__answeredAt && new Date(String(vars.__answeredAt)).getTime() >= new Date(newest.createdAt).getTime()) return { text: "" };
         if (!history.length || history[history.length - 1].role !== "user") history = [...history, { role: "user", content: textOfMessage(newest) || input }];
         vars.__answeredAt = new Date(newest.createdAt).toISOString();
@@ -164,7 +168,10 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
         // what the person sent as files: a PDF is the transcript, a voice note is written down (when the company turned it on) or asked in writing
         const burst = input === null ? [] : await burstOf(ticket.id);
         const media = mediaOfMessages(burst);
-        let said = input === null ? null : last.content;
+        // Keep the raw inbound only for deterministic CRM extraction (for example name/CPF).
+        // loadHistory deliberately masks PII before any model prompt; using its masked text here
+        // made the deterministic parser miss the very data the lead had just provided.
+        let said = input === null ? null : (latestRawInput || input);
         let audioUnreadable = false;
         // the voice notes of the burst are written down once and kept on the message: the turns after read what was said
         const voices = burst.filter(isVoiceNote).slice(0, 3);

@@ -7,7 +7,7 @@ import ShowWhatsAppService from "./ShowWhatsAppService";
 import AssociateWhatsappQueue from "./AssociateWhatsappQueue";
 import { cleanCredential, isMasked, looksLikeAppSecret, mergeConfig } from "../../helpers/Secrets";
 import { forgetWebhook } from "../../channels/WebhookLog";
-import { forgetInstitutions } from "../../helpers/Institution";
+import { defaultInstitution, forgetInstitutions } from "../../helpers/Institution";
 import Institution from "../../models/Institution";
 
 interface WhatsappData {
@@ -89,7 +89,9 @@ const UpdateWhatsAppService = async ({
   // the university the number speaks for (empty = the default one)
   let ownInstitution: number | null | undefined;
   if (institutionId !== undefined) {
-    ownInstitution = institutionId === null || institutionId === "" || Number(institutionId) === 0 ? null : Number(institutionId);
+    ownInstitution = institutionId === null || institutionId === "" || Number(institutionId) === 0
+      ? (await defaultInstitution())?.id || null
+      : Number(institutionId);
     if (ownInstitution !== null && !(await Institution.count({ where: { id: ownInstitution } as any }))) throw new AppError("ERR_NOT_FOUND", 404);
   }
 

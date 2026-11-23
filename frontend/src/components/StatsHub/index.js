@@ -35,7 +35,9 @@ const StatsHubBar = () => {
   const { user } = useContext(AuthContext);
   const history = useHistory();
   const { pathname, search } = useLocation();
-  const here = `${pathname}${new URLSearchParams(search).get("aba") ? `?aba=${new URLSearchParams(search).get("aba")}` : ""}`;
+  // "?aba=geral" is the overview itself: the first tab stays marked whichever way the person got there
+  const aba = new URLSearchParams(search).get("aba");
+  const here = `${pathname}${aba && aba !== "geral" ? `?aba=${aba}` : ""}`;
   const sections = hubSections(user);
   const bar = useRef(null);
   // on the phone the bar slides: the current tab is brought into view
@@ -46,12 +48,10 @@ const StatsHubBar = () => {
   if (sections.reduce((n, s) => n + s.items.length, 0) < 2) return null;
   return (
     <nav aria-label="Estatísticas" className="stats-hub" ref={bar}>
-      <span className="stats-hub__title">Estatísticas</span>
-      {sections.map(({ dept, icon: Icon, items }) => {
+      {sections.map(({ dept, items }) => {
         const on = items.some((i) => here === i.to);
         return (
           <div key={dept} className={`stats-hub__dept${on ? " is-on" : ""}`}>
-            <span className="stats-hub__label"><Icon size={15} /> {dept}</span>
             {items.map((i) => (
               <button key={i.to} type="button" aria-current={here === i.to ? "page" : undefined} className={`stats-hub__item${here === i.to ? " is-on" : ""}`} onClick={() => history.push(i.to)}>{i.label}</button>
             ))}

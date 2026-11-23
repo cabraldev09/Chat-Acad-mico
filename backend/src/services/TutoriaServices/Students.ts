@@ -9,6 +9,8 @@ import Polo from "../../models/Polo";
 import User from "../../models/User";
 import { connectionOfTeam, TUTORIA_SEGMENTS } from "../ChannelServices/ConnectionTeam";
 import { openingTemplateOf } from "../TicketServices/OpeningTemplate";
+import { analyticsInstitutionScope } from "../AnalyticsServices/InstitutionScope";
+import { legacyInstitutionId as getLegacyInstitutionId } from "../../helpers/Institution";
 
 const MARK = "‎";
 const H = 3600000;
@@ -54,47 +56,59 @@ export const studentState = (lead: { onboardingStatus: string; enrolledAt: Date 
 };
 
 // what the conversations of the tutoring side say about each contact (one query for all of them)
-const factsOf = async (contactIds: number[]): Promise<Map<number, ContactFacts>> => {
-  const out = new Map<number, ContactFacts>();
+const factsKey = (contactId: number, institutionId: number | null, legacyId: number | null): string => `${contactId}:${institutionId ?? legacyId ?? "null"}`;
+const factsOf = async (pairs: Array<{ contactId: number; institutionId: number | null }>, institution: { id: number; isDefault: boolean; isLegacy?: boolean } | null): Promise<Map<string, ContactFacts>> => {
+  const out = new Map<string, ContactFacts>();
+  const legacyId = await getLegacyInstitutionId();
+  const contactIds = [...new Set(pairs.map(p => p.contactId))];
   if (!contactIds.length) return out;
   const rows = (await sequelize.query(
     portable(`
-    SELECT t.contactId AS contactId,
+    SELECT t.contactId AS contactId, t.institutionId AS institutionId,
       MAX(t.id) AS ticketId,
-      (SELECT SUM(u.unreadMessages) FROM Tickets u WHERE u.contactId = t.contactId AND u.segment IN (:segments) AND u.isGroup = false) AS unread,
+      (SELECT SUM(u.unreadMessages) FROM Tickets u WHERE u.contactId = t.contactId AND u.institutionId IS NOT DISTINCT FROM t.institutionId AND u.segment IN (:segments) AND u.isGroup = false) AS unread,
       MAX(CASE WHEN m.fromMe = false THEN m.createdAt END) AS lastIn,
       MAX(CASE WHEN m.fromMe = true AND m.body NOT LIKE :mark THEN m.createdAt END) AS lastOut
     FROM Tickets t LEFT JOIN Messages m ON m.ticketId = t.id
     WHERE t.contactId IN (:ids) AND t.segment IN (:segments) AND t.isGroup = false
-    GROUP BY t.contactId`),
-    { replacements: { ids: contactIds, segments: TUTORIA_SEGMENTS, mark: `${MARK}%` }, type: QueryTypes.SELECT }
+      AND (:institutionId IS NULL OR t.institutionId = :institutionId OR (:includeLegacy AND t.institutionId IS NULL))
+    GROUP BY t.contactId, t.institutionId`),
+    { replacements: { ids: contactIds, segments: TUTORIA_SEGMENTS, mark: `${MARK}%`, institutionId: institution?.id || null, includeLegacy: !!institution?.isLegacy }, type: QueryTypes.SELECT }
   )) as any[];
   const calls = (await sequelize.query(
     portable(`
-    SELECT t.contactId AS contactId, e.createdAt AS callAt, e.note AS callNote
+    SELECT t.contactId AS contactId, t.institutionId AS institutionId, e.createdAt AS callAt, e.note AS callNote
     FROM TicketEvents e JOIN Tickets t ON t.id = e.ticketId
     WHERE t.contactId IN (:ids) AND e.type = 'team_handoff_in' AND t.segment IN (:segments)
+      AND (:institutionId IS NULL OR t.institutionId = :institutionId OR (:includeLegacy AND t.institutionId IS NULL))
     ORDER BY e.createdAt ASC`),
-    { replacements: { ids: contactIds, segments: TUTORIA_SEGMENTS }, type: QueryTypes.SELECT }
+    { replacements: { ids: contactIds, segments: TUTORIA_SEGMENTS, institutionId: institution?.id || null, includeLegacy: !!institution?.isLegacy }, type: QueryTypes.SELECT }
   )) as any[];
   const status = (await sequelize.query(
     portable(`SELECT id, status FROM Tickets WHERE id IN (:ids)`),
     { replacements: { ids: rows.map(r => Number(r.ticketId)).concat([0]) }, type: QueryTypes.SELECT }
   )) as any[];
   const statusOf = new Map(status.map(s => [Number(s.id), String(s.status)]));
-  rows.forEach(r => out.set(Number(r.contactId), {
-    ticketId: r.ticketId ? Number(r.ticketId) : null,
-    status: r.ticketId ? statusOf.get(Number(r.ticketId)) || null : null,
-    unread: Number(r.unread || 0),
-    lastIn: r.lastIn ? new Date(r.lastIn) : null,
-    lastOut: r.lastOut ? new Date(r.lastOut) : null,
-    callAt: null,
-    callNote: null
-  }));
+  rows.forEach(r => {
+    const key = factsKey(Number(r.contactId), r.institutionId === null ? null : Number(r.institutionId), legacyId);
+    const previous = out.get(key);
+    const ticketId = Math.max(Number(r.ticketId) || 0, previous?.ticketId || 0) || null;
+    const latest = (a: Date | null, b: Date | null): Date | null => !a ? b : !b ? a : a > b ? a : b;
+    out.set(key, {
+      ticketId,
+      status: ticketId ? statusOf.get(ticketId) || previous?.status || null : null,
+      unread: Number(r.unread || 0) + (previous?.unread || 0),
+      lastIn: latest(previous?.lastIn || null, r.lastIn ? new Date(r.lastIn) : null),
+      lastOut: latest(previous?.lastOut || null, r.lastOut ? new Date(r.lastOut) : null),
+      callAt: previous?.callAt || null,
+      callNote: previous?.callNote || null
+    });
+  });
   // the last call of each contact (the query is ordered: the newest wins)
   calls.forEach(c => {
-    const f = out.get(Number(c.contactId)) || { ticketId: null, status: null, unread: 0, lastIn: null, lastOut: null, callAt: null, callNote: null };
-    out.set(Number(c.contactId), { ...f, callAt: new Date(c.callAt), callNote: c.callNote || null });
+    const key = factsKey(Number(c.contactId), c.institutionId === null ? null : Number(c.institutionId), legacyId);
+    const f = out.get(key) || { ticketId: null, status: null, unread: 0, lastIn: null, lastOut: null, callAt: null, callNote: null };
+    out.set(key, { ...f, callAt: new Date(c.callAt), callNote: c.callNote || null });
   });
   return out;
 };
@@ -103,11 +117,13 @@ export interface StudentsQuery {
   // a tutor's id, or "none" for the students nobody took yet
   tutorId?: number | "none" | null;
   poloId?: number | null;
+  poloIds?: number[] | null;
 }
 
 // The tutor's students ("Meus alunos"): the enrolled students given to the tutor (the management sees everybody, by tutor and polo),
 // with the conversation of the tutoring, the last contact, and what needs the tutor now.
 export const listStudents = async (q: StudentsQuery) => {
+  const institution = analyticsInstitutionScope();
   const [slaHours, idleDays, number, template] = await Promise.all([
     getSetting("onboarding_sla_hours", "24").then(v => Math.max(1, Number(v) || 24)),
     getSetting("tutoria_idle_days", "15").then(v => Math.max(1, Number(v) || 15)),
@@ -120,9 +136,11 @@ export const listStudents = async (q: StudentsQuery) => {
       enrolledAt: { [Op.ne]: null },
       lostAt: null,
       ...(q.tutorId === "none" ? { onboardingTutorId: null } : q.tutorId ? { onboardingTutorId: q.tutorId } : {}),
-      ...(q.poloId ? { poloId: q.poloId } : {})
+      ...(q.poloId ? { poloId: q.poloId } : {}),
+      ...(q.poloIds ? { poloId: q.poloIds.length ? q.poloIds : [0] } : {}),
+      ...(institution ? { [Op.or]: [{ institutionId: institution.id }, ...(institution.isLegacy ? [{ institutionId: null }] : [])] } : {})
     } as any,
-    attributes: ["id", "name", "phone", "contactId", "poloId", "courseId", "onboardingTutorId", "onboardingStatus", "onboardingChecklist", "enrolledAt"],
+    attributes: ["id", "name", "phone", "contactId", "institutionId", "poloId", "courseId", "onboardingTutorId", "onboardingStatus", "onboardingChecklist", "enrolledAt"],
     include: [
       { model: Polo, attributes: ["id", "name"] },
       { model: Course, attributes: ["id", "name"] }
@@ -131,11 +149,12 @@ export const listStudents = async (q: StudentsQuery) => {
     limit: 2000
   });
   const tutors = new Map((await User.findAll({ where: { id: [...new Set(leads.map(l => l.onboardingTutorId).filter(Boolean))] } as any, attributes: ["id", "name"] })).map(u => [u.id, u.name]));
-  const facts = await factsOf([...new Set(leads.map(l => l.contactId).filter(Boolean))] as number[]);
+  const legacyId = await getLegacyInstitutionId();
+  const facts = await factsOf(leads.filter(l => l.contactId).map(l => ({ contactId: Number(l.contactId), institutionId: l.institutionId == null ? legacyId : Number(l.institutionId) })), institution);
   const blank: ContactFacts = { ticketId: null, status: null, unread: 0, lastIn: null, lastOut: null, callAt: null, callNote: null };
   const now = Date.now();
   const students = leads.map(l => {
-    const f = (l.contactId && facts.get(l.contactId)) || blank;
+    const f = (l.contactId && facts.get(factsKey(Number(l.contactId), l.institutionId == null ? legacyId : Number(l.institutionId), legacyId)) ) || blank;
     const checklist = (() => { try { return typeof l.onboardingChecklist === "string" ? JSON.parse(l.onboardingChecklist as any) : l.onboardingChecklist || {}; } catch { return {}; } })();
     const steps = Object.values(checklist || {});
     return {
@@ -189,16 +208,21 @@ const median = (values: number[]): number | null => {
 // The manager's panel, per tutor, in a period: the students in the tutor's care, the students actually contacted (a message of the
 // tutoring sent to them), the onboarding finished over the onboarding started in the period, the real time to the first contact (the
 // first message of the tutoring after the enrollment, not the "Iniciar" click) and what is overdue now.
-export const tutorPanel = async (from: Date, to: Date) => {
-  const { students } = await listStudents({});
+export const tutorPanel = async (from: Date, to: Date, poloIds: number[] | null = null) => {
+  const { students } = await listStudents({ poloIds });
+  const institution = analyticsInstitutionScope();
   const q = async (sql: string, replacements: any) => (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
   const contacted = await q(`SELECT l.onboardingTutorId AS tutorId, COUNT(DISTINCT l.id) AS n FROM Leads l JOIN Tickets t ON t.contactId = l.contactId
-    JOIN Messages m ON m.ticketId = t.id WHERE l.onboardingTutorId IS NOT NULL AND t.segment IN (:segments) AND m.fromMe = true AND m.body NOT LIKE :mark
-    AND m.createdAt BETWEEN :from AND :to GROUP BY l.onboardingTutorId`, { segments: TUTORIA_SEGMENTS, mark: `${MARK}%`, from, to });
+    JOIN Messages m ON m.ticketId = t.id WHERE l.onboardingTutorId IS NOT NULL AND t.institutionId IS NOT DISTINCT FROM l.institutionId AND t.segment IN (:segments) AND m.fromMe = true AND m.body NOT LIKE :mark
+    AND (:institutionId IS NULL OR l.institutionId = :institutionId OR (:includeLegacy AND l.institutionId IS NULL))
+    ${poloIds === null ? "" : "AND l.poloId IN (:poloIds)"}
+    AND m.createdAt BETWEEN :from AND :to GROUP BY l.onboardingTutorId`, { segments: TUTORIA_SEGMENTS, mark: `${MARK}%`, from, to, institutionId: institution?.id || null, includeLegacy: !!institution?.isLegacy, ...(poloIds === null ? {} : { poloIds: poloIds.length ? poloIds : [0] }) });
   const enrolled = await q(`SELECT l.id, l.onboardingTutorId AS tutorId, l.enrolledAt, l.onboardingDoneAt,
-      (SELECT MIN(m.createdAt) FROM Tickets t JOIN Messages m ON m.ticketId = t.id WHERE t.contactId = l.contactId AND t.segment IN (:segments)
+      (SELECT MIN(m.createdAt) FROM Tickets t JOIN Messages m ON m.ticketId = t.id WHERE t.contactId = l.contactId AND t.institutionId IS NOT DISTINCT FROM l.institutionId AND t.segment IN (:segments)
         AND m.fromMe = true AND m.body NOT LIKE :mark AND m.createdAt >= l.enrolledAt) AS firstOut
-    FROM Leads l WHERE l.enrolledAt BETWEEN :from AND :to AND l.lostAt IS NULL`, { segments: TUTORIA_SEGMENTS, mark: `${MARK}%`, from, to });
+    FROM Leads l WHERE l.enrolledAt BETWEEN :from AND :to AND l.lostAt IS NULL
+      AND (:institutionId IS NULL OR l.institutionId = :institutionId OR (:includeLegacy AND l.institutionId IS NULL))
+      ${poloIds === null ? "" : "AND l.poloId IN (:poloIds)"}`, { segments: TUTORIA_SEGMENTS, mark: `${MARK}%`, from, to, institutionId: institution?.id || null, includeLegacy: !!institution?.isLegacy, ...(poloIds === null ? {} : { poloIds: poloIds.length ? poloIds : [0] }) });
   const names = new Map((await tutorsAndPolos()).tutors.map(t => [t.id, t.name]));
   const rows = new Map<number | null, any>();
   const row = (id: number | null, name: string) => {

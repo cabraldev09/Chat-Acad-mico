@@ -1,4 +1,4 @@
-import { institutionName } from "../../helpers/Institution";
+import { currentInstitutionId, institutionFor, institutionName, legacyInstitutionId } from "../../helpers/Institution";
 import { Op } from "sequelize";
 
 import Message from "../../models/Message";
@@ -17,26 +17,39 @@ export interface ContactTranscript {
 }
 
 // The conversations of the same side as this one: the tutors never read the consultants' conversations and vice-versa
-export const sameSideWhere = (ticket: Pick<Ticket, "contactId" | "segment">): any => {
+const institutionWhere = async (ticket?: Ticket): Promise<any[]> => {
+  const institutionId = currentInstitutionId() || (ticket ? (await institutionFor({ ticket }))?.id || null : null);
+  if (!institutionId) return [];
+  const legacyId = await legacyInstitutionId();
+  return [{ [Op.or]: [{ institutionId }, ...(institutionId === legacyId ? [{ institutionId: null }] : [])] }];
+};
+
+export const sameSideWhere = async (ticket: Pick<Ticket, "contactId" | "segment">): Promise<any> => {
   const segments = segmentsOfSide(sideOfSegment(ticket.segment));
-  return {
+  const where: any = {
     contactId: ticket.contactId,
     isGroup: false,
     ...(segments ? { segment: { [Op.in]: segments } } : { [Op.or]: [{ segment: { [Op.notIn]: [...TUTORIA_SEGMENTS, "relationship"] } }, { segment: null }] })
   };
+  const scope = await institutionWhere(ticket as Ticket);
+  if (scope.length) where[Op.and] = scope;
+  return where;
 };
 
 // The whole story of the client on this side, not only this conversation: earlier attendances (and who attended them) are where the
 // consultant who receives a returning or transferred client loses the most time. The newest messages win when the story is long.
 // `onlyThis`: just this conversation (what goes to the other side when the tutoring or the consultant is called).
 export const contactTranscript = async (ticket: Ticket, limit = 60, onlyThis = false): Promise<ContactTranscript> => {
-  const tickets = await Ticket.findAll({ where: onlyThis ? { id: ticket.id } : sameSideWhere(ticket), attributes: ["id", "userId", "lastUserId"] });
+  const scope = await institutionWhere(ticket);
+  const where = onlyThis ? { id: ticket.id, ...(scope.length ? { [Op.and]: scope } : {}) } : await sameSideWhere(ticket);
+  const tickets = await Ticket.findAll({ where, attributes: ["id", "userId", "lastUserId"] });
+  if (!tickets.length) return { text: "", lastMessageId: null, conversations: 0, attendants: [] };
   const ids = tickets.map(t => t.id);
   const people = [...new Set(tickets.flatMap(t => [t.userId, t.lastUserId]).filter(Boolean))] as number[];
   const names = new Map((people.length ? await User.findAll({ where: { id: people }, attributes: ["id", "name"] }) : []).map(u => [u.id, u.name]));
   const byTicket = new Map(tickets.map(t => [t.id, names.get(t.userId) || names.get(t.lastUserId) || ""]));
   const rows = (await Message.findAll({
-    where: { ticketId: { [Op.in]: ids.length ? ids : [ticket.id] }, isDeleted: false } as any,
+    where: { ticketId: { [Op.in]: ids }, isDeleted: false } as any,
     attributes: ["id", "body", "fromMe", "mediaType", "createdAt", "ticketId"],
     order: [["createdAt", "DESC"], ["id", "DESC"]],
     limit

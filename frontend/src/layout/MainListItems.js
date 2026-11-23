@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 
@@ -59,10 +59,11 @@ const useStyles = makeStyles((theme) => ({
       color: "#fff",
     },
   },
+  // the same height folded and open: opening the menu never moves the icons up or down
   navItemCollapsed: {
     position: "relative",
     justifyContent: "center",
-    padding: theme.spacing(1, 1),
+    padding: theme.spacing(0.875, 1),
   },
   // the current page: a lighter band and the light blue of the logo (#4595D8) on the icon
   navItemActive: {
@@ -80,6 +81,10 @@ const useStyles = makeStyles((theme) => ({
     minWidth: 0,
     color: "inherit",
     "& svg": { fontSize: 20 },
+    // the dock grows the icon with a transform: its box keeps its size, so nothing around it moves
+    transition: "transform .14s cubic-bezier(.2,.8,.2,1)",
+    transformOrigin: "center",
+    "@media (prefers-reduced-motion: reduce)": { transition: "none" },
   },
   navTextRoot: {
     flex: "0 1 auto",
@@ -155,9 +160,11 @@ function ListItemLink(props) {
         button
         component={renderLink}
         className={clsx(classes.navItem, collapsed && classes.navItemCollapsed)}
+        data-dock={primary}
+        aria-label={collapsed ? primary : undefined}
       >
         {icon ? (
-          <ListItemIcon className={classes.navIcon}>{icon}</ListItemIcon>
+          <ListItemIcon className={classes.navIcon} data-dock-icon="">{icon}</ListItemIcon>
         ) : null}
         {!collapsed && (
           <ListItemText
@@ -172,8 +179,57 @@ function ListItemLink(props) {
   );
 }
 
+// The folded menu as a dock: the icons grow the closer the pointer is (the nearest one the most, its neighbours less) and the name of
+// the nearest item shows beside it. Only the icon is transformed, so no size changes and nothing shakes. Off on touch screens and for
+// who asked for less motion. Written by hand after the Dock of 21st.dev (the original needs framer-motion and React 18).
+const DOCK_REACH = 96;
+const DOCK_GROW = 0.45;
+const useDock = (on) => {
+  const box = useRef(null);
+  const label = useRef(null);
+  const frame = useRef(0);
+  const fine = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const active = on && fine;
+  const leave = useCallback(() => {
+    cancelAnimationFrame(frame.current);
+    if (box.current) box.current.querySelectorAll("[data-dock-icon]").forEach((el) => { el.style.transform = ""; });
+    if (label.current) label.current.style.opacity = "0";
+  }, []);
+  const move = useCallback((e) => {
+    if (!active || !box.current) return;
+    const y = e.clientY;
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      if (!box.current) return;
+      let near = null;
+      let best = Infinity;
+      box.current.querySelectorAll("[data-dock]").forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const d = Math.abs(y - (r.top + r.height / 2));
+        const k = Math.max(0, 1 - d / DOCK_REACH);
+        const icon = el.querySelector("[data-dock-icon]");
+        if (icon) icon.style.transform = `scale(${(1 + DOCK_GROW * k * k * (3 - 2 * k)).toFixed(3)})`;
+        if (d < best) { best = d; near = el; }
+      });
+      const tag = label.current;
+      if (!tag) return;
+      if (near && best < 24) {
+        const r = near.getBoundingClientRect();
+        tag.textContent = near.getAttribute("data-dock") || "";
+        tag.style.top = `${Math.round(r.top + r.height / 2)}px`;
+        tag.style.left = `${Math.round(r.right + 14)}px`;
+        tag.style.opacity = "1";
+      } else tag.style.opacity = "0";
+    });
+  }, [active]);
+  // the menu opened (or the screen changed): the icons go back to their size
+  useEffect(() => { if (!active) leave(); return leave; }, [active, leave]);
+  return { box, label, move: active ? move : undefined, leave: active ? leave : undefined };
+};
+
 const MainListItems = (props) => {
   const { drawerClose, collapsed } = props;
+  const dock = useDock(collapsed);
   const classes = useStyles();
   const { whatsApps } = useContext(WhatsAppsContext);
   const { user } = useContext(AuthContext);
@@ -248,7 +304,8 @@ const MainListItems = (props) => {
   );
 
   return (
-    <div onClick={drawerClose}>
+    <div onClick={drawerClose} ref={dock.box} onMouseMove={dock.move} onMouseLeave={dock.leave}>
+      <span ref={dock.label} className="dock-label" aria-hidden="true" />
       {/* the conversations come first: they are the home of the system */}
       <ListItemLink
         to="/tickets"
@@ -356,21 +413,23 @@ const MainListItems = (props) => {
           collapsed={collapsed}
         />
       )}
-      {/* two separate places: the management sees the whole team (Gestão comercial); a consultant sees only their own (Meu desempenho);
+      {/* two separate places: the management sees the whole team (Estatísticas); a consultant sees only their own (Meu desempenho);
           the tutor keeps the numbers of the tutoring */}
-      {isManager(user) ? (
+      {isManager(user) && (
         <ListItemLink
           to="/estatisticas"
           alsoActive={["/reports", "/estatisticas/tutoria", "/estatisticas/captacao"]}
-          primary="Gestão comercial"
+          primary="Estatísticas"
           icon={<BarChartIcon className="ico" />}
           collapsed={collapsed}
           adornment={tasksBadge}
         />
-      ) : ["tutor", "academico"].includes(user.role) ? (
+      )}
+      {["tutor", "academico"].includes(user.role) && !isManager(user) ? (
         <ListItemLink to="/estatisticas/tutoria" primary="Minha tutoria" icon={<LineChartIcon className="ico" />} collapsed={collapsed} />
       ) : (
-        <ListItemLink to="/meu-desempenho" alsoActive={["/estatisticas", "/reports", "/estatisticas/captacao"]} primary="Meu desempenho" icon={<GaugeIcon className="ico" />} collapsed={collapsed} />
+        // everyone of the commercial side has their own results one click away: the consultant, and also who manages and attends
+        <ListItemLink to="/meu-desempenho" alsoActive={isManager(user) ? [] : ["/estatisticas", "/reports", "/estatisticas/captacao"]} primary="Meu desempenho" icon={<GaugeIcon className="ico" />} collapsed={collapsed} />
       )}
       {isManager(user) && (
         <>

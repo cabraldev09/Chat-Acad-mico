@@ -17,6 +17,7 @@ import { getIO } from "../../libs/socket";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import { normalizeEmail, normalizePhone } from "../../helpers/Phone";
 import { brPhoneVariants } from "../../helpers/PhoneVariants";
+import { legacyInstitutionId } from "../../helpers/Institution";
 import { normalizeCpf } from "../../helpers/Cpf";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { computeScore } from "./LeadScore";
@@ -164,7 +165,7 @@ export const getEntryTerms = async (): Promise<{ terms: string[]; defaultTerm: s
   return { terms, defaultTerm: terms.includes(stored) ? stored : terms[0] };
 };
 
-export const findDuplicate = async (phone: string | null, email: string | null, contactId?: number | null, cpf?: string | null) => {
+export const findDuplicate = async (phone: string | null, email: string | null, contactId?: number | null, cpf?: string | null, institutionId?: number | null) => {
   const or: any[] = [];
   if (cpf) or.push({ cpf });
   // the same person with and without the ninth digit is one lead
@@ -172,7 +173,12 @@ export const findDuplicate = async (phone: string | null, email: string | null, 
   if (email) or.push({ email });
   if (contactId) or.push({ contactId });
   if (!or.length) return null;
-  return Lead.findOne({ where: { [Op.or]: or }, order: [["id", "ASC"]] });
+  const conditions: any[] = [{ [Op.or]: or }];
+  if (institutionId) {
+    const isLegacy = institutionId === await legacyInstitutionId();
+    conditions.push(isLegacy ? { [Op.or]: [{ institutionId }, { institutionId: { [Op.is]: null } }] } : { institutionId });
+  }
+  return Lead.findOne({ where: { [Op.and]: conditions }, order: [["id", "ASC"]] });
 };
 
 // Creates a lead, or enriches the existing one when the same person arrives again
@@ -205,7 +211,7 @@ const upsertLeadCore = async (
   }
 
   const cpf = normalizeCpf(input.cpf);
-  const existing = await findDuplicate(phone, email, contactId, cpf);
+  const existing = await findDuplicate(phone, email, contactId, cpf, input.institutionId);
   if (existing) {
     const patch: any = {};
     FILL_FIELDS.forEach(f => {

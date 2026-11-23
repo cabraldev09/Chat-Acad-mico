@@ -26,6 +26,7 @@ import { getIO } from "../libs/socket";
 import makeCrud from "./crudFactory";
 import { assertOwnList, tutorIdOf, tutoriaConnectionId } from "../services/CampaignServices/Access";
 import { CampaignStep, MAX_CAMPAIGN_STEPS, cleanSteps, stepsOf } from "../helpers/CampaignText";
+import { legacyInstitutionId } from "../helpers/Institution";
 
 // message/mediaUrl (the first step) stay filled for older screens and integrations
 const applySteps = async (data: any, existing?: Campaign) => {
@@ -288,6 +289,7 @@ export const duplicate = async (req: Request, res: Response): Promise<Response> 
     batchPause: c.batchPause,
     contactListId: c.contactListId,
     whatsappId: c.whatsappId,
+    institutionId: c.institutionId || await legacyInstitutionId(),
     templateName: c.templateName,
     templateLanguage: c.templateLanguage,
     createdById: Number(req.user.id)
@@ -381,20 +383,23 @@ const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => 
   const relaxed = !!whatsapp && whatsapp.riskMode === "relaxed";
   let optedOut = 0;
   let cold = 0;
-  // consent is registered, not required: the team sees how many have none (and may take them out of the list)
+  // Campaign sends require recorded consent. Keep this count separate so the team can clean up the list.
   let noConsent = 0;
+  let canReceive = 0;
   variantsOf.forEach(vs => {
     const c = vs.map(v => byNumber.get(v)).find(Boolean);
     if (c && c.optOut) {
       optedOut += 1;
       return;
     }
-    if (!c || !c.consentAt) noConsent += 1;
+    const hasConsent = !!c?.consentAt;
+    if (!hasConsent) noConsent += 1;
     const isWarm = !!c && warm.has(c.id);
     // cold contacts: only a template (official API) or a flexible QR connection may write to them
-    if (!isWarm && !template && !(whatsapp && isUnofficial(whatsapp) && relaxed) && (official || (whatsapp && isUnofficial(whatsapp)))) cold += 1;
+    const isColdBlocked = !isWarm && !template && !(whatsapp && isUnofficial(whatsapp) && relaxed) && (official || (whatsapp && isUnofficial(whatsapp)));
+    if (isColdBlocked) cold += 1;
+    if (hasConsent && !isColdBlocked) canReceive += 1;
   });
-  const canReceive = Math.max(0, total - optedOut - cold);
 
   const steps = stepsOf(campaign);
   const messagesPerPerson = template ? 1 : steps.length;
@@ -415,16 +420,14 @@ const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => 
         : `${cold} ${cold === 1 ? "contato nunca respondeu" : "contatos nunca responderam"} e esta conexão está em modo seguro: ${cold === 1 ? "ele será pulado" : "eles serão pulados"}. Para escrever a quem nunca respondeu, use a API oficial com um modelo ou o modo flexível (com mais risco para o número).`
     );
   }
-  if (noConsent) {
-    warnings.push(`${noConsent} ${noConsent === 1 ? "contato não tem" : "contatos não têm"} consentimento registrado (formulário, conversa iniciada pela pessoa ou lista importada com consentimento). Dá para tirá-los da lista antes de enviar.`);
-  }
+  if (noConsent) warnings.push(`${noConsent} ${noConsent === 1 ? "contato não tem" : "contatos não têm"} consentimento registrado e será pulado. Registre o consentimento ou tire-o da lista antes do envio.`);
   if (safety && safety.dailyLimit !== null && canReceive > Math.max(0, safety.dailyLimit - (safety.sentToday || 0))) {
     warnings.push(`Esta conexão envia até ${safety.dailyLimit} por dia em campanhas (hoje já foram ${safety.sentToday}): o envio continua nos dias seguintes.`);
   }
   return {
     total,
     canReceive,
-    blocked: { optedOut, cold },
+    blocked: { optedOut, cold, noConsent },
     noConsent,
     messagesPerPerson,
     estimatedSeconds,
@@ -527,17 +530,18 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
   const leads = await Lead.findAll({
     where: await withLeadScope(req, { [Op.and]: and }),
     include,
-    attributes: ["id", "name", "phone"],
+    attributes: ["id", "name", "phone", "consentAt"],
     limit: 5000
   });
-  const seen = new Set<string>();
-  const people: Array<{ name: string; number: string }> = [];
+  const peopleByNumber = new Map<string, { name: string; number: string; phone: string; consentAt: Date | null }>();
   leads.forEach(l => {
     const number = withCountry(l.phone || "");
-    if (number.length < 10 || seen.has(number)) return;
-    seen.add(number);
-    people.push({ name: l.name, number });
+    if (number.length < 10) return;
+    const previous = peopleByNumber.get(number);
+    if (!previous) peopleByNumber.set(number, { name: l.name, number, phone: number, consentAt: l.consentAt || null });
+    else if (!previous.consentAt && l.consentAt) previous.consentAt = l.consentAt;
   });
+  const people = [...peopleByNumber.values()];
   if (b.dryRun) return res.json({ count: people.length });
 
   let list: ContactList | null = null;
@@ -551,6 +555,15 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
     list = await ContactList.create({ name, createdById: Number(req.user.id) } as any);
   }
   if (!people.length) throw new AppError("ERR_CAMPAIGN_NO_LEADS");
+
+  const consented = people.filter(p => p.consentAt);
+  if (consented.length) {
+    const { recordLeadCampaignConsent } = await import("../services/SafetyServices/LeadCampaignConsent");
+    for (const lead of consented) {
+      // eslint-disable-next-line no-await-in-loop
+      await recordLeadCampaignConsent(lead);
+    }
+  }
 
   const existing = new Set(
     (await ContactListItem.findAll({ where: { contactListId: list.id }, attributes: ["number"] })).map(i => i.number)
@@ -573,6 +586,7 @@ export const importItems = async (req: Request, res: Response): Promise<Response
     )
   );
   const toCreate: any[] = [];
+  const consentCandidates = new Map<string, { name: string; number: string; email: string }>();
   let skipped = 0;
   let invalid = 0;
   incoming.forEach(i => {
@@ -582,6 +596,9 @@ export const importItems = async (req: Request, res: Response): Promise<Response
       invalid += 1;
       skipped += 1;
       return;
+    }
+    if (req.body.consent === true && !consentCandidates.has(number)) {
+      consentCandidates.set(number, { name: (i.name || number).trim(), number, email: i.email || "" });
     }
     if (brPhoneVariants(number).some(v => existing.has(v))) {
       skipped += 1;
@@ -596,12 +613,20 @@ export const importItems = async (req: Request, res: Response): Promise<Response
     });
   });
   await ContactListItem.bulkCreate(toCreate);
-  // "tenho o consentimento destes contatos": recorded on the contacts that already exist (the import is the source)
-  if (req.body.consent === true && toCreate.length) {
-    const { noteConsentByPhone } = await import("../services/SafetyServices/Consent");
-    for (const item of toCreate) {
+  // A list-level consent declaration must be available to the worker too, including numbers that had no Contact row yet.
+  if (consentCandidates.size) {
+    const { noteConsent } = await import("../services/SafetyServices/Consent");
+    for (const item of consentCandidates.values()) {
       // eslint-disable-next-line no-await-in-loop
-      await noteConsentByPhone(item.number, "import");
+      const variants = brPhoneVariants(item.number);
+      const contact = await Contact.findOne({ where: { number: { [Op.in]: variants } } as any });
+      if (contact) {
+        // eslint-disable-next-line no-await-in-loop
+        await noteConsent(contact.id, "import");
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        await Contact.create({ name: item.name, number: item.number, email: item.email || "", channel: "whatsapp", consentAt: new Date(), consentSource: "import" } as any);
+      }
     }
   }
   return res.json({ imported: toCreate.length, skipped, invalid, duplicated: skipped - invalid });

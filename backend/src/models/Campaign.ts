@@ -12,7 +12,8 @@ import {
   ForeignKey,
   BelongsTo,
   BelongsToMany,
-  HasMany
+  HasMany,
+  BeforeCreate
 } from "sequelize-typescript";
 
 import ContactList from "./ContactList";
@@ -21,6 +22,15 @@ import CampaignShipping from "./CampaignShipping";
 
 @Table
 class Campaign extends Model<Campaign> {
+  @BeforeCreate
+  static async setInstitution(campaign: Campaign): Promise<void> {
+    if (campaign.institutionId) return;
+    const { institutionIdForWhatsapp, defaultInstitution } = await import("../helpers/Institution");
+    campaign.institutionId = campaign.whatsappId
+      ? (await institutionIdForWhatsapp(campaign.whatsappId)) as number
+      : ((await defaultInstitution())?.id as number);
+  }
+
   @PrimaryKey
   @AutoIncrement
   @Column

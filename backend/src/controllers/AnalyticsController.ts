@@ -1,4 +1,4 @@
-import { analyticsInstitutionId } from "../services/AnalyticsServices/AnalyticsService";
+import { analyticsInstitutionId, analyticsInstitutionScope } from "../services/AnalyticsServices/AnalyticsService";
 import { Request, Response } from "express";
 
 import AppError from "../errors/AppError";
@@ -23,7 +23,7 @@ export const me = async (req: Request, res: Response): Promise<Response> => {
   const id = Number(req.user.id);
   const [bundle] = await bundlesFor([id], p);
   const config = await getConfig();
-  return res.json({ period: period(req), ...bundle, targets: { dailyMessages: config.dailyMessagesTarget, dailyAttendances: config.dailyAttendancesTarget }, focus: await focusFor(id) });
+  return res.json({ period: period(req), ...bundle, targets: { dailyMessages: config.dailyMessagesTarget, dailyAttendances: config.dailyAttendancesTarget }, focus: await focusFor(id, analyticsInstitutionScope()) });
 };
 
 // One consultant seen by the management: the very same bundle the person reads in /analytics/me
@@ -33,7 +33,7 @@ export const consultant = async (req: Request, res: Response): Promise<Response>
   const p = resolvePeriod(req.query);
   const [bundle] = await bundlesFor([target], p);
   const config = await getConfig();
-  return res.json({ period: period(req), ...bundle, targets: { dailyMessages: config.dailyMessagesTarget, dailyAttendances: config.dailyAttendancesTarget }, focus: await focusFor(target) });
+  return res.json({ period: period(req), ...bundle, targets: { dailyMessages: config.dailyMessagesTarget, dailyAttendances: config.dailyAttendancesTarget }, focus: await focusFor(target, analyticsInstitutionScope()) });
 };
 
 // The management center: only the consultants the requester is allowed to see
@@ -219,14 +219,21 @@ export const tutoria = async (req: Request, res: Response): Promise<Response> =>
   const manager = isManagerRole(role);
   if (!manager && !["tutor", "academico"].includes(role)) throw new AppError("ERR_NO_PERMISSION", 403);
   const p = resolvePeriod(req.query);
+  // Coordination sees tutoring aggregates only for polos explicitly assigned to that coordinator.
+  // Administrators retain the group-wide view defined by the current management policy.
+  let poloIds: number[] | null = null;
+  if (role === "coordenacao") {
+    const PoloMember = (await import("../models/PoloMember")).default;
+    poloIds = (await PoloMember.findAll({ where: { userId: Number(req.user.id), role: "coordenacao" }, attributes: ["poloId"] })).map(m => Number(m.poloId));
+  }
   const { tutoriaInsights } = await import("../services/AnalyticsServices/TutoriaInsights");
-  const insights = await tutoriaInsights(manager ? null : [Number(req.user.id)], p.start, p.end);
+  const insights = await tutoriaInsights(manager ? null : [Number(req.user.id)], p.start, p.end, poloIds);
   let panel: any = null;
   if (manager) {
     const { tutorPanel } = await import("../services/TutoriaServices/Students");
-    panel = await tutorPanel(p.start, p.end);
+    panel = await tutorPanel(p.start, p.end, poloIds);
   }
-  return res.json({ period: period(req), scope: manager ? "all" : "mine", ...insights, panel });
+  return res.json({ period: period(req), scope: role === "coordenacao" ? "authorized-polos" : manager ? "all" : "mine", ...insights, panel });
 };
 
 // ---------------------------------------------------------------- insights and who is online (Painel do CRM and Estatísticas)
@@ -257,8 +264,8 @@ export const meOverview = async (req: Request, res: Response): Promise<Response>
   const length = p.end.getTime() - p.start.getTime();
   const before = { ...p, start: new Date(p.start.getTime() - length), end: new Date(p.start.getTime() - 1) };
   const [[bundle], config, leads, insights, focus, team, grades, previous] = await Promise.all([
-    bundlesFor([id], p), getConfig(), myLeads(id), insightsFor(req.user, new Date(), { selfOnly: true }), focusFor(id),
-    teamAverages(p), gradesSentBy(id, p), computeMetrics([id], before as any)
+    bundlesFor([id], p), getConfig(), myLeads(id), insightsFor(req.user, new Date(), { selfOnly: true }), focusFor(id, analyticsInstitutionScope()),
+    teamAverages(p, id), gradesSentBy(id, p), computeMetrics([id], before as any)
   ]);
   const { coachingFor } = await import("../services/AnalyticsServices/ConsultantReview");
   const [coaching] = await coachingFor([{ id, name: "" }], p.start, p.end, await stepLabelOf()).catch(() => [] as any[]);

@@ -40,8 +40,9 @@ const ListContactsService = async ({
       : kind === "groups"
         ? [{ isGroup: true }, { [Op.or]: [{ kind: { [Op.ne]: "channel" } }, { kind: { [Op.is]: null } }] }]
         : [];
-  const parts: any[] = [contactsSearchWhere(searchParam), ...(scope ? [scope] : []), ...kindWhere];
-  const whereCondition: any = parts.length > 1 ? { [Op.and]: parts } : parts[0];
+  // nothing typed: no filter at all (a LIKE '%%' would still make the database read every name)
+  const parts: any[] = [...(searchParam.trim() ? [contactsSearchWhere(searchParam)] : []), ...(scope ? [scope] : []), ...kindWhere];
+  const whereCondition: any = parts.length > 1 ? { [Op.and]: parts } : parts[0] || {};
   const limit = 20;
   const offset = limit * (+pageNumber - 1);
 

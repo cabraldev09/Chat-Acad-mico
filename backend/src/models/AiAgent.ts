@@ -12,13 +12,21 @@ import {
   ForeignKey,
   BelongsTo,
   BelongsToMany,
-  HasMany
+  HasMany,
+  BeforeCreate
 } from "sequelize-typescript";
 
 import { maskSecret, openSecret, sealSecret } from "../helpers/Secrets";
 
 @Table
 class AiAgent extends Model<AiAgent> {
+  @BeforeCreate
+  static async setInstitution(agent: AiAgent): Promise<void> {
+    if (agent.institutionId) return;
+    const { currentInstitutionId, defaultInstitution } = await import("../helpers/Institution");
+    agent.institutionId = currentInstitutionId() || (await defaultInstitution())?.id as number;
+  }
+
   @PrimaryKey
   @AutoIncrement
   @Column

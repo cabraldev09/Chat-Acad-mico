@@ -15,6 +15,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
 import { brDecimal, copyPng, downloadPng, renderPng } from "../../utils/shareImage";
 import api from "../../services/api";
+import { ErrorState, SkeletonCards } from "../../components/ui";
 import toastError from "../../errors/toastError";
 
 const SHARE_WIDTH = 640;
@@ -504,13 +505,15 @@ const PoloGoals = () => {
   const [busy, setBusy] = useState(false);
   const shareRef = useRef(null);
   const [changes, setChanges] = useState([]);
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async (goalId) => {
+    setFailed(false);
     try {
       const { data: d } = await api.get("/goals/polos", { params: goalId ? { goalId } : {} });
       setData(d);
       setMonth((m) => (m && (d.months || []).includes(m) ? m : null));
-    } catch (e) { toastError(e); }
+    } catch (e) { setFailed(true); toastError(e); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -553,7 +556,17 @@ const PoloGoals = () => {
   };
   const reload = () => { setDialog(null); load(goal && goal.id); };
 
-  if (!data) return <MainContainer><MainHeader><Title>Metas</Title></MainHeader></MainContainer>;
+  // before the first answer the page says what is happening: loading, or that it failed and how to try again (never a blank page)
+  if (!data) {
+    return (
+      <MainContainer>
+        <MainHeader><Title>Metas</Title></MainHeader>
+        {failed
+          ? <ErrorState title="Não foi possível carregar as metas dos polos." onRetry={() => load()} />
+          : <div style={{ padding: 16 }} aria-busy="true"><SkeletonCards n={4} height={120} /></div>}
+      </MainContainer>
+    );
+  }
   const { totals } = shown;
 
   return (

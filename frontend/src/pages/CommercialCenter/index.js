@@ -1,26 +1,20 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Check, ChevronDown, ChevronUp, Download, HeartPulse, ListTodo, Megaphone, MapPin, MonitorCheck, Plus, Search, Settings2, Target, Users, X } from "lucide-react";
+import { AlertTriangle, Wifi, WifiOff, Settings2, Target, Users, X } from "lucide-react";
 
 import Tooltip from "@material-ui/core/Tooltip";
 import Drawer from "@material-ui/core/Drawer";
 import Button from "@material-ui/core/Button";
-import Popover from "@material-ui/core/Popover";
-import { AuthContext } from "../../context/Auth/AuthContext";
-import { onColor, tint } from "../../utils/color";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import NumberTicker from "../../components/NumberTicker";
-import { BRAND, BlockTitle, CompareBars, HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
+import { BRAND, BlockTitle, CompareBars, HistoryChart, Kpi, PRESENCE, Progress, num, useAnalytics, useKit } from "../../components/analytics/kit";
 import { ManagementFeedback } from "../Reports/Management";
 
 const DAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
 const LEVEL = { high: "#dc2626", medium: "#d97706", low: "#0693E3" };
-// where a click on an alert takes the manager (the task screen opens already filtered on that person)
-// only the overdue tasks have a screen filtered on the person; every other alert opens that person's detail here (the generic links were MY inbox / MY panel)
-const alertLink = (a) => `/crm/tarefas?scope=all&status=overdue&userId=${a.userId}`;
 const dateInPoloTime = (date) => date.toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
 
 const supervisorPeriod = (period) => {
@@ -121,7 +115,7 @@ const Detail = ({ userId, period, defs, onClose }) => {
     if (!data) return <div style={{ display: "grid", gap: 14 }}>{[0, 1, 2].map((i) => <div key={i} className="ui-skeleton" style={{ height: i === 0 ? 120 : 90, borderRadius: 16 }} />)}</div>;
     const m = data.metrics;
     const p = data.presence;
-    const wa = WA[p.whatsapp.state];
+    const wa = (WA[p.whatsapp.state] || WA.none);
     const down = p.whatsapp.state !== "connected";
     const slots = p.scheduleToday.length ? p.scheduleToday.map((s) => `${s.start}–${s.end}`).join(", ") : "";
     const firstHint = m.firstContactSamples ? `${m.firstContactSamples} ${m.firstContactSamples === 1 ? "lead atendido por ele" : "leads atendidos por ele"}` : down ? "Sem WhatsApp conectado" : "Nenhum lead contatado por ele no período";
@@ -135,7 +129,7 @@ const Detail = ({ userId, period, defs, onClose }) => {
             </span>
             <div style={{ minWidth: 0, flex: 1 }}>
               <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em" }}>{data.user.name}</h2>
-              <div className={c.sub}>{PRESENCE[p.state].label}</div>
+              <div className={c.sub}>{(PRESENCE[p.state] || PRESENCE.off).label}</div>
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, paddingTop: 14, borderTop: "1px solid var(--ui-border, rgba(127,140,160,.25))" }}>
@@ -178,7 +172,7 @@ const Detail = ({ userId, period, defs, onClose }) => {
     );
   })();
   return (
-    <Drawer anchor="right" open onClose={onClose} PaperProps={{ style: { width: "min(820px, 100vw)", background: "var(--ui-bg, #f4f7fb)" } }}>
+    <Drawer anchor="right" open onClose={onClose} PaperProps={{ style: { width: "min(820px, 100vw)", background: "var(--surface-2)" } }}>
       <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 2, background: BRAND.blue, color: "#fff" }}>
         <b style={{ fontSize: 15 }}>Detalhes do consultor</b>
         <button type="button" aria-label="Fechar" onClick={onClose} style={{ border: 0, background: "rgba(255,255,255,.14)", color: "#fff", borderRadius: 10, width: 34, height: 34, cursor: "pointer", display: "grid", placeItems: "center" }}><X size={18} /></button>
@@ -226,14 +220,14 @@ const Team = ({ consultants, onOpen }) => {
       {list.length === 0 && <div className={c.sub}>Nenhum consultor cadastrado.</div>}
       {list.map((b) => {
         const p = b.presence;
-        const wa = WA[p.whatsapp.state];
+        const wa = (WA[p.whatsapp.state] || WA.none);
         const down = p.whatsapp.state !== "connected";
         const slots = p.scheduleToday.length ? p.scheduleToday.map((s) => `${s.start}–${s.end}`).join(", ") : "";
         return (
           <button key={b.user.id} type="button" onClick={() => onOpen(b.user.id)} className={c.row} style={{ padding: "12px 0", alignItems: "flex-start" }}>
             <span style={{ position: "relative", width: 38, height: 38, flex: "none" }}>
-              <span style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 13, fontWeight: 700, background: "rgba(11,66,121,.1)", color: BRAND.blue }}>{initials(b.user.name)}</span>
-              <span title={p.online ? "Online agora" : "Offline"} style={{ position: "absolute", right: -1, bottom: -1, width: 11, height: 11, borderRadius: "50%", background: p.online ? "#16a34a" : "#94a3b8", border: "2px solid #fff" }} />
+              <span style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 13, fontWeight: 700, background: "color-mix(in srgb, var(--c-brand) 14%, transparent)", color: "var(--c-brand)" }}>{initials(b.user.name)}</span>
+              <span title={p.online ? "Online agora" : "Offline"} style={{ position: "absolute", right: -1, bottom: -1, width: 11, height: 11, borderRadius: "50%", background: p.online ? "#16a34a" : "#94a3b8", border: "2px solid var(--surface)" }} />
             </span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.user.name}</b>
@@ -264,6 +258,8 @@ const WHY = {
   pending_reply: "Conversas abertas em que o cliente foi o último a falar e ainda espera resposta.",
   idle_on_schedule: "No horário de trabalho, sem enviar mensagem, mexer em lead ou concluir tarefa há um tempo.",
   below_messages_target: "Mensagens enviadas hoje abaixo da meta diária, dentro do horário de trabalho.",
+  below_attendances_target: "Conversas atendidas hoje abaixo da meta diária, dentro do horário de trabalho.",
+  training_needed: "A revisão diária das conversas encontrou o mesmo ponto se repetindo. Veja a aba Treinamento.",
   followups_due: "Leads com o próximo contato marcado para hoje ou antes.",
   no_conversion: "Leads trabalhados no período sem nenhuma matrícula confirmada.",
 };

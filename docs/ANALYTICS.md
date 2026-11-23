@@ -10,12 +10,44 @@ As definições de cada indicador estão em `definitions.ts` e saem em `GET /ana
 | Metas dos polos | Visão geral, Polos e metas e Meu desempenho | `GET /dashboard/polos-progress` | todos os logados: só meta, feito e ritmo de cada polo, sem pessoas; marca os polos de quem vê |
 
 **Visão geral (gestão)** é a tela principal, de cima para baixo:
-1. **Agora:** quem está trabalhando, WhatsApp desconectado, alertas e tarefas sem responsável.
-2. **Progresso dos polos:** meta do semestre, ritmo esperado e previsão de cada polo.
-3. **Período:** leitura do período, atendimentos, mensagens, matrículas, tempo até finalizar, fila agora, atendimentos e gráficos
+1. **Resultado do período:** matrículas, conversas atendidas, pessoas contatadas e mensagens enviadas, cada uma com a linha dia a
+   dia (soma dos consultores que a pessoa pode ver), e os cartões de conversão, primeiro contato, espera, tarefas e propostas.
+2. **Agora:** quem está trabalhando, WhatsApp desconectado, alertas e tarefas sem responsável.
+3. **Progresso dos polos:** meta do semestre, ritmo esperado e previsão de cada polo.
+4. **Atendimento:** leitura do período, atendimentos, mensagens, matrículas, tempo até finalizar, fila agora e gráficos
    (o mesmo bloco de Atendimento, embutido como `ConversationsOverview`).
-4. **Comercial:** pessoas contatadas, matrículas dos consultores, leads parados, onde os leads param, objeções, cidades e etapas
+5. **Comercial:** pessoas contatadas, matrículas dos consultores, leads parados, onde os leads param, objeções, cidades e etapas
    puladas.
+
+**Meu desempenho (consultor)**, de cima para baixo: resultados do período com a linha dia a dia e a comparação com o período
+anterior; a meta em anel e a posição na equipe; o que foi feito hoje; o que fazer agora; os demais resultados; os leads no funil;
+as metas dos polos; as orientações. A posição vem em `team.position` de `/analytics/me/overview` (`{ rank, of }`, por matrículas
+no período): só o lugar e o total de consultores, nunca o número de um colega.
+
+**Visual:** os painéis usam o kit de `frontend/src/components/peak` sobre um fundo cinza neutro (`#f0f2f5`, o fundo padrão do
+sistema). No topo, até quatro `PeakChart` (o cartão escuro do Peak Chart, de Louis Studios, no 21st.dev). Abaixo, caixas brancas
+lisas, com borda fina e sombra leve, sem fundo tingido nem faixa colorida: a cor aparece só onde diz algo (o número de um problema,
+um ponto de estado, um gráfico) (`styles/peak.css`). As peças:
+- `SectionTitle`: título de seção com barra azul-marinho;
+- `GlowStat`: cartão de número com ícone em pastilha; `CountStat`: número grande que conta até o valor e abre a lista filtrada;
+- `GlowFunnel`: o funil em blocos na ordem das etapas (número e parte do total); as etapas vazias viram uma linha só;
+- `GlowRank`: ranking com posição em medalha, valor, participação e um traço curto (nunca uma barra de ponta a ponta);
+- `Donut` (de `components/charts`) para proporções: origem dos leads e motivos de perda;
+- `GlowRing` e os cartões de polo com anel para metas; `TodoList` para prioridades; `Badge` para estado em tabelas.
+Os painéis antigos (`useKit().panel`, Atendimento, Polos e metas) usam a mesma caixa (`--card-bg`, `--card-line`, `--card-shadow`).
+
+**Prioridades:** o bloco de insights (`components/Insights`) é uma lista de ações ordenada por urgência; cada linha tem o botão
+"Resolver", que abre a tela certa. Não usa ícone de IA: são leituras dos dados, não texto gerado.
+
+**Cabeçalho:** as abas das Estatísticas são uma barra arredondada com a aba atual em azul-marinho; título e período ficam na mesma
+faixa. A faixa de tarefas e leads do topo (`TaskAlert`) não aparece nos painéis.
+
+**Menu lateral:** recolhido, é um dock: os ícones crescem perto do ponteiro (só `transform`, sem mudar o tamanho de nada) e o nome
+do item aparece ao lado. Só abre pelo botão. Antes ele abria sozinho ao passar o mouse, o que mudava a largura sob o ponteiro e fazia
+a lista tremer e rolar. "Meu desempenho" aparece para o consultor e também para a gestão.
+
+**Sem repetição:** um número aparece uma vez por tela. Na Visão geral, o bloco Atendimento embutido não repete atendimentos,
+mensagens e matrículas do topo, e o Comercial não repete pessoas contatadas e matrículas.
 
 "Equipe agora" (`/gestao-comercial`, hoje um redirecionamento) e a "Visão do gestor" de Atendimento saíram, porque repetiam esses
 números. A aba Consultores junta os números comerciais com o tempo de resposta e onde cada conversa parou (clique em Conversas). A
@@ -27,7 +59,7 @@ Os dois leem o mesmo pacote por pessoa (`bundlesFor`): mesmos filtros de períod
 - **Conversas atendidas** (`attendances`): conversas (tickets) de clientes com ao menos uma mensagem humana no período. Cada conversa conta uma vez, quantas mensagens tiver. É o número principal da produção.
 - **Pessoas contatadas** (`peopleContacted`): contatos diferentes que receberam mensagem humana no período. Quem tem duas conversas conta uma vez.
 - **Mensagens enviadas** (no período de atendimento e na exportação dos consultores): envios humanos feitos pelo sistema (tabela `OutboundMessages`, `status=sent`, `sentAt`, `userId` = autor real). Idempotente por `clientKey`: repetir o envio não conta de novo. Nunca contam mensagens da IA, de robôs/campanhas, nem **abrir uma conversa**. Envio recusado (conversa de outro) não gera registro.
-- **Matrículas**: `Leads.wonAt` no período, `ownerId` = consultor (mesma regra das Metas).
+- **Matrículas**: `Leads.wonAt` no período, `ownerId` = consultor, mais os cursos extras em `LeadEnrollments.enrolledAt` (mesma regra das Metas).
 - Limite conhecido: mensagens digitadas direto no celular e encaminhamentos/enquetes/cartões não passam pelo envio do sistema e não têm autoria registrada; não entram na contagem.
 
 ## Tempo real

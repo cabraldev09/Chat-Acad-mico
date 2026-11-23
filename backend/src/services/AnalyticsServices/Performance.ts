@@ -27,18 +27,23 @@ export const myLeads = async (userId: number) => {
 export const allConsultantIds = async (): Promise<number[]> =>
   (await rows(`SELECT u.id FROM Users u WHERE ${consultantWhere} ORDER BY u.id`, {})).map(r => Number(r.id));
 
-// the average of the team in the period, to compare (first contact, share of conversations with the grade, conversion)
-export const teamAverages = async (period: Period) => {
+// the average of the team in the period, to compare (first contact, share of conversations with the grade, conversion), and where
+// the person stands among the consultants by enrollments: only the place and how many there are, never a colleague's number
+export const teamAverages = async (period: Period, userId?: number) => {
   const ids = await allConsultantIds();
-  if (!ids.length) return { firstContact: null, gradeShare: null, conversion: null };
-  const metrics = [...(await computeMetrics(ids, period)).values()] as any[];
+  if (!ids.length) return { firstContact: null, gradeShare: null, conversion: null, position: null };
+  const all = await computeMetrics(ids, period);
+  const metrics = [...all.values()] as any[];
+  const mine = userId ? (all.get(userId) as any) : null;
+  // people with the same number of enrollments share the best place
+  const position = mine ? { rank: 1 + metrics.filter(m => Number(m.enrollments || 0) > Number(mine.enrollments || 0)).length, of: ids.length } : null;
   const samples = metrics.reduce((t, m) => t + (m.firstContactMinutes === null ? 0 : m.firstContactSamples), 0);
   const firstContact = samples ? metrics.reduce((t, m) => t + (m.firstContactMinutes === null ? 0 : m.firstContactMinutes * m.firstContactSamples), 0) / samples : null;
   const attendances = metrics.reduce((t, m) => t + Number(m.attendances || 0), 0);
   const [g] = await rows(`SELECT COUNT(*) AS n FROM LeadActivities WHERE type = 'grade_sent' AND userId IN (:ids) AND createdAt BETWEEN :from AND :to`, { ids, from: period.start, to: period.end });
   const leads = metrics.reduce((t, m) => t + Number(m.leadsWorked || 0), 0);
   const won = metrics.reduce((t, m) => t + Number(m.enrollments || 0), 0);
-  return { firstContact, gradeShare: attendances ? Math.round((Number(g?.n || 0) / attendances) * 100) : null, conversion: leads ? Math.round((won / leads) * 1000) / 10 : null };
+  return { firstContact, gradeShare: attendances ? Math.round((Number(g?.n || 0) / attendances) * 100) : null, conversion: leads ? Math.round((won / leads) * 1000) / 10 : null, position };
 };
 
 export const gradesSentBy = async (userId: number, period: Period): Promise<number> =>

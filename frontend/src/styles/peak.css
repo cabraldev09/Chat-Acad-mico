@@ -1,0 +1,160 @@
+/* The boxes of the panels: plain white on a neutral grey page, a crisp border and a soft shadow. No tinted backgrounds and no
+   coloured strips: colour appears only where it says something (the number of a problem, a small dot of state, a chart).
+   In the dark theme the boxes are a neutral dark grey. The Peak Chart on top of the page stays dark: it is the highlight. */
+.pk {
+  --pk-accent: var(--c-leads);
+  --pk-num: var(--text-1);
+  --pk-ink: var(--text-1);
+  --pk-ink-2: #5b6676;
+  --pk-ink-3: var(--text-3);
+  --pk-line: #dfe3ea;
+  --pk-good: #15803d;
+  --pk-bad: #dc2626;
+  --pk-warn: #b45309;
+  --pk-base: #ffffff;
+  position: relative;
+  min-width: 0;
+  color: var(--pk-ink);
+  border-radius: 14px;
+  border: 1px solid var(--pk-line);
+  background: var(--pk-base);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.04);
+  overflow: hidden;
+}
+:root[data-theme="dark"] .pk { --pk-base: #1b1d1f; --pk-line: rgba(255, 255, 255, 0.1); --pk-ink-2: #9aa3ad; --pk-good: #4ade80; --pk-bad: #f87171; --pk-warn: #fbbf24; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset; }
+.pk[data-tone="good"] { --pk-accent: var(--c-won); }
+.pk[data-tone="bad"] { --pk-accent: var(--c-lost); --pk-num: var(--pk-bad); }
+.pk[data-tone="warn"] { --pk-accent: var(--c-warn); --pk-num: var(--pk-warn); }
+.pk[data-tone="violet"] { --pk-accent: var(--c-violet); }
+.pk[data-tone="brand"] { --pk-accent: var(--c-brand); }
+button.pk, a.pk { font: inherit; text-align: left; cursor: pointer; text-decoration: none; width: 100%; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+button.pk:hover, a.pk:hover { border-color: #b8c0cc; box-shadow: 0 2px 4px rgba(16, 24, 40, 0.06), 0 8px 16px -8px rgba(16, 24, 40, 0.12); }
+button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent); outline-offset: 2px; }
+
+/* the title of a section of a page: a navy bar, the title and one sentence */
+.pk-section { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; margin: 0 0 12px; min-width: 0; }
+.pk-section h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; color: var(--text-1); }
+.pk-section .hint { font-size: 12.5px; color: var(--text-2); flex: 1; min-width: 160px; }
+
+/* the row of Peak Charts: columns on a wide screen, a swipe row on a phone (the page itself never scrolls sideways) */
+.pk-row { display: grid; gap: 18px 6px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); align-items: start; padding: 10px 0 14px; min-width: 0; }
+@media (max-width: 640px) {
+  .pk-row { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 12px 6px 18px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .pk-row::-webkit-scrollbar { display: none; }
+  .pk-row > * { flex: 0 0 76%; max-width: 300px; scroll-snap-align: center; }
+}
+
+.pk-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(164px, 1fr)); min-width: 0; }
+.pk-grid-4 { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); min-width: 0; }
+@media (max-width: 1100px) { .pk-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .pk-grid-4 { grid-template-columns: 1fr; } }
+.pk-grid-wide { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); align-items: start; min-width: 0; }
+
+/* small stat card */
+.pk-stat { padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 6px; min-height: 124px; }
+.pk-label { font-size: 13px; font-weight: 500; color: var(--pk-ink-2); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pk-ico { display: grid; place-items: center; flex: none; color: var(--pk-ink-3); }
+.pk-value { color: var(--pk-num); font-size: 28px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pk-hint { font-size: 12px; color: var(--pk-ink-2); line-height: 1.35; }
+.pk-chip { position: relative; display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 700; letter-spacing: 0; padding: 2px 7px; border-radius: 999px; background: var(--track); color: var(--pk-ink-2); white-space: nowrap; }
+.pk-chip[data-good="1"] { background: color-mix(in srgb, var(--pk-good) 15%, transparent); color: var(--pk-good); }
+.pk-chip[data-good="0"] { background: color-mix(in srgb, var(--pk-bad) 13%, transparent); color: var(--pk-bad); }
+.pk-spark { display: block; width: 100%; height: 38px; margin-top: auto; overflow: visible; }
+
+/* the counter of what asks for action now: a large number that counts up; a dot of colour says the state */
+.pk-count { padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 4px; min-height: 132px; }
+.pk-count .pk-label > span:first-child { display: inline-flex; align-items: center; gap: 8px; }
+.pk-count .pk-label > span:first-child::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--pk-accent); flex: none; }
+.pk-count .n { color: var(--pk-num); font-size: 40px; font-weight: 650; letter-spacing: -0.04em; line-height: 1.05; font-variant-numeric: tabular-nums; margin-top: 8px; }
+.pk-count .go { margin-top: auto; padding-top: 10px; font-size: 12.5px; font-weight: 600; color: var(--pk-ink-2); display: inline-flex; align-items: center; gap: 4px; }
+button.pk-count:hover .go { color: var(--c-brand); }
+
+/* panel with a title */
+.pk-panel { padding: 20px 20px 18px; }
+.pk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.pk-title { margin: 0; font-size: 14.5px; font-weight: 650; letter-spacing: -0.01em; color: var(--pk-ink); }
+.pk-sub { font-size: 12.5px; color: var(--pk-ink-2); margin-top: 3px; line-height: 1.4; }
+.pk-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 110px; text-align: center; font-size: 13.5px; color: var(--pk-ink-2); }
+.pk-btn { border: 1px solid var(--pk-line); background: var(--pk-base); color: var(--pk-ink); border-radius: 10px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.pk-btn:hover { border-color: var(--c-leads); color: var(--c-brand); background: var(--accent-soft); }
+.pk-btn[data-primary="1"] { background: #0b4279; border-color: #0b4279; color: #fff; }
+.pk-btn[data-primary="1"]:hover { background: #0a3a6d; color: #fff; }
+.pk-skel { border-radius: 8px; background: linear-gradient(90deg, var(--track), color-mix(in srgb, var(--pk-accent) 16%, transparent), var(--track)); background-size: 200% 100%; animation: pk-shimmer 1.4s linear infinite; }
+.pk-skel::before { display: none; }
+@keyframes pk-shimmer { to { background-position: -200% 0; } }
+.pk-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; padding: 2px 8px; border-radius: 999px; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; background: var(--track); color: var(--pk-ink-2); }
+.pk-badge[data-tone="bad"] { background: color-mix(in srgb, var(--pk-bad) 14%, transparent); color: var(--pk-bad); }
+.pk-badge[data-tone="warn"] { background: color-mix(in srgb, var(--c-warn) 18%, transparent); color: var(--pk-warn); }
+.pk-badge[data-tone="good"] { background: color-mix(in srgb, var(--pk-good) 14%, transparent); color: var(--pk-good); }
+
+/* ranking: place, name, value and share; the bar is a short trace beside the value, never a ruler across the box */
+.pk-rank { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.pk-rank li { display: grid; grid-template-columns: 30px minmax(0, 1fr) 84px auto; gap: 2px 12px; align-items: center; padding: 9px 8px; border-radius: 10px; font-size: 13.5px; }
+.pk-rank li + li { border-top: 1px solid color-mix(in srgb, var(--pk-line) 60%, transparent); border-radius: 0; }
+.pk-rank .pos { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--track); color: var(--pk-ink-2); font-variant-numeric: tabular-nums; }
+.pk-rank li:nth-child(1) .pos { background: var(--text-1); color: var(--pk-base); }
+.pk-rank .who { min-width: 0; }
+.pk-rank .name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pk-rank .note { display: block; font-size: 12px; color: var(--pk-ink-2); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-rank .track { height: 4px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.pk-rank .fill { display: block; height: 100%; border-radius: 999px; background: var(--c-brand); transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pk-rank .val { color: var(--pk-num); font-weight: 650; font-size: 15px; font-variant-numeric: tabular-nums; text-align: right; min-width: 44px; }
+.pk-rank .val small { display: block; font-size: 11.5px; font-weight: 600; color: var(--pk-ink-2); }
+.pk-rank li[data-me="1"] { background: var(--accent-soft); }
+.pk-rank button.name { border: 0; background: none; color: inherit; font: inherit; font-weight: 600; padding: 0; text-align: left; cursor: pointer; width: 100%; }
+.pk-rank button.name:hover { color: var(--c-brand); text-decoration: underline; }
+@media (max-width: 520px) { .pk-rank li { grid-template-columns: 30px minmax(0, 1fr) auto; } .pk-rank .track { display: none; } }
+
+/* goal ring */
+.pk-ring { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.pk-ring svg { flex: none; overflow: visible; }
+.pk-ring .arc { transition: stroke-dashoffset 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pk-facts { display: grid; gap: 8px 18px; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); flex: 1; min-width: 180px; }
+.pk-facts dt { font-size: 12px; color: var(--pk-ink-2); }
+.pk-facts dd { margin: 2px 0 0; color: var(--pk-num); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* the funnel as a sequence of stages: each stage is a block with its number; the empty ones fold into one quiet line */
+.pk-flow { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.pk-flow .stage { position: relative; border: 1px solid var(--pk-line); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); font: inherit; color: inherit; text-align: left; min-width: 0; }
+.pk-flow button.stage { cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.pk-flow button.stage:hover { border-color: #b8c0cc; background: var(--pk-base); }
+.pk-flow .stage .step { font-size: 11px; font-weight: 600; color: var(--pk-ink-3); display: flex; align-items: center; gap: 6px; }
+.pk-flow .stage .step::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--stage, var(--c-leads)); }
+.pk-flow .stage .nm { font-size: 13px; font-weight: 600; color: var(--pk-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; }
+.pk-flow .stage .n { font-size: 26px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; color: var(--pk-ink); font-variant-numeric: tabular-nums; margin-top: 8px; display: flex; align-items: baseline; gap: 8px; }
+.pk-flow .stage .n small { font-size: 12px; font-weight: 500; color: var(--pk-ink-2); letter-spacing: 0; }
+.pk-flow-empty { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--pk-line); font-size: 12.5px; color: var(--pk-ink-2); display: flex; gap: 6px 8px; flex-wrap: wrap; align-items: center; }
+.pk-flow-empty span.tag { padding: 2px 9px; border-radius: 999px; background: var(--track); font-size: 12px; }
+
+/* a list of things to do: colour of the state, what it is, and the button that opens the right screen */
+.pk-todo { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.pk-todo li { display: flex; align-items: center; gap: 12px; padding: 12px 0; min-width: 0; }
+.pk-todo li + li { border-top: 1px solid var(--pk-line); }
+.pk-todo li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--todo, var(--c-leads)); flex: none; }
+.pk-todo .txt { flex: 1; min-width: 0; }
+.pk-todo .txt b { display: block; font-size: 13.5px; line-height: 1.35; }
+.pk-todo .txt span { display: block; font-size: 12.5px; color: var(--pk-ink-2); margin-top: 2px; line-height: 1.4; }
+
+/* table inside a panel */
+.pk-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.pk-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--pk-ink-2); padding: 8px 10px; border-bottom: 1px solid var(--pk-line); white-space: nowrap; }
+.pk-table td { padding: 11px 10px; border-bottom: 1px solid color-mix(in srgb, var(--pk-line) 60%, transparent); vertical-align: middle; }
+.pk-table .r { text-align: right; font-variant-numeric: tabular-nums; }
+.pk-table tbody tr[data-click="1"] { cursor: pointer; }
+.pk-table tbody tr[data-click="1"]:hover { background: var(--surface-2); }
+.pk-scroll { overflow-x: auto; }
+/* on a phone each row of the table becomes a card: nothing scrolls sideways */
+@media (max-width: 720px) {
+  .pk-table.pk-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .pk-table.pk-stack, .pk-table.pk-stack tbody, .pk-table.pk-stack tr, .pk-table.pk-stack td { display: block; width: 100%; }
+  .pk-table.pk-stack tr { padding: 10px 0; border-bottom: 1px solid var(--pk-line); display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; background: none !important; }
+  .pk-table.pk-stack td { border: 0; padding: 0; text-align: left !important; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .pk-table.pk-stack td::before { content: attr(data-label); font-size: 12px; color: var(--pk-ink-2); }
+  .pk-table.pk-stack td[data-main="1"] { grid-column: 1 / -1; font-size: 15px; }
+  .pk-table.pk-stack td[data-main="1"]::before { content: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pk-skel { animation: none; }
+  .pk-rank .fill, .pk-ring .arc, button.pk, .pk-flow button.stage { transition: none; }
+}

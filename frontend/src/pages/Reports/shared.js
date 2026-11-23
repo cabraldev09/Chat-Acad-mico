@@ -17,7 +17,7 @@ export const useShared = makeStyles((theme) => {
   const line = "var(--line)";
   const soft = "var(--surface-2)";
   return {
-    panel: { background: "var(--surface)", border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: theme.spacing(2.25, 2.5), boxShadow: "var(--shadow-card)", minWidth: 0 },
+    panel: { background: "var(--card-bg)", border: "1px solid var(--card-line)", borderRadius: 14, padding: theme.spacing(2.25, 2.5), boxShadow: "var(--card-shadow)", minWidth: 0 },
     title: { fontSize: 14.5, fontWeight: 700, margin: 0, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 },
     sub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
     stack: { display: "grid", gap: theme.spacing(2.5), minWidth: 0 },
