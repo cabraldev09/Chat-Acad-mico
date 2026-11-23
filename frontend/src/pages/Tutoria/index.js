@@ -1,9 +1,8 @@
 import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory, useLocation } from "react-router-dom";
-import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import { Button, CircularProgress, MenuItem, TextField } from "@material-ui/core";
-import { MessageSquare, MailOpen, MonitorCheck, RefreshCw, Upload, Megaphone } from "lucide-react";
+import { MessageSquare, MonitorCheck, RefreshCw, Upload, Megaphone } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -112,16 +111,6 @@ export default function Tutoria() {
     } catch (e) { toastError(e); }
     setBusy(null);
   };
-  const opening = async (s) => {
-    setBusy(s.leadId);
-    try {
-      const { data: r } = await api.post(`/tutoria/students/${s.leadId}/conversation`);
-      await api.post(`/tickets/${r.ticketId}/opening-template`);
-      toast.success(`Mensagem de abertura enviada para ${s.name.split(" ")[0]}.`);
-      load();
-    } catch (e) { toastError(e); }
-    setBusy(null);
-  };
 
   return (
     <MainContainer>
@@ -206,7 +195,6 @@ export default function Tutoria() {
                   <td>
                     <div className={c.actions}>
                       <Button size="small" variant="outlined" className={c.button} disabled={busy === s.leadId} startIcon={<MessageSquare size={13} />} onClick={() => open(s)}>Abrir conversa</Button>
-                      {data.rules?.official && !s.windowOpen && data.rules?.template && <Button size="small" className={c.button} disabled={busy === s.leadId} startIcon={<MailOpen size={13} />} onClick={() => opening(s)}>Enviar abertura</Button>}
                       <Button size="small" className={c.button} startIcon={<MonitorCheck size={13} />} onClick={() => setTab("ambientacao")}>Ambientação</Button>
                     </div>
                   </td>
