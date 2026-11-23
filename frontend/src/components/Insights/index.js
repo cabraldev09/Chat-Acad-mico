@@ -1,22 +1,16 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
-import { AlertTriangle, ChevronRight, Lightbulb, RefreshCw, Sparkles, TrendingUp, Users } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { formatDistanceToNowStrict, isToday, isYesterday, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 import api from "../../services/api";
 import { initialsOf, colorOf } from "../../utils/avatar";
+import { GlowPanel, TodoList } from "../peak";
 
-// Two blocks shared by the Painel do CRM and Estatísticas, drawn after the 21st.dev references "Insight Cards" (a short sentence and
-// where to act) and "User Presence Avatar" (online and offline apart), rewritten with the tokens of the system: no new library.
-
-const TONE = {
-  danger: { color: "#dc2626", Icon: AlertTriangle },
-  warn: { color: "#d97706", Icon: AlertTriangle },
-  good: { color: "#16a34a", Icon: TrendingUp },
-  info: { color: "#0693E3", Icon: Lightbulb },
-};
+// Two blocks shared by the Painel do CRM and Estatísticas: the priorities of now (each one a line that opens where to act) and who is
+// using the system, in the boxes of the panels (components/peak).
 
 const ROLE = { admin: "Administração", coordenacao: "Coordenação", consultor: "Consultor", tutor: "Tutor", academico: "Acadêmico", relacionamento: "Relacionamento" };
 
@@ -77,34 +71,17 @@ const Failed = ({ onRetry, text }) => {
 };
 
 // What deserves attention now and what the numbers are saying, one sentence each; a click opens where to act
-export const InsightsCard = ({ limit = 6, style }) => {
-  const c = useStyles();
+export const InsightsCard = ({ limit = 6, style, title = "Prioridades de agora" }) => {
   const history = useHistory();
   const { data, failed, loading, reload } = useLoad("/analytics/insights", true, 120000);
-  const items = ((data && data.items) || []).slice(0, limit);
+  // the most urgent first: what is late, then what asks for attention, then the good news and the notes
+  const order = { danger: 0, warn: 1, info: 2, good: 3 };
+  const items = [...((data && data.items) || [])].sort((x, y) => (order[x.tone] ?? 2) - (order[y.tone] ?? 2)).slice(0, limit);
   return (
-    <section className={c.card} style={style} aria-label="Insights">
-      <div className={c.head}>
-        <h2 className={c.title}><Sparkles size={16} style={{ color: "var(--c-leads, #0693E3)" }} />Insights de agora</h2>
-        <span className={c.sub}>Lidos dos dados do sistema</span>
-      </div>
-      {loading && !data && [0, 1, 2].map((i) => <div key={i} className={c.skel} />)}
-      {failed && !data && <Failed onRetry={reload} text="Não foi possível carregar os insights agora." />}
-      {data && !items.length && <div className={c.sub} style={{ padding: "8px 0" }}>Tudo em dia. Nenhum ponto pedindo atenção agora.</div>}
-      {items.map((it) => {
-        const t = TONE[it.tone] || TONE.info;
-        return (
-          <button key={it.key} type="button" className={c.item} onClick={() => history.push(it.link)}>
-            <span className={c.icon} style={{ color: t.color, background: `${t.color}1f` }}><t.Icon size={16} /></span>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span className={c.itemTitle} style={{ display: "block" }}>{it.title}</span>
-              <span className={c.itemDetail} style={{ display: "block" }}>{it.detail}</span>
-            </span>
-            <ChevronRight size={16} style={{ color: "var(--text-2)", flex: "none", marginTop: 7 }} />
-          </button>
-        );
-      })}
-    </section>
+    <GlowPanel id="priorities" style={style} title={title} sub="O que pede ação, do mais urgente ao menos. Cada linha abre a tela onde se resolve."
+      loading={loading && !data} error={failed && !data} onRetry={reload} empty={!!data && !items.length} emptyText="Tudo em dia. Nenhum ponto pedindo atenção agora.">
+      <TodoList items={items.map((it) => ({ key: it.key, tone: it.tone, title: it.title, detail: it.detail, onClick: it.link ? () => history.push(it.link) : undefined }))} />
+    </GlowPanel>
   );
 };
 
@@ -137,11 +114,8 @@ export const TeamOnline = ({ limit = 8, style }) => {
   const online = users.filter((u) => u.online);
   const shown = all ? users : users.slice(0, limit);
   return (
-    <section className={c.card} style={style} aria-label="Equipe online">
-      <div className={c.head}>
-        <h2 className={c.title}><Users size={16} style={{ color: "var(--c-leads, #0693E3)" }} />Equipe</h2>
-        {data && <span className={c.pill}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "#16a34a" }} />{online.length} online agora</span>}
-      </div>
+    <GlowPanel id="team-online" style={style} title="Equipe" sub="Online: usou o sistema nos últimos 5 minutos."
+      action={data ? <span className={c.pill}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "#16a34a" }} />{online.length} online agora</span> : null}>
       {loading && !data && [0, 1, 2].map((i) => <div key={i} className={c.skel} />)}
       {failed && !data && <Failed onRetry={reload} text="Não foi possível carregar a equipe agora." />}
       {online.length > 1 && (
@@ -162,7 +136,6 @@ export const TeamOnline = ({ limit = 8, style }) => {
         </div>
       ))}
       {users.length > limit && <button type="button" className={c.link} style={{ marginTop: 8 }} onClick={() => setAll((v) => !v)}>{all ? "Mostrar menos" : `Ver todos (${users.length})`}</button>}
-      <div className={c.sub} style={{ marginTop: 8 }}>Online: usou o sistema nos últimos 5 minutos.</div>
-    </section>
+    </GlowPanel>
   );
 };

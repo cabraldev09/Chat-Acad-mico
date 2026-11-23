@@ -1,11 +1,12 @@
 import React from "react";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, ChevronRight } from "lucide-react";
 
 import PeakChart from "./PeakChart";
+import NumberTicker from "../NumberTicker";
 import "../../styles/peak.css";
 
-// The pieces that sit under the Peak Chart: light boxes in the blue of the brand (see styles/peak.css). Nothing here computes a number: each
-// piece shows what the screen gives it, and each one handles loading, empty and error.
+// The pieces of the panels (see styles/peak.css for the look). Nothing here computes a number: each piece shows what the screen
+// gives it, and each one handles loading, empty and error.
 
 export { PeakChart };
 
@@ -36,9 +37,18 @@ export const DeltaChip = ({ value, upIsGood = true, suffix = "%" }) => {
   );
 };
 
+/** The title of a section of a page: a navy bar, the title, one sentence and, on the right, what acts on the section. */
+export const SectionTitle = ({ title, hint, action, style }) => (
+  <div className="pk-section" style={style}>
+    <h2>{title}</h2>
+    {hint ? <span className="hint">{hint}</span> : <span style={{ flex: 1 }} />}
+    {action}
+  </div>
+);
+
 export const PeakRow = ({ children, label }) => <div className="pk-row" role="group" aria-label={label}>{children}</div>;
 
-// a line with the glow of the Peak Chart, small enough for a stat card
+// a line with a marked last point, small enough for a stat card
 export const Spark = ({ data, id }) => {
   const vals = (data || []).map((v) => Number(v) || 0);
   if (vals.length < 2) return <svg className="pk-spark" aria-hidden="true" />;
@@ -65,12 +75,12 @@ export const Spark = ({ data, id }) => {
   );
 };
 
-/** The small card: label, number, change against the period before, a line and one sentence. */
+/** The small card: label, icon in its colour, number, change against the period before, a line and one sentence. */
 export const GlowStat = ({ id, label, value, delta, upIsGood, spark, hint, tone, icon: Icon, onClick, loading, title }) => {
   const Tag = onClick ? "button" : "div";
   return (
     <Tag type={onClick ? "button" : undefined} className="pk pk-stat" data-tone={tone} data-stat={id} onClick={onClick} title={title}>
-      <span className="pk-label"><span>{label}</span>{Icon ? <Icon size={16} aria-hidden="true" /> : null}</span>
+      <span className="pk-label"><span>{label}</span>{Icon ? <span className="pk-ico" aria-hidden="true"><Icon size={17} /></span> : null}</span>
       {loading ? <span className="pk-skel" style={{ height: 32, width: "55%" }} /> : (
         <span className="pk-value">{value}<DeltaChip value={delta} upIsGood={upIsGood} /></span>
       )}
@@ -80,43 +90,24 @@ export const GlowStat = ({ id, label, value, delta, upIsGood, spark, hint, tone,
   );
 };
 
-// 5x7 dot-matrix digits (and the few signs a counter needs)
-const GLYPH = {
-  0: "01110 10001 10011 10101 11001 10001 01110", 1: "00100 01100 00100 00100 00100 00100 01110", 2: "01110 10001 00001 00010 00100 01000 11111",
-  3: "11110 00001 00001 01110 00001 00001 11110", 4: "00010 00110 01010 10010 11111 00010 00010", 5: "11111 10000 11110 00001 00001 10001 01110",
-  6: "00110 01000 10000 11110 10001 10001 01110", 7: "11111 00001 00010 00100 01000 01000 01000", 8: "01110 10001 10001 01110 10001 10001 01110",
-  9: "01110 10001 10001 01111 00001 00010 01100", ".": "00000 00000 00000 00000 00000 01100 01100", "-": "00000 00000 00000 11111 00000 00000 00000",
-  "%": "11001 11010 00010 00100 01000 01011 10011", ",": "00000 00000 00000 00000 01100 00100 01000",
-};
-export const DotDigits = ({ text }) => {
-  const chars = String(text).split("").filter((ch) => GLYPH[ch]);
-  const step = 6;
-  return (
-    <svg className="pk-digits" viewBox={`0 0 ${Math.max(1, chars.length * step * 2 - 2)} 14`} aria-hidden="true">
-      {chars.map((ch, ci) => GLYPH[ch].split(" ").map((row, y) => row.split("").map((bit, x) => (
-        <circle key={`${ci}-${y}-${x}`} className={bit === "1" ? "on" : "off"} cx={ci * step * 2 + x * 2 + 1} cy={y * 2 + 1} r="0.78" />
-      ))))}
-    </svg>
-  );
-};
-
-/** The counter of what is happening now, drawn in dots. */
-export const DotTile = ({ id, label, value, hint, tone, onClick, loading }) => {
+/** What asks for action now: a large number that counts up to its value, what it is, and where the click goes. */
+export const CountStat = ({ id, label, value, hint, tone, icon: Icon, onClick, action, loading }) => {
   const Tag = onClick ? "button" : "div";
-  // the dots are a drawing: who uses a screen reader hears the number
-  const spoken = [label, loading ? "carregando" : nf(value), hint].filter(Boolean).join(". ");
   return (
-    <Tag type={onClick ? "button" : undefined} className="pk pk-dot" data-tone={tone} data-stat={id} onClick={onClick} aria-label={spoken}>
-      <span className="pk-label"><span>{label}</span></span>
-      {loading ? <span className="pk-skel" style={{ height: 34, width: 70 }} /> : <DotDigits text={String(Math.round(Number(value) || 0))} />}
+    <Tag type={onClick ? "button" : undefined} className="pk pk-count" data-tone={tone} data-stat={id} onClick={onClick}>
+      <span className="pk-label"><span>{label}</span>{Icon ? <span className="pk-ico" aria-hidden="true"><Icon size={17} /></span> : null}</span>
+      {loading ? <span className="pk-skel" style={{ height: 44, width: 90, marginTop: 6 }} /> : <span className="n"><NumberTicker value={Number(value) || 0} format={nf} /></span>}
       {hint ? <span className="pk-hint">{hint}</span> : null}
+      {onClick && action ? <span className="go">{action}<ChevronRight size={14} aria-hidden="true" /></span> : null}
     </Tag>
   );
 };
 
+export const Badge = ({ tone, children, title }) => <span className="pk-badge" data-tone={tone} title={title}>{children}</span>;
+
 /** A block with a title. loading shows the skeleton, error the retry, empty the sentence that says why there is nothing. */
-export const GlowPanel = ({ title, sub, action, tone, loading, error, onRetry, empty, emptyText = "Nada para mostrar no período.", children, id }) => (
-  <section className="pk pk-panel" data-tone={tone} data-panel={id} aria-busy={loading ? "true" : undefined}>
+export const GlowPanel = ({ title, sub, action, tone, loading, error, onRetry, empty, emptyText = "Nada para mostrar no período.", children, id, style }) => (
+  <section className="pk pk-panel" data-tone={tone} data-panel={id} aria-busy={loading ? "true" : undefined} style={style}>
     {(title || action) && (
       <div className="pk-head">
         <div style={{ minWidth: 0 }}>
@@ -140,26 +131,33 @@ export const GlowPanel = ({ title, sub, action, tone, loading, error, onRetry, e
   </section>
 );
 
-/** rows: [{ key, name, value (text), bar (0..100), note, me, onClick }]. The row marked `me` is the reader's own. */
-export const GlowRank = ({ rows, numbered = true }) => (
+/**
+ * A ranking. rows: [{ key, name, value (text), bar (0..100, against the leader), share (text, part of the total), note, me, onClick }].
+ * The three first places are marked; the bar is a short trace beside the value. One row alone shows no bar: there is nothing to compare.
+ */
+export const GlowRank = ({ rows }) => (
   <ol className="pk-rank">
     {rows.map((r, i) => (
       <li key={r.key} data-me={r.me ? "1" : undefined}>
-        <span className="pos">{numbered ? i + 1 : ""}</span>
-        {r.onClick ? <button type="button" className="name" onClick={r.onClick}>{r.name}</button> : <span className="name" title={r.name}>{r.name}{r.me ? " (você)" : ""}</span>}
-        <span className="val">{r.value}</span>
-        <span className="track" aria-hidden="true"><span className="fill" style={{ display: "block", width: `${Math.max(0, Math.min(100, r.bar || 0))}%` }} /></span>
-        {r.note ? <span className="note">{r.note}</span> : null}
+        <span className="pos" aria-label={`${i + 1}º lugar`}>{i + 1}</span>
+        <span className="who">
+          {r.onClick ? <button type="button" className="name" onClick={r.onClick}>{r.name}</button> : <span className="name" title={r.name}>{r.name}{r.me ? " (você)" : ""}</span>}
+          {r.note ? <span className="note">{r.note}</span> : null}
+        </span>
+        <span className="track" aria-hidden="true" style={rows.length < 2 ? { visibility: "hidden" } : undefined}><span className="fill" style={{ width: `${Math.max(0, Math.min(100, r.bar || 0))}%` }} /></span>
+        <span className="val">{r.value}{r.share ? <small>{r.share}</small> : null}</span>
       </li>
     ))}
   </ol>
 );
 
-// the ranking of a list of records by one of its numbers
-export const rankRows = (list, nameKey, valueKey, { limit = 8, note, format = nf, onClick, me } = {}) => {
+// the ranking of a list of records by one of its numbers; `share` adds the part of the total each one holds
+export const rankRows = (list, nameKey, valueKey, { limit = 8, note, format = nf, onClick, me, share = true } = {}) => {
   const max = Math.max(1, ...list.map((r) => Number(r[valueKey]) || 0));
+  const total = list.reduce((t, r) => t + (Number(r[valueKey]) || 0), 0);
   return list.slice(0, limit).map((r) => ({
     key: String(r.id ?? r.userId ?? r[nameKey]), name: String(r[nameKey]), value: format(r[valueKey]), bar: ((Number(r[valueKey]) || 0) / max) * 100,
+    share: share && total > 0 && list.length > 1 ? `${Math.round(((Number(r[valueKey]) || 0) / total) * 100)}%` : undefined,
     note: note ? note(r) : undefined, onClick: onClick ? () => onClick(r) : undefined, me: me ? me(r) : false,
   }));
 };
@@ -175,31 +173,60 @@ export const GlowRing = ({ pct, facts = [], size = 132, label = "da meta" }) => 
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth="10" />
         <circle className="arc" cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--pk-accent)" strokeWidth="10" strokeLinecap="round"
           strokeDasharray={len} strokeDashoffset={len * (1 - p / 100)} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-        <text x="50%" y="49%" textAnchor="middle" dominantBaseline="middle" fill="var(--pk-num)" style={{ fontSize: size * 0.24, fontWeight: 650, letterSpacing: "-0.03em" }}>{Math.round(Number(pct) || 0)}%</text>
-        <text x="50%" y="68%" textAnchor="middle" fill="var(--pk-ink-2)" style={{ fontSize: 11.5 }}>{label}</text>
+        <text x="50%" y="49%" textAnchor="middle" dominantBaseline="middle" fill="var(--pk-num)" style={{ fontSize: size * 0.24, fontWeight: 700, letterSpacing: "-0.03em" }}>{Math.round(Number(pct) || 0)}%</text>
+        <text x="50%" y="68%" textAnchor="middle" fill="var(--pk-ink-2)" style={{ fontSize: Math.max(10, size * 0.085) }}>{label}</text>
       </svg>
-      <dl className="pk-facts" style={{ margin: 0 }}>
-        {facts.map((f) => <div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}
-      </dl>
+      {facts.length > 0 && (
+        <dl className="pk-facts" style={{ margin: 0 }}>
+          {facts.map((f) => <div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}
+        </dl>
+      )}
     </div>
   );
 };
 
-/** steps: [{ key, name, value }], widest first. */
-export const GlowFunnel = ({ steps, onStep }) => {
-  const max = Math.max(1, ...steps.map((s) => Number(s.value) || 0));
+/**
+ * The funnel as a sequence of stages. steps: [{ key, name, value, color }], in the order of the funnel. Each stage that holds something
+ * is a block with its number and its part of the total; the empty ones are named in one quiet line (a row of zeros is not information).
+ */
+export const GlowFunnel = ({ steps, onStep, unit = "leads" }) => {
+  const total = steps.reduce((t, s) => t + (Number(s.value) || 0), 0);
+  const filled = steps.filter((s) => Number(s.value) > 0);
+  const empty = steps.filter((s) => !(Number(s.value) > 0));
+  const Tag = onStep ? "button" : "div";
   return (
-    <div className="pk-funnel">
-      {steps.map((s) => (
-        <div className="step" key={s.key} onClick={onStep ? () => onStep(s) : undefined} style={onStep ? { cursor: "pointer" } : undefined}>
-          <span title={s.name}>{s.name}</span>
-          <span className="bar" aria-hidden="true"><i style={{ width: `${((Number(s.value) || 0) / max) * 100}%`, ...(s.color ? { "--pk-accent": s.color } : {}) }} /></span>
-          <span className="n">{nf(s.value)}</span>
+    <div>
+      <div className="pk-flow">
+        {filled.map((s) => (
+          <Tag key={s.key} type={onStep ? "button" : undefined} className="stage" style={s.color ? { "--stage": s.color } : undefined} onClick={onStep ? () => onStep(s) : undefined}>
+            <span className="step">Etapa {steps.indexOf(s) + 1}</span>
+            <span className="nm" title={s.name} style={{ display: "block" }}>{s.name}</span>
+            <span className="n">{nf(s.value)}<small>{total > 0 ? `${Math.round((Number(s.value) / total) * 100)}% dos ${unit}` : ""}</small></span>
+          </Tag>
+        ))}
+      </div>
+      {empty.length > 0 && (
+        <div className="pk-flow-empty">
+          <b>{empty.length === 1 ? "1 etapa vazia:" : `${empty.length} etapas vazias:`}</b>
+          {empty.map((s) => <span key={s.key} className="tag">{s.name}</span>)}
         </div>
-      ))}
+      )}
     </div>
   );
 };
+
+const TODO_TONE = { danger: "var(--c-lost)", bad: "var(--c-lost)", warn: "var(--c-warn)", good: "var(--c-won)", info: "var(--c-leads)" };
+/** Things to do. items: [{ key, tone, title, detail, onClick }]: the colour says how urgent, the button opens where to act. */
+export const TodoList = ({ items, action = "Resolver" }) => (
+  <ul className="pk-todo">
+    {items.map((it) => (
+      <li key={it.key} style={{ "--todo": TODO_TONE[it.tone] || TODO_TONE.info }}>
+        <span className="txt"><b>{it.title}</b>{it.detail ? <span>{it.detail}</span> : null}</span>
+        {it.onClick ? <button type="button" className="pk-btn" onClick={it.onClick} aria-label={`${action}: ${it.title}`}>{action}<ChevronRight size={14} aria-hidden="true" /></button> : null}
+      </li>
+    ))}
+  </ul>
+);
 
 // the days of a series as dd/mm, for the readout of the Peak Chart
 export const dayLabel = (d) => (d ? `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}` : "");
