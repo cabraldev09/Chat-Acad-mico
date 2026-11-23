@@ -21,7 +21,7 @@ import { AcademicCtx, closestOffered, findCourse, joinNames, offeredCourses, run
 import { addActivity } from "../CrmServices/LeadCore";
 import { BOLSA_ASKS, bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
 import { stripGradeAnnouncement } from "./GradeChoice";
-import { areaAsked, areaText, courseLabel } from "./InventedCourse";
+import { areaAsked, areaInContext, areaText, courseLabel } from "./InventedCourse";
 import { studentFacts } from "./StudentFacts";
 import { mirror } from "./Slots";
 import { pendingSteps } from "../FlowServices/StepLock";
@@ -306,7 +306,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   }
 
   // "cursos na área da saúde": the courses of the catalogue that are of that area, with the format of each one (the model never lists from memory)
-  const area = d.input !== null && wrote && !named && !state.slots.enrolledStudent ? areaAsked(lastText) : null;
+  const area = d.input !== null && wrote && !named && !state.slots.enrolledStudent ? areaAsked(lastText) || areaInContext(lastText, lastBot) : null;
   if (area) {
     const list = await offeredCourses();
     if (list.length) return answered(areaText(area, list), null, "other", { endsWithQuestion: true });

@@ -44,7 +44,7 @@ const AREA_ASK: Array<[AskedArea, RegExp]> = [
   ["educacao", /\b(area|areas|cursos?|algo|opcoes|graduacao)\b.{0,30}\b(educacao|licenciaturas?)\b/]
 ];
 const AREA_COURSES: Record<AskedArea, RegExp> = {
-  saude: /\b(saude|hospitalar|radiologia|biomedicina|farmacia|fisioterapia|nutricao|enfermagem|estetica|cosmetica|fonoaudiologia|terapia|podologia|gerontologia|educacao fisica|psicologia|odontologia|medicina)\b/,
+  saude: /\b(saude|hospitalar|radiologia|biomedicina|farmacia|fisioterapia|nutricao|enfermagem|estetica|cosmetica|fonoaudiologia|terapia|podologia|gerontologia|optica|optometria|quiropraxia|naturologia|educacao fisica|psicologia|odontologia|medicina)\b/,
   tecnologia: /\b(sistemas|software|computacao|dados|redes|coding|inteligencia artificial|informacao|jogos|internet|ciberseguranca|seguranca cibernetica|devops|programacao|cloud|nuvem)\b/,
   gestao: /\b(gestao|administracao|processos gerenciais|logistica|marketing|recursos humanos|contabeis|comercio|comercial|financeira|financas|empreendedorismo|secretariado)\b/,
   educacao: /\b(pedagogia|letras|licenciatura|educacao especial|historia|geografia|matematica|filosofia|sociologia|ciencias biologicas|artes visuais)\b/
@@ -56,14 +56,28 @@ export const areaAsked = (text: string): AskedArea | null => {
   const hit = AREA_ASK.find(([, r]) => r.test(t));
   return hit ? hit[0] : null;
 };
+// "Quais são os cursos nessa área?": the area is not in the message, it is in what was just said (the last answer of the agent)
+const AREA_WORD: Array<[AskedArea, RegExp]> = [
+  ["saude", /\b(area|areas) (de |da )?saude\b/], ["tecnologia", /\b(area|areas) (de |da )?(tecnologia|ti)\b/],
+  ["gestao", /\b(area|areas) (de |da )?(gestao|negocios)\b/], ["educacao", /\b(area|areas) (de |da )?educacao\b/]
+];
+export const areaInContext = (text: string, previous: string): AskedArea | null => {
+  const t = plainName(text);
+  if (!t || t.length > 120) return null;
+  const refers = /\b(nessa|dessa|essa|nesta|desta|esta|na mesma) area\b/.test(t) || /^(e )?(quais|que) (sao )?(os |as )?(outros |outras |demais )?(cursos|opcoes|graduacoes)( (voces )?(tem|ofertam|oferecem))?$/.test(t);
+  if (!refers) return null;
+  const p = plainName(previous);
+  const hit = AREA_WORD.find(([, r]) => r.test(p));
+  return hit ? hit[0] : null;
+};
 export const coursesOfArea = <T extends { name: string }>(list: T[], area: AskedArea): T[] => list.filter(c => AREA_COURSES[area].test(plainName(c.name)));
 const MODALITY_LABEL = (m: string | null | undefined): string => {
   const p = plainName(m || "");
   return p.includes("semi") ? "semipresencial" : p.includes("presencial") ? "presencial" : p ? "EAD" : "";
 };
 export const areaText = (area: AskedArea, list: Array<{ name: string; modality?: string | null }>): string => {
-  const found = coursesOfArea(list, area).slice(0, 10);
+  const found = coursesOfArea(list, area).slice(0, 25);
   if (!found.length) return `Hoje a instituição não tem cursos cadastrados na área de ${AREA_LABEL[area]}.\n\nQual outra área ou curso te interessa?`;
   const lines = found.map(c => { const m = MODALITY_LABEL(c.modality); return `- ${courseLabel(c.name)}${m ? `: ${m}` : ""}`; });
-  return [`Na área de ${AREA_LABEL[area]}, ${found.length === 1 ? "o curso que oferecemos é" : "os cursos que oferecemos são"}:`, lines.join("\n"), "Qual deles te interessa?"].join("\n\n");
+  return [`Na área de ${AREA_LABEL[area]}, ${found.length === 1 ? "o curso que oferecemos é" : `oferecemos ${found.length} cursos`}:`, lines.join("\n"), "Qual deles te interessa?"].join("\n\n");
 };

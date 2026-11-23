@@ -4170,6 +4170,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(anthropic.requests.length === llmArea, "the area question should not call the model");
       assert(/Radiologia \(tecnólogo\): semipresencial/.test(out.join("\n")), `the health courses of the catalogue are missing: ${out}`);
       assert(!/Medicina|Enfermagem|Cst Em/.test(out.join("\n")), `a course that is not offered, or a raw name, was told: ${out}`);
+      // "nessa área": the area comes from what the agent just said, and the list is again the one of the catalogue, without the model
+      const llmArea2 = anthropic.requests.length;
+      out = await say(QA, "wamid.qs-a2b", "Quais são os cursos nessa área?", t => t.some(x => /área de saúde/.test(x)), "the area said before is kept");
+      assert(anthropic.requests.length === llmArea2 && /Radiologia \(tecnólogo\)/.test(out.join("\n")), `the follow-up about the area went to the model: ${out}`);
       out = await say(QA, "wamid.qs-a3", "Tem o curso de radiologia semi presencial?", t => t.length > 0, "radiologia is found");
       assert(!/não oferece/.test(out.join("\n")), `an offered course was denied: ${out}`);
       await waitFor(() => /radiologia/i.test(String(slotsOfNumber(QA).courseName || "")), 15000, "the course Radiologia recognised");
