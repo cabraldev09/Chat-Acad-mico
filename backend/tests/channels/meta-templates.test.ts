@@ -7,7 +7,8 @@ vi.mock("../../src/services/ChannelServices/ConnectionTeam", () => ({ connection
 vi.mock("../../src/services/TicketServices/OpeningTemplate", () => ({ windowOf: vi.fn() }));
 vi.mock("../../src/helpers/AppSettings", () => ({ getSetting: vi.fn(async (_k: string, d: string) => d), setSetting: vi.fn() }));
 
-import { TEMPLATE_PACK, cleanDraft, paramsIn, variableAtEdge } from "../../src/services/CampaignServices/Templates";
+import { TEMPLATE_PACK, cleanDraft, linkApproved, paramsIn, variableAtEdge } from "../../src/services/CampaignServices/Templates";
+import { getSetting, setSetting } from "../../src/helpers/AppSettings";
 import { prettyPhone, vcardOf, welcomeText } from "../../src/services/CrmServices/TutoriaContact";
 
 describe("pacote de modelos da Meta", () => {
@@ -54,6 +55,21 @@ describe("variável no início ou no fim (a Meta recusa)", () => {
   });
   it("nenhum modelo do pacote começa ou termina com variável", () => {
     for (const t of TEMPLATE_PACK("Cruzeiro do Sul Virtual")) expect(variableAtEdge(t.body)).toBe(false);
+  });
+});
+
+describe("modelo que a Meta passou para Marketing", () => {
+  const st = (name: string, status = "APPROVED") => ({ name, language: "pt_BR", category: "UTILITY", status, reason: null, body: "", buttons: [] });
+  it("a configuração que usa o modelo antigo passa para o novo quando ele é aprovado, e nunca antes", async () => {
+    (getSetting as any).mockImplementation(async (k: string, d: string) => (k === "tutoria_template_name" ? "retomada_tutoria" : k === "relacionamento_template_name" ? "um_modelo_proprio" : d));
+    (setSetting as any).mockClear();
+    const pending = await linkApproved("Cruzeiro do Sul Virtual", [st("retomada_tutoria_aviso", "PENDING")]);
+    expect(pending).not.toContain("retomada_tutoria_aviso");
+    const linked = await linkApproved("Cruzeiro do Sul Virtual", [st("retomada_tutoria_aviso"), st("retomada_relacionamento_aviso")]);
+    expect(linked).toContain("retomada_tutoria_aviso");
+    expect(setSetting).toHaveBeenCalledWith("tutoria_template_name", "retomada_tutoria_aviso");
+    // a template the administration chose by hand is never replaced
+    expect(linked).not.toContain("retomada_relacionamento_aviso");
   });
 });
 

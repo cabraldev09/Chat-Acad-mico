@@ -113,23 +113,25 @@ export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
   { name: "taxa_matricula_vencimento", department: "financeiro", use: "aviso",
     purpose: "Taxa de matrícula perto do vencimento",
     body: "Taxa de matrícula, {{1}}: a taxa do curso {{2}} vence em {{3}}. Se já pagou, desconsidere. Para receber o Pix ou o boleto de novo, responda aqui.", examples: ["Maria", "Pedagogia", "25/11/2026"] },
-  { name: "vencimento_mensalidade", department: "financeiro", use: "aviso",
+  // vencimento_mensalidade, retomada_tutoria and retomada_relacionamento were approved but moved to Marketing by the Meta (each send
+  // costs more): rewritten as pure notices of something already open, with new names (see SUPERSEDED for the settings that used them)
+  { name: "vencimento_mensalidade_aviso", department: "financeiro", use: "aviso",
     purpose: "Boleto da mensalidade perto do vencimento",
-    body: "Mensalidade, {{1}}: o boleto do curso {{2}} vence em {{3}}. Se já pagou, desconsidere. Para a segunda via, responda aqui.", examples: ["Maria", "Pedagogia", "10/12/2026"] },
+    body: "Mensalidade, {{1}}: o boleto da mensalidade do curso {{2}} vence em {{3}}. Se o pagamento já foi feito, desconsidere esta mensagem.", examples: ["Maria", "Pedagogia", "10/12/2026"] },
   // the first version (matricula_confirmada_tutoria) asked the student to write to the number: the Meta read it as an invitation and
   // refused it as Utility (INCORRECT_CATEGORY). A refused name cannot be used again, so this one has a new name and is a plain notice.
   { name: "matricula_confirmada_aviso", department: "tutoria", use: "aviso", setting: "boas_vindas_template_name",
     purpose: "Matrícula confirmada: quem é o tutor e o número da tutoria",
     body: `Matrícula confirmada, {{1}}: a sua matrícula no curso {{2}} foi registrada. O acompanhamento é feito por {{3}}, da tutoria da ${institution}, pelo número {{4}}, que também cuida da sua ambientação.`, examples: ["Maria", "Pedagogia", "Ana Paula", "+55 (69) 99325-8103"] },
-  { name: "retomada_tutoria", department: "tutoria", use: "abertura", setting: "tutoria_template_name", buttons: ["Sim, podemos falar", "Agora não"],
+  { name: "retomada_tutoria_aviso", department: "tutoria", use: "abertura", setting: "tutoria_template_name", buttons: ["Continuar", "Agora não"],
     purpose: "A tutoria retomar o contato com o aluno depois de 24 h",
-    body: `Tutoria da ${institution}: {{1}}, aqui é {{2}}, sobre o acompanhamento do seu curso. Podemos falar por aqui?`, examples: ["Maria", "Paula"] },
+    body: `Tutoria da ${institution}: {{1}}, aqui é {{2}}. O acompanhamento do seu curso está em andamento e aguarda a sua resposta para continuar.`, examples: ["Maria", "Paula"] },
   { name: "ambientacao_agendada", department: "tutoria", use: "aviso",
     purpose: "Lembrete da ambientação marcada",
     body: "Ambientação agendada, {{1}}: a sua ambientação com a tutoria está marcada para {{2}}. Se precisar trocar o horário, responda esta mensagem.", examples: ["Maria", "21/11 às 14h"] },
-  { name: "retomada_relacionamento", department: "relacionamento", use: "abertura", setting: "relacionamento_template_name", buttons: ["Sim, podemos falar", "Agora não"],
+  { name: "retomada_relacionamento_aviso", department: "relacionamento", use: "abertura", setting: "relacionamento_template_name", buttons: ["Continuar o atendimento", "Agora não"],
     purpose: "Retenção: retomar o contato com o aluno depois de 24 h",
-    body: `Relacionamento com o aluno da ${institution}: {{1}}, aqui é {{2}}. Há um atendimento sobre a sua matrícula aguardando a sua resposta.`, examples: ["Maria", "Carla"] },
+    body: `Relacionamento com o aluno da ${institution}: {{1}}, aqui é {{2}}. O atendimento sobre a sua matrícula está em andamento e aguarda a sua resposta para continuar.`, examples: ["Maria", "Carla"] },
   { name: "prazo_rematricula", department: "relacionamento", use: "aviso", setting: "rematricula_template_name", buttons: ["Quero ajuda"],
     purpose: "Prazo da rematrícula do aluno ativo",
     body: "Rematrícula, {{1}}: a rematrícula do seu curso {{2}} vai até {{3}}. Se precisar de ajuda para concluir, responda esta mensagem.", examples: ["Maria", "Pedagogia", "15/01/2027"] },
@@ -266,13 +268,23 @@ export const sendTemplatePack = async (institution: string, whatsappId?: number 
 
 // once the Meta approves a template of the pack, it takes its place in the setting that uses it (opening of the department, welcome),
 // unless the administration already chose another one; a template under review is never used (the Meta would refuse the send)
+// earlier versions of the pack that a newer one replaces: a setting still pointing to the old one moves to the new one once it is approved
+export const SUPERSEDED: Record<string, string> = {
+  retomada_tutoria: "retomada_tutoria_aviso",
+  retomada_relacionamento: "retomada_relacionamento_aviso",
+  vencimento_mensalidade: "vencimento_mensalidade_aviso",
+  matricula_confirmada_tutoria: "matricula_confirmada_aviso",
+};
+
 export const linkApproved = async (institution: string, templates: TemplateStatus[]): Promise<string[]> => {
   const { getSetting, setSetting } = await import("../../helpers/AppSettings");
   const approved = new Set(templates.filter(t => t.status === "APPROVED").map(t => t.name));
   const linked: string[] = [];
   for (const t of TEMPLATE_PACK(institution)) {
     // eslint-disable-next-line no-await-in-loop
-    if (t.setting && approved.has(t.name) && !String(await getSetting(t.setting, "")).trim()) {
+    // eslint-disable-next-line no-await-in-loop
+    const current = t.setting ? String(await getSetting(t.setting, "")).trim() : "";
+    if (t.setting && approved.has(t.name) && (!current || SUPERSEDED[current] === t.name)) {
       // eslint-disable-next-line no-await-in-loop
       await setSetting(t.setting, t.name);
       linked.push(t.name);
