@@ -36,6 +36,15 @@ um ponto de estado, um gráfico) (`styles/peak.css`). As peças:
 - `GlowRing` e os cartões de polo com anel para metas; `TodoList` para prioridades; `Badge` para estado em tabelas.
 Os painéis antigos (`useKit().panel`, Atendimento, Polos e metas) usam a mesma caixa (`--card-bg`, `--card-line`, `--card-shadow`).
 
+**Etapas puladas, com quem e quando:** em Estatísticas → Comercial, cada etapa pulada é um cartão com anel ("n de total de
+conversas com processo"). O clique abre a lista de `GET /analytics/process/skipped?step=<chave>` (só gestão, só os consultores que
+a pessoa pode ver): consultor, lead, a última atualização do processo daquela conversa e o botão que abre a conversa. A data é a
+da última atualização do processo (`CopilotSnapshots.updatedAt`), não o instante exato em que a etapa foi pulada.
+
+**Cartões de número:** `GlowStat` e `CountStat` usam o degradê do Market Card (Louis Studios, 21st.dev): azul claro à esquerda,
+azul-marinho à direita, número branco. Um problema aparece no ícone (vermelho ou âmbar). Os painéis ficam brancos, com o título
+numa faixa suave. Proporções usam `DonutChart` (rosca que se desenha e destaca a fatia apontada) e `RingStat` (anel com "n de total").
+
 **Prioridades:** o bloco de insights (`components/Insights`) é uma lista de ações ordenada por urgência; cada linha tem o botão
 "Resolver", que abre a tela certa. Não usa ícone de IA: são leituras dos dados, não texto gerado.
 

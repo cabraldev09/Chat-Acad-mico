@@ -225,7 +225,7 @@ const MyPerformance = () => {
       </Section>
 
       {/* the goals of every polo: how the consultant's polo is doing and the others (the same cards the management sees) */}
-      <div style={{ marginTop: 28 }}><PoloProgress title="Metas dos polos" /></div>
+      <div style={{ marginTop: 28 }}><PoloProgress title="Metas dos meus polos" onlyMine /></div>
 
       {/* 7. orientation */}
       <Section title="Orientações para você" hint="Da revisão diária das suas conversas e da comparação com a média da equipe.">

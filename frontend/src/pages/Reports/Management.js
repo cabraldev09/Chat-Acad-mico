@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useChartTheme } from "../../components/charts";
-import { AlertTriangle, Building2, CheckCircle2, Gauge, MapPin, RefreshCw, Sparkles, Users } from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle2, Gauge, MapPin, RefreshCw, Workflow, Users } from "lucide-react";
 import api from "../../services/api";
 
 import { ErrorState } from "../../components/ui";
@@ -77,7 +77,7 @@ export const ManagementFeedback = ({ date, days, unavailableMessage }) => {
     <section className={c.panel} aria-labelledby="management-feedback-title">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0, flex: "1 1 260px" }}>
-          <h2 id="management-feedback-title" className={c.title}><Sparkles size={16} /> Feedback gerencial com IA</h2>
+          <h2 id="management-feedback-title" className={c.title}><Workflow size={16} /> Feedback gerencial com IA</h2>
           <div className={c.sub}>Leitura agregada dos polos no período. As recomendações são orientativas; confirme os indicadores antes de agir. Não envia mensagens nem altera leads.</div>
         </div>
         <button
@@ -87,7 +87,7 @@ export const ManagementFeedback = ({ date, days, unavailableMessage }) => {
           aria-busy={loading}
           style={{ border: 0, borderRadius: 9, padding: "9px 14px", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#0b4279", color: "#fff", font: "inherit", fontSize: 13, fontWeight: 650, cursor: loading ? "wait" : cooldown ? "default" : "pointer", opacity: loading || cooldown ? 0.75 : 1, flex: "0 0 auto" }}
         >
-          {loading ? <RefreshCw size={15} className="ui-spin" aria-hidden="true" /> : <Sparkles size={15} aria-hidden="true" />}
+          {loading ? <RefreshCw size={15} className="ui-spin" aria-hidden="true" /> : <Workflow size={15} aria-hidden="true" />}
           {loading ? "Gerando feedback…" : cooldown ? "Feedback atualizado" : unavailableMessage ? "Período indisponível" : feedback ? "Gerar novamente" : "Gerar feedback com IA"}
         </button>
       </div>

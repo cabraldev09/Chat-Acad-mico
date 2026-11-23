@@ -92,7 +92,7 @@ button.pk-count:hover .go { color: var(--c-brand); }
 .pk-rank li { display: grid; grid-template-columns: 30px minmax(0, 1fr) 84px auto; gap: 2px 12px; align-items: center; padding: 9px 8px; border-radius: 10px; font-size: 13.5px; }
 .pk-rank li + li { border-top: 1px solid color-mix(in srgb, var(--pk-line) 60%, transparent); border-radius: 0; }
 .pk-rank .pos { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--track); color: var(--pk-ink-2); font-variant-numeric: tabular-nums; }
-.pk-rank li:nth-child(1) .pos { background: var(--text-1); color: var(--pk-base); }
+.pk-rank li:nth-child(1) .pos { background: #0b4279; color: #fff; }
 .pk-rank .who { min-width: 0; }
 .pk-rank .name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .pk-rank .note { display: block; font-size: 12px; color: var(--pk-ink-2); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -114,7 +114,8 @@ button.pk-count:hover .go { color: var(--c-brand); }
 .pk-facts dd { margin: 2px 0 0; color: var(--pk-num); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* the funnel as a sequence of stages: each stage is a block with its number; the empty ones fold into one quiet line */
-.pk-flow { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+/* auto-fill: two stages keep the size of a stage instead of stretching across the whole box */
+.pk-flow { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); }
 .pk-flow .stage { position: relative; border: 1px solid var(--pk-line); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); font: inherit; color: inherit; text-align: left; min-width: 0; }
 .pk-flow button.stage { cursor: pointer; transition: border-color .15s ease, background .15s ease; }
 .pk-flow button.stage:hover { border-color: #b8c0cc; background: var(--pk-base); }
@@ -158,3 +159,80 @@ button.pk-count:hover .go { color: var(--c-brand); }
   .pk-skel { animation: none; }
   .pk-rank .fill, .pk-ring .arc, button.pk, .pk-flow button.stage { transition: none; }
 }
+
+/* a share as a ring beside its name */
+.pk-ringgrid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); }
+.pk-ringstat { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+.pk-ringstat svg { flex: none; }
+.pk-ringstat .arc { transition: stroke-dashoffset 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pk-ringstat .txt { display: grid; gap: 2px; min-width: 0; }
+.pk-ringstat .txt b { font-size: 14px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.pk-ringstat .txt > span { font-size: 12.5px; color: var(--pk-ink-2); }
+.pk-ringstat .txt .go { display: inline-flex; align-items: center; gap: 3px; margin-top: 4px; font-weight: 600; color: var(--c-brand); }
+
+/* the parts of a whole: a ring that draws itself, the number of the pointed slice in the centre, and the legend */
+.pk-donut { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.pk-donut .ring { position: relative; flex: none; margin: 0 auto; }
+.pk-donut .seg { cursor: pointer; transition: opacity .18s ease; animation: pk-donut-in .7s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i) * 70ms); }
+@keyframes pk-donut-in { from { stroke-dasharray: 0.01 9999; opacity: 0; } }
+.pk-donut .mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; padding: 0 30px; }
+.pk-donut .mid small { font-size: 12px; color: var(--pk-ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-donut .mid b { font-size: 30px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.pk-donut .mid span { font-size: 12.5px; font-weight: 600; color: var(--pk-ink-2); }
+.pk-donut .legend { flex: 1; min-width: min(220px, 100%); margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.pk-donut .legend li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 40px; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 8px; font-size: 13.5px; outline: none; }
+.pk-donut .legend li[data-on="1"], .pk-donut .legend li:focus-visible { background: var(--surface-2); }
+.pk-donut .legend i { width: 10px; height: 10px; border-radius: 50%; }
+.pk-donut .legend .lb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-donut .legend .lb em { font-style: normal; color: var(--pk-ink-2); font-size: 12px; margin-left: 6px; }
+.pk-donut .legend b { font-weight: 650; font-variant-numeric: tabular-nums; }
+.pk-donut .legend .pc { font-size: 12.5px; color: var(--pk-ink-2); text-align: right; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .pk-donut .seg { animation: none; } .pk-ringstat .arc { transition: none; } }
+
+
+/* ---- hierarchy with one hue: the cards of numbers sit on a very light blue of the brand, the panels stay white with a soft band
+   behind their title, and red or amber appear only when the number is a problem. Not all white, and not a rainbow. ---- */
+.pk { --pk-soft: color-mix(in srgb, var(--c-brand) 5%, var(--pk-base)); --pk-soft-line: color-mix(in srgb, var(--c-brand) 16%, var(--pk-line)); }
+.pk-stat, .pk-count, .pk-ringstat { background: var(--pk-soft); border-color: var(--pk-soft-line); }
+.pk-count[data-tone="bad"], .pk-stat[data-tone="bad"], .pk-ringstat[data-tone="bad"] { background: color-mix(in srgb, var(--c-lost) 6%, var(--pk-base)); border-color: color-mix(in srgb, var(--c-lost) 24%, var(--pk-line)); }
+.pk-count[data-tone="warn"], .pk-stat[data-tone="warn"] { background: color-mix(in srgb, var(--c-warn) 8%, var(--pk-base)); border-color: color-mix(in srgb, var(--c-warn) 28%, var(--pk-line)); }
+.pk-ico { width: 30px; height: 30px; border-radius: 9px; color: var(--c-brand); background: color-mix(in srgb, var(--c-brand) 10%, var(--pk-base)); }
+.pk[data-tone="bad"] .pk-ico { color: var(--pk-bad); background: color-mix(in srgb, var(--c-lost) 12%, var(--pk-base)); }
+.pk[data-tone="warn"] .pk-ico { color: var(--pk-warn); background: color-mix(in srgb, var(--c-warn) 14%, var(--pk-base)); }
+.pk-count .pk-label > span:first-child::before { display: none; }
+.pk-value, .pk-count .n { color: var(--c-brand); }
+.pk[data-tone="bad"] .pk-value, .pk[data-tone="bad"] .n { color: var(--pk-bad); }
+.pk[data-tone="warn"] .pk-value, .pk[data-tone="warn"] .n { color: var(--pk-warn); }
+/* the title of a panel on a soft band, so the box has a head and a body */
+.pk-panel > .pk-head { margin: -20px -20px 16px; padding: 14px 20px; background: var(--pk-soft); border-bottom: 1px solid var(--pk-soft-line); align-items: center; }
+.pk-flow .stage { background: var(--pk-soft); border-color: var(--pk-soft-line); }
+.pk-flow button.stage:hover { background: var(--pk-base); border-color: var(--c-brand); }
+.pk-rank li:nth-child(1) .pos { background: #0b4279; color: #fff; }
+.pk-rank .val, .pk-facts dd { color: var(--c-brand); }
+
+/* ---- the cards of numbers in the look of the Market Card (Louis Studios, 21st.dev): light blue on the left melting into a deep
+   navy on the right, a large white number. The same blue for every card; a problem shows in its icon and in its chip, in red or
+   amber. The panels (lists, tables, charts) stay white. ---- */
+.pk-stat, .pk-count, .pk-count[data-tone], .pk-stat[data-tone] {
+  --pk-ink: #ffffff; --pk-ink-2: rgba(255, 255, 255, 0.78); --pk-ink-3: rgba(255, 255, 255, 0.62);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(90% 150% at -6% 55%, #6cc0ff 0%, #3b8cff 22%, #2457e6 42%, rgba(25, 58, 160, 0.55) 60%, rgba(11, 30, 66, 0) 80%),
+    linear-gradient(100deg, #1b3fae 0%, #0c2147 62%, #0a1a38 100%);
+  box-shadow: 0 1px 2px rgba(11, 30, 66, 0.2), 0 14px 26px -16px rgba(20, 60, 160, 0.65);
+}
+.pk-stat .pk-value, .pk-count .n, .pk[data-tone="bad"].pk-stat .pk-value, .pk[data-tone="warn"].pk-stat .pk-value, .pk[data-tone="bad"].pk-count .n, .pk[data-tone="warn"].pk-count .n { color: #fff; }
+.pk-stat .pk-label, .pk-count .pk-label { color: rgba(255, 255, 255, 0.86); }
+.pk-stat .pk-hint, .pk-count .pk-hint { color: rgba(255, 255, 255, 0.76); }
+.pk-stat .pk-ico, .pk-count .pk-ico { color: #fff; background: rgba(255, 255, 255, 0.16); }
+.pk-stat[data-tone="bad"] .pk-ico, .pk-count[data-tone="bad"] .pk-ico { color: #fff; background: #e5484d; }
+.pk-stat[data-tone="warn"] .pk-ico, .pk-count[data-tone="warn"] .pk-ico { color: #1f1300; background: #ffb224; }
+.pk-count .go, button.pk-count:hover .go { color: #fff; }
+.pk-stat .pk-chip, .pk-count .pk-chip { background: rgba(255, 255, 255, 0.16); color: #fff; }
+.pk-stat .pk-chip[data-good="1"] { background: rgba(16, 80, 50, 0.55); color: #8ff0bd; }
+.pk-stat .pk-chip[data-good="0"] { background: rgba(110, 20, 24, 0.6); color: #ff9a9a; }
+.pk-stat .pk-spark path { stroke: #fff; }
+.pk-stat .pk-spark circle { fill: #fff; }
+.pk-stat .pk-skel, .pk-count .pk-skel { background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.28), rgba(255,255,255,.12)); background-size: 200% 100%; }
+button.pk-stat:hover, button.pk-count:hover { border-color: rgba(255, 255, 255, 0.4); box-shadow: 0 2px 4px rgba(11, 30, 66, 0.25), 0 18px 30px -16px rgba(20, 60, 160, 0.8); }

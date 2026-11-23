@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/database", () => ({ default: { query: vi.fn(), getDialect: () => "postgres" } }));
 import { coachingFrom, parseReviewAnswer, scrub, COACHING_MIN_REVIEWS } from "../../src/services/AnalyticsServices/ConsultantReview";
-import { skippedSteps } from "../../src/services/AnalyticsServices/SalesInsights";
+import { skippedRowsOf, skippedSteps } from "../../src/services/AnalyticsServices/SalesInsights";
 
 const steps = ["course", "entry", "city", "grade", "proposal", "enroll"];
 const label = (k: string) => ({ grade: "Grade", proposal: "Proposta" } as Record<string, string>)[k] || k;
@@ -53,5 +53,27 @@ describe("etapas puladas no processo de vendas", () => {
   it("o que ainda não chegou não conta como pulado, e etapa opcional nunca conta", () => {
     expect(skippedSteps(order, ["course", "entry"])).toEqual([]);
     expect(skippedSteps([...order.slice(0, 2), { key: "city", label: "city", optional: true }, ...order.slice(3)], ["course", "entry", "grade"])).toEqual([]);
+  });
+});
+
+describe("skipped step detail: who, which lead and when", () => {
+  const order = [{ key: "entry", label: "Entrada" }, { key: "course", label: "Curso" }, { key: "grade", label: "Grade" }, { key: "extra", label: "Extra", optional: true }, { key: "proposal", label: "Proposta" }];
+  const names = new Map([[7, "João"], [8, "Gabrielli"]]);
+  const snaps = [
+    { ticketId: 31, leadId: 501, userId: 7, doneKeys: ["entry", "course", "proposal"], updatedAt: "2026-11-20T15:00:00Z", leadName: "Lead A" },
+    { ticketId: 32, leadId: null, userId: 8, doneKeys: JSON.stringify(["entry", "proposal"]), updatedAt: "2026-11-19T10:00:00Z", leadName: null },
+    { ticketId: 33, leadId: 502, userId: 7, doneKeys: ["entry", "course", "grade", "proposal"], updatedAt: "2026-11-18T10:00:00Z", leadName: "Lead C" }
+  ];
+  it("lists only the conversations in which the step was skipped, in the order received, with the names", () => {
+    expect(skippedRowsOf(snaps, order, "grade", names)).toEqual([
+      { userId: 7, consultant: "João", leadId: 501, leadName: "Lead A", ticketId: 31, at: "2026-11-20T15:00:00.000Z" },
+      { userId: 8, consultant: "Gabrielli", leadId: null, leadName: "Sem nome", ticketId: 32, at: "2026-11-19T10:00:00.000Z" }
+    ]);
+    expect(skippedRowsOf(snaps, order, "course", names).map(r => r.ticketId)).toEqual([32]);
+  });
+  it("a step nobody skipped, an optional one or an unknown one gives nothing", () => {
+    expect(skippedRowsOf(snaps, order, "entry", names)).toEqual([]);
+    expect(skippedRowsOf(snaps, order, "extra", names)).toEqual([]);
+    expect(skippedRowsOf(snaps, order, "nope", names)).toEqual([]);
   });
 });
