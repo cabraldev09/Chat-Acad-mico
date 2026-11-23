@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Prompt } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Autocomplete } from "@material-ui/lab";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField, Tooltip, Typography, makeStyles } from "@material-ui/core";
@@ -81,6 +82,14 @@ const Goals = () => {
   }, [selected]);
   useEffect(() => { load(); fetchAllUsers().then(setUsers).catch(() => {}); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // unsaved targets are never lost on the way: closing or reloading the tab asks first, and so does leaving the screen (see <Prompt>)
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   const choose = (g) => {
     if (dirty && !window.confirm("Há alterações não salvas. Descartar?")) return;
     setSelected(g.id); setDraft(clean(g)); setDirty(false);
@@ -108,6 +117,7 @@ const Goals = () => {
     } catch (e) { toastError(e); }
   };
   const repeat = async () => {
+    if (dirty && !window.confirm("Há alterações não salvas. Repetir o período sem salvar descarta o que foi digitado. Continuar?")) return;
     try { const { data } = await api.post(`/goals/${draft.id}/repeat`); toast.success("Período repetido com as mesmas pessoas e metas."); await load(data.id); } catch (e) { toastError(e); }
   };
   const remove = async () => {
@@ -147,6 +157,7 @@ const Goals = () => {
 
   return (
     <MainContainer>
+      <Prompt when={dirty} message="Há metas alteradas e não salvas. Sair sem salvar?" />
       <MainHeader>
         <Title>Metas da equipe</Title>
         <MainHeaderButtonsWrapper>

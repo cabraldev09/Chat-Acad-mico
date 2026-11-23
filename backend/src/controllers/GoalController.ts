@@ -227,6 +227,23 @@ export const distribute = (total: number, n: number): number[] => {
   return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
 };
 
+// THE TARGET OF EACH MONTH, the only place that decides it (the cards, the month view, the table and the image all read it):
+//  - months typed by hand in the editor are kept as typed;
+//  - otherwise a month that already passed keeps its even share (what was asked of it then), and what is still missing of the semester
+//    is spread over the current month and the ones ahead, so nothing left undone in a past month is lost and the months ahead always
+//    add up to "target minus what was done before them".
+// `done` is the total of the polo (it includes what was typed as already done); `doneByMonth` what each month has; `now` is "YYYY-MM".
+export const rollMonthly = (o: { target: number | null; months: string[]; monthly: number[]; custom: boolean; doneByMonth: number[]; done: number; now: string }): number[] => {
+  if (o.target === null || o.custom) return o.monthly;
+  const ahead = o.months.map((m, i) => (m >= o.now ? i : -1)).filter(i => i >= 0);
+  if (!ahead.length) return o.monthly;
+  const aheadDone = ahead.reduce((t, i) => t + (o.doneByMonth[i] || 0), 0);
+  const pastDone = o.doneByMonth.reduce((t, n, i) => t + (ahead.includes(i) ? 0 : n || 0), 0);
+  const before = Math.max(o.done - aheadDone, pastDone);
+  const split = distribute(Math.max(0, o.target - before), ahead.length);
+  return o.monthly.map((v, i) => (ahead.includes(i) ? split[ahead.indexOf(i)] : v));
+};
+
 const parseJson = (raw: any, fallback: any) => {
   try {
     const v = typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -327,9 +344,11 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
       const canceled = g?.canceled || 0;
       const missing = target === null ? null : target - done; // negative = above the target
       const pct = pctOf(done, target);
+      const doneByMonth = months.map(m => (crm[m] || 0) + (Number(manualMonthly[m]) || 0));
+      const plan = rollMonthly({ target, months, monthly, custom: monthlyCustom, doneByMonth, done, now: today.slice(0, 7) });
       const byMonth = months.map((m, i) => {
-        const mDone = (crm[m] || 0) + (Number(manualMonthly[m]) || 0);
-        const mTarget = target === null ? null : monthly[i];
+        const mDone = doneByMonth[i];
+        const mTarget = target === null ? null : plan[i];
         const mMissing = mTarget === null ? null : mTarget - mDone;
         return { month: m, target: mTarget, done: mDone, missing: mMissing, pct: pctOf(mDone, mTarget), status: statusOf(pctOf(mDone, mTarget)), perDay: perDayOf(mMissing, monthDaysLeft(m)), adjust: Number(manualMonthly[m]) || 0 };
       });
