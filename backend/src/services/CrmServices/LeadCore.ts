@@ -181,6 +181,16 @@ export const findDuplicate = async (phone: string | null, email: string | null, 
   return Lead.findOne({ where: { [Op.and]: conditions }, order: [["id", "ASC"]] });
 };
 
+// the polo of the lead: by the city (and the course) it came with, else by the wallet of its owner (see PoloServices/LeadPolo)
+const settlePoloOf = async (lead: Lead, placeChanged: boolean): Promise<void> => {
+  try {
+    const { settleLeadPolo } = await import("../PoloServices/LeadPolo");
+    await settleLeadPolo(lead, { placeChanged });
+  } catch (err) {
+    logger.warn(`Polo of lead ${lead.id} was not decided: ${err}`);
+  }
+};
+
 // Creates a lead, or enriches the existing one when the same person arrives again
 // a lead that comes with consent (a form the person filled) records it on the contact too (see SafetyServices/Consent)
 export const upsertLead = async (
@@ -220,6 +230,8 @@ const upsertLeadCore = async (
     });
     if (!existing.contactId && contactId) patch.contactId = contactId;
     if (Object.keys(patch).length) await existing.update(patch);
+    // the city came now: the polo is decided by it
+    if (patch.city || patch.state) await settlePoloOf(existing, true);
     await addActivity(
       existing.id,
       actorId,
@@ -280,6 +292,7 @@ const upsertLeadCore = async (
     await addActivity(created.id, actorId, "system", "Indicação de afiliado: a produção dele é contada a partir desta matrícula");
     await tagAffiliateLead(created);
   }
+  await settlePoloOf(created, false);
   await rescore(created);
   // every lead that enters counts once, whether or not the AI agent ever talked to it (the base to read the conversion against)
   await AgentMetricEvent.create({ leadId: created.id, agentId: null, event: "lead_created", once: true, meta: JSON.stringify({ source: input.source || null }) } as any).catch(() => undefined);

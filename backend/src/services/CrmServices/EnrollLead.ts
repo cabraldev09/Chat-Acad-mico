@@ -168,6 +168,7 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // 2) the lead
   await lead.update({
     poloId: polo.id,
+    poloSource: "enrollment",
     rgm,
     ...(course && course.id !== lead.courseId ? { courseId: course.id } : {}),
     onboardingStatus: "pending",
@@ -475,7 +476,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
       tutor = changesPolo || input.tutorId === "auto" ? await pickUserForQueue(queue, true) : await User.findByPk(lead.onboardingTutorId);
     }
     const before = lead.onboardingTutorId ? (await User.findByPk(lead.onboardingTutorId))?.name : null;
-    await lead.update({ poloId: polo.id, onboardingTutorId: tutor?.id || null });
+    await lead.update({ poloId: polo.id, poloSource: "enrollment", onboardingTutorId: tutor?.id || null } as any);
     // the student's portal and academic analyses follow the new tutor (one tutor for the student everywhere)
     if (tutor) {
       const Student = (await import("../../models/Student")).default;

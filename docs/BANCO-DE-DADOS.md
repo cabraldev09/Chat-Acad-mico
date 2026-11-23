@@ -56,7 +56,7 @@ Por que a API não pode ficar no Supabase: as Edge Functions do Supabase são fu
 **IA**
 - `KbDocuments` (textos, perguntas frequentes, arquivos e páginas da base de conhecimento) e `KbChunks` (trechos de ~200 tokens com índice de busca em português); `AiUsage` (tokens de cada chamada ao modelo). `AiAgents` guarda persona, limites e campos a coletar; `Tickets.aiSummary/aiTurns/aiSlots` guardam o resumo, o número de respostas e os dados que a IA já coletou.
 
-**Polos e matrícula**: `Polos`, `PoloMembers` (quem atua em cada função do polo), `Queues.poloId/role`, `Leads.onboarding*` (ambientação com o tutor).
+**Polos e matrícula**: `Polos`, `PoloMembers` (quem atua em cada função do polo), `Queues.poloId/role`, `Leads.onboarding*` (ambientação com o tutor), `Leads.poloSource` (como o polo do lead foi decidido: `city`, `wallet`, `flow` ou `enrollment`).
 
 **Sistema**: `SequelizeMeta` (migrations aplicadas), `WppKeys` (tabela legada de chaves; o provedor atual não grava nela).
 

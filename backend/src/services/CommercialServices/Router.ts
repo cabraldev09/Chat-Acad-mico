@@ -110,19 +110,12 @@ export const resolvePolo = async (city?: string | null, state?: string | null): 
   return { polo: r.polo, ambiguous: r.status === "ambiguous", candidates: r.candidates };
 };
 
-// the polo of the lead: the one already saved, else the one the city points to (saved, so everything after knows it)
+// the polo of the lead: the one already saved, else the one the city (and the state) points to and, with no city told, the wallet of the
+// consultant who owns the lead (PoloServices/LeadPolo decides and saves it, so everything after knows it)
 export const ensurePolo = async (lead: Lead | null, cityHint?: string | null): Promise<Polo | null> => {
   if (!lead) return null;
-  if (lead.poloId) {
-    const own = await Polo.findByPk(lead.poloId);
-    if (own && own.active !== false) return own;
-  }
-  const { polo } = await resolvePolo(cityHint || lead.city);
-  if (polo) {
-    await lead.update({ poloId: polo.id });
-    await addActivity(lead.id, null, "system", `Polo definido pela cidade informada: ${polo.name}`).catch(() => undefined);
-  }
-  return polo;
+  const { settleLeadPolo } = await import("../PoloServices/LeadPolo");
+  return (await settleLeadPolo(lead, { cityHint })).polo;
 };
 
 // ---------------------------------------------------------------- semipresencial enrollment
@@ -256,7 +249,7 @@ export interface RouteOptions {
 export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Promise<Routed> => {
   const lead = opts.lead !== undefined ? opts.lead : await Lead.findOne({ where: { contactId: ticket.contactId } });
   const chosen = opts.poloId ? await Polo.findByPk(opts.poloId) : null;
-  if (chosen && lead && lead.poloId !== chosen.id) await lead.update({ poloId: chosen.id });
+  if (chosen && lead && (lead.poloId !== chosen.id || lead.poloSource !== "flow")) await lead.update({ poloId: chosen.id, poloSource: "flow" } as any);
   let polo = chosen || (await ensurePolo(lead, opts.city));
   // semipresencial course: the enrollment is at a released polo (a polo a person chose inside a flow is respected)
   let semipresencial: Routed["semipresencial"] = null;

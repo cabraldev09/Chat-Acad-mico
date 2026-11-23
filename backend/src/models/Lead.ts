@@ -240,6 +240,11 @@ class Lead extends Model<Lead> {
   @BelongsTo(() => Polo)
   polo: Polo;
 
+  // how the polo was decided: city | wallet | flow | enrollment (see PoloServices/LeadPolo)
+  @AllowNull(true)
+  @Column
+  poloSource: string;
+
   // semipresencial course: `poloId` is where the student enrolls and this is the polo of the city, where the practical classes are meant to happen
   @AllowNull(true)
   @Column
