@@ -20,9 +20,10 @@ As definições de cada indicador estão em `definitions.ts` e saem em `GET /ana
    puladas.
 
 **Meu desempenho (consultor)**, de cima para baixo: resultados do período com a linha dia a dia e a comparação com o período
-anterior; a meta em anel e a posição na equipe; o que foi feito hoje; o que fazer agora; os demais resultados; os leads no funil;
-as metas dos polos; as orientações. A posição vem em `team.position` de `/analytics/me/overview` (`{ rank, of }`, por matrículas
-no período): só o lugar e o total de consultores, nunca o número de um colega.
+anterior; a meta em anel; o que foi feito hoje; o que fazer agora; os demais resultados; os leads no funil; as orientações.
+As metas de todos os polos e de todos os consultores ficam em **Metas**, no menu lateral, aberto a toda a equipe (por polo e por
+consultor; só a gestão edita, e "Matrículas realizadas" continua só da gestão). `GET /goals` é lido por qualquer perfil logado;
+criar, alterar e excluir continuam com a gestão.
 
 **Visual:** os painéis usam o kit de `frontend/src/components/peak` sobre um fundo cinza neutro (`#f0f2f5`, o fundo padrão do
 sistema). No topo, até quatro `PeakChart` (o cartão escuro do Peak Chart, de Louis Studios, no 21st.dev). Abaixo, caixas brancas

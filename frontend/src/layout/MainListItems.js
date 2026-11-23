@@ -348,7 +348,8 @@ const MainListItems = (props) => {
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}
-      {isManager(user) && <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas", "/crm/matriculas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />}
+      {/* the goals of every polo and every consultant: the whole team follows them; only the management edits */}
+      {<ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas", "/crm/matriculas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />}
       {!collapsed && (
         <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
       )}

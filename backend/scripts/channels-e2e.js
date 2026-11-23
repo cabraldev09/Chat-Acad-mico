@@ -2812,7 +2812,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(rep.data.members[0].target === 2 && rep.data.members[0].manual === 0, "repeat keeps targets, drops adjustments");
 
       const tl = (await http.post("/auth/login", { email: "leila-meta@x.com", password: "senha123" })).data.token;
-      assert((await http.get("/goals", asUser(tl))).status === 403, "a consultant read the goals");
+      // the whole team follows the goals of every consultant (the menu Metas); only the management changes them
+      const seenByConsultant = await http.get("/goals", asUser(tl));
+      assert(seenByConsultant.status === 200 && seenByConsultant.data.some(g => g.id === made.data.id), `a consultant does not see the goals: ${seenByConsultant.status}`);
+      assert((await http.put(`/goals/${made.data.id}`, { title: "x" }, asUser(tl))).status === 403 && (await http.post("/goals", { startsOn: "2027-01-01", endsOn: "2027-01-02", members: [] }, asUser(tl))).status === 403 && (await http.delete(`/goals/${made.data.id}`, asUser(tl))).status === 403, "a consultant changed the goals");
       const list = (await http.get("/goals", auth())).data;
       assert(list.length >= 2, "list");
       assert((await http.delete(`/goals/${rep.data.id}`, auth())).status === 200 && (await http.get("/goals", auth())).data.length === list.length - 1, "delete");
