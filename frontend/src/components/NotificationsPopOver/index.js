@@ -17,6 +17,7 @@ import Switch from "@material-ui/core/Switch";
 import { Bell, BellRing, Volume2, VolumeX } from "lucide-react";
 
 import TicketListItem from "../TicketListItem";
+import { NoticeList, useNotices } from "../NotificationCenter";
 import { showMessageToast, dismissMessageToast } from "../MessageToast";
 import { i18n } from "../../translate/i18n";
 import useTickets from "../../hooks/useTickets";
@@ -272,6 +273,17 @@ const NotificationsPopOver = () => {
 		setIsOpen(false);
 	};
 
+	// the notices of the system (Avisos), the conversations with unread messages (Mensagens) and the sound preferences (Som)
+	const notices = useNotices();
+	const [tab, setTab] = useState(null);
+	const shownTab = tab || (notices.unread > 0 ? "notices" : "messages");
+	const tabBtn = (key, label, count) => (
+		<button key={key} type="button" role="tab" aria-selected={shownTab === key} onClick={() => setTab(key)}
+			style={{ flex: 1, border: 0, borderBottom: `2px solid ${shownTab === key ? "var(--accent, #0B4279)" : "transparent"}`, background: "transparent", padding: "10px 6px", font: "inherit", fontSize: 13, fontWeight: shownTab === key ? 700 : 500, color: "inherit", cursor: "pointer" }}>
+			{label}{count ? ` (${count})` : ""}
+		</button>
+	);
+
 	const NotificationTicket = ({ children }) => {
 		return <div onClick={handleClickAway}>{children}</div>;
 	};
@@ -285,7 +297,7 @@ const NotificationsPopOver = () => {
 					aria-label="Notificações e som"
 					className={classes.iconButton}
 				>
-					<Badge badgeContent={notifications.length} color="primary" overlap="rectangular">
+					<Badge badgeContent={notifications.length + notices.unread} color="primary" overlap="rectangular">
 						{soundMode === "alerts" ? <BellRing size={20} /> : <Bell size={20} />}
 					</Badge>
 				</IconButton>
@@ -305,6 +317,15 @@ const NotificationsPopOver = () => {
 				classes={{ paper: classes.popoverPaper }}
 				onClose={handleClickAway}
 			>
+				<div role="tablist" aria-label="Notificações" style={{ display: "flex", borderBottom: "1px solid var(--line, #e5e7eb)" }}>
+					{tabBtn("notices", "Avisos", notices.unread)}
+					{tabBtn("messages", "Mensagens", notifications.length)}
+					{tabBtn("sound", "Som", 0)}
+				</div>
+				{shownTab === "notices" && (
+					<div className={classes.tabContainer}><NoticeList notices={notices} onNavigate={handleClickAway} /></div>
+				)}
+				{shownTab === "sound" && (
 				<div className={classes.prefs}>
 					<div className={classes.prefsTitle}>Som das novas mensagens</div>
 					{[
@@ -349,6 +370,8 @@ const NotificationsPopOver = () => {
 						/>
 					</div>
 				</div>
+				)}
+				{shownTab === "messages" && (
 				<List dense className={classes.tabContainer}>
 					{notifications.length === 0 ? (
 						<ListItem>
@@ -362,6 +385,7 @@ const NotificationsPopOver = () => {
 						))
 					)}
 				</List>
+				)}
 			</Popover>
 		</>
 	);

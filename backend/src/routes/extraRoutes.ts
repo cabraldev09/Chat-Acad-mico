@@ -1,4 +1,5 @@
 import * as Tutoria from "../controllers/TutoriaController";
+import * as Notifications from "../controllers/NotificationController";
 import * as MetaCosts from "../controllers/MetaCostsController";
 import * as MetaTemplates from "../controllers/MetaTemplatesController";
 import isRetentionOperator from "../middleware/isRetentionOperator";
@@ -398,7 +399,14 @@ r.post("/leads/:id/activities", isAuth, canAccessLead, Lead.addNote);
 r.get("/leads/:id/tasks", isAuth, canAccessLead, Lead.leadTasks);
 r.post("/leads/:id/tasks", isAuth, canAccessLead, Lead.addTask);
 r.post("/leads/:id/open-ticket", isAuth, canAccessLead, Lead.openTicket);
+// the notification center (the bell): each person reads and marks only their own notices
+r.get("/notifications", isAuth, Notifications.index);
+r.get("/notifications/count", isAuth, Notifications.count);
+r.put("/notifications/read-all", isAuth, Notifications.readAll);
+r.put("/notifications/:id/read", isAuth, Notifications.read);
 r.get("/lead-tasks", isAuth, Lead.tasksIndex);
+// the numbers of the tabs and of the menu badge (the same filters as the list)
+r.get("/lead-tasks/counts", isAuth, Lead.tasksCounts);
 r.post("/lead-tasks/release-unreachable", isAuth, isManager, Lead.releaseUnreachable);
 r.get("/onboarding", isAuth, Lead.onboardingList);
 r.get("/onboarding/rules", isAuth, Lead.onboardingRules);
@@ -448,6 +456,8 @@ r.post("/leads/:id/onboarding", isAuth, canAccessLead, Lead.onboarding);
 r.put("/leads/:id/onboarding", isAuth, canAccessLead, Lead.editOnboarding);
 r.put("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.updateTask);
 r.post("/leads/:id/tasks/:taskId/toggle", isAuth, canAccessLead, Lead.completeTask);
+// conclude or reopen with the choice said (done: true | false): never flips a task the system closed a moment ago
+r.put("/leads/:id/tasks/:taskId/done", isAuth, canAccessLead, Lead.setTaskDone);
 r.delete("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.removeTask);
 
 // ---------------------------------------------------------------- proposals

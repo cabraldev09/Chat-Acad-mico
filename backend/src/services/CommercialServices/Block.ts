@@ -83,7 +83,7 @@ export const runCommercialBlock = async (node: FlowNode, d: BlockDeps): Promise<
         await goTo(ports, s.slots.analysisStatus === "completed" ? "analysis_done" : "curricular_analysis", "histórico recebido");
       } else if (out.motivo === "sem_arquivo") {
         await goTo(ports, "waiting_transcript", "histórico ainda não enviado");
-        await ports.task("transcript:wait", "Aguardar histórico acadêmico", new Date(now.getTime() + 2 * 86400000), "documentos");
+        await ports.task("transcript:wait", "Pedir o histórico acadêmico ao lead", new Date(now.getTime() + 2 * 86400000), "documentos");
       }
       break;
     }

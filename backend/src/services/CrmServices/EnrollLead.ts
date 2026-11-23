@@ -231,6 +231,7 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
       leadId: lead.id,
       userId: tutor.id,
       type: "outro",
+      kind: "onboarding",
       title: "Ambientar o aluno na plataforma (1º acesso, AVA e contatos do polo)",
       dueAt: new Date(Date.now() + 4 * 3600000)
     } as any);
@@ -303,6 +304,7 @@ const enrollAdditional = async (lead: Lead, actorId: number, input: EnrollInput)
     leadId: lead.id,
     userId: tutor?.id || null,
     type: "outro",
+    kind: "onboarding",
     title: `Ambientar o aluno na nova matrícula${label}`,
     dueAt: new Date(Date.now() + 4 * 3600000)
   } as any);
@@ -417,13 +419,16 @@ export const setOnboarding = async (lead: Lead, actorId: number, action: "start"
       onboardingDoneAt: new Date(),
       onboardingStartedAt: lead.onboardingStartedAt || new Date()
     });
+    // the tasks of the onboarding of this student close with it
+    const { closeTasksFor } = await import("./TaskLifecycle");
+    await closeTasksFor(lead.id, ["onboarding", "onboarding_late"], "onboarding_done");
     await addActivity(lead.id, actorId, "system", `Ambientação concluída: o aluno foi atendido pelo tutor.${missing.length ? ` Etapas não feitas: ${missing.map(s => s.label).join(", ")}. Motivo: ${String(note).trim().slice(0, 500)}` : ""}`);
     // the consultant gets the student back for referrals and new sales
     if (lead.ownerId) {
       const day = 86400000;
       await LeadTask.bulkCreate([
-        { leadId: lead.id, userId: lead.ownerId, type: "whatsapp", title: "Pedir indicação a este aluno", dueAt: new Date(Date.now() + 30 * day) },
-        { leadId: lead.id, userId: lead.ownerId, type: "whatsapp", title: "Oferecer nova graduação ou pós a este aluno", dueAt: new Date(Date.now() + 90 * day) }
+        { leadId: lead.id, userId: lead.ownerId, type: "whatsapp", kind: "referral", title: "Pedir indicação a este aluno", dueAt: new Date(Date.now() + 30 * day) },
+        { leadId: lead.id, userId: lead.ownerId, type: "whatsapp", kind: "upsell", title: "Oferecer nova graduação ou pós a este aluno", dueAt: new Date(Date.now() + 90 * day) }
       ] as any, { individualHooks: true });
     }
     await dispatchWebhook("onboarding.done", { leadId: lead.id, lead: lead.name, tutorId: lead.onboardingTutorId });

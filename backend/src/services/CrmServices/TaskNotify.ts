@@ -9,6 +9,8 @@ export const notifyTaskAssigned = async (task: LeadTask, byUserId: number | null
     if (!task.userId || Number(task.userId) === Number(byUserId || 0)) return;
     const lead = await Lead.findByPk(task.leadId, { attributes: ["id", "name"] });
     const by = byUserId ? await User.findByPk(byUserId, { attributes: ["id", "name"] }) : null;
+    const { notify } = await import("../NotificationServices/Notify");
+    void notify([task.userId], { kind: "task_assigned", level: task.priority === "high" ? "warning" : "info", title: `Nova tarefa: ${task.title}`, body: `${lead ? lead.name : "Lead"}${by ? ` · de ${by.name}` : ""}`, link: "/crm/tarefas", dedupeKey: `task-assigned:${task.id}:${task.userId}` });
     getIO().to(`user:${task.userId}`).emit("taskAssigned", {
       userId: task.userId,
       taskId: task.id,

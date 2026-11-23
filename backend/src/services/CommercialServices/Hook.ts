@@ -198,7 +198,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
 
   // 6) tasks (one per reason) and the note (only when it changed)
   if (s.readyForProposal) await ports.task("proposal:ready", "Gerar e apresentar proposta", new Date(now.getTime() + 60 * 60000), "proposta");
-  if (target === "waiting_transcript" || nextActionOf(s) === "wait_transcript") await ports.task("transcript:wait", "Aguardar histórico acadêmico", new Date(now.getTime() + 2 * 86400000), "documentos");
+  if (target === "waiting_transcript" || nextActionOf(s) === "wait_transcript") await ports.task("transcript:wait", "Pedir o histórico acadêmico ao lead", new Date(now.getTime() + 2 * 86400000), "documentos");
   if (followUp && s.followUpAt) await ports.task(`follow_up:${ymdOf(new Date(s.followUpAt))}`, `Retomar contato: ${s.followUpReason}`, s.followUpAt, "whatsapp");
   const note = s.summary || "";
   if (note && hashOf(note) !== s.lastNoteHash) {

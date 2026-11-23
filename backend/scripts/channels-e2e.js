@@ -5429,11 +5429,13 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(mineSt.status === 200 && mineSt.data.scope === "mine" && mineSt.data.byTutor.every(t => t.tutorId === tutor.id) && mineSt.data.period, `a tutor read the management panel ${JSON.stringify(mineSt.data).slice(0, 200)}`);
       assert((await http.get("/onboarding/stats", asUser(consTok))).status === 403, "a consultant read the tutoring numbers");
 
-      // over 24 h without the first contact: one task for every administrator, once
+      // over 24 h without the first contact: ONE urgent task without a person (the management hands it out; it used to be one per manager,
+      // and none of them ever closed) and a notice in the bell of every manager, once
       sql(`UPDATE Leads SET onboardingStatus='pending', onboardingAlertAt=NULL, enrolledAt=NOW() - INTERVAL '2 days' WHERE id=${lead.id}`);
-      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the administrators");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the management");
       const admins = Number(sql(`SELECT COUNT(*) FROM Users WHERE profile='admin' OR role IN ('admin','coordenacao')`));
-      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) === admins, "one task per administrator expected");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%' AND userId IS NULL AND kind='onboarding_late' AND priority='high'`)) === 1, "one task without a person expected");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${lead.id}'`)) === admins, 8000, "a notice for every manager");
     });
     await test("grades: reading them again rewrites the WhatsApp text of every matrix and lists only real internships", async () => {
       const r = await http.post("/grades/refresh", {}, auth());

@@ -9,7 +9,20 @@ import { touchAnalytics } from "../AnalyticsServices/Realtime";
 // A task given on purpose to a third person (not the lead's owner, not the previous one) stays where it was put.
 // The conversation is linked to the lead by the CONTACT (tickets do not carry the lead id).
 // the tasks the system itself creates for a lead (the robot's handoff, the first days of a new student) always belong to whoever answers the lead
-const SYSTEM_TASK = `(k.title LIKE 'Atender lead encaminhado%' OR k.title LIKE 'Ambientar o aluno%')`;
+const SYSTEM_TASK = `(k.kind IN ('handoff', 'onboarding') OR k.title LIKE 'Atender lead encaminhado%' OR k.title LIKE 'Ambientar o aluno%')`;
+
+// a task that changed hands: the new person hears it (kept in the bell) and both lists refresh
+const movedTo = async (taskId: number, to: number, from: number | null): Promise<void> => {
+  try {
+    const [row] = (await sequelize.query(`SELECT k.title, k."leadId", l.name FROM "LeadTasks" k JOIN "Leads" l ON l.id = k."leadId" WHERE k.id = :id`, { replacements: { id: taskId }, type: QueryTypes.SELECT })) as any[];
+    const { notify } = await import("../NotificationServices/Notify");
+    if (row) await notify([to], { kind: "task_assigned", title: `Tarefa passada para você: ${row.title}`, body: row.name, link: "/crm/tarefas", dedupeKey: `task-moved:${taskId}:${to}` });
+    const { getIO } = await import("../../libs/socket");
+    [to, from].filter(Boolean).forEach(userId => getIO().emit("taskChanged", { userId, leadId: row ? row.leadId : null }));
+  } catch (_) {
+    // a notice never stops the reassignment
+  }
+};
 
 export const syncHandoffTasks = async (contactId?: number, previousUserId?: number | null): Promise<number> => {
   const rows = (await sequelize.query(
@@ -25,7 +38,9 @@ export const syncHandoffTasks = async (contactId?: number, previousUserId?: numb
   for (const r of rows) {
     const owner = r.owner ? Number(r.owner) : null;
     if (owner && owner !== Number(r.userId)) {
-      await sequelize.query(`UPDATE "LeadTasks" SET "userId" = :owner, "updatedAt" = NOW() WHERE id = :id`, { replacements: { owner, id: r.id } });
+      // the new person is reminded again (the reminder went to the previous one) and hears about the task
+      await sequelize.query(`UPDATE "LeadTasks" SET "userId" = :owner, "notifiedAt" = NULL, "updatedAt" = NOW() WHERE id = :id`, { replacements: { owner, id: r.id } });
+      await movedTo(r.id, owner, r.userId ? Number(r.userId) : null);
       moved += 1;
     }
   }
@@ -55,7 +70,8 @@ export const releaseUnreachableTasks = async (): Promise<{ moved: number; releas
     const answerer = r.answerer ? Number(r.answerer) : null;
     // the conversation is still with the same person who cannot act (nobody with a number could take it): the task waits without an owner, where the management sees it
     if (answerer && answerer !== Number(r.userId)) {
-      await sequelize.query(`UPDATE "LeadTasks" SET "userId" = :to, "updatedAt" = NOW() WHERE id = :id`, { replacements: { to: answerer, id: r.id } });
+      await sequelize.query(`UPDATE "LeadTasks" SET "userId" = :to, "notifiedAt" = NULL, "updatedAt" = NOW() WHERE id = :id`, { replacements: { to: answerer, id: r.id } });
+      await movedTo(r.id, answerer, Number(r.userId));
       moved += 1;
       touched.add(answerer);
     } else {

@@ -5,6 +5,7 @@ import LeadTask from "../models/LeadTask";
 import User from "../models/User";
 import { getSetting } from "../helpers/AppSettings";
 import { getIO } from "../libs/socket";
+import { notify } from "../services/NotificationServices/Notify";
 import { logger } from "../utils/logger";
 import { addActivity } from "../services/CrmServices/LeadCore";
 import LeadReminderLog from "../models/LeadReminderLog";
@@ -48,10 +49,11 @@ const tick = async (): Promise<void> => {
       await lead.update({ onboardingAlertAt: new Date() });
       // eslint-disable-next-line no-await-in-loop
       await addActivity(lead.id, null, "system", `Ambientação pendente há mais de ${hours} horas: o tutor ainda não iniciou.`);
-      for (const m of managers) {
-        // eslint-disable-next-line no-await-in-loop
-        await LeadTask.create({ leadId: lead.id, userId: m.id, type: "whatsapp", title: `Ambientação atrasada: ${lead.name} está há mais de ${hours} horas sem o primeiro contato do tutor`, dueAt: new Date() } as any).catch(() => undefined);
-      }
+      // one task, without a person (the management hands it out), not one per manager that never closed
+      // eslint-disable-next-line no-await-in-loop
+      await LeadTask.create({ leadId: lead.id, userId: null, type: "whatsapp", kind: "onboarding_late", priority: "high", title: `Ambientação atrasada: ${lead.name} está há mais de ${hours} horas sem o primeiro contato do tutor`, dueAt: new Date() } as any).catch(() => undefined);
+      // eslint-disable-next-line no-await-in-loop
+      await notify(managers.map(m => m.id), { kind: "onboarding_late", level: "warning", title: `Ambientação atrasada: ${lead.name}`, body: `Mais de ${hours} horas sem o primeiro contato do tutor.`, link: `/crm?lead=${lead.id}`, dedupeKey: `onboarding-late:${lead.id}` });
       getIO().emit("onboardingAlert", { leadId: lead.id, leadName: lead.name, tutorId: lead.onboardingTutorId, hours });
     }
   } catch (err) {
