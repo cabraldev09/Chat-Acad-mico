@@ -1,4 +1,5 @@
 import { findCatalogCourse } from "../helpers/Institution";
+import { normalizeModality, modalityTotals } from "../helpers/CourseModality";
 import { touchAnalytics } from "../services/AnalyticsServices/Realtime";
 import { hasContactAccessOrFree } from "../middleware/canAccessContact";
 import { syncNextFollowUp } from "../services/CrmServices/FollowUp";
@@ -598,17 +599,6 @@ const yes = (v: any, fallback = true): boolean => {
   return !["0", "nao", "não", "n", "false", "inativo", "no"].includes(String(v).trim().toLowerCase());
 };
 
-const MODALITIES = ["Presencial", "EAD", "Semipresencial", "Flex"];
-const normalizeModality = (v: any): string | null => {
-  const t = String(v || "").trim();
-  if (!t) return null;
-  const hit = MODALITIES.find(m => m.toLowerCase() === t.toLowerCase().replace("semi presencial", "semipresencial"));
-  if (hit) return hit;
-  if (/semi/i.test(t)) return "Semipresencial";
-  if (/dist|ead|online/i.test(t)) return "EAD";
-  if (/presen/i.test(t)) return "Presencial";
-  return t;
-};
 
 // body: { items: [{ name, category, level, modality, monthlyFee, semesters, active, institution }], institutionId, dryRun }
 // Returns one row per line (new | update | error) so the wizard can show a preview.
@@ -899,7 +889,7 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     SELECT COUNT(*) AS total FROM LeadEnrollments e JOIN Leads l ON l.id = e.leadId
     WHERE e.createdAt BETWEEN :from AND :to ${f}`).catch(() => [{ total: 0 }]);
 
-  // the enrollments of the period by the kind of course (EAD, ao vivo, semipresencial...), as the course catalogue names it
+  // the enrollments of the period by the format of the course: only the formats the system has (Presencial, EAD, Semipresencial, Flex)
   const byModality = await q(`
     SELECT COALESCE(NULLIF(c.modality,''), NULLIF(l.modality,''), 'Não informado') AS name, COUNT(*) AS total
     FROM Leads l LEFT JOIN Courses c ON c.id = l.courseId
@@ -968,7 +958,7 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
       return { ...r, leads: Number(r.leads), won: Number(r.won), open: Number(r.open), avgFirstContactMin: k ? k.s / k.n : null, waiting: w ? Number(w.total) : 0 };
     }),
     previous: { leads: Number(prev?.leads) || 0, won: Number(prev?.won) || 0, lost: Number(prev?.lost) || 0, enrollments: Number(prev?.enrollments) || 0, conversion: Number(prev?.leads) ? (Number(prev.won) / Number(prev.leads)) * 100 : 0 },
-    byModality: byModality.map(r => ({ name: String(r.name), total: Number(r.total) })),
+    byModality: modalityTotals(byModality),
     triage: triage.map(r => ({ id: r.id, name: r.name, phone: r.phone, source: r.source, createdAt: r.createdAt, ownerId: r.ownerId, ownerName: r.ownerName, late: new Date(r.createdAt) < dayBounds(undefined).start })),
     lostReasons: lostReasons.map(r => ({ ...r, total: Number(r.total) })),
     enrollmentsInPeriod: wonDaily.reduce((a, r) => a + Number(r.total || 0), 0) + (Number(extra?.total) || 0),

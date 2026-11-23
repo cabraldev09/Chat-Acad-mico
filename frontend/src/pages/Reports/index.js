@@ -254,14 +254,14 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
   const tabs = manager ? TABS.slice(1) : TABS.slice(0, 1);
 
   return (
-    <div className={embedded ? undefined : classes.page}>
+    <div className={embedded ? undefined : `${classes.page} gv-plain`}>
       {!embedded && <StatsHubBar />}
-      {!embedded && <div className={classes.top}>
-        <div>
-          <h1 className={classes.hello}>Atendimento e canais</h1>
-          <div className={classes.sub}>{data && data.scope === "all" ? "Toda a equipe" : "Seus atendimentos"} · {periodName}</div>
+      {!embedded && <div className="gv-head" style={{ marginBottom: 20 }}>
+        <div style={{ minWidth: 0 }}>
+          <h1>Atendimento e canais</h1>
+          <p>{data && data.scope === "all" ? "Toda a equipe" : "Seus atendimentos"} · {periodName}</p>
         </div>
-        <div className={classes.controls}>
+        <div className={classes.controls} style={{ color: "var(--text-1)" }}>
           <div className={classes.seg} role="tablist" aria-label="Período">
             {[["Dia", 1], ["7 dias", 7], ["30 dias", 30]].map(([label, n]) => (
               <button key={n} type="button" role="tab" aria-selected={days === n} className={`${classes.segBtn} ${days === n ? classes.segOn : ""}`} onClick={() => setDays(n)}>{label}</button>
@@ -273,7 +273,7 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
             <input type="date" className={classes.dateInput} value={shown} max={today} onChange={(e) => e.target.value && setDate(e.target.value >= today ? "" : e.target.value)} aria-label="Escolher o dia" />
             <button type="button" className={classes.iconBtn} onClick={() => go(1)} disabled={isToday} title="Próximo" aria-label="Próximo período"><ChevronRight size={17} /></button>
           </div>
-          {!isToday && <button type="button" className={classes.segBtn} style={{ border: "1px solid currentColor" }} onClick={() => setDate("")}>Hoje</button>}
+          {!isToday && <button type="button" className={classes.segBtn} style={{ border: "1px solid rgba(255,255,255,.6)", color: "#fff" }} onClick={() => setDate("")}>Hoje</button>}
         </div>
       </div>}
 

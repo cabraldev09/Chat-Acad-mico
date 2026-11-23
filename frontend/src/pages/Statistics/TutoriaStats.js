@@ -43,17 +43,17 @@ export default function TutoriaStats() {
   if (!allowed) return <Redirect to={hubHome(user)} />;
   return (
     <MainContainer>
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 2px 24px" }}>
+      <div className="gv-plain" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 2px 24px" }}>
         <StatsHubBar />
-        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
+        <div className="gv-head" style={{ marginBottom: 20 }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 750, letterSpacing: "-0.03em", lineHeight: 1.15 }}>{manager ? "Desempenho da tutoria" : "Meus números da tutoria"}</h1>
-            <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>{manager ? "A ambientação dos alunos matriculados e o trabalho de cada tutor." : "Só os seus alunos: quantos chegaram, quantos você ambientou e quanto tempo levou o primeiro contato."}</div>
+            <h1>{manager ? "Desempenho da tutoria" : "Meus números da tutoria"}</h1>
+            <p>{manager ? "A ambientação dos alunos matriculados e o trabalho de cada tutor." : "Só os seus alunos: quantos chegaram, quantos você ambientou e quanto tempo levou o primeiro contato."}</p>
           </div>
-          <div className="ui-tabs" role="tablist" aria-label="Período" style={{ marginLeft: 0, flexWrap: "wrap" }}>
-            {PERIODS.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={period === k} className={`ui-tabs__btn${period === k ? " is-on" : ""}`} onClick={() => setPeriod(k)}>{l}</button>)}
+          <div className="gv-seg" role="group" aria-label="Período">
+            {PERIODS.map(([k, l]) => <button key={k} type="button" aria-pressed={period === k} onClick={() => setPeriod(k)}>{l}</button>)}
           </div>
-          <button type="button" className="pk-btn" onClick={() => history.push("/meus-alunos")}>Abrir os alunos</button>
+          <button type="button" className="gv-btn" style={{ background: "#fff", color: "#0b4279", alignSelf: "auto" }} onClick={() => history.push("/meus-alunos")}>Abrir os alunos</button>
         </div>
         {/* what needs care now: students without contact, risk of dropping out, re-enrollments and where the onboarding stops */}
         <div style={{ marginBottom: 16 }}><Tutoring params={{ range: period === "semana" ? "week" : "month" }} /></div>
