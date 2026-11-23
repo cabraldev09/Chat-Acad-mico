@@ -24,23 +24,30 @@ anterior; a meta em anel e a posição na equipe; o que foi feito hoje; o que fa
 as metas dos polos; as orientações. A posição vem em `team.position` de `/analytics/me/overview` (`{ rank, of }`, por matrículas
 no período): só o lugar e o total de consultores, nunca o número de um colega.
 
-**Visual:** os painéis usam o kit de `frontend/src/components/peak`. No topo, até quatro `PeakChart` (o cartão escuro do Peak
-Chart, de Louis Studios, no 21st.dev), com o número principal e a linha dia a dia; cada um anima um canvas só enquanto está visível.
-Abaixo, as caixas são claras e na cor da marca (`styles/peak.css`): fundo da superfície do tema, números em azul-marinho, detalhes
-em azul-claro e uma luz suave na base; no tema escuro ficam cinza-azuladas. Verde, âmbar e vermelho só indicam estado. As peças:
-`GlowStat` (cartão de número), `DotTile` (contador de agora), `GlowPanel`, `GlowRank`, `GlowRing` e `GlowFunnel`. Os painéis
-antigos (`useKit().panel`, Atendimento, Polos e metas) usam a mesma aparência. `useAnalytics` divide uma consulta por endereço e um
-socket por tela.
+**Visual:** os painéis usam o kit de `frontend/src/components/peak` sobre um fundo azul-acinzentado (`#e6edf5`, o fundo padrão do
+sistema). No topo, até quatro `PeakChart` (o cartão escuro do Peak Chart, de Louis Studios, no 21st.dev). Abaixo, caixas brancas
+com borda e sombra marcadas e uma faixa de cor no topo que diz o tipo do número: azul volume, verde ganho, âmbar atenção, vermelho
+problema (`styles/peak.css`). As peças:
+- `SectionTitle`: título de seção com barra azul-marinho;
+- `GlowStat`: cartão de número com ícone em pastilha; `CountStat`: número grande que conta até o valor e abre a lista filtrada;
+- `GlowFunnel`: o funil em blocos na ordem das etapas (número e parte do total); as etapas vazias viram uma linha só;
+- `GlowRank`: ranking com posição em medalha, valor, participação e um traço curto (nunca uma barra de ponta a ponta);
+- `Donut` (de `components/charts`) para proporções: origem dos leads e motivos de perda;
+- `GlowRing` e os cartões de polo com anel para metas; `TodoList` para prioridades; `Badge` para estado em tabelas.
+Os painéis antigos (`useKit().panel`, Atendimento, Polos e metas) usam a mesma caixa (`--card-bg`, `--card-line`, `--card-shadow`).
+
+**Prioridades:** o bloco de insights (`components/Insights`) é uma lista de ações ordenada por urgência; cada linha tem o botão
+"Resolver", que abre a tela certa. Não usa ícone de IA: são leituras dos dados, não texto gerado.
 
 **Cabeçalho:** as abas das Estatísticas são uma barra arredondada com a aba atual em azul-marinho; título e período ficam na mesma
-faixa. A faixa de tarefas e leads do topo (`TaskAlert`) não aparece nos painéis (Painel do CRM, Estatísticas, Atendimento e Meu
-desempenho), que já mostram essas contagens nos próprios cartões.
+faixa. A faixa de tarefas e leads do topo (`TaskAlert`) não aparece nos painéis.
+
+**Menu lateral:** recolhido, é um dock: os ícones crescem perto do ponteiro (só `transform`, sem mudar o tamanho de nada) e o nome
+do item aparece ao lado. Só abre pelo botão. Antes ele abria sozinho ao passar o mouse, o que mudava a largura sob o ponteiro e fazia
+a lista tremer e rolar. "Meu desempenho" aparece para o consultor e também para a gestão.
 
 **Sem repetição:** um número aparece uma vez por tela. Na Visão geral, o bloco Atendimento embutido não repete atendimentos,
 mensagens e matrículas do topo, e o Comercial não repete pessoas contatadas e matrículas.
-
-**Menu lateral:** "Meu desempenho" aparece para o consultor e também para a gestão (quem coordena e atende), abaixo de
-"Estatísticas".
 
 "Equipe agora" (`/gestao-comercial`, hoje um redirecionamento) e a "Visão do gestor" de Atendimento saíram, porque repetiam esses
 números. A aba Consultores junta os números comerciais com o tempo de resposta e onde cada conversa parou (clique em Conversas). A

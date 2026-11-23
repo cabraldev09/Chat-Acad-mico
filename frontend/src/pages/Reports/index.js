@@ -54,7 +54,7 @@ const useStyles = makeStyles((theme) => {
     dateInput: { border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", colorScheme: theme.palette.type },
     layout: { display: "grid", gap: theme.spacing(2.5), gridTemplateColumns: "minmax(0, 1fr) 340px", alignItems: "start", [theme.breakpoints.down("md")]: { gridTemplateColumns: "1fr" } },
     stack: { display: "grid", gap: theme.spacing(2.5), minWidth: 0 },
-    panel: { background: "radial-gradient(120% 60% at 50% 122%, color-mix(in srgb, var(--tone, var(--c-leads)) 18%, transparent) 0%, color-mix(in srgb, var(--tone, var(--c-leads)) 6%, transparent) 42%, transparent 70%), var(--surface)", border: `1px solid ${line}`, borderRadius: 18, padding: theme.spacing(2.25, 2.5), boxShadow: "inset 0 -2px 0 color-mix(in srgb, var(--tone, var(--c-leads)) 40%, transparent), 0 1px 2px rgba(11,66,121,.05), 0 10px 24px -18px color-mix(in srgb, var(--c-brand) 55%, transparent)", minWidth: 0 },
+    panel: { background: "var(--card-bg)", border: "1px solid var(--card-line)", borderRadius: 16, padding: theme.spacing(2.25, 2.5), boxShadow: "var(--card-shadow)", minWidth: 0 },
     panelTitle: { fontSize: 14, fontWeight: 650, margin: 0, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 },
     panelSub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
     nowGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: theme.spacing(1), [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },

@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { format, parseISO } from "date-fns";
-import { AlertTriangle, CalendarCheck2, ChevronRight, Clock3, Lightbulb, MessageCircle, Phone, RefreshCw } from "lucide-react";
+import { AlertTriangle, CalendarCheck2, Clock3, Lightbulb, MessageCircle, Phone, RefreshCw } from "lucide-react";
 
 import { BlockTitle, PeriodPicker, fmt, minutesText, num, periodParams, useAnalytics, useKit } from "../../components/analytics/kit";
-import { ACCENT, DotTile, GlowFunnel, GlowPanel, GlowRing, GlowStat, PeakChart, PeakRow, dayLabel } from "../../components/peak";
+import { ACCENT, CountStat, GlowFunnel, GlowPanel, GlowRing, GlowStat, PeakChart, PeakRow, SectionTitle, TodoList, dayLabel } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import "../../styles/dash.css";
 
@@ -13,7 +13,6 @@ import "../../styles/dash.css";
 // the orientation from the daily review. The management has Estatísticas with the whole team.
 
 const when = (v) => { try { return format(parseISO(v), "dd/MM HH:mm"); } catch (e) { return ""; } };
-const TONE = { danger: "#dc2626", warn: "#d97706", good: "#16a34a", info: "#0693E3" };
 const PERIOD_LABEL = { today: "Hoje", week: "7 dias", month: "Este mês", custom: "Período" };
 // change against the period before, in percent (points for a rate); null when there is nothing to compare
 const change = (now, before, points) => {
@@ -31,18 +30,12 @@ const RESULTS = [
   ["messagesSent", "Mensagens enviadas"],
 ];
 
-const Section = ({ title, hint, children, action }) => {
-  const c = useKit();
-  return (
-    <section style={{ marginTop: 26, minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-        <div><h2 className={c.h2} style={{ fontSize: 17 }}>{title}</h2>{hint && <div className={c.sub}>{hint}</div>}</div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-};
+const Section = ({ title, hint, children, action }) => (
+  <section style={{ marginTop: 28, minWidth: 0 }}>
+    <SectionTitle title={title} hint={hint} action={action} />
+    {children}
+  </section>
+);
 
 const ordinal = (n) => `${num(n)}º`;
 
@@ -169,11 +162,11 @@ const MyPerformance = () => {
       {/* 3. today */}
       {today && (
         <Section title="Hoje" hint="O que você fez desde a meia-noite.">
-          <div className="pk-grid">
-            <DotTile id="today-attendances" label="Conversas atendidas" value={today.attendances} hint={targets.dailyAttendances > 0 ? `Meta do dia: ${num(targets.dailyAttendances)}` : undefined} tone={targets.dailyAttendances > 0 && today.attendances >= targets.dailyAttendances ? "good" : undefined} />
-            <DotTile id="today-messages" label="Mensagens enviadas" value={today.messagesSent} hint={targets.dailyMessages > 0 ? `Meta do dia: ${num(targets.dailyMessages)}` : undefined} tone={targets.dailyMessages > 0 && today.messagesSent >= targets.dailyMessages ? "good" : undefined} />
-            <DotTile id="today-people" label="Pessoas contatadas" value={today.peopleContacted} tone="violet" />
-            <DotTile id="today-enrollments" label="Matrículas" value={today.enrollments} tone="good" />
+          <div className="pk-grid-4">
+            <CountStat id="today-attendances" label="Conversas atendidas" value={today.attendances} hint={targets.dailyAttendances > 0 ? `Meta do dia: ${num(targets.dailyAttendances)}` : undefined} tone={targets.dailyAttendances > 0 && today.attendances >= targets.dailyAttendances ? "good" : undefined} />
+            <CountStat id="today-messages" label="Mensagens enviadas" value={today.messagesSent} hint={targets.dailyMessages > 0 ? `Meta do dia: ${num(targets.dailyMessages)}` : undefined} tone={targets.dailyMessages > 0 && today.messagesSent >= targets.dailyMessages ? "good" : undefined} />
+            <CountStat id="today-people" label="Pessoas contatadas" value={today.peopleContacted} tone="violet" />
+            <CountStat id="today-enrollments" label="Matrículas" value={today.enrollments} tone="good" />
           </div>
         </Section>
       )}
@@ -181,16 +174,9 @@ const MyPerformance = () => {
       {/* 4. what to do now */}
       <Section title="O que fazer agora" hint="Os pontos que dependem de você, do mais urgente ao menos.">
         <div className={c.cols}>
-          <div className={c.panel}>
-            {todo.length === 0 && <div className={c.sub}>Tudo em dia. Nenhum ponto pedindo atenção agora.</div>}
-            {todo.map((it) => (
-              <button key={it.key} type="button" className={c.row} onClick={() => go(it.link)}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: TONE[it.tone] || TONE.info, flex: "none" }} />
-                <span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block" }}>{it.title}</b><span className={c.sub}>{it.detail}</span></span>
-                <ChevronRight size={15} style={{ color: "var(--text-2)", flex: "none" }} />
-              </button>
-            ))}
-          </div>
+          <GlowPanel id="todo" title="Prioridades" empty={!todo.length} emptyText="Tudo em dia. Nenhum ponto pedindo atenção agora.">
+            <TodoList items={todo.map((it) => ({ key: it.key, tone: it.tone, title: it.title, detail: it.detail, onClick: it.link ? () => go(it.link) : undefined }))} />
+          </GlowPanel>
           <div className={c.panel}>
             <BlockTitle icon={<Clock3 size={16} />} title={`Responder agora (${num(data.metrics.pendingReply)})`} help="Conversas suas em que o cliente falou por último. As mais antigas primeiro." />
             {data.focus.conversations.length === 0 && <div className={c.sub} style={{ marginTop: 6 }}>Ninguém esperando resposta sua.</div>}

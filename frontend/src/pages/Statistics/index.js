@@ -9,7 +9,7 @@ import toastError from "../../errors/toastError";
 import StatsHubBar from "../../components/StatsHub";
 import { ChartCard } from "../../components/charts";
 import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num, fmt, minutesText } from "../../components/analytics/kit";
-import { PeakChart, PeakRow, GlowStat, GlowPanel, GlowRank, rankRows, dayLabel, ACCENT } from "../../components/peak";
+import { PeakChart, PeakRow, GlowStat, GlowPanel, GlowRank, SectionTitle, rankRows, dayLabel, ACCENT } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
@@ -209,18 +209,12 @@ const conversationRange = (period) => {
   return { days: 1, date: "" };
 };
 
-const Section = ({ title, sub, children }) => {
-  const c = useKit();
-  return (
-    <section style={{ display: "grid", gap: 12, minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>{title}</h2>
-        {sub && <span className={c.sub} style={{ marginTop: 0 }}>{sub}</span>}
-      </div>
-      {children}
-    </section>
-  );
-};
+const Section = ({ title, sub, children }) => (
+  <section style={{ minWidth: 0 }}>
+    <SectionTitle title={title} hint={sub} />
+    {children}
+  </section>
+);
 
 // Agora: who is working, whose WhatsApp is down, what needs attention and the tasks nobody owns (live, whatever the period)
 const Now = ({ params }) => {
