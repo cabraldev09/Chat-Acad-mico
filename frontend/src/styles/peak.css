@@ -220,6 +220,10 @@ button.pk-count:hover .go { color: var(--c-brand); }
   background:
     radial-gradient(90% 150% at -6% 55%, #6cc0ff 0%, #3b8cff 22%, #2457e6 42%, rgba(25, 58, 160, 0.55) 60%, rgba(11, 30, 66, 0) 80%),
     linear-gradient(100deg, #1b3fae 0%, #0c2147 62%, #0a1a38 100%);
+  /* the gradient is measured from the border and painted once: under a translucent border it would repeat, and its dark end would
+     show as a strip along the opposite edge and the corners */
+  background-origin: border-box;
+  background-repeat: no-repeat;
   box-shadow: 0 1px 2px rgba(11, 30, 66, 0.2), 0 14px 26px -16px rgba(20, 60, 160, 0.65);
 }
 .pk-stat .pk-value, .pk-count .n, .pk[data-tone="bad"].pk-stat .pk-value, .pk[data-tone="warn"].pk-stat .pk-value, .pk[data-tone="bad"].pk-count .n, .pk[data-tone="warn"].pk-count .n { color: #fff; }
@@ -456,6 +460,7 @@ button.gv-multi-row:hover .gv-multi-col i { background: color-mix(in srgb, var(-
    name of every polo on a navy band ---- */
 .pp-hero { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 20px 24px; border-radius: 16px; color: #fff; --text-1: #fff; --text-2: rgba(255, 255, 255, 0.8); --track: rgba(255, 255, 255, 0.2);
   background: radial-gradient(90% 150% at -6% 55%, #6cc0ff 0%, #3b8cff 22%, #2457e6 42%, rgba(25, 58, 160, 0.55) 60%, rgba(11, 30, 66, 0) 80%), linear-gradient(100deg, #1b3fae 0%, #0c2147 62%, #0a1a38 100%);
+  background-origin: border-box; background-repeat: no-repeat;
   border: 1px solid rgba(255, 255, 255, 0.14); box-shadow: 0 14px 26px -16px rgba(20, 60, 160, 0.65); }
 .pp-hero-num { font-size: 40px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
 .pp-hero-num small { font-size: 20px; font-weight: 600; opacity: 0.72; }
@@ -486,3 +491,21 @@ button.gv-multi-row:hover .gv-multi-col i { background: color-mix(in srgb, var(-
 .gv-plain .pk-stat .pk-chip[data-good="0"] { background: rgba(220, 38, 38, 0.1); color: #b91c1c; }
 .gv-plain .pk-stat .pk-spark path { stroke: var(--c-brand); }
 .gv-plain .pk-stat .pk-spark circle { fill: var(--c-brand); }
+
+/* ---- the period on a phone: the five choices share the width and the two dates sit side by side under them, each as wide as
+   the other (a date field keeps a wide natural size on phones and pushed the second one out of the band) ---- */
+.gv-dates input { min-width: 0; -webkit-appearance: none; appearance: none; text-align: left; color-scheme: light; }
+.gv-dates input::-webkit-date-and-time-value { text-align: left; }
+@media (max-width: 620px) {
+  .gv-head { padding: 14px 16px; }
+  .gv-head-side, .gv-head > .gv-range { width: 100%; }
+  .gv-range { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 100%; }
+  .gv-seg { display: flex; width: 100%; overflow: visible; }
+  .gv-seg button { flex: 1 1 0; min-width: 0; padding: 0 4px; min-height: 40px; font-size: 13px; }
+  .gv-dates { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; width: 100%; }
+  .gv-dates input { width: 100%; min-height: 44px; font-size: 16px; padding: 0 8px; }
+}
+@media (max-width: 380px) { .gv-seg { padding: 2px; gap: 0; } .gv-seg button { font-size: 12px; padding: 0 1px; letter-spacing: -0.01em; } }
+/* the chosen period keeps its ink while the pointer (or the finger, where "hover" sticks after a tap) is still on it */
+.gv-seg button[aria-pressed="true"]:hover:not(:disabled) { color: var(--c-brand); }
+.gv-head .gv-seg button[aria-pressed="true"], .gv-head .gv-seg button[aria-pressed="true"]:hover:not(:disabled) { background: #fff; color: #0b4279; }

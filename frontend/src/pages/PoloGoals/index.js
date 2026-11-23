@@ -97,7 +97,7 @@ const useStyles = makeStyles((theme) => ({
     // the summary of the semester in the look of the cards of numbers (blue melting into navy, white text); the ring reads these colours
     display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: theme.spacing(3), alignItems: "center", color: "#fff", borderRadius: 16, padding: theme.spacing(2.5, 3),
     "--text-1": "#fff", "--text-2": "rgba(255,255,255,.8)", "--track": "rgba(255,255,255,.2)", "--c-leads": "#fff",
-    background: "radial-gradient(90% 150% at -6% 55%, #6cc0ff 0%, #3b8cff 22%, #2457e6 42%, rgba(25,58,160,.55) 60%, rgba(11,30,66,0) 80%), linear-gradient(100deg, #1b3fae 0%, #0c2147 62%, #0a1a38 100%)", border: "1px solid rgba(255,255,255,.14)", boxShadow: "0 14px 26px -16px rgba(20,60,160,.65)", marginBottom: theme.spacing(2),
+    background: "radial-gradient(90% 150% at -6% 55%, #6cc0ff 0%, #3b8cff 22%, #2457e6 42%, rgba(25,58,160,.55) 60%, rgba(11,30,66,0) 80%), linear-gradient(100deg, #1b3fae 0%, #0c2147 62%, #0a1a38 100%)", backgroundOrigin: "border-box", backgroundRepeat: "no-repeat", border: "1px solid rgba(255,255,255,.14)", boxShadow: "0 14px 26px -16px rgba(20,60,160,.65)", marginBottom: theme.spacing(2),
     [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr", justifyItems: "center", textAlign: "center" },
   },
   heroNum: { fontSize: 44, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
