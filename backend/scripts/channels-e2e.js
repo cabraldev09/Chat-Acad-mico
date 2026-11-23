@@ -3922,7 +3922,10 @@ const postMeta = (id, payload, secret, badSig) => {
       await say(D, "wamid.com-d1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of D");
       await say(D, "wamid.com-d2", "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "qualification of D");
       await say(D, "wamid.com-d3", "quanto tempo dura?", t => t.some(x => /Direito:/.test(x)), "course of D");
-      await say(D, "wamid.com-d4", "Vou pensar e volto depois", t => t.some(x => /Combinado/.test(x)), "follow-up");
+      // "vou pensar": one gentle question about what may still be unclear; the reason and the day the person gave are kept; then the decision is respected
+      await say(D, "wamid.com-d4", "Vou pensar e volto depois", t => t.some(x => /ficou alguma dúvida/.test(x)), "the doubt is asked before letting go");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(D)}`) === "1" && !/^done/.test(runOf(D)), "the conversation ended on the first 'vou pensar'");
+      await say(D, "wamid.com-d4b", "não, é só isso", t => t.some(x => /Fico à disposição/.test(x)), "follow-up");
       await waitFor(() => leadStage(D) === stageName("follow_up") && /^done/.test(runOf(D)), 8000, "column 'Follow-up' and the run ended");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(D)} AND title LIKE 'Retomar contato:%' AND dueAt >= '2026-11-30 12:00' AND dueAt < '2026-12-02 00:00'`)) === 1, `no follow-up task on the date the person gave: ${sql(`SELECT string_agg(title || ' @ ' || dueAt::text, ' | ') FROM LeadTasks WHERE leadId=${leadId(D)}`)}`);
       assert(sql(`SELECT followUpReason FROM LeadCommercials WHERE leadId=${leadId(D)}`).includes("família"), "reason not kept");

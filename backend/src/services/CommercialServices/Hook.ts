@@ -264,7 +264,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (ask) exit = null;
   else if (noInterest) { exit = "sem_interesse"; exitWhy = "A pessoa confirmou que não tem interesse."; }
   else if (s.readyForProposal && !input.stepsPending && !holdValue && !input.stay) { exit = "proposta"; exitWhy = intent === "price" ? "Pediu valores: quem apresenta as condições é o consultor." : intent === "enrollment" ? "Quer se matricular: o consultor conduz a matrícula." : intent === "proposal" ? "Pediu proposta ou link de inscrição." : "Lead quente: encaminhado ao consultor."; }
-  else if (followUp) { exit = "follow_up"; exitWhy = "Pediu um tempo: o retorno ficou agendado."; }
+  else if (followUp && !input.stay) { exit = "follow_up"; exitWhy = "Pediu um tempo: o retorno ficou agendado."; }
   // a question the base does not answer: the agent says it will confirm, the question is noted for the consultant and the conversation goes on
   // (the process continues); only after the "tentativas de esclarecimento" of the administrator in a row does a person take over
   else if (unknownAsked && !unknownHeld) {

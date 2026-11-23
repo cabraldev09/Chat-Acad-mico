@@ -440,8 +440,8 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // "vou pensar": one gentle question about what may still be unclear; said again (or "não, é só isso"), the decision is respected
   const thinkAnswered = !!state.slots.thinkAsked && /ficou alguma duvida sobre o curso, o formato ou o processo/.test(plainText(lastBot)) && /^(nao|n|nada|so isso|e so isso|tudo certo|ta tudo certo|nenhuma|sem duvidas?|nao,? obrigad[oa]|por enquanto nao)\b/.test(plainText(lastText).trim());
   if (d.input !== null && wrote && !state.slots.enrolledStudent && (asksForTime(lastText) || thinkAnswered) && !saysNoInterest(lastText)) {
-    if (!state.slots.thinkAsked) return answered(THINK_PROBE, null, "other", { patch: { thinkAsked: true }, stay: true, endsWithQuestion: true });
-    return answered(THINK_BYE, null, "follow_up", { intent: "follow_up", followUp: { reason: "pediu um tempo para pensar", at: null } });
+    // (the first time goes through the model, which keeps the reason and the day the person gave: see thinkProbe below)
+    if (state.slots.thinkAsked) return answered(THINK_BYE, null, "follow_up", { intent: "follow_up", followUp: { reason: (state as any).followUpReason || "pediu um tempo para pensar", at: null } });
   }
 
   // a student who needs the tutoring or the secretary: the team of the polo takes it, without a sales talk (and without a model)
@@ -566,6 +566,8 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // "não tenho mais interesse", "vou pensar": read in the words of the person, whatever the model registered
   const intentOut = d.input !== null && wrote && saysNoInterest(lastText) ? "no_interest" : d.input !== null && wrote && asksForTime(lastText) && intent !== "no_interest" ? "follow_up" : intent;
   // nothing is asked on top of a doubt of the person, nor of who asked for time or lost the interest
+  // "vou pensar" for the first time: what the person said (the reason, the day) is kept, and one gentle question is asked before letting go
+  const thinkProbe = d.input !== null && wrote && intentOut === "follow_up" && !state.slots.thinkAsked && !state.slots.enrolledStudent;
   const quiet = asksSomething(lastText) || ["follow_up", "no_interest", "objection", "unknown"].includes(String(intentOut));
   const bolsaDue = d.input !== null && !formatNow && !quiet && needsBolsaData(probe) && (!/\?[\s"”')]*$/.test(String(text || "").trim()) || Number(probe.qualifiedReplies || 0) >= (d.ports.qualifyAfter || 2) + 1);
   // The grade goes to every person who has a course, even if nobody asked for it and the model did not call the tool: it is part of the process.
@@ -618,13 +620,15 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     patchOut = { ...patchOut, bolsaDataAsked: Number(probe.bolsaDataAsked || 0) + 1 };
   }
   const hook = await commercialTurn(d.ports, {
-    userText: lastText, intent: intentOut, patch: patchOut, tools: toolsOut, hadText: !!text, replied: d.input !== null,
+    userText: lastText, intent: intentOut, patch: thinkProbe ? { ...patchOut, thinkAsked: true } : patchOut, tools: toolsOut, hadText: !!text, replied: d.input !== null,
+    ...(thinkProbe ? { stay: true } : {}),
     followUp: intent === "follow_up" ? { reason: turn.motivo_retorno || turn.duvida_principal || null, at: turn.retorno_em || null } : null,
     unknownQuestion, objection: turn.objecao || (intent === "objection" ? lastText : null), question: turn.duvida_principal || null, topics: result.topics,
     firstContactSent: d.input === null && !!text, nodeId: d.nodeId, retract: d.input !== null && retractsBuying(lastText), hasPolo: !!d.lead?.poloId,
     endsWithQuestion: /\?[\s"”')]*$/.test(String(text || "").trim()), stepsPending
   });
 
+  if (thinkProbe && !hook.exit) text = THINK_PROBE;
   // what the person reads is also decided by the rules; what the model wrote is checked against what the tools and the base returned
   const guard = unsafeAnswer(text, `${result.evidence}\n${lastText}`);
   const moneyLike = guard.unsafe && (guard.kind === "price" || guard.kind === "percent" || guard.kind === "free");
@@ -685,7 +689,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     }
   }
   // the answer that completes course, city and first degree: the team presents the course (bridge, duration, format) instead of the model
-  if ((!hook.exit || hook.exit === "done") && d.input !== null && !state.slots.enrolledStudent && !state.slots.courseExplained && !modalityExplained(state.slots) && !nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, undefined, scriptTexts(d))) {
+  if (!thinkProbe && (!hook.exit || hook.exit === "done") && d.input !== null && !state.slots.enrolledStudent && !state.slots.courseExplained && !modalityExplained(state.slots) && !nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, undefined, scriptTexts(d))) {
     const shown = await presentCourse(d, state.slots);
     if (shown) {
       text = shown.text;
