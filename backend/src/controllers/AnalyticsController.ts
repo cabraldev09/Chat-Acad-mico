@@ -1,3 +1,4 @@
+import { analyticsInstitutionId } from "../services/AnalyticsServices/AnalyticsService";
 import { Request, Response } from "express";
 
 import AppError from "../errors/AppError";
@@ -40,7 +41,7 @@ export const team = async (req: Request, res: Response): Promise<Response> => {
   if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
   const p = resolvePeriod(req.query);
   // the screen asks again on every tab change and on every reconnection: a few seconds of memory spares the database the whole count
-  const key = `analytics-team:${req.user.id}:${p.from}:${p.to}`;
+  const key = `analytics-team:${req.user.id}:${p.from}:${p.to}:${analyticsInstitutionId() || 0}`;
   return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), async () => {
     const ids = await visibleConsultantIds(req.user);
     const bundles = await bundlesFor(ids, p);
@@ -141,7 +142,7 @@ const commercialUsers = async (req: Request): Promise<Array<{ id: number; name: 
 export const commercial = async (req: Request, res: Response): Promise<Response> => {
   const p = resolvePeriod(req.query);
   const users = await commercialUsers(req);
-  const key = `analytics-commercial:${req.user.id}:${p.from}:${p.to}:${users.map(u => u.id).join(",")}`;
+  const key = `analytics-commercial:${req.user.id}:${p.from}:${p.to}:${users.map(u => u.id).join(",")}:${analyticsInstitutionId() || 0}`;
   return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), async () => {
     const { configOf } = await import("../services/CopilotServices/Settings");
     const { salesInsights } = await import("../services/AnalyticsServices/SalesInsights");
@@ -232,7 +233,7 @@ export const tutoria = async (req: Request, res: Response): Promise<Response> =>
 // short sentences from real data, each with where to act: the management reads its team, a consultant reads their own leads
 export const insights = async (req: Request, res: Response): Promise<Response> => {
   const { insightsFor } = await import("../services/AnalyticsServices/Insights");
-  const key = `analytics-insights:${req.user.id}`;
+  const key = `analytics-insights:${req.user.id}:${analyticsInstitutionId() || 0}`;
   return res.json({ items: await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => insightsFor(req.user)) });
 };
 

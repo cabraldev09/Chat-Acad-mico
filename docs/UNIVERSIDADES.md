@@ -74,9 +74,17 @@ Antes de reverter `20261222000009-institutions`, faça rollback do código que l
 mas remove as escolhas de universidade, as configurações próprias e os vínculos com polos; não execute `down` com a versão nova do código
 em funcionamento.
 
+## Estatísticas por universidade
+
+- Com duas ou mais universidades, o seletor de período (Estatísticas, Central Comercial, Meu desempenho) ganha "Universidade".
+- A escolha vai como `?institutionId=` e o middleware `analyticsInstitution` roda a tela inteira dentro dela.
+- O filtro de "só clientes reais" das conversas (`VALID_TICKET`) e o trecho `LEAD_IN_INSTITUTION` das consultas de leads passam a
+  contar só o que é da universidade escolhida. O que não tem universidade própria conta para a padrão.
+- Sem escolha, vale o grupo inteiro. O cache de cada tela é separado por universidade.
+
 ## Próximas etapas
 
 - Configurações próprias por universidade (`InstitutionSettings`), caindo na configuração geral: Efí, número da tutoria, formulário.
 - Polos que servem várias universidades (`PoloInstitutions`).
 - Logo da universidade nos e-mails e no portal do aluno e do afiliado.
-- Filtro "Universidade" em Estatísticas, Metas, Campanhas e Custos.
+- Filtro "Universidade" em Metas, Campanhas e Custos.

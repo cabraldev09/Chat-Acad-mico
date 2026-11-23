@@ -1,7 +1,7 @@
 import CopilotSnapshot from "../../models/CopilotSnapshot";
 import Ticket from "../../models/Ticket";
 import { logger } from "../../utils/logger";
-import { Period, rows, VALID_TICKET } from "./AnalyticsService";
+import { Period, rows, VALID_TICKET, LEAD_IN_INSTITUTION } from "./AnalyticsService";
 
 // How each consultant works the sales process, for the management: conversations, messages, audios and grades, how much of the
 // process the conversations went through and where the leads stopped, the leads by stage and the stage moves. Same period rules
@@ -104,7 +104,7 @@ export const processMetrics = async (users: Array<{ id: number; name: string }>,
 
   // the person's open leads, by funnel column (the picture now, not the period)
   (await rows(`SELECT l.ownerId AS userId, s.name AS stage, s.color, s.position, COUNT(*) AS n FROM Leads l JOIN LeadStages s ON s.id = l.stageId
-    WHERE l.ownerId IN (:ids) AND l.isHistorical = false AND s.type = 'open' GROUP BY l.ownerId, s.name, s.color, s.position ORDER BY s.position`, rep)).forEach(r => {
+    WHERE l.ownerId IN (:ids) AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION} AND s.type = 'open' GROUP BY l.ownerId, s.name, s.color, s.position ORDER BY s.position`, rep)).forEach(r => {
     const m = out.get(Number(r.userId));
     if (m) m.byStage.push({ stage: String(r.stage), color: r.color || null, n: Number(r.n) });
   });

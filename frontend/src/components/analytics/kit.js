@@ -129,11 +129,39 @@ export const useDefinitions = () => {
   return defs || {};
 };
 
+// the universities of the group, read once per page load: with two or more, the screens can be filtered by one of them
+let universitiesLoad = null;
+const loadUniversities = () => {
+  if (!universitiesLoad) {
+    universitiesLoad = api.get("/institutions")
+      .then(({ data }) => (Array.isArray(data) ? data : []).filter((i) => i.active !== false))
+      .catch(() => { universitiesLoad = null; return []; });
+  }
+  return universitiesLoad;
+};
+const useUniversities = () => {
+  const [list, setList] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    loadUniversities().then((l) => { if (alive) setList(l); });
+    return () => { alive = false; };
+  }, []);
+  return list;
+};
+
 export const PeriodPicker = ({ value, onChange }) => {
   const c = useKit();
+  const universities = useUniversities();
   const opts = [["today", "Hoje"], ["week", "7 dias"], ["month", "Este mês"], ["custom", "Período"]];
   return (
     <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      {universities.length > 1 && (
+        <select aria-label="Universidade" className={c.input} value={value.institutionId || ""}
+          onChange={(e) => onChange({ ...value, institutionId: e.target.value ? Number(e.target.value) : null })}>
+          <option value="">Todas as universidades</option>
+          {universities.map((u) => <option key={u.id} value={u.id}>{u.shortName || u.name}</option>)}
+        </select>
+      )}
       <span className={c.chips} role="group" aria-label="Período">
         {opts.map(([k, label]) => (
           <button key={k} type="button" aria-pressed={value.range === k} className={`${c.chip} ${value.range === k ? c.chipOn : ""}`} onClick={() => onChange({ ...value, range: k })}>{label}</button>
@@ -150,7 +178,10 @@ export const PeriodPicker = ({ value, onChange }) => {
   );
 };
 
-export const periodParams = (p) => (p.range === "custom" ? { range: "custom", from: p.from, to: p.to } : { range: p.range });
+export const periodParams = (p) => ({
+  ...(p.range === "custom" ? { range: "custom", from: p.from, to: p.to } : { range: p.range }),
+  ...(p.institutionId ? { institutionId: p.institutionId } : {}),
+});
 
 export const Kpi = ({ k, value, def, hint, tone }) => {
   const c = useKit();

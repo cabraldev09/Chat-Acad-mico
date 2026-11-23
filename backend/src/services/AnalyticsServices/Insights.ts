@@ -1,4 +1,4 @@
-import { rows, VALID_TICKET, visibleConsultantIds } from "./AnalyticsService";
+import { rows, VALID_TICKET, visibleConsultantIds, LEAD_IN_INSTITUTION } from "./AnalyticsService";
 import { isManagerRole, roleOf } from "../../helpers/Roles";
 import { logger } from "../../utils/logger";
 import { getAppTz } from "../../helpers/AppTime";
@@ -39,7 +39,7 @@ export const insightsFor = async (user: any, now: Date = new Date(), opts: { sel
   if (!ids.length) return [];
   const rep = { ids, now, hourAgo: new Date(now.getTime() - 3600000), threeDays: new Date(now.getTime() - 3 * DAY), weekAgo: new Date(now.getTime() - 7 * DAY), twoWeeks: new Date(now.getTime() - 14 * DAY), month: new Date(now.getTime() - 30 * DAY) };
   const owner = manager ? "(l.ownerId IN (:ids) OR l.ownerId IS NULL)" : "l.ownerId IN (:ids)";
-  const open = `l.isHistorical = false AND EXISTS (SELECT 1 FROM LeadStages s WHERE s.id = l.stageId AND s.type = 'open')`;
+  const open = `l.isHistorical = false AND ${LEAD_IN_INSTITUTION} AND EXISTS (SELECT 1 FROM LeadStages s WHERE s.id = l.stageId AND s.type = 'open')`;
   const out: Insight[] = [];
 
   await safe("firstContact", async () => {
@@ -103,7 +103,7 @@ export const insightsFor = async (user: any, now: Date = new Date(), opts: { sel
   });
 
   await safe("enrollmentsTrend", async () => {
-    const [r] = await rows(`SELECT SUM(CASE WHEN l.wonAt >= :weekAgo THEN 1 ELSE 0 END) AS now7, SUM(CASE WHEN l.wonAt >= :twoWeeks AND l.wonAt < :weekAgo THEN 1 ELSE 0 END) AS prev7 FROM Leads l WHERE l.isHistorical = false AND l.wonAt >= :twoWeeks AND ${owner}`, rep);
+    const [r] = await rows(`SELECT SUM(CASE WHEN l.wonAt >= :weekAgo THEN 1 ELSE 0 END) AS now7, SUM(CASE WHEN l.wonAt >= :twoWeeks AND l.wonAt < :weekAgo THEN 1 ELSE 0 END) AS prev7 FROM Leads l WHERE l.isHistorical = false AND ${LEAD_IN_INSTITUTION} AND l.wonAt >= :twoWeeks AND ${owner}`, rep);
     const a = Number(r?.now7 || 0);
     const b = Number(r?.prev7 || 0);
     if (!a && !b) return;
@@ -113,7 +113,7 @@ export const insightsFor = async (user: any, now: Date = new Date(), opts: { sel
   });
 
   await safe("bestSource", async () => {
-    const list = await rows(`SELECT COALESCE(l.source, 'Outro') AS name, COUNT(*) AS leads, SUM(CASE WHEN l.wonAt IS NOT NULL THEN 1 ELSE 0 END) AS won FROM Leads l WHERE l.isHistorical = false AND l.createdAt >= :month AND ${owner} GROUP BY COALESCE(l.source, 'Outro')`, rep);
+    const list = await rows(`SELECT COALESCE(l.source, 'Outro') AS name, COUNT(*) AS leads, SUM(CASE WHEN l.wonAt IS NOT NULL THEN 1 ELSE 0 END) AS won FROM Leads l WHERE l.isHistorical = false AND ${LEAD_IN_INSTITUTION} AND l.createdAt >= :month AND ${owner} GROUP BY COALESCE(l.source, 'Outro')`, rep);
     const ranked = list.map(s => ({ name: String(s.name), leads: Number(s.leads), won: Number(s.won) })).filter(s => s.leads >= 5).sort((x, y) => y.won / y.leads - x.won / x.leads);
     if (ranked.length >= 2 && ranked[0].won > 0) {
       const best = ranked[0];
@@ -122,12 +122,12 @@ export const insightsFor = async (user: any, now: Date = new Date(), opts: { sel
   });
 
   await safe("topCourse", async () => {
-    const [top] = await rows(`SELECT c.name, COUNT(*) AS leads, SUM(CASE WHEN l.wonAt IS NOT NULL THEN 1 ELSE 0 END) AS won FROM Leads l JOIN Courses c ON c.id = l.courseId WHERE l.isHistorical = false AND l.createdAt >= :month AND ${owner} GROUP BY c.name ORDER BY COUNT(*) DESC LIMIT 1`, rep);
+    const [top] = await rows(`SELECT c.name, COUNT(*) AS leads, SUM(CASE WHEN l.wonAt IS NOT NULL THEN 1 ELSE 0 END) AS won FROM Leads l JOIN Courses c ON c.id = l.courseId WHERE l.isHistorical = false AND ${LEAD_IN_INSTITUTION} AND l.createdAt >= :month AND ${owner} GROUP BY c.name ORDER BY COUNT(*) DESC LIMIT 1`, rep);
     if (top && Number(top.leads) >= 3) out.push({ key: "top_course", tone: "info", title: `${top.name} é o curso mais procurado`, detail: `${plural(Number(top.leads), "lead", "leads")} nos últimos 30 dias e ${plural(Number(top.won), "matrícula", "matrículas")}.`, link: "/estatisticas/captacao" });
   });
 
   await safe("peakHour", async () => {
-    const list = await rows(`SELECT l.createdAt AS at FROM Leads l WHERE l.isHistorical = false AND l.createdAt >= :month AND ${owner}`, rep);
+    const list = await rows(`SELECT l.createdAt AS at FROM Leads l WHERE l.isHistorical = false AND ${LEAD_IN_INSTITUTION} AND l.createdAt >= :month AND ${owner}`, rep);
     if (list.length < 10) return;
     const hours = new Array(24).fill(0);
     const fmt = new Intl.DateTimeFormat("en-GB", { timeZone: getAppTz(), hour: "2-digit", hour12: false });
