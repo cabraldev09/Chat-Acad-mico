@@ -5,7 +5,7 @@ import { MenuItem, TextField } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { BarsChart, ChartLegend, ChartTooltip, useChartTheme } from "../../components/charts";
-import { BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, GraduationCap, MailOpen, MessageCircle, MessagesSquare, Reply, Timer, Users } from "lucide-react";
+import { BellOff, CalendarDays, CheckCircle2, Clock3, GraduationCap, MailOpen, MessageCircle, MessagesSquare, Reply, Timer, Users } from "lucide-react";
 
 import { CHANNELS } from "../../components/ChannelIcon";
 import { AuthContext } from "../../context/Auth/AuthContext";
@@ -20,7 +20,7 @@ import toastError from "../../errors/toastError";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 import { ErrorState } from "../../components/ui";
 import StatsHubBar from "../../components/StatsHub";
-import { DonutChart, GlowPanel, GlowRank, GlowStat } from "../../components/peak";
+import { DonutChart, GlowPanel, GlowRank, GlowStat, RangePicker, rangeDates, useCycle } from "../../components/peak";
 
 // Atendimento. Every figure appears once:
 //   Visão geral  what is happening now and what happened in the period (volume, matrículas, resolução, atendimentos). The management
@@ -137,10 +137,17 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
   // the overview of the conversations lives in Estatísticas → Visão geral for the management; this screen keeps the team and the channels
   const [tabState, setTab] = useState(isManager(user) ? "equipe" : "geral");
   const tab = embedded ? "geral" : tabState;
-  const [dateState, setDate] = useState("");
-  const [daysState, setDays] = useState(1);
-  const date = embedded ? dateProp || "" : dateState;
-  const days = embedded ? daysProp || 1 : daysState;
+  // the period of the screen: today, the last 7 days, the month, two dates or the cycle of goals. The server reads it as "so many
+  // days ending on a day" (up to a semester)
+  const [period, setPeriod] = useState({ range: "today" });
+  const cycle = useCycle();
+  const picked = useMemo(() => {
+    const r = rangeDates(period, cycle);
+    const span = Math.round((new Date(`${r.to}T12:00:00`) - new Date(`${r.from}T12:00:00`)) / 86400000) + 1;
+    return { days: Math.min(186, Math.max(1, span || 1)), date: r.to >= today ? "" : r.to };
+  }, [period, cycle, today]);
+  const date = embedded ? dateProp || "" : picked.date;
+  const days = embedded ? daysProp || 1 : picked.days;
   const [queueId, setQueueId] = useState("");
   const [userId, setUserId] = useState("");
   const [queues, setQueues] = useState([]);
@@ -202,12 +209,6 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
     return () => { clearTimeout(timer); clearInterval(poll); socket.disconnect(); };
   }, [load]);
 
-  const go = (delta) => {
-    const d = new Date(`${shown}T12:00:00`);
-    d.setDate(d.getDate() + delta * days);
-    const next = iso(d);
-    setDate(next >= today ? "" : next);
-  };
   const longDay = new Date(`${shown}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   const periodName = days === 1 ? (isToday ? "Hoje" : longDay) : `${days} dias até ${isToday ? "hoje" : new Date(`${shown}T12:00:00`).toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}`;
 
@@ -261,20 +262,7 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
           <h1>Atendimento e canais</h1>
           <p>{data && data.scope === "all" ? "Toda a equipe" : "Seus atendimentos"} · {periodName}</p>
         </div>
-        <div className={classes.controls} style={{ color: "var(--text-1)" }}>
-          <div className={classes.seg} role="tablist" aria-label="Período">
-            {[["Dia", 1], ["7 dias", 7], ["30 dias", 30]].map(([label, n]) => (
-              <button key={n} type="button" role="tab" aria-selected={days === n} className={`${classes.segBtn} ${days === n ? classes.segOn : ""}`} onClick={() => setDays(n)}>{label}</button>
-            ))}
-          </div>
-          <div className={classes.datebox}>
-            <button type="button" className={classes.iconBtn} onClick={() => go(-1)} title="Anterior" aria-label="Período anterior"><ChevronLeft size={17} /></button>
-            <CalendarDays size={15} style={{ opacity: 0.55 }} />
-            <input type="date" className={classes.dateInput} value={shown} max={today} onChange={(e) => e.target.value && setDate(e.target.value >= today ? "" : e.target.value)} aria-label="Escolher o dia" />
-            <button type="button" className={classes.iconBtn} onClick={() => go(1)} disabled={isToday} title="Próximo" aria-label="Próximo período"><ChevronRight size={17} /></button>
-          </div>
-          {!isToday && <button type="button" className={classes.segBtn} style={{ border: "1px solid rgba(255,255,255,.6)", color: "#fff" }} onClick={() => setDate("")}>Hoje</button>}
-        </div>
+        <RangePicker value={period} onChange={setPeriod} cycle={cycle} />
       </div>}
 
       {!embedded && tabs.length > 1 && (
@@ -379,7 +367,7 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
                       <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} tickMargin={8} interval="preserveStartEnd" minTickGap={16} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} />
                       <Tooltip cursor={{ fill: ct.cursor }} content={<ChartTooltip />} />
-                      <Bar dataKey="created" name="Novos" radius={[3, 3, 0, 0]} maxBarSize={22} style={{ cursor: "pointer" }} onClick={(d) => { if (d && !embedded) { setDays(1); setDate(d.key >= today ? "" : d.key); } }} isAnimationActive={false}>
+                      <Bar dataKey="created" name="Novos" radius={[3, 3, 0, 0]} maxBarSize={22} style={{ cursor: "pointer" }} onClick={(d) => { if (d && !embedded) setPeriod({ range: "custom", from: d.key, to: d.key }); }} isAnimationActive={false}>
                         {series.map((s) => <Cell key={s.key} fill={s.key === shown ? ct.c.brand : ct.c.leads} />)}
                       </Bar>
                       <Bar dataKey="closed" name="Finalizados" fill={ct.c.muted} fillOpacity={0.45} radius={[3, 3, 0, 0]} maxBarSize={22} isAnimationActive={false} />

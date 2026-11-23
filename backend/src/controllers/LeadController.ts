@@ -1112,8 +1112,15 @@ export const onboardingChecklist = async (req: Request, res: Response): Promise<
 // the numbers of the onboarding for the management: how fast the first contact happens, who is late, how many finish per week, per tutor
 // the window of the numbers: semana (7 days), mês (this month), ciclo (the semester: the goal running today, e.g. 2027.1 from 17/11 to
 // 03/05; without one, the calendar half-year) or the last 90 days (the default)
-const periodStart = async (period: string): Promise<{ since: number; label: string }> => {
+// `from`/`to` (YYYY-MM-DD): the two dates the screen chose (today, the week, the month, a range or the cycle); without them the named
+// periods of before still work
+const periodStart = async (period: string, from?: string, to?: string): Promise<{ since: number; until?: number; label: string }> => {
   const now = new Date();
+  const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (from && to && dayRe.test(from) && dayRe.test(to) && from <= to) {
+    const br = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+    return { since: dayBounds(from).start.getTime(), until: dayBounds(to).end.getTime(), label: from === to ? `em ${br(from)}` : `de ${br(from)} a ${br(to)}` };
+  }
   if (period === "semana") return { since: now.getTime() - 7 * 86400000, label: "últimos 7 dias" };
   if (period === "mes") return { since: new Date(now.getFullYear(), now.getMonth(), 1).getTime(), label: "este mês" };
   if (period === "ciclo") {
@@ -1132,7 +1139,7 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
   const manager = isManagerRole(role);
   // a tutor sees only their own students; the management sees everybody
   if (!manager && !["tutor", "academico"].includes(role)) throw new AppError("ERR_NO_PERMISSION", 403);
-  const { since: periodSince, label: periodLabel } = await periodStart(String(req.query.period || ""));
+  const { since: periodSince, until: periodUntil = Number.MAX_SAFE_INTEGER, label: periodLabel } = await periodStart(String(req.query.period || ""), req.query.from ? String(req.query.from) : undefined, req.query.to ? String(req.query.to) : undefined);
   const slaHours = Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24);
   const rows = await Lead.findAll({
     where: { onboardingStatus: { [Op.ne]: "none" }, enrolledAt: { [Op.ne]: null }, ...(manager ? {} : { onboardingTutorId: uid(req) }) } as any,
@@ -1145,7 +1152,7 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
   const since90 = periodSince;
   const firstContact = (r: Lead): number | null => (r.onboardingStartedAt && r.enrolledAt ? Math.max(0, (+new Date(r.onboardingStartedAt) - +new Date(r.enrolledAt)) / H) : null);
   const avg = (xs: number[]): number | null => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
-  const recent = rows.filter(r => r.enrolledAt && +new Date(r.enrolledAt) >= since90);
+  const recent = rows.filter(r => r.enrolledAt && +new Date(r.enrolledAt) >= since90 && +new Date(r.enrolledAt) <= periodUntil);
   const pending = rows.filter(r => r.onboardingStatus === "pending");
   const late = pending.filter(r => now - +new Date(r.enrolledAt) > slaHours * H);
   const within = recent.map(firstContact).filter((x): x is number => x !== null);
@@ -1173,7 +1180,7 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
         active: mine.filter(r => r.onboardingStatus !== "done").length,
         late: mine.filter(r => r.onboardingStatus === "pending" && now - +new Date(r.enrolledAt) > slaHours * H).length,
         doneLast30: mine.filter(r => r.onboardingDoneAt && now - +new Date(r.onboardingDoneAt) <= 30 * 24 * H).length,
-        avgFirstContactHours: avg(mine.filter(r => r.enrolledAt && +new Date(r.enrolledAt) >= since90).map(firstContact).filter((x): x is number => x !== null))
+        avgFirstContactHours: avg(mine.filter(r => r.enrolledAt && +new Date(r.enrolledAt) >= since90 && +new Date(r.enrolledAt) <= periodUntil).map(firstContact).filter((x): x is number => x !== null))
       };
     })
     .sort((a, b) => b.active - a.active);
@@ -1181,7 +1188,7 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
     slaHours,
     period: periodLabel,
     scope: manager ? "all" : "mine",
-    doneInPeriod: rows.filter(r => r.onboardingDoneAt && +new Date(r.onboardingDoneAt) >= periodSince).length,
+    doneInPeriod: rows.filter(r => r.onboardingDoneAt && +new Date(r.onboardingDoneAt) >= periodSince && +new Date(r.onboardingDoneAt) <= periodUntil).length,
     enrolledInPeriod: recent.length,
     totals: { pending: pending.length, started: rows.filter(r => r.onboardingStatus === "started").length, done: rows.filter(r => r.onboardingStatus === "done").length, late: late.length, withoutTutor: rows.filter(r => !r.onboardingTutorId && r.onboardingStatus !== "done").length },
     avgFirstContactHours: avg(within),
