@@ -30,7 +30,7 @@ describe("pacote de modelos da Meta", () => {
     for (const t of pack) expect(t.body).not.toMatch(/desconto|promo|oferta|gr[aá]tis|imperd[ií]vel|condi[cç][oõ]es especiais/i);
   });
   it("as boas-vindas da matrícula pedem para agendar a ambientação com o tutor", () => {
-    const bv = pack.find(t => t.name === "matricula_confirmada_tutoria")!;
+    const bv = pack.find(t => t.name === "matricula_confirmada_aviso")!;
     expect(bv.setting).toBe("boas_vindas_template_name");
     expect(paramsIn(bv.body)).toBe(4);
     expect(bv.body).toMatch(/ambientação/);

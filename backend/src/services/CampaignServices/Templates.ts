@@ -116,9 +116,11 @@ export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
   { name: "vencimento_mensalidade", department: "financeiro", use: "aviso",
     purpose: "Boleto da mensalidade perto do vencimento",
     body: "Mensalidade, {{1}}: o boleto do curso {{2}} vence em {{3}}. Se já pagou, desconsidere. Para a segunda via, responda aqui.", examples: ["Maria", "Pedagogia", "10/12/2026"] },
-  { name: "matricula_confirmada_tutoria", department: "tutoria", use: "aviso", setting: "boas_vindas_template_name",
+  // the first version (matricula_confirmada_tutoria) asked the student to write to the number: the Meta read it as an invitation and
+  // refused it as Utility (INCORRECT_CATEGORY). A refused name cannot be used again, so this one has a new name and is a plain notice.
+  { name: "matricula_confirmada_aviso", department: "tutoria", use: "aviso", setting: "boas_vindas_template_name",
     purpose: "Matrícula confirmada: quem é o tutor e o número da tutoria",
-    body: `Matrícula confirmada, {{1}}: a sua matrícula no curso {{2}} está confirmada. Quem acompanha você é {{3}}, da tutoria da ${institution}, pelo número {{4}}. Mande uma mensagem nesse número para agendar a sua ambientação.`, examples: ["Maria", "Pedagogia", "Ana Paula", "+55 (69) 99325-8103"] },
+    body: `Matrícula confirmada, {{1}}: a sua matrícula no curso {{2}} foi registrada. O acompanhamento é feito por {{3}}, da tutoria da ${institution}, pelo número {{4}}, que também cuida da sua ambientação.`, examples: ["Maria", "Pedagogia", "Ana Paula", "+55 (69) 99325-8103"] },
   { name: "retomada_tutoria", department: "tutoria", use: "abertura", setting: "tutoria_template_name", buttons: ["Sim, podemos falar", "Agora não"],
     purpose: "A tutoria retomar o contato com o aluno depois de 24 h",
     body: `Tutoria da ${institution}: {{1}}, aqui é {{2}}, sobre o acompanhamento do seu curso. Podemos falar por aqui?`, examples: ["Maria", "Paula"] },
@@ -143,9 +145,11 @@ export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
   { name: "pagamento_confirmado", department: "financeiro", use: "aviso",
     purpose: "Pagamento da taxa ou da mensalidade confirmado",
     body: "Pagamento confirmado, {{1}}: o pagamento de {{2}} referente ao curso {{3}} foi confirmado. Guarde esta mensagem como comprovante do recebimento.", examples: ["Maria", "taxa de matrícula", "Pedagogia"] },
-  { name: "acesso_portal_liberado", department: "tutoria", use: "aviso",
-    purpose: "O acesso do aluno ao portal foi liberado (RGM e e-mail acadêmico)",
-    body: "Acesso ao portal liberado, {{1}}: o seu RGM é {{2}} e o e-mail de acesso é {{3}}. Em caso de dúvida no primeiro acesso, responda esta mensagem.", examples: ["Maria", "1234567", "maria.silva@cs.cruzeirodosul.edu.br"] },
+  // the first version (acesso_portal_liberado) carried the RGM and the e-mail of access: the Meta read it as login data and refused
+  // it as Utility (INCORRECT_CATEGORY). The access data goes in the conversation; the template only says it was released.
+  { name: "acesso_portal_aviso", department: "tutoria", use: "aviso",
+    purpose: "O acesso do aluno ao portal foi liberado",
+    body: "Acesso ao portal, {{1}}: o seu acesso ao portal do aluno do curso {{2}} foi liberado. As orientações do primeiro acesso seguem nesta conversa.", examples: ["Maria", "Pedagogia"] },
   { name: "inicio_das_aulas", department: "tutoria", use: "aviso",
     purpose: "Data de início das aulas do curso do aluno",
     body: "Início das aulas, {{1}}: as aulas do curso {{2}} começam em {{3}}. O acesso às disciplinas é pelo portal do aluno.", examples: ["Maria", "Pedagogia", "02/02/2027"] }

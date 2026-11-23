@@ -5830,9 +5830,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(first.data.pack.every(p => !/^\s*ol[áa]/i.test(p.body) && p.department), "a template of the pack opens with Olá or has no department");
       const opening = graph.templates.find(t => t.name === "retomada_atendimento");
       assert(opening && opening.components.some(c => c.type === "BUTTONS" && c.buttons.length === 2 && c.buttons.every(b => b.type === "QUICK_REPLY")), `the opening went without buttons ${JSON.stringify(opening && opening.components)}`);
-      graph.templates.find(t => t.name === "matricula_confirmada_tutoria").status = "APPROVED";
+      graph.templates.find(t => t.name === "matricula_confirmada_aviso").status = "APPROVED";
       const after = await http.get("/meta/templates", auth());
-      assert(after.data.linked.includes("matricula_confirmada_tutoria") && sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`) === "matricula_confirmada_tutoria" && after.data.templates.find(x => x.name === "retomada_atendimento").department === "atendimento", `the approved template was not linked: ${JSON.stringify(after.data.linked)}`);
+      assert(after.data.linked.includes("matricula_confirmada_aviso") && sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`) === "matricula_confirmada_aviso" && after.data.templates.find(x => x.name === "retomada_atendimento").department === "atendimento", `the approved template was not linked: ${JSON.stringify(after.data.linked)}`);
       // a new template: examples are required, and a refusal comes back with the Meta's reason
       assert((await http.post("/meta/templates", { name: "aviso_x", body: "Olá {{1}}, aviso.", examples: [] }, auth())).status === 400, "a template without examples was sent");
       const edge = await http.post("/meta/templates", { name: "aviso_borda", body: "{{1}}, a sua matrícula está confirmada.", examples: ["Ana"] }, auth());
