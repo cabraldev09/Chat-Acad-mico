@@ -7,10 +7,9 @@ import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import StatsHubBar from "../../components/StatsHub";
-import { ChartCard } from "../../components/charts";
 import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num, fmt, minutesText } from "../../components/analytics/kit";
 import Drawer from "@material-ui/core/Drawer";
-import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, RingStat, rankRows, CountStat, BarsChart, Switch } from "../../components/peak";
+import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, RingStat, rankRows, CountStat, BarsChart, Switch, MultiBars, BoardHead, Person, EmptyNote } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
@@ -22,7 +21,7 @@ import { Leads, mins } from "../CommercialCenter/ProcessTab";
 const pct = (v) => (v === null || v === undefined ? "-" : `${String(Math.round(v * 10) / 10).replace(".", ",")}%`);
 const Failed = ({ onRetry }) => <GlowPanel error onRetry={onRetry} />;
 
-const PERIOD_LABEL = { today: "Hoje", week: "7 dias", month: "Este mês", custom: "Período" };
+const PERIOD_LABEL = { today: "Hoje", week: "Últimos 7 dias", month: "Este mês", custom: "Período" };
 
 // the production of the whole team, day by day: the days of every consultant added up
 const teamSeries = (consultants) => {
@@ -41,31 +40,48 @@ const RESULT_KEYS = [
   { key: "peopleContacted", title: "Pessoas contatadas", unit: "pessoas" },
   { key: "messagesSent", title: "Mensagens enviadas", unit: "mensagens" },
 ];
+// how many of something it took for one enrollment, said the way each number is read
+const share = (a, b) => (b > 0 ? `${(Math.round((a / b) * 1000) / 10).toLocaleString("pt-BR")}%` : null);
 const Results = ({ params, period }) => {
   const { data, loading, error, reload } = useAnalytics("/analytics/team", params);
   const series = useMemo(() => teamSeries(data && data.consultants), [data]);
-  const [shown, setShown] = useState("enrollments");
+  const [shown, setShown] = useState("all");
   if (error && !data) return <Failed onRetry={reload} />;
   const wait = loading && !data;
   const t = (data && data.totals) || {};
-  const badge = PERIOD_LABEL[period.range] || "Período";
-  const current = RESULT_KEYS.find((k) => k.key === shown) || RESULT_KEYS[0];
+  const badge = period.cycle ? "Ciclo" : PERIOD_LABEL[period.range] || "Período";
+  const won = Number(t.enrollments) || 0;
+  // the conversion of each number into enrollments, in the period on screen
+  const rates = {
+    enrollments: t.conversion === null || t.conversion === undefined ? null : `${fmt(t.conversion, "percent")} dos leads trabalhados`,
+    attendances: share(won, Number(t.attendances)) ? `${share(won, Number(t.attendances))} viraram matrícula` : null,
+    peopleContacted: share(won, Number(t.peopleContacted)) ? `${share(won, Number(t.peopleContacted))} viraram matrícula` : null,
+    messagesSent: won > 0 ? `${num(Math.round((Number(t.messagesSent) || 0) / won))} mensagens por matrícula` : null,
+  };
+  const current = RESULT_KEYS.find((k) => k.key === shown);
   const first = t.firstContactMinutes;
   return (
-    <div className="gv-plain" style={{ display: "grid", gap: 14, minWidth: 0 }}>
+    <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
       <div className="pk-grid-4" role="group" aria-label="Resultado do período">
         {RESULT_KEYS.map((k) => (
-          <CountStat key={k.key} id={k.key} label={k.title} value={Number(t[k.key]) || 0} loading={wait} hint={badge}
-            action={shown === k.key ? "No gráfico abaixo" : "Ver por dia"} onClick={() => setShown(k.key)} />
+          <CountStat key={k.key} id={k.key} label={k.title} value={Number(t[k.key]) || 0} loading={wait} hint={rates[k.key] || badge}
+            action={shown === k.key ? "Ver todas" : "Ver só esta"} onClick={() => setShown(shown === k.key ? "all" : k.key)} />
         ))}
       </div>
       <section className="gv-card" data-panel="bars" aria-busy={wait ? "true" : undefined}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <h3 className="gv-title">{current.title} por dia</h3>
-          <Switch label="O que mostrar" value={shown} onChange={setShown} options={RESULT_KEYS.map((k) => [k.key, k.title])} />
+          <h3 className="gv-title">{current ? `${current.title} por dia` : "Todas as frentes por dia"} · {badge}</h3>
+          <Switch label="O que mostrar" value={shown} onChange={setShown} options={[["all", "Todas"], ...RESULT_KEYS.map((k) => [k.key, k.title])]} />
         </div>
         {wait ? <div className="pk-skel" style={{ height: 220, borderRadius: 8 }} aria-hidden="true" />
-          : <BarsChart days={series.map((d) => ({ day: d.day, value: d[current.key] }))} unit={current.unit} />}
+          : current ? (
+            <>
+              <BarsChart days={series.map((d) => ({ day: d.day, value: d[current.key] }))} unit={current.unit} />
+              {rates[current.key] && <div className="gv-ffoot">Conversão no período: <b>{rates[current.key]}</b></div>}
+            </>
+          ) : (
+            <MultiBars onPick={setShown} rows={RESULT_KEYS.map((k) => ({ key: k.key, title: k.title, unit: k.unit, total: Number(t[k.key]) || 0, note: rates[k.key], days: series.map((d) => ({ day: d.day, value: d[k.key] })) }))} />
+          )}
       </section>
       <div className="pk-grid">
         <GlowStat id="conversion" label="Conversão" icon={TrendingUp} tone="violet" loading={wait} value={fmt(t.conversion, "percent")} hint="Matrículas divididas pelos leads trabalhados" />
@@ -173,6 +189,7 @@ const Consultants = ({ params }) => {
   const top = (data && data.sales && data.sales.top) || [];
   const process = new Map(((proc.data && proc.data.consultants) || []).map((r) => [r.userId, r]));
   const wait = loading && !data;
+  const sumOf = (key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
   const byEnrollments = [...rows].sort((x, y) => (y.enrollments || 0) - (x.enrollments || 0) || (y.conversations || 0) - (x.conversations || 0));
   // the fastest to answer first; who has no answer measured in the period stays out
   const byReply = rows.map((r) => ({ ...r, reply: (process.get(r.userId) || {}).replyMedianMin, sla: (process.get(r.userId) || {}).replyWithinSlaPct }))
@@ -189,6 +206,12 @@ const Consultants = ({ params }) => {
   };
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      <div className="pk-grid-4">
+        <CountStat id="team-enrollments" label="Matrículas da equipe" loading={wait} value={sumOf("enrollments")} hint={`${num(rows.filter((r) => r.enrollments > 0).length)} de ${num(rows.length)} consultores matricularam`} />
+        <CountStat id="team-conversations" label="Conversas atendidas" loading={wait} value={sumOf("conversations")} hint={share(sumOf("enrollments"), sumOf("conversations")) ? `${share(sumOf("enrollments"), sumOf("conversations"))} viraram matrícula` : "No período"} />
+        <CountStat id="team-people" label="Pessoas contatadas" loading={wait} value={sumOf("peopleContacted")} hint={share(sumOf("enrollments"), sumOf("peopleContacted")) ? `${share(sumOf("enrollments"), sumOf("peopleContacted"))} viraram matrícula` : "No período"} />
+        <CountStat id="team-stalled" label="Leads parados" tone={sumOf("stalled") ? "warn" : "good"} loading={wait} value={sumOf("stalled")} hint={`${num(sumOf("lost"))} perdidos no período`} />
+      </div>
       <div className="pk-grid-wide">
         <GlowPanel id="rank-enrollments" tone="good" title="Ranking de matrículas" sub="Quem mais matriculou no período. Clique no nome para ver os detalhes." loading={wait} empty={!rows.length} emptyText="Nenhum consultor com atividade no período.">
           <GlowRank rows={rankRows(byEnrollments, "name", "enrollments", { limit: 10, onClick: (r) => setDetail(r.userId) })} />
@@ -208,7 +231,7 @@ const Consultants = ({ params }) => {
                 const stop = pr && pr.stoppedAt && pr.stoppedAt[0];
                 return (
                   <tr key={r.userId} data-click="1" onClick={() => setDetail(r.userId)}>
-                    <td data-main="1" style={{ whiteSpace: "nowrap", fontWeight: 600 }}>{r.name}</td>
+                    <td data-main="1" style={{ whiteSpace: "nowrap", fontWeight: 600 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><Person name={r.name} size={28} />{r.name}</span></td>
                     <td className="r" data-label="Conversas">
                       <button type="button" className="pk-btn" style={{ padding: "2px 8px" }} onClick={(e) => { e.stopPropagation(); setStops(r); }} aria-label={`Onde as conversas de ${r.name} pararam`}>{num(r.conversations)}</button>
                     </td>
@@ -295,7 +318,7 @@ const Overview = ({ params, period }) => {
   const range = conversationRange(period);
   return (
     <div style={{ display: "grid", gap: 28 }}>
-      <Section title="Resultado do período" sub="Toque em um número para ver os dias dele no gráfico"><Results params={params} period={period} /></Section>
+      <Section title="Resultado do período" sub="As quatro frentes lado a lado, com a conversão de cada uma em matrícula. Toque em um número para ver só ele."><Results params={params} period={period} /></Section>
       <Section title="Agora" sub="Quem está trabalhando e o que precisa da sua atenção"><Now params={params} /></Section>
       <PoloProgress title="Progresso dos polos" />
       <Section title="Atendimento" sub="Atendimentos, mensagens, tempos e a fila"><ConversationsOverview days={range.days} date={range.date} /></Section>
@@ -346,31 +369,27 @@ const Training = ({ params }) => {
     setBusy(false);
   };
   return (
-    <ChartCard
-      title="Treinamento sugerido"
-      sub={data ? `A IA lê as conversas do dia uma vez por dia, sem CPF, telefone e nomes. Só aparece o que se repete em pelo menos ${data.minReviews} conversas.${data.enabled ? "" : " A leitura diária está desligada."}` : ""}
+    <GlowPanel id="training" title="Treinamento sugerido"
+      sub={data ? `A IA lê as conversas do dia uma vez por dia, sem CPF, telefone e nomes. Só aparece o que se repete em pelo menos ${data.minReviews} conversas.${data.enabled ? "" : " A leitura diária está desligada."}` : undefined}
       loading={loading && !data}
-      empty={!list.length}
-      emptyText="Ainda não há conversas lidas no período para sugerir treinamento."
-      action={list.some((x) => x.items.length) ? <button type="button" className={c.btnPrimary} disabled={busy} onClick={suggest} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><Workflow size={14} />{busy ? "Escrevendo…" : "Sugerir treinamento"}</button> : null}
-    >
-      <div style={{ display: "grid", gap: 10 }}>
+      action={list.some((x) => x.items.length) ? <button type="button" className={c.btnPrimary} disabled={busy} onClick={suggest} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><Workflow size={14} />{busy ? "Escrevendo…" : "Sugerir treinamento"}</button> : null}>
+      {!list.length && !(loading && !data) && <EmptyNote>Ainda não há conversas lidas no período para sugerir treinamento.</EmptyNote>}
+      <div className="gv-people">
         {list.map((x) => (
-          <div key={x.userId} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-              <b>{x.name}</b><span className={c.sub} style={{ marginTop: 0 }}>{num(x.reviewed)} conversa(s) lidas</span>
-            </div>
+          <article key={x.userId} className="gv-person-card">
+            <header>
+              <Person name={x.name} />
+              <b>{x.name}<small>{num(x.reviewed)} {x.reviewed === 1 ? "conversa lida" : "conversas lidas"}</small></b>
+            </header>
             {x.items.length ? (
-              <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 13.5, display: "grid", gap: 2 }}>
-                {x.items.map((it) => <li key={`${it.kind}-${it.key}`}>{it.text}</li>)}
-              </ul>
-            ) : <div className={c.sub}>Nada se repetiu no período.</div>}
-            {x.strengths && x.strengths.length > 0 && <div className={c.sub}>Pontos fortes: {x.strengths.join(", ")}</div>}
-            {tips[x.userId] && <div style={{ marginTop: 6, padding: "6px 10px", borderRadius: 8, background: "var(--surface-2)", fontSize: 13.5 }}><b>Sugestão:</b> {tips[x.userId]}</div>}
-          </div>
+              <ul>{x.items.map((it) => <li key={`${it.kind}-${it.key}`}>{it.text}</li>)}</ul>
+            ) : <div className={c.sub} style={{ marginTop: 0 }}>Nada se repetiu no período.</div>}
+            {x.strengths && x.strengths.length > 0 && <div className={c.sub} style={{ marginTop: 0 }}>Pontos fortes: {x.strengths.join(", ")}</div>}
+            {tips[x.userId] && <div className="gv-tip"><b>Sugestão:</b> {tips[x.userId]}</div>}
+          </article>
         ))}
       </div>
-    </ChartCard>
+    </GlowPanel>
   );
 };
 
@@ -442,14 +461,10 @@ export default function Statistics() {
   if (!manager) return <Redirect to="/meu-desempenho" />;
   const view = { geral: <Overview params={params} period={period} />, consultores: <Consultants params={params} />, polos: <PolosAndGoals params={params} period={period} />, treinamento: <Training params={params} /> };
   return (
-    <div className={`${c.page} dash-scope`}>
+    <div className={`${c.page} dash-scope gv-plain`}>
       <StatsHubBar />
-      <div className={c.head}>
-        <div style={{ minWidth: 0 }}>
-          <h1 className={c.h1}>{TITLES[tab]}</h1>
-          <div className={c.lead}>{LEADS[tab]}</div>
-        </div>
-        <PeriodPicker value={period} onChange={setPeriod} />
+      <div style={{ marginBottom: 20 }}>
+        <BoardHead title={TITLES[tab]} sub={LEADS[tab]}><PeriodPicker value={period} onChange={setPeriod} /></BoardHead>
       </div>
       {TABS.filter((k) => visited.has(k)).map((k) => (
         <div key={k} hidden={k !== tab}>{view[k]}</div>

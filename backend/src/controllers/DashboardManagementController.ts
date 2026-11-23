@@ -35,7 +35,8 @@ const DEPARTMENTS: Array<[string, string]> = [
 
 const BASE = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person'))`;
 
-const period = (req: Request) => {
+// `maxDays`: the panels read up to a semester (the cycle of goals); the feedback written by the AI stays within a month
+const period = (req: Request, maxDays = 31) => {
   const requestedDate = req.query.date ?? req.body?.date;
   const requestedDays = req.query.days ?? req.body?.days;
   const hasDate = requestedDate !== undefined && requestedDate !== null && requestedDate !== "";
@@ -49,7 +50,7 @@ const period = (req: Request) => {
   }
   const requestedRangeDays = Number(requestedDays);
   const hasDays = requestedDays !== undefined && requestedDays !== null && requestedDays !== "";
-  if (hasDays && (!Number.isInteger(requestedRangeDays) || requestedRangeDays < 1 || requestedRangeDays > 31)) throw new AppError("ERR_INVALID_PERIOD", 400);
+  if (hasDays && (!Number.isInteger(requestedRangeDays) || requestedRangeDays < 1 || requestedRangeDays > maxDays)) throw new AppError("ERR_INVALID_PERIOD", 400);
   const rangeDays = hasDays ? requestedRangeDays : 1;
   const endBounds = dayBounds(day);
   const start = dayBounds(shiftDays(endBounds.start, -(rangeDays - 1))).start;
@@ -211,7 +212,7 @@ const buildManagement = async (p: ReturnType<typeof period>): Promise<any> => {
 // Management view: every department, every attendant and every polo side by side. Administration and coordination only.
 export const management = async (req: Request, res: Response): Promise<Response> => {
   if (!isManagerRole(roleOf(req.user))) return res.status(403).json({ error: "ERR_NO_PERMISSION" });
-  const p = period(req);
+  const p = period(req, 186);
   const key = `dash-mgmt:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
   return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagement(p)));
 };
@@ -473,7 +474,7 @@ const buildManagerOverview = async (p: ReturnType<typeof period>): Promise<any> 
 
 export const managerOverview = async (req: Request, res: Response): Promise<Response> => {
   if (!isManagerRole(roleOf(req.user))) return res.status(403).json({ error: "ERR_NO_PERMISSION" });
-  const p = period(req);
+  const p = period(req, 186);
   const key = `dash-manager:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
   return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagerOverview(p)));
 };
