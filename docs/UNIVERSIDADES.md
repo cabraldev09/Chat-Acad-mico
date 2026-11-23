@@ -18,16 +18,16 @@ CRM → Configurações → **Universidades** (`/institutions`, gestão). Cada u
 
 Regras:
 - A padrão não pode ser desativada nem apagada. Para trocar, marque outra como padrão.
-- Uma universidade com números ligados não pode ser apagada.
+- Uma universidade com números, conversas, leads, campanhas, agentes, cursos, propostas ou configurações ligadas não pode ser apagada. Desative-a para encerrar o uso sem reclassificar o histórico.
 
 ## De onde vem a universidade
 
 - **Número:** escolhida no cadastro do número (Conexões), quando há duas ou mais universidades. Vazio quer dizer a padrão.
 - **Conversa (`Tickets.institutionId`):** herda do número ao ser criada.
 - **Lead (`Leads.institutionId`):** herda da conversa mais recente do contato, senão a padrão.
-- **Dados antigos:** a migração `20261222000009-institutions` pôs todos os números, conversas, leads, campanhas e agentes na
-  universidade padrão. A padrão é a que tem o nome de Configurações → Geral; se nenhuma tiver, a primeira; se não houver nenhuma, é
-  criada "Cruzeiro do Sul Virtual".
+- **Dados antigos:** registros sem `institutionId` pertencem à universidade padrão. A migração mantém esses campos vazios para evitar
+  atualizar tabelas operacionais inteiras e bloquear o atendimento no início do deploy. A padrão é a instituição ativa com o nome de
+  Configurações → Geral; se não houver, a primeira ativa; se nenhuma existir, é criada "Cruzeiro do Sul Virtual".
 
 ## Nome que a IA usa
 
@@ -42,6 +42,12 @@ As entradas que trabalham em nome de uma conversa rodam dentro de `withInstituti
 - copiloto.
 
 Com uma universidade só, ou numa conversa da padrão, nada muda.
+
+## Reversão da migração
+
+Antes de reverter `20261222000009-institutions`, faça rollback do código que lê e grava `institutionId`. A migração `down` é atômica,
+mas remove as escolhas de universidade, as configurações próprias e os vínculos com polos; não execute `down` com a versão nova do código
+em funcionamento.
 
 ## Próximas etapas
 

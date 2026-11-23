@@ -5802,6 +5802,13 @@ CREATE UNIQUE INDEX institutions_slug ON public."Institutions" USING btree (slug
 
 
 --
+-- Name: institutions_one_default; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX institutions_one_default ON public."Institutions" USING btree ((true)) WHERE ("isDefault" = true);
+
+
+--
 -- Name: kb_chunks_document_id; Type: INDEX; Schema: public; Owner: -
 --
 

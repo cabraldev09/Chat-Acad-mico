@@ -96,10 +96,10 @@ export const institutionFor = async (ctx: { institutionId?: number | null; ticke
 // one), the name of Configurações → Geral (what the team already typed)
 export const institutionNameFor = async (ctx: Parameters<typeof institutionFor>[0] = {}): Promise<string> => {
   const list = await allInstitutions();
-  if (list.length <= 1) return institutionName();
+  if (list.length <= 1) return cached;
   const inst = await institutionFor(ctx);
-  if (!inst || inst.isDefault) return institutionName();
-  return inst.shortName || inst.name || institutionName();
+  if (!inst || inst.isDefault) return cached;
+  return inst.shortName || inst.name || cached;
 };
 
 // a setting as the university of the conversation has it (InstitutionSettings), else the global one
@@ -117,7 +117,7 @@ export const getSettingFor = async (key: string, institutionId: number | null | 
 
 // runs the work of one conversation (an AI turn, a flow, the copilot) speaking for the university of that conversation
 export const withInstitutionOf = async <T>(ctx: Parameters<typeof institutionFor>[0], fn: () => Promise<T>): Promise<T> => {
-  let name: string | null = null;
-  try { name = await institutionNameFor(ctx); } catch (_) { name = null; }
-  return name && name !== cached ? scope.run(name, fn) : fn();
+  let name: string;
+  try { name = await institutionNameFor(ctx); } catch (_) { name = cached; }
+  return scope.run(name || cached, fn);
 };
