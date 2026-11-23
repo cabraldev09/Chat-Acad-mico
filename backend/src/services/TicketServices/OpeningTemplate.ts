@@ -23,6 +23,8 @@ const first = (name?: string | null): string => String(name || "").trim().split(
 export interface WindowState {
   official: boolean;
   open: boolean;
+  // the person never wrote to this number: the 24 hours did not "pass", they never started
+  never?: boolean;
   template: { name: string; language: string } | null;
 }
 
@@ -33,7 +35,7 @@ export const windowOf = async (ticket: Pick<Ticket, "id" | "whatsappId" | "segme
   if (channel !== "whatsapp_cloud") return { official: false, open: true, template: null };
   const last = await lastInboundAt(ticket.contactId, ticket.whatsappId);
   const side = sideOfSegment(ticket.segment) === "tutoria" ? "tutoria" : "atendimento";
-  return { official: true, open: inMessagingWindow(channel, last), template: await openingTemplateOf(side) };
+  return { official: true, open: inMessagingWindow(channel, last), never: !last, template: await openingTemplateOf(side) };
 };
 
 export const sendOpeningTemplate = async (ticketId: number, userId: number): Promise<void> => {

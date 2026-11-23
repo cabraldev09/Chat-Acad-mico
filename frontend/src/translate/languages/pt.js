@@ -653,7 +653,7 @@ const messages = {
         ERR_META_TEMPLATES_REFUSED: "A Meta recusou a consulta dos modelos. Confira o token da conexão da API oficial em Conexões (pode ter vencido ou estar sem permissão).",
         ERR_META_TEMPLATES_UNAVAILABLE: "Não foi possível consultar os modelos na Meta agora. Tente de novo em alguns minutos.",
         ERR_META_APP_NOT_CONFIGURED: "O app da Meta ainda não foi configurado. Peça ao administrador para cadastrar o ID e a chave do app em Conexões.",
-        ERR_REPLY_WINDOW_CLOSED: "Passaram mais de 24 horas desde a última mensagem desta pessoa. Pelo número oficial do WhatsApp (ou pelo Instagram) só dá para responder dentro de 24 h: use \"Enviar mensagem de abertura\" ou aguarde ela escrever de novo.",
+        ERR_REPLY_WINDOW_CLOSED: "Passaram mais de 24 horas desde a última mensagem desta pessoa. Pelo número oficial do WhatsApp (ou pelo Instagram) só dá para responder dentro de 24 h: aguarde ela escrever de novo.",
         ERR_TEAM_HANDOFF_TEAM: "Escolha se quer chamar a tutoria ou o consultor.",
         ERR_WRONG_SIDE: "Esta conversa é do outro lado (tutoria ou comercial) e cada perfil atende pelo seu número. Use \"Chamar a tutoria\" ou \"Chamar o consultor\".",
         ERR_USER_WRONG_SIDE: "Essa pessoa é do outro lado (tutoria ou comercial). Para envolver o outro lado, use \"Chamar a tutoria\" ou \"Chamar o consultor\".",
@@ -679,6 +679,7 @@ const messages = {
         ERR_LOST_REASON_REQUIRED: "Escolha o motivo da perda.",
         ERR_STAGE_HAS_LEADS: "Esta etapa tem leads. Mova-os antes de excluí-la.",
         ERR_FIELD_REQUIRED_name: "Informe o nome.",
+        ERR_CONTACT_NUMBER_INVALID: "Informe o número com o DDD, por exemplo 69 99999-0000. Espaços, traços e parênteses podem ficar.",
         ERR_NO_PERMISSION: "Você não tem permissão para fazer isso.",
         ERR_NO_OTHER_WHATSAPP: "Deve haver pelo menos um WhatsApp padrão.",
         ERR_NO_DEF_WAPP_FOUND:
