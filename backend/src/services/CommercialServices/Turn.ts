@@ -412,7 +412,8 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   if (fast && fast.intent !== "human") {
     // (the price asked again: the consultant now, with what is known; "quero me matricular" is never "insisting on the price")
     // (the wish to enroll said again instead of answering what was asked: the candidate is ready, the consultant takes it with what is known)
-    const insists = (fast.intent !== "enrollment" && priceAsks >= PRICE_ASKS) || (fast.intent === "enrollment" && !!state.slots.fastLane && /\?\s*$/.test(lastBot.trim()));
+    // (the question may be followed by a line of help, "Se você já é aluno… é só me dizer.", so it is looked for anywhere in the message)
+    const insists = (fast.intent !== "enrollment" && priceAsks >= PRICE_ASKS) || (fast.intent === "enrollment" && !!state.slots.fastLane && /\?/.test(lastBot));
     if (!insists && lanePending({ ...slotsHeard, fastLane: "x" })) return laneStep(fast.intent, fast.intent === "enrollment" ? ENROLL_BRIDGE : VALUE_BRIDGE_SHORT);
     const text = scriptTexts(d).handoff || FIXED.toProposal;
     const hook = await commercialTurn(d.ports, { userText: lastText, fast: fast.intent, patch: { fastLane: state.slots.fastLane || (fast.intent === "enrollment" ? "enrollment" : "price"), ...(heardNow.courseId ? { courseId: heardNow.courseId, courseName: heardNow.courseName } : {}) }, tools: [], hadText: true, replied: true, retract: false, nodeId: d.nodeId, holdValue: false });

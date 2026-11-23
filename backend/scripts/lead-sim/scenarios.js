@@ -46,6 +46,9 @@ const SC = [
     ...need(!/mudan[cç]as do MEC|Sobre a tutoria/i.test(all(t)), "aplicou o roteiro acadêmico inteiro a quem quer se matricular"),
     ...need(last(t).status === "handoff" && /encaminhar/.test(all(t)), "não encaminhou (ou encaminhou sem avisar)"),
     ...need(t[0].slots && t[0].slots.fastLane === "enrollment", "não classificou como intenção de matrícula")]],
+  ["C2", "repete que quer se matricular em vez de dizer o curso", "", ["quero me matricular hoje", "quero me matricular agora mesmo"], t => [
+    ...need(/curso/i.test(at(t, 0)) && t[0].status === "waiting", "não perguntou o curso na primeira mensagem"),
+    ...need(last(t).status === "handoff" && /consultor/.test(at(t, 1)), "segurou quem repetiu que quer se matricular")]],
   ["D", "segunda graduação e troca de curso", "", ["já tenho graduação em pedagogia e quero fazer nutrição", "ji parana", "sim", "na verdade prefiro farmácia", "sim", "sim", "Diego Farias Rocha", "529.982.247-25"], t => [
     ...need(t[0].slots && /Nutri/.test(String(t[0].slots.courseName)) && t[0].slots.entryType === "second_degree", "não separou o curso desejado da graduação anterior"),
     ...need(/Farm/.test(String((t[3].slots || {}).courseName)), "não atualizou o curso"),
