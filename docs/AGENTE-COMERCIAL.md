@@ -26,6 +26,10 @@ Agentes de IA → **Abrir central** (`/ai-agents/:id/central?secao=…`; `/melho
 ## O que é código e o que é IA
 A IA só entende a mensagem (intenção, dados) e escreve a resposta. Quem decide é o sistema, sempre igual:
 - **Respostas sem IA**: a abertura (com o próximo dado que falta), o pedido de uma pessoa e a pergunta de valor/bolsa/matrícula/proposta.
+- **Pediu valor, bolsa ou matrícula**: o agente não passa direto ao consultor. Diz que quem simula a bolsa é o consultor do polo e, antes,
+  trabalha o lead: apresenta o curso (duração e formato, dos dados do sistema) ou pergunta o que falta para isso, e pede nome completo e CPF
+  para a simulação. O consultor é chamado quando isso está feito, quando a pessoa insiste no valor ou, no máximo, depois de 2 respostas
+  (`Rules.holdsProposal`, `VALUE_HOLD`). O lead já vai para "Pronto para proposta" e a tarefa do consultor é criada na hora da pergunta.
 - **Funil**: o lead só anda para frente (Contato iniciado → Em atendimento → Qualificado → Aguardando histórico/Análise curricular →
   Análise concluída → Pronto para proposta). Atendimento humano, Follow-up e Sem interesse podem ser entrados de qualquer coluna antes
   da proposta. Uma coluna que a equipe escolheu à mão é respeitada.

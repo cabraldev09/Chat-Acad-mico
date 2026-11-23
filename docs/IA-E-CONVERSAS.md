@@ -151,3 +151,16 @@ O administrador pode revogar um arquivo pelo nome em **Operação e custos**; is
 A migração `20261110000001-operational-continuity` adiciona disponibilidade/capacidade, marcadores de alerta, chaves de tarefas e registros de envio/reserva. As tabelas novas usam RLS sem acesso pelo cliente Supabase. Publique backend e frontend juntos, aplique a migração e só então habilite as opções de envio desejadas.
 
 `npm run test:ai`, `npm run test:security`, `npm run test:channels`, i18n, build e lint são verificações de publicação. A integração cria e remove um banco PostgreSQL temporário e usa provedores simulados. Railway e o atualizador da VPS conferem os jobs `verificar` e `integracao` da revisão exata antes de publicar. O bloqueio precisa ser instalado no servidor e as regras de proteção da branch precisam exigir esses jobs. Um serviço externo que publica por conta própria, como a Vercel, precisa respeitar os mesmos checks nas configurações da conta.
+
+## Sem roteiro publicado a IA não atende
+
+Um agente que tem roteiro (criado por modelo ou com IA) e nunca o publicou não fala com as pessoas: sem o roteiro o modelo responderia
+livre, fora do processo ensinado. A conversa vai para a equipe (motivo `sem_roteiro`), o registro da conversa diz por quê e o responsável
+pelo agente é avisado. O cartão do agente mostra "Roteiro não publicado". Exceção: o rascunho feito a partir de um agente
+que já atende pelo formulário ("converter em blocos" e o roteiro aprendido) não muda nada até ser publicado
+(`RunAiAgent.scriptNotPublished`).
+
+Em qualquer modo, a lista de cursos ofertados (com o formato de cada um) vai ao modelo, e uma resposta que afirma um curso fora dela é
+trocada antes de chegar à pessoa (`CommercialServices/InventedCourse.ts`). Curso que deixou de ser ofertado é desligado em Cursos e
+materiais (coluna Oferta) ou em Configurações do CRM, aba Cursos.
+

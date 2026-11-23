@@ -146,7 +146,7 @@ const AiAgents = () => {
                 <div className={classes.chips}>
                   <span className={classes.chip} style={a.active ? { background: "rgba(22,163,74,.14)", color: "#15803d" } : undefined}>{a.active ? "Ligado" : "Desligado"}</span>
                   <span className={classes.chip}>{f ? kind.label : "Modo simples"}</span>
-                  {f && <span className={classes.chip} style={f.status === "published" ? undefined : { background: "rgba(217,119,6,.14)", color: "#b45309" }}>{f.status === "published" ? `Publicado v${f.version}${f.changed ? " · com mudanças" : ""}` : "Em edição"}</span>}
+                  {f && <span className={classes.chip} style={f.status === "published" ? undefined : { background: "rgba(217,119,6,.14)", color: "#b45309" }}>{f.status === "published" ? `Publicado v${f.version}${f.changed ? " · com mudanças" : ""}` : "Roteiro não publicado"}</span>}
                 </div>
                 <div className={classes.hint}>Atende: {a.queueId ? "uma fila" : ((a.whatsappIds || []).length || a.whatsappId) ? `${new Set([...(a.whatsappIds || []), a.whatsappId].filter(Boolean)).size === 1 ? "uma conexão" : `${new Set([...(a.whatsappIds || []), a.whatsappId].filter(Boolean)).size} conexões`}` : "todas as conversas sem atendente"}</div>
                 <div className={classes.go}>

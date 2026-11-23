@@ -136,9 +136,16 @@ export const courseMention = (text: string): string | null => {
   if (!t || t.length > 200) return null;
   const m = t.match(COURSE_NOUN);
   if (!m) return null;
-  const name = m[1].split(COURSE_STOP)[0].replace(/\s+/g, " ").trim();
+  // the format is not part of the name ("radiologia semi presencial" is the course Radiologia)
+  const name = m[1].split(COURSE_STOP)[0].replace(MODALITY_WORDS, " ").replace(/\s+/g, " ").trim();
   if (name.length < 4 || NOT_A_COURSE.test(name)) return null;
   return name;
+};
+const MODALITY_WORDS = /\b(semi ?presencial|presencial|ead|a distancia|distancia|online|on line|hibrido)\b/g;
+// the format the person asked for, when said: it only chooses between two offers of the same course
+export const modalityMention = (text: string): string | null => {
+  const t = plain(text);
+  return /\bsemi ?presencial|hibrido\b/.test(t) ? "SEMIPRESENCIAL" : /\b(ead|a distancia|online|on line)\b/.test(t) ? "EAD" : /\bpresencial\b/.test(t) ? "PRESENCIAL" : null;
 };
 
 // the person takes back what made the lead "ready for the proposal"
@@ -493,6 +500,15 @@ export const QUALIFIED_REPLIES = 2;
 export const hasBolsaData = (slots: Slots): boolean => !!slots.fullName && !!slots.cpfGiven;
 // (not when the question is for someone else: the data would be of another person, the consultant handles it)
 export const needsBolsaData = (slots: Slots): boolean => isQualified(slots) && !hasBolsaData(slots) && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
+
+// who asks the price, the scholarship or the enrollment is worked first: the agent presents the course (the value of it) and asks the data for the
+// consultant to simulate the scholarship; the consultant is called once that is done, or after VALUE_HOLD answers at most (never a loop)
+export const VALUE_HOLD = 2;
+export const holdsProposal = (slots: Slots): boolean =>
+  !slots.enrolledStudent && Number(slots.valueHeld || 0) < VALUE_HOLD && (!slots.courseExplained || needsBolsaData(slots));
+// the words for the moment of the price: values come from the consultant, and before that the course
+export const VALUE_BRIDGE = "Os valores e as bolsas dependem da sua situação e do seu polo, por isso quem simula a melhor bolsa para você é o consultor do seu polo. Vou encaminhar para ele, mas antes quero te mostrar o que o curso oferece.";
+export const VALUE_BRIDGE_SHORT = "Os valores e as bolsas dependem da sua situação e do seu polo, por isso quem simula a melhor bolsa para você é o consultor do seu polo.";
 
 export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES, requires?: readonly string[]): boolean => {
   if (!after || !isQualified(slots, requires)) return false;

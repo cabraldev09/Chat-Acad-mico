@@ -6,7 +6,7 @@ vi.mock("../../../src/models/ChatbotNode", () => ({ default: {} }));
 import { validateGraph } from "../../../src/services/FlowServices/Graph";
 import { cleanStage } from "../../../src/services/FlowServices/StageSpec";
 import { COMMERCIAL_KB, COMMERCIAL_PERSONA, COMMERCIAL_TEMPLATE_KEY, commercialGraph } from "../../../src/services/CommercialServices/Template";
-import { isGreeting, openingText, stageFieldsDone } from "../../../src/services/CommercialServices/Rules";
+import { isGreeting, openingText, stageFieldsDone, holdsProposal, VALUE_HOLD, VALUE_BRIDGE, VALUE_BRIDGE_SHORT } from "../../../src/services/CommercialServices/Rules";
 
 // The ready agent "Comercial — Graduação" (the run in the simulator, with the funnel moving, is in the end-to-end checks).
 
@@ -276,8 +276,14 @@ describe("the hook sends a student to the right team, asking the city once", () 
     const ports = fakePorts();
     await commercialTurn(ports, { userText: "preciso de uma declaração", fast: "secretary", tools: [], hadText: true, replied: true });
     const price = await commercialTurn(ports, { userText: "quanto custa outro curso?", fast: "price", tools: [], hadText: true, replied: true });
-    expect(price.exit).toBe("proposta");
+    // back to sales: the secretary is not called; the course is worked first and the consultant follows (at most VALUE_HOLD answers later)
+    expect(price.exit).toBeNull();
+    expect(price.trace.readyForProposal).toBe(true);
+    let last = price;
+    for (let i = 1; i <= VALUE_HOLD && last.exit === null; i++) last = await commercialTurn(ports, { userText: "e o valor?", fast: "price", tools: [], hadText: true, replied: true });
+    expect(last.exit).toBe("proposta");
   });
+
   it("a person asked for wins over the sector", async () => {
     const r = await commercialTurn(fakePorts({ city: "Vilhena" }), { userText: "quero falar com uma pessoa", fast: "human", tools: [], hadText: true, replied: true });
     expect(r.exit).toBe("human");
@@ -317,5 +323,32 @@ describe("\"sou aluno\" alone is an existing student", () => {
     for (const t of ["sou aluno", "Sou aluna", "eu sou aluno da cruzeiro", "já sou aluno", "sou aluno, preciso de ajuda"]) expect(interestOf(t), t).toBe("aluno");
     expect(interestOf("sou aluno de outra faculdade")).not.toBe("aluno");
     expect(interestOf("sou aluno do ensino médio")).not.toBe("aluno");
+  });
+});
+
+describe("who asks the price is worked before the consultant", () => {
+  const qualified = { courseName: "Direito", city: "Porto Velho", entryType: "first_degree" };
+  it("the course not presented yet holds the proposal, the data for the scholarship too", () => {
+    expect(holdsProposal({ ...qualified })).toBe(true);
+    expect(holdsProposal({ ...qualified, courseExplained: true })).toBe(true);
+    expect(holdsProposal({ ...qualified, courseExplained: true, fullName: "Maria Souza", cpfGiven: true })).toBe(false);
+    expect(holdsProposal({ ...qualified, courseExplained: true, bolsaDataAsked: 2 })).toBe(false);
+    expect(holdsProposal({ ...qualified, valueHeld: VALUE_HOLD })).toBe(false);
+    expect(holdsProposal({ enrolledStudent: true })).toBe(false);
+  });
+  it("the hook holds the exit while the course is presented, and hands over when it is done", async () => {
+    const ports = fakePorts({ ...qualified });
+    const first = await commercialTurn(ports, { userText: "qual o valor?", fast: "price", tools: [], hadText: true, replied: true, holdValue: true, patch: { courseExplained: true } });
+    expect(first.exit).toBeNull();
+    expect(first.trace.readyForProposal).toBe(true);
+    const done = await commercialTurn(ports, { userText: "Maria Souza", intent: "proposal", fast: "proposal", tools: [], hadText: true, replied: true, patch: { fullName: "Maria Souza", cpfGiven: true } });
+    expect(done.exit).toBe("proposta");
+  });
+  it("a request for a person is never held", async () => {
+    const r = await commercialTurn(fakePorts({ ...qualified, readyForProposal: true }), { userText: "quero falar com uma pessoa", fast: "human", tools: [], hadText: true, replied: true });
+    expect(r.exit).toBe("human");
+  });
+  it("the words never carry a value", () => {
+    [VALUE_BRIDGE, VALUE_BRIDGE_SHORT].forEach(t => { expect(t).not.toMatch(/R\$|\d/); expect(t).toMatch(/consultor do seu polo/); });
   });
 });

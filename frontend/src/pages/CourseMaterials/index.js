@@ -197,8 +197,21 @@ const CourseList = () => {
   const [q, setQ] = useState("");
   const [only, setOnly] = useState("");
   useEffect(() => { api.get("/course-materials").then(({ data: d }) => setData(d)).catch((e) => { toastError(e); setData({ courses: [] }); }); }, []);
-  const list = useMemo(() => (data ? data.courses : []).filter((c) => (!q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase())) && (!only || (only === "waiting" ? c.waiting > 0 : only === "noText" ? !c.approvedText : c.mec.formato === only))), [data, q, only]);
+  const list = useMemo(() => (data ? data.courses : []).filter((c) => (!q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase())) && (!only || (only === "off" ? c.active === false : only === "waiting" ? c.waiting > 0 : only === "noText" ? !c.approvedText : c.mec.formato === only))), [data, q, only]);
   const waiting = data ? data.courses.filter((c) => c.waiting > 0).length : 0;
+  const [busyId, setBusyId] = useState(null);
+  // a course that is no longer offered is turned off here: the AI, the forms and the lists stop showing it at once
+  const toggle = async (c) => {
+    const next = c.active === false;
+    if (!next && !window.confirm(`Deixar de ofertar ${c.name}? A IA e os formulários param de oferecer este curso. Você pode voltar atrás quando quiser.`)) return;
+    setBusyId(c.id);
+    try {
+      await api.put(`/courses/${c.id}/active`, { active: next });
+      setData((d) => ({ ...d, courses: d.courses.map((x) => (x.id === c.id ? { ...x, active: next } : x)) }));
+      toast.success(next ? `${c.name} voltou a ser ofertado.` : `${c.name} não é mais ofertado.`);
+    } catch (e) { toastError(e); }
+    setBusyId(null);
+  };
   return (
     <div className="space-y-5">
       <div>
@@ -209,24 +222,32 @@ const CourseList = () => {
         <span className="relative block w-full sm:w-80"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar curso" aria-label="Buscar curso" className="h-10 bg-white pl-9" /></span>
         <select value={only} onChange={(e) => setOnly(e.target.value)} aria-label="Filtrar" className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm">
           <option value="">Todos os cursos</option><option value="EAD">EAD</option><option value="Semipresencial">Semipresencial</option><option value="Presencial">Presencial</option>
-          <option value="waiting">Com print a confirmar</option><option value="noText">Sem texto aprovado</option>
+          <option value="waiting">Com print a confirmar</option><option value="noText">Sem texto aprovado</option>{data && data.canManage ? <option value="off">Não ofertados</option> : null}
         </select>
       </div>
       {!data ? <p className="text-sm text-slate-500">Carregando…</p> : (
         <Card className="overflow-hidden"><div className="overflow-x-auto">
           <table className="w-full min-w-[44rem] text-left text-sm">
-            <thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-3 font-medium">Curso</th><th className="px-4 py-3 font-medium">Formato</th><th className="px-4 py-3 font-medium">Prática exigida</th><th className="px-4 py-3 font-medium">Texto aprovado</th><th className="px-4 py-3 font-medium">Prints</th></tr></thead>
+            <thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-3 font-medium">Curso</th><th className="px-4 py-3 font-medium">Formato</th><th className="px-4 py-3 font-medium">Prática exigida</th><th className="px-4 py-3 font-medium">Texto aprovado</th><th className="px-4 py-3 font-medium">Prints</th>{data.canManage ? <th className="px-4 py-3 font-medium">Oferta</th> : null}</tr></thead>
             <tbody>
               {list.map((c) => (
-                <tr key={c.id} onClick={() => history.push(`/cursos/${c.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
+                <tr key={c.id} onClick={() => history.push(`/cursos/${c.id}`)} className={cn("cursor-pointer border-b last:border-0 hover:bg-muted/50", c.active === false && "opacity-60")}>
                   <td className="px-4 py-3 font-medium text-slate-900">{c.name}{c.semesters ? <span className="ml-2 text-xs font-normal text-muted-foreground">{c.semesters} sem.</span> : null}</td>
                   <td className="px-4 py-3"><Badge variant="outline" className={cn("border-transparent", FORMAT_TONE[c.mec.formato])}>{c.mec.formato}</Badge></td>
                   <td className="px-4 py-3 text-slate-600">{c.mec.semPratica ? "Sem aulas práticas" : `${c.mec.percentualPresencial}% presencial`}</td>
                   <td className="px-4 py-3 text-slate-600">{c.approvedText ? "Confirmado" : "Padrão do formato"}</td>
                   <td className="px-4 py-3">{c.prints}{c.waiting ? <span className="ml-2 rounded bg-status-warning-bg px-1.5 py-0.5 text-xs text-status-warning">{c.waiting} a confirmar</span> : null}</td>
+                  {data.canManage ? (
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap text-xs font-semibold" style={{ color: c.active === false ? "#64748b" : "#15803d" }}>
+                        <input type="checkbox" className="size-4" checked={c.active !== false} disabled={busyId === c.id} onChange={() => toggle(c)} aria-label={`Ofertar ${c.name}`} />
+                        {c.active === false ? "Não ofertado" : "Ofertado"}
+                      </label>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
-              {list.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">Nenhum curso para este filtro.</td></tr>}
+              {list.length === 0 && <tr><td colSpan={data.canManage ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">Nenhum curso para este filtro.</td></tr>}
             </tbody>
           </table>
         </div></Card>

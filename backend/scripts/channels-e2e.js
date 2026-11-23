@@ -3802,6 +3802,14 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // 3) a real conversation: the agent on, the flow published
       await http.put(`/ai-agents/${agentId}`, { active: true, whatsappId: cid, apiKey: "sk-ant-test", waitSeconds: 0, provider: "anthropic", model: "claude-haiku-5-5" }, auth());
+      // the agent is on and its script was never published: it does not talk to the lead (no model, no free answer), the team takes the conversation
+      {
+        const NP = "5511920000259", before = graph.sent.length, calls = anthropic.requests.length;
+        await inboundCloud(NP, "wamid.com-np1", "Gostaria de saber sobre os cursos na área da saúde");
+        await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(NP)}`) === "error" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(NP)}`) === "0", 20000, "without a published script the conversation goes to the team");
+        assert(anthropic.requests.length === calls, "the model answered a lead without a published script");
+        assert(!sentTexts(before).some(t => /Enfermagem|Medicina|semipresencia/i.test(t)), `a free answer reached the lead: ${sentTexts(before)}`);
+      }
       assert((await http.post(`/flows/${flowId}/publish`, {}, auth())).status === 200, "publish the commercial flow");
       const texts = since => graph.sent.slice(since).filter(x => x.path === "/PN1/messages" && x.body && x.body.type === "text" && x.body.text).map(x => x.body.text.body);
       // the rule "a qualified lead goes to the consultant after a few answers" has its own scenario (R): the others keep talking
@@ -3857,9 +3865,15 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!/Tutoria|Plataforma de estudo/.test(sysOfMec.split("Base aprovada")[1] || ""), "passages of other subjects reached the prompt");
 
       llm = anthropic.requests.length;
-      out = await say(A, "wamid.com-a5", "qual o valor da mensalidade? tem bolsa?", t => t.some(x => /consultor/.test(x)), "the handoff for the proposal");
+      // the price is worked first: the values come from the consultant, who simulates the scholarship with the name and the CPF asked now
+      out = await say(A, "wamid.com-a5", "qual o valor da mensalidade? tem bolsa?", t => t.some(x => /consultor do seu polo/.test(x)), "the price is worked before the consultant");
       assert(anthropic.requests.length === llm, "a question about price should not call the model");
       assert(!out.some(x => /R\$|\d+,\d{2}/.test(x)), `a value was told: ${out}`);
+      if (/CPF/.test(out.join(" "))) {
+        assert(!/^handoff|^done/.test(runOf(A)) && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(A)}`) === "1", "handed over before the data for the scholarship");
+        assert(Number(slotsA().valueHeld) === 1, `the hold was not counted: ${JSON.stringify(slotsA())}`);
+        out = await say(A, "wamid.com-a5b", "Ana Paula Souza, CPF 714.602.381-84", t => t.some(x => /simular as bolsas/.test(x)), "the data for the scholarship, then the consultant");
+      }
       await waitFor(() => /^handoff|^done/.test(runOf(A)), 8000, "the flow hands over");
       assert(leadStage(A) === stageName("ready_for_proposal"), `column after the price: ${leadStage(A)}`);
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(A)} AND title='Gerar e apresentar proposta'`)) === 1, "the proposal task is missing or repeated");
@@ -3986,9 +4000,10 @@ const postMeta = (id, payload, secret, badSig) => {
       llm = anthropic.requests.length;
       mk = graph.sent.length;
       await media(J, "wamid.com-j2", "audio", { id: "MEDIAOGG3", mime_type: "audio/ogg" });
-      await waitFor(() => texts(mk).some(x => /consultor/.test(x)), 20000, "the voice note was understood (price question)");
+      await waitFor(() => texts(mk).some(x => /consultor do seu polo/.test(x)), 20000, "the voice note was understood (price question)");
       assert(anthropic.transcriptions >= 1 && anthropic.requests.length === llm, "the voice note was not transcribed, or the model was called for a price question");
-      await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(J)}`) === "proposal", 8000, "reason proposal (J)");
+      // the price is worked before the consultant: the lead is ready for the proposal and the hold was counted
+      await waitFor(() => { const sl = JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(J)}`) || "{}"); return Number(sl.valueHeld) === 1; }, 8000, "the price question held for the course (J)");
       sql(`DELETE FROM Settings WHERE key='ai_transcribe_audio'`);
 
       // K) the model writes a price: it never reaches the person, the lead goes to the proposal
@@ -4088,15 +4103,23 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // "Quanto custa Criminologia?": the course is recognised in the words, the price goes to the consultant with the course already in the brief
       const Q2 = "5511920000241";
-      out = await say(Q2, "wamid.qs-2", "Quanto custa Criminologia?", t => t.some(x => /consultor/.test(x)), "price handed to the consultant");
+      // the course is worked first (the consultant simulates the scholarship); whoever insists on the price is handed over
+      out = await say(Q2, "wamid.qs-2", "Quanto custa Criminologia?", t => t.some(x => /consultor do seu polo/.test(x)), "the price is worked before the consultant");
       assert(out.some(x => /Estela, assistente virtual/.test(x)), `no presentation before the answer: ${out}`);
       assert(!out.some(x => /R\$|mensalidade de/.test(x)), "a price was given");
-      await waitFor(() => slotsOfNumber(Q2).courseName === "Criminologia" && handoffOf(Q2) === "proposal", 15000, "the course recognised and the handoff routed");
+      await waitFor(() => slotsOfNumber(Q2).courseName === "Criminologia", 15000, "the course recognised");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q2)}`) === "1" && !handoffOf(Q2), `handed over before the course was worked: ${handoffOf(Q2)}`);
+      out = await say(Q2, "wamid.qs-2b", "Mas qual o valor da mensalidade?", t => t.some(x => /consultor/.test(x)), "the insisted price goes to the consultant");
+      assert(!out.some(x => /R\$|mensalidade de/.test(x)), "a price was given");
+      await waitFor(() => handoffOf(Q2) === "proposal", 15000, "the handoff routed");
       assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(Q2)} AND type='handoff' AND note LIKE '%Curso:%Criminologia%'`)) >= 1, "the brief does not carry the course");
 
       // "Quero me matricular hoje": straight to the consultant, even with nothing else known
       const Q3 = "5511920000242";
-      await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor/.test(x)), "enrollment handed over");
+      // "Quero me matricular hoje": the agent first asks the course to present it; insisting goes to the consultant
+      out = await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor do seu polo/.test(x)), "enrollment worked first");
+      assert(/curso/i.test(out.join(" ")) && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "1", `the course was not asked: ${out}`);
+      await say(Q3, "wamid.qs-3b", "Quero me matricular agora mesmo", t => t.some(x => /consultor/.test(x)), "enrollment handed over");
       await waitFor(() => handoffOf(Q3) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "0", 15000, "the AI is out after the handoff");
 
       // "Já sou aluno": the system asks which team (tutoring or secretary) instead of selling
@@ -4136,6 +4159,20 @@ const postMeta = (id, payload, secret, badSig) => {
       out = await say(Q9, "wamid.qs-9", "Quero falar com uma pessoa", t => t.some(x => /consultor/.test(x)), "the handoff is said");
       assert(!out.some(x => /assumiu|já está com/.test(x)), `the lead was told someone took it: ${out}`);
       assert(anthropic.requests.length === llm0, "the model was called in the scenarios that need none");
+
+      // the real conversation of 23/11: the area asked for lists only what the catalogue has (never Medicina or Enfermagem), with the format;
+      // "radiologia semi presencial" is the course Radiologia, not a course that is not offered
+      await http.post("/courses", { name: "Cst Em Radiologia", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 6, monthlyFee: 400, active: true }, auth());
+      const QA = "5511920000258";
+      await say(QA, "wamid.qs-a1", "Boa tarde", t => t.some(x => /Qual curso/.test(x)), "greeting before the area");
+      const llmArea = anthropic.requests.length;
+      out = await say(QA, "wamid.qs-a2", "Gostaria de saber sobre os cursos na área da saúde", t => t.some(x => /área de saúde/.test(x)), "the area is answered from the catalogue");
+      assert(anthropic.requests.length === llmArea, "the area question should not call the model");
+      assert(/Radiologia \(tecnólogo\): semipresencial/.test(out.join("\n")), `the health courses of the catalogue are missing: ${out}`);
+      assert(!/Medicina|Enfermagem|Cst Em/.test(out.join("\n")), `a course that is not offered, or a raw name, was told: ${out}`);
+      out = await say(QA, "wamid.qs-a3", "Tem o curso de radiologia semi presencial?", t => t.length > 0, "radiologia is found");
+      assert(!/não oferece/.test(out.join("\n")), `an offered course was denied: ${out}`);
+      await waitFor(() => /radiologia/i.test(String(slotsOfNumber(QA).courseName || "")), 15000, "the course Radiologia recognised");
 
       // "Sou de Cidade Estela": the city is recognised in the words from the polos of the system (the model only writes the answer)
       const Q10 = "5511920000249";

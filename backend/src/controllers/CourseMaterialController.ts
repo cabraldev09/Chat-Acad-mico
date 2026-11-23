@@ -52,7 +52,8 @@ const userNames = async (rows: CourseMaterial[]): Promise<Map<number, string>> =
 // the list of the courses with what the MEC asks of each, the text in use and how many prints wait for a confirmation
 export const index = async (_req: Request, res: Response): Promise<Response> => {
   const [courses, rules, materials] = await Promise.all([
-    Course.findAll({ where: { active: true } as any, attributes: ["id", "name", "modality", "semesters"], order: [["name", "ASC"]] }),
+    // the management also sees the courses that are no longer offered, to turn them on again; the others only see what is offered
+    Course.findAll({ where: (manager(_req) ? {} : { active: true }) as any, attributes: ["id", "name", "modality", "semesters", "active"], order: [["name", "ASC"]] }),
     CourseRegulation.findAll({ where: { intakeTerm: null } as any }),
     CourseMaterial.findAll({ attributes: ["id", "courseId", "status"] })
   ]);
@@ -64,9 +65,19 @@ export const index = async (_req: Request, res: Response): Promise<Response> => 
     const mec = mecRequirementOf(await areaOfCourse(c), r);
     const own = materials.filter(m => m.courseId === c.id);
     const approved = r && r.commercialApprovedText && !isStandardText(r.commercialApprovedText) ? r.commercialApprovedText : null;
-    out.push({ id: c.id, name: c.name, modality: c.modality, semesters: c.semesters || null, mec, approvedText: approved, prints: own.length, waiting: own.filter(m => m.status === "pending").length });
+    out.push({ id: c.id, name: c.name, active: c.active !== false, modality: c.modality, semesters: c.semesters || null, mec, approvedText: approved, prints: own.length, waiting: own.filter(m => m.status === "pending").length });
   }
   return res.json({ courses: out, canManage: manager(_req) });
+};
+
+// a course that is no longer offered is turned off (never deleted: leads and enrollments point to it). The AI, the forms and the lists
+// only show what is on.
+export const setActive = async (req: Request, res: Response): Promise<Response> => {
+  mustManage(req);
+  const course = await Course.findByPk(req.params.id);
+  if (!course) throw new AppError("Curso não encontrado.", 404);
+  await course.update({ active: req.body?.active === true });
+  return res.json({ id: course.id, active: course.active });
 };
 
 export const list = async (req: Request, res: Response): Promise<Response> => {

@@ -11,7 +11,7 @@ import { slotsOf, missingSlots } from "./Tools";
 import { briefIfCommercial } from "../CommercialServices/Brief";
 import { HandoffWhy, Routed, WHY_TEXT, routeToCommercial } from "../CommercialServices/Router";
 
-export type HandoffReason = "pedido" | "limite_turnos" | "limite_tokens" | "qualificado" | "sem_resposta" | "desconhecido";
+export type HandoffReason = "pedido" | "limite_turnos" | "limite_tokens" | "qualificado" | "sem_resposta" | "desconhecido" | "sem_roteiro";
 
 const REASON: Record<HandoffReason, string> = {
   pedido: "o aluno pediu para falar com uma pessoa ou o assunto exige um humano",
@@ -19,7 +19,8 @@ const REASON: Record<HandoffReason, string> = {
   limite_tokens: "o limite diário de uso da IA foi atingido",
   qualificado: "todos os dados necessários foram coletados",
   sem_resposta: "a IA não conseguiu responder",
-  desconhecido: "a pergunta não está na base de conhecimento"
+  desconhecido: "a pergunta não está na base de conhecimento",
+  sem_roteiro: "o roteiro do agente não está publicado: a IA não atende sem ele"
 };
 
 const summaryOf = (agent: AiAgent, ticket: Ticket): string => {
@@ -35,7 +36,7 @@ const summaryOf = (agent: AiAgent, ticket: Ticket): string => {
 
 // Passes the conversation to the team with everything the AI learned, so nobody asks again.
 const WHY_OF_REASON: Record<HandoffReason, HandoffWhy> = {
-  pedido: "human_request", limite_turnos: "limit_turns", limite_tokens: "limit_tokens", qualificado: "proposal", sem_resposta: "error", desconhecido: "unknown"
+  pedido: "human_request", limite_turnos: "limit_turns", limite_tokens: "limit_tokens", qualificado: "proposal", sem_resposta: "error", desconhecido: "unknown", sem_roteiro: "error"
 };
 
 export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: HandoffReason, question?: string, why?: HandoffWhy): Promise<Routed | null> => {
