@@ -1,3 +1,4 @@
+import { withInstitutionOf } from "../../helpers/Institution";
 import { robotMayTalk } from "../../helpers/AgentScope";
 import { Op } from "sequelize";
 
@@ -153,7 +154,8 @@ const lastUserText = async (ticketId: number): Promise<string> => {
 };
 
 // The person stopped writing while an AI stage was waiting: the AI answers the whole burst once.
-export const resumeStageRun = async (ticketId: number): Promise<void> => {
+export const resumeStageRun = async (ticketId: number): Promise<void> => withInstitutionOf({ ticketId }, () => resumeStageRunNow(ticketId));
+const resumeStageRunNow = async (ticketId: number): Promise<void> => {
   const run = await ChatFlowRun.findOne({ where: { ticketId, status: "waiting" }, order: [["id", "DESC"]] });
   if (!run) return;
   const flow = await ChatFlow.findByPk(run.flowId);

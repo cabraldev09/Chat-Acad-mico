@@ -36,8 +36,9 @@ export const loadDefaultCatalog = async (opts: { force?: boolean } = {}): Promis
   const lines = readFileSync(CSV, "utf8").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   lines.shift();
 
-  let inst = await Institution.findOne({ where: { name: INSTITUTION.name } });
-  if (!inst) inst = await Institution.create({ ...INSTITUTION, active: true } as any);
+  // the catalogue is of the Cruzeiro do Sul Virtual: its institution, else the default university (never a second Cruzeiro next to it)
+  let inst = (await Institution.findOne({ where: { name: INSTITUTION.name } })) || (await Institution.findOne({ where: { isDefault: true } as any }));
+  if (!inst) inst = await Institution.create({ ...INSTITUTION, active: true, isDefault: !(await Institution.count()) } as any);
 
   const result: CatalogResult = { created: 0, updated: 0, skipped: 0, total: 0 };
   for (const line of lines) {

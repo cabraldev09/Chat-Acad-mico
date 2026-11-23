@@ -11,7 +11,8 @@ import {
   BelongsToMany,
   AutoIncrement,
   Default,
-  DataType
+  DataType,
+  BeforeCreate
 } from "sequelize-typescript";
 
 import Contact from "./Contact";
@@ -24,6 +25,17 @@ import TicketTag from "./TicketTag";
 
 @Table
 class Ticket extends Model<Ticket> {
+  // the university of the conversation: the one of the number it came through (helpers/Institution)
+  @Column
+  institutionId: number;
+
+  @BeforeCreate
+  static async setInstitution(ticket: Ticket): Promise<void> {
+    if (ticket.institutionId) return;
+    const { institutionIdForWhatsapp } = await import("../helpers/Institution");
+    ticket.institutionId = (await institutionIdForWhatsapp(ticket.whatsappId)) as number;
+  }
+
   @PrimaryKey
   @AutoIncrement
   @Column

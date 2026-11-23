@@ -470,7 +470,7 @@ const CrmSettings = () => {
       <MainHeader><Title>Funil, cursos e propostas</Title></MainHeader>
       <Paper variant="outlined" style={{ marginBottom: 8 }}>
         <Tabs value={tab} onChange={(e, v) => setTab(v)}>
-          <Tab label="Etapas do funil" /><Tab label="Cursos" /><Tab label="Instituições" /><Tab label="Modelos de proposta" />
+          <Tab label="Etapas do funil" /><Tab label="Cursos" /><Tab label="Universidades" /><Tab label="Modelos de proposta" />
         </Tabs>
       </Paper>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -543,17 +543,33 @@ const CrmSettings = () => {
           </>
         )}
         {tab === 2 && (
-          <CrudPage embedded title="Instituições" endpoint="/institutions" addLabel="Nova instituição" socketEvent="institution"
-            emptyText="Cadastre a instituição (nome, CNPJ e logo) que aparece no cabeçalho da proposta."
+          <CrudPage embedded title="Universidades" endpoint="/institutions" addLabel="Nova universidade" socketEvent="institution" dialogWidth="md"
+            emptyText="Cadastre cada universidade do grupo: nome, logo e marca. A padrão vale para tudo que não disser outra."
             fields={[
-              { name: "name", label: "Nome da instituição", required: true },
+              { name: "name", label: "Nome da universidade", required: true },
+              { name: "shortName", label: "Nome curto", helper: "Como a IA e as mensagens chamam a universidade. Ex.: Cruzeiro do Sul Virtual." },
               { name: "cnpj", label: "CNPJ" },
+              { name: "slug", label: "Endereço das páginas públicas", helper: "Só letras, números e hífen. Vazio: gerado pelo nome." },
               { name: "logoFile", label: "Logo (PNG, JPG ou SVG)", type: "file" },
+              { name: "brandColor", label: "Cor da marca", type: "color" },
+              { name: "site", label: "Site" },
+              { name: "mailFromName", label: "Nome do remetente dos e-mails" },
+              { name: "mailFrom", label: "E-mail do remetente", helper: "Precisa ser um endereço verificado no serviço de e-mail. Vazio: usa o remetente geral." },
+              { name: "footer", label: "Rodapé das páginas e documentos", type: "textarea", rows: 2 },
+              { name: "isDefault", label: "Universidade padrão (números e leads sem universidade ficam com ela)", type: "switch" },
               { name: "active", label: "Ativa", type: "switch", default: true },
             ]}
             columns={[
               { header: "Logo", render: (r) => (r.logoFile ? <img alt="" src={r.logoUrl} style={{ maxHeight: 32, maxWidth: 120 }} /> : "—") },
-              { header: "Instituição", field: "name" }, { header: "CNPJ", render: (r) => r.cnpj || "—" },
+              { header: "Universidade", render: (r) => (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  {r.brandColor && <span aria-hidden style={{ width: 10, height: 10, borderRadius: 999, background: r.brandColor, flex: "none" }} />}
+                  <span>{r.name}{r.shortName && r.shortName !== r.name ? <span style={{ color: "#64748b" }}>{` (${r.shortName})`}</span> : null}</span>
+                  {r.isDefault && <b style={{ fontSize: 11, color: "#0f766e", border: "1px solid #99f6e4", borderRadius: 999, padding: "1px 8px" }}>Padrão</b>}
+                </span>
+              ) },
+              { header: "Endereço", render: (r) => (r.slug ? `/${r.slug}` : "—") },
+              { header: "CNPJ", render: (r) => r.cnpj || "—" },
               { header: "Ativa", render: (r) => <ActiveToggle key={r.id} row={r} endpoint="/institutions" /> },
             ]} />
         )}

@@ -28,6 +28,10 @@ class AiAgent extends Model<AiAgent> {
   @Column
   name: string;
 
+  // the university of the group this belongs to (see models/Institution)
+  @Column
+  institutionId: number;
+
   @Default("anthropic")
   @Column
   provider: string;

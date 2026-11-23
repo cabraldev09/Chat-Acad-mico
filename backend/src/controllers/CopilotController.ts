@@ -1,3 +1,4 @@
+import { withInstitutionOf } from "../helpers/Institution";
 import { getIO } from "../libs/socket";
 import { createHash } from "crypto";
 import { Request, Response } from "express";
@@ -45,7 +46,8 @@ const ticketOf = async (req: Request): Promise<Ticket> => {
   return ticket;
 };
 const eligible = (ticket: Ticket): boolean => !ticket.isGroup && !ticket.isHistorical && ticket.status !== "closed";
-export const show = async (req: Request, res: Response) => {
+export const show = (req: Request, res: Response) => withInstitutionOf({ ticketId: Number(req.params.ticketId) || null }, () => showNow(req, res));
+const showNow = async (req: Request, res: Response) => {
   const ticket = await ticketOf(req);
   const config = await configOf();
   if (!eligible(ticket) || !config.enabled || !policyFor(config, ticket.whatsappId).enabled) return res.json({ enabled: false });
@@ -107,7 +109,8 @@ const briefJson = (r: CopilotRequest | null) => {
   try { return JSON.parse(r.text); } catch { return null; }
 };
 
-export const suggest = async (req: Request, res: Response) => {
+export const suggest = (req: Request, res: Response) => withInstitutionOf({ ticketId: Number(req.params.ticketId) || null }, () => suggestNow(req, res));
+const suggestNow = async (req: Request, res: Response) => {
   const ticket = await ticketOf(req);
   const mode = typeof req.body?.mode === "string" && MODES[req.body.mode] ? String(req.body.mode) : null;
   const config = await configOf();
@@ -165,7 +168,8 @@ export const suggest = async (req: Request, res: Response) => {
 
 // The whole story of the client summed up by the AI, with the next step: what a consultant needs when the client comes back or arrives
 // by a transfer. Counted in the same daily limits as the suggestions, and made once per new message (the same story is not paid twice).
-export const brief = async (req: Request, res: Response) => {
+export const brief = (req: Request, res: Response) => withInstitutionOf({ ticketId: Number(req.params.ticketId) || null }, () => briefNow(req, res));
+const briefNow = async (req: Request, res: Response) => {
   const ticket = await ticketOf(req);
   const config = await configOf();
   if (!eligible(ticket) || !config.enabled || !config.aiEnabled || !policyFor(config, ticket.whatsappId).enabled) throw new AppError("ERR_COPILOT_DISABLED", 403);

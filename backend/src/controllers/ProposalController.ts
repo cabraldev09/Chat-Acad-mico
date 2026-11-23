@@ -439,17 +439,6 @@ export const publicPdf = async (req: Request, res: Response): Promise<Response> 
 };
 
 // --------------------------------------------------- institutions / templates
-export const institutions = makeCrud(Institution, {
-  event: "institution",
-  fields: ["name", "cnpj", "logoFile", "active"],
-  required: ["name"],
-  order: [["name", "ASC"]],
-  beforeSave: data => {
-    if (data.logoFile) data.logoFile = path.basename(String(data.logoFile));
-    return data;
-  }
-});
-
 export const templates = makeCrud(ProposalTemplate, {
   event: "proposalTemplate",
   fields: [

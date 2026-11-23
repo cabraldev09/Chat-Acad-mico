@@ -130,9 +130,13 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 	const [loadingGroups, setLoadingGroups] = useState(false);
 	const [saving, setSaving] = useState(false);
 
+	// the universities of the group: with two or more, each number says which one it speaks for
+	const [institutions, setInstitutions] = useState([]);
+
 	useEffect(() => {
 		if (!open) return;
 		api.get("/channels").then(({ data }) => setChannels(data)).catch(() => {});
+		api.get("/institutions").then(({ data }) => setInstitutions((Array.isArray(data) ? data : []).filter(i => i.active !== false))).catch(() => setInstitutions([]));
 	}, [open]);
 
 	const agentConnections = a => [...new Set([a.whatsappId, ...(a.whatsappIds || [])].filter(Boolean).map(Number))];
@@ -237,6 +241,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 			riskMode: whatsApp.riskMode,
 			groupsMode: whatsApp.groupsMode || "off",
 			...(isManager(user) ? { aiFirst: !!whatsApp.aiFirst, team: whatsApp.team || null } : {}),
+			...(isManager(user) && institutions.length > 1 ? { institutionId: whatsApp.institutionId || null } : {}),
 			allowedGroups: allowed,
 			businessHours: JSON.stringify(hours),
 			queueIds: selectedQueueIds,
@@ -326,6 +331,26 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 							<MenuItem value="">Geral</MenuItem>
 							<MenuItem value="atendimento">Atendimento / Matrículas (consultores)</MenuItem>
 							<MenuItem value="tutoria">Tutoria (tutores)</MenuItem>
+						</TextField>
+					</div>
+				)}
+
+				{isManager(user) && institutions.length > 1 && (
+					<div className={classes.section}>
+						<TextField
+							select
+							fullWidth
+							variant="outlined"
+							margin="dense"
+							label="Universidade"
+							value={whatsApp.institutionId || ""}
+							onChange={e => setWhatsApp({ ...whatsApp, institutionId: e.target.value ? Number(e.target.value) : null })}
+							helperText="As conversas e os leads que chegam por este número ficam com esta universidade: o nome que a IA usa, a marca e os relatórios."
+						>
+							<MenuItem value="">A universidade padrão</MenuItem>
+							{institutions.map(i => (
+								<MenuItem key={i.id} value={i.id}>{i.shortName ? `${i.shortName} (${i.name})` : i.name}</MenuItem>
+							))}
 						</TextField>
 					</div>
 				)}

@@ -1,3 +1,4 @@
+import { withInstitutionOf } from "../../helpers/Institution";
 import { Op } from "sequelize";
 
 import { getSetting } from "../../helpers/AppSettings";
@@ -40,7 +41,9 @@ export const welcomeText = (first: string, number: string, tutorName?: string | 
   return `${first ? `${first}, ` : ""}sua matrícula está confirmada! ${who}. Salve o número da tutoria ${prettyPhone(number)} e mande uma mensagem por lá para agendar a sua ambientação (a apresentação da plataforma de estudos).`;
 };
 
-export const sendTutoriaContact = async (lead: Lead, tutorName?: string | null): Promise<string | null> => {
+export const sendTutoriaContact = async (lead: Lead, tutorName?: string | null): Promise<string | null> =>
+  withInstitutionOf({ lead }, () => sendTutoriaContactNow(lead, tutorName));
+const sendTutoriaContactNow = async (lead: Lead, tutorName?: string | null): Promise<string | null> => {
   try {
     const { number, connection } = await tutoriaNumber();
     // no tutoring line at all (an installation without it): nothing to hand over; a line without a known number: the team is told

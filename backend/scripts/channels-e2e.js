@@ -5276,7 +5276,8 @@ const postMeta = (id, payload, secret, badSig) => {
       await inboundCloud("5511910000009", "wamid.learn-1", "Vocês têm bolsa para atletas?");
       await waitFor(() => sentTexts(before).some(t => t.includes("passar sua dúvida")), 15000, "unknown reply");
       const t = ticketOf("5511910000009");
-      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "0", "ticket should go to a person");
+      // after the reply the agent keeps the question, tells the owner on WhatsApp and only then hands over: wait for the handover, not the reply
+      await waitFor(() => sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "0", 8000, "ticket should go to a person");
       assert(sql(`SELECT status FROM AiLearnings WHERE ticketId=${t}`) === "aguardando_equipe", "question not kept");
       const told = graph.sent.slice(before).find(x => x.body && x.body.to === "5511999990000" && x.body.text && x.body.text.body.includes("não soube responder"));
       assert(told && told.body.text.body.includes("bolsa para atletas"), "owner was not told on WhatsApp");
@@ -6787,6 +6788,71 @@ const postMeta = (id, payload, secret, badSig) => {
       const source = `require("reflect-metadata"); const db=require("./dist/database").default; const assert=require("node:assert/strict"); require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ ${code} })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`;
       return execFileSync(process.execPath, ["-e", source], { cwd: ROOT, env, timeout: 25000 }).toString();
     };
+    console.log("\nUniversidades do grupo");
+    await test("universities: one default, address never repeated, the number decides the university of the conversation and of the lead, and the AI speaks for it", async () => {
+      // the migration made the existing data belong to one default university
+      const list = (await http.get("/institutions", auth())).data;
+      const def = list.find(i => i.isDefault);
+      assert(def && list.filter(i => i.isDefault).length === 1 && def.slug, `one default with an address expected: ${JSON.stringify(list.map(i => [i.name, i.isDefault, i.slug]))}`);
+      // the catalogue loaded by the system belongs to the default university (not to a second Cruzeiro beside it)
+      assert(Number(sql(`SELECT COUNT(*) FROM Courses WHERE category='Graduação - Cruzeiro' AND institutionId IS NOT NULL AND institutionId <> ${def.id}`)) === 0 && list.length === 1, `the catalogue is not of the default university: ${JSON.stringify(list.map(i => i.name))}`);
+      assert((await http.post("/institutions", { name: "Universidade Norte Teste" }, asUser(agentToken))).status === 403, "a consultant created a university");
+      const made = await http.post("/institutions", { name: "Universidade Norte Teste", shortName: "Norte Teste", brandColor: "#123ABC", mailFrom: "contato@norte.test" }, auth());
+      assert(made.status === 201 && made.data.slug === "norte-teste" && !made.data.isDefault, `created ${JSON.stringify(made.data)}`);
+      const north = made.data.id;
+      assert((await http.post("/institutions", { name: "Outra", slug: "Norte Teste" }, auth())).data.error === "ERR_INSTITUTION_SLUG_TAKEN", "repeated address accepted");
+      assert((await http.put(`/institutions/${north}`, { brandColor: "azul" }, auth())).data.error === "ERR_INSTITUTION_COLOR", "bad color accepted");
+      assert((await http.put(`/institutions/${def.id}`, { isDefault: false }, auth())).data.error === "ERR_INSTITUTION_DEFAULT", "the default was turned off with no other");
+      assert((await http.put(`/institutions/${def.id}`, { isDefault: "false" }, auth())).data.error === "ERR_INSTITUTION_DEFAULT", "the default was turned off by a string boolean");
+      assert((await http.put(`/institutions/${def.id}`, { active: "false" }, auth())).data.error === "ERR_INSTITUTION_DEFAULT", "the default was deactivated by a string boolean");
+      assert((await http.delete(`/institutions/${def.id}`, auth())).data.error === "ERR_INSTITUTION_DEFAULT", "the default was deleted");
+      const inactive = await http.post("/institutions", { name: "Universidade Inativa Teste", active: false }, auth());
+      assert(inactive.status === 201 && inactive.data.active === false, `inactive institution ${JSON.stringify(inactive.data)}`);
+      assert((await http.put(`/institutions/${inactive.data.id}`, { isDefault: true }, auth())).data.error === "ERR_INSTITUTION_DEFAULT", "an inactive institution became the default");
+      assert((await http.delete(`/institutions/${inactive.data.id}`, auth())).status === 200, "an unused inactive institution was not deleted");
+      // marking another as default moves it (one only), and back
+      await http.put(`/institutions/${north}`, { isDefault: true }, auth());
+      assert(sql(`SELECT string_agg(id::text, ',') FROM Institutions WHERE isDefault`) === String(north), "two defaults");
+      const switched = await Promise.all([
+        http.put(`/institutions/${north}`, { isDefault: true }, auth()),
+        http.put(`/institutions/${def.id}`, { isDefault: true }, auth())
+      ]);
+      assert(switched.every(r => r.status === 200), `concurrent default switch failed: ${JSON.stringify(switched.map(r => r.status))}`);
+      assert(sql(`SELECT COUNT(*) FROM Institutions WHERE isDefault`) === "1", "concurrent update left multiple defaults");
+      await http.put(`/institutions/${def.id}`, { isDefault: true }, auth());
+      assert(sql(`SELECT string_agg(id::text, ',') FROM Institutions WHERE isDefault`) === String(def.id), "the default did not come back");
+      // a number of the north university: what comes through it is of the north; a number of the default stays of the default
+      const out = JSON.parse(inDb(`
+        const Whatsapp=require("./dist/models/Whatsapp").default, Contact=require("./dist/models/Contact").default, Ticket=require("./dist/models/Ticket").default, Lead=require("./dist/models/Lead").default;
+        const I=require("./dist/helpers/Institution");
+        const wa=await Whatsapp.create({name:"Número Norte Teste",channel:"webchat",status:"CONNECTED",institutionId:${north}});
+        const c1=await Contact.create({name:"Aluno Norte Teste",number:"5511990000951",channel:"webchat"});
+        const t1=await Ticket.create({contactId:c1.id,whatsappId:wa.id,status:"pending",isGroup:false});
+        const stage=await require("./dist/models/LeadStage").default.findOne({order:[["id","ASC"]]}); const l1=await Lead.create({name:"Aluno Norte Teste",contactId:c1.id,stageId:stage.id});
+        const c2=await Contact.create({name:"Aluno Padrão Teste",number:"5511990000952",channel:"telegram"});
+        const t2=await Ticket.create({contactId:c2.id,whatsappId:${tgId},status:"pending",isGroup:false});
+        const inside=await I.withInstitutionOf({ticketId:t1.id}, async()=>I.institutionName());
+        const other=await I.withInstitutionOf({ticketId:t2.id}, async()=>I.institutionName());
+        const nested=await I.withInstitutionOf({ticketId:t1.id}, async()=>I.withInstitutionOf({ticketId:t2.id}, async()=>I.institutionName()));
+        const concurrent=await Promise.all([
+          I.withInstitutionOf({ticketId:t1.id}, async()=>{await new Promise(r=>setTimeout(r,25)); return I.institutionName();}),
+          I.withInstitutionOf({ticketId:t2.id}, async()=>{await new Promise(r=>setTimeout(r,10)); return I.institutionName();})
+        ]);
+        console.log(JSON.stringify({wa:wa.id,t1:t1.institutionId,l1:l1.institutionId,t2:t2.institutionId,inside,other,nested,concurrent,outside:I.institutionName(),ids:[t1.id,t2.id],lead:l1.id,contacts:[c1.id,c2.id]}));`).trim().split("\n").pop());
+      assert(out.t1 === north && out.l1 === north, `the conversation or the lead did not take the university of the number: ${JSON.stringify(out)}`);
+      assert(out.t2 === def.id, "a conversation of a default number took another university");
+      assert(out.inside === "Norte Teste" && out.other === out.outside && out.outside !== "Norte Teste", `the AI did not speak for the university of the conversation: ${JSON.stringify(out)}`);
+      assert(out.nested === out.outside, `a default conversation inherited the outer university: ${JSON.stringify(out)}`);
+      assert(out.concurrent[0] === "Norte Teste" && out.concurrent[1] === out.outside, `conversation contexts crossed: ${JSON.stringify(out.concurrent)}`);
+      // a number with conversations: the university cannot go away until the number changes; the screen changes it
+      assert((await http.delete(`/institutions/${north}`, auth())).data.error === "ERR_INSTITUTION_IN_USE", "a university with numbers was deleted");
+      const moved = await http.put(`/whatsapp/${out.wa}`, { institutionId: null }, auth());
+      assert(moved.status === 200 && sql(`SELECT COALESCE(institutionId::text,'') FROM Whatsapps WHERE id=${out.wa}`) === "", "the number did not leave the university");
+      assert((await http.put(`/whatsapp/${out.wa}`, { institutionId: 999999 }, auth())).status === 404, "a number took a university that does not exist");
+      assert((await http.delete(`/institutions/${north}`, auth())).data.error === "ERR_INSTITUTION_IN_USE", "history lost its university after its number moved");
+      psql(DB, `DELETE FROM "Leads" WHERE id=${out.lead}; DELETE FROM "Tickets" WHERE id IN (${out.ids.join(",")}); DELETE FROM "Contacts" WHERE id IN (${out.contacts.join(",")}); DELETE FROM "Whatsapps" WHERE id=${out.wa}`);
+      assert((await http.delete(`/institutions/${north}`, auth())).status === 200, "the test university was not deleted");
+    });
     console.log("\nCopiloto do consultor");
     await test("copilot config is manager-only, validates revisions and blocks generic setting bypass", async () => {
       assert((await http.get("/copilot/settings", asUser(agentToken))).status === 403, "staff read admin controls");

@@ -7,6 +7,8 @@ import ShowWhatsAppService from "./ShowWhatsAppService";
 import AssociateWhatsappQueue from "./AssociateWhatsappQueue";
 import { cleanCredential, isMasked, looksLikeAppSecret, mergeConfig } from "../../helpers/Secrets";
 import { forgetWebhook } from "../../channels/WebhookLog";
+import { forgetInstitutions } from "../../helpers/Institution";
+import Institution from "../../models/Institution";
 
 interface WhatsappData {
   name?: string;
@@ -24,6 +26,7 @@ interface WhatsappData {
   allowedGroups?: string[];
   aiFirst?: boolean;
   team?: string | null;
+  institutionId?: number | string | null;
 }
 
 interface Request {
@@ -61,6 +64,7 @@ const UpdateWhatsAppService = async ({
     allowedGroups,
     aiFirst,
     team,
+    institutionId,
     queueIds = []
   } = whatsappData;
 
@@ -80,6 +84,13 @@ const UpdateWhatsAppService = async ({
 
   if (groupsMode !== undefined && !["off", "selected", "all"].includes(groupsMode)) {
     throw new AppError("ERR_INVALID_GROUPS_MODE", 400);
+  }
+
+  // the university the number speaks for (empty = the default one)
+  let ownInstitution: number | null | undefined;
+  if (institutionId !== undefined) {
+    ownInstitution = institutionId === null || institutionId === "" || Number(institutionId) === 0 ? null : Number(institutionId);
+    if (ownInstitution !== null && !(await Institution.count({ where: { id: ownInstitution } as any }))) throw new AppError("ERR_NOT_FOUND", 404);
   }
 
   let oldDefaultWhatsapp: Whatsapp | null = null;
@@ -119,10 +130,12 @@ const UpdateWhatsAppService = async ({
     groupsMode,
     aiFirst: aiFirst === undefined ? undefined : !!aiFirst,
     team: team === undefined ? undefined : team === "atendimento" || team === "tutoria" ? team : null,
-    allowedGroups: allowedGroups === undefined ? undefined : JSON.stringify(allowedGroups.map(String))
-  });
+    allowedGroups: allowedGroups === undefined ? undefined : JSON.stringify(allowedGroups.map(String)),
+    institutionId: ownInstitution
+  } as any);
 
   if (config !== undefined) forgetWebhook(whatsapp.id);
+  if (ownInstitution !== undefined) forgetInstitutions();
 
   await AssociateWhatsappQueue(whatsapp, queueIds);
 

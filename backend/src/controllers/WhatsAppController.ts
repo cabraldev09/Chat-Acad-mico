@@ -8,6 +8,8 @@ import DeleteWhatsAppService from "../services/WhatsappService/DeleteWhatsAppSer
 import ListWhatsAppsService from "../services/WhatsappService/ListWhatsAppsService";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import UpdateWhatsAppService from "../services/WhatsappService/UpdateWhatsAppService";
+import Institution from "../models/Institution";
+import { forgetInstitutions } from "../helpers/Institution";
 import { whatsappProvider } from "../providers/WhatsApp";
 import { getAdapter } from "../channels";
 import AppError from "../errors/AppError";
@@ -146,6 +148,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   });
   // what a shared number is for (atendimento / tutoria): chosen by the administration
   if (!ownerId && isAdminReq(req) && (req.body.team === "atendimento" || req.body.team === "tutoria")) await whatsapp.update({ team: req.body.team });
+  // the university it speaks for, chosen by the administration (empty = the default one)
+  if (isAdminReq(req) && Number(req.body.institutionId) > 0) {
+    if (await Institution.count({ where: { id: Number(req.body.institutionId) } as any })) {
+      await whatsapp.update({ institutionId: Number(req.body.institutionId) } as any);
+      forgetInstitutions();
+    }
+  }
 
   // the person's own number becomes their sending number (unless they already use another number of theirs)
   if (ownerId) {
