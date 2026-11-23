@@ -49,7 +49,14 @@ O painel **Funil comercial** mostra chamadas, ferramentas, cache, respostas sem 
 ## Quem assume a conversa (transferência para o comercial do polo)
 Toda passagem do agente para uma pessoa (pedido de atendente, hora da proposta, pergunta sem resposta, reclamação, erro da IA, limites)
 passa por um único serviço, `CommercialServices/Router.ts`:
-1. **Polo**: o do lead; se não houver, o que a cidade informada indica (sem acento, com frase e erro de digitação) e que passa a ser gravado no lead.
+1. **Polo**: o do lead. Uma regra só decide e grava (`PoloServices/LeadPolo.ts`, coluna `Leads.poloSource`):
+   - **cidade ou estado informados** (`city`): o polo que atende a cidade (sem acento, com frase e erro de digitação), ajustado pelo curso
+     (semipresencial matricula no polo liberado). Cidade que nenhum polo atende, ou que serve a mais de um, deixa o lead **sem polo**:
+     o agente pergunta e a fila central recebe. A carteira nunca é usada para adivinhar o polo de uma cidade;
+   - **sem cidade e sem estado** (`wallet`): o polo comercial do consultor responsável pelo lead (a carteira), quando ele é de um único polo;
+   - a cidade informada depois **substitui** o polo da carteira. Vale na conversa com a IA, ao criar o lead (CRM, formulário) e ao editar
+     cidade, estado, curso ou responsável no CRM;
+   - polo escolhido pela pessoa num fluxo (`flow`) e polo de quem já se matriculou (`enrollment`) não são alterados.
 2. **Fila**: a fila comercial do polo; sem equipe, a **fila central** (Agentes de IA → *Quem assume*; padrão: a primeira fila comercial com consultores);
    sem nenhuma, a conversa fica pendente na fila do polo e a gestão é avisada. Nunca fica sem destino. **Polo sem consultor**: a conversa **continua na fila do polo**
    (não vai para outro polo) e só a gestão é avisada; a fila central vale apenas quando o polo é desconhecido ou não tem fila comercial.

@@ -4432,6 +4432,19 @@ const postMeta = (id, payload, secret, badSig) => {
       const U = "5511920000303";
       out = await say(U, "wamid.com-s2", "moro em Cidade Que Nao Existe", t => t.some(x => /AVISO: .*estado/.test(x)), "U no polo: the state is asked");
       assert(sql(`SELECT COALESCE(poloId::text,'') FROM Leads WHERE id=${leadId(U)}`) === "", "a polo was guessed for a city nobody serves");
+      // the wallet: a lead with no city takes the commercial polo of the consultant who owns it; the city told later wins, and a city nobody
+      // serves takes the polo away (the wallet never guesses a polo for a city)
+      const poloOf = id => sql(`SELECT COALESCE(poloId::text,'')||'|'||COALESCE(poloSource,'') FROM Leads WHERE id=${id}`);
+      const wl = (await http.post("/leads", { name: "Lead Da Carteira", phone: "5511920000399", ownerId: consS.id }, auth())).data.lead;
+      assert(poloOf(wl.id) === `${poloS.id}|wallet`, `a lead without a city did not take the polo of its consultant: ${poloOf(wl.id)}`);
+      assert((await http.put(`/leads/${wl.id}`, { city: "Cidade Outro", state: "RO" }, auth())).status === 200, "city of the wallet lead");
+      assert(poloOf(wl.id) === `${other.id}|city`, `the city told later did not replace the polo of the wallet: ${poloOf(wl.id)}`);
+      await http.put(`/leads/${wl.id}`, { city: "Cidade Que Nao Existe", state: "" }, auth());
+      assert(poloOf(wl.id) === "|", `a city nobody serves kept a polo: ${poloOf(wl.id)}`);
+      await http.put(`/leads/${wl.id}`, { city: "" }, auth());
+      assert(poloOf(wl.id) === `${poloS.id}|wallet`, `without a city the wallet did not come back: ${poloOf(wl.id)}`);
+      const wc = (await http.post("/leads", { name: "Lead Com Cidade", phone: "5511920000398", ownerId: consS.id, city: "Itapuã do Oeste" }, auth())).data.lead;
+      assert(poloOf(wc.id) === `${poloS.id}|city`, `a lead created with a served city did not get its polo: ${poloOf(wc.id)}`);
 
       // V) objections: the agent answers them (with the guide of the base) and a person takes over after the third; "é golpe?" is a doubt, not a complaint
       const V = "5511920000305";

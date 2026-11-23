@@ -201,7 +201,17 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 
   const ownerChanged = patch.ownerId !== undefined && patch.ownerId !== lead.ownerId;
   const previousOwner = lead.ownerId;
+  const same = (a: any, b: any): boolean => String(a ?? "").trim() === String(b ?? "").trim();
+  const placeChanged = (patch.city !== undefined && !same(patch.city, lead.city)) || (patch.state !== undefined && !same(patch.state, lead.state));
+  const courseChanged = patch.courseId !== undefined && Number(patch.courseId || 0) !== Number(lead.courseId || 0);
   await lead.update(patch);
+  // the polo follows the city and the course; without a city, the wallet of whoever owns the lead
+  if (placeChanged || courseChanged || ownerChanged) {
+    const { settleLeadPolo, refreshCoursePolo } = await import("../services/PoloServices/LeadPolo");
+    await settleLeadPolo(lead, { placeChanged })
+      .then(() => (courseChanged ? refreshCoursePolo(lead) : undefined))
+      .catch(err => logger.warn(`Polo of lead ${lead.id} was not decided: ${err}`));
+  }
   // the open tasks follow whoever answers the lead now
   if (ownerChanged) await syncHandoffTasks(lead.contactId, previousOwner).catch(() => undefined);
   if (Array.isArray(req.body.tagIds)) {

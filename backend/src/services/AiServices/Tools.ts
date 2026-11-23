@@ -397,18 +397,16 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>, opt
   }
   if (c.estado && !lead.state) patch.state = String(c.estado).slice(0, 40);
   // the polo comes from the city the person told (the cities each polo serves; accents, punctuation and small typos do not matter)
+  // (a polo that came from the wallet of the consultant, while no city was known, gives way to the city)
   let newPolo: Polo | null = null;
-  if ((c.cidade || c.estado) && !lead.poloId) {
-    const { resolvePolo } = await import("../CommercialServices/Router");
-    const { polo } = await resolvePolo(c.cidade || lead.city, c.estado || lead.state);
-    if (polo) {
-      patch.poloId = polo.id;
-      newPolo = polo;
-    }
-  }
   if (Object.keys(patch).length) {
     await lead.update(patch);
     await addActivity(lead.id, null, "system", `Dados informados no atendimento com IA: ${Object.keys(patch).join(", ")}`);
+  }
+  if ((c.cidade || c.estado) && (!lead.poloId || lead.poloSource === "wallet")) {
+    const { settleLeadPolo } = await import("../PoloServices/LeadPolo");
+    const settled = await settleLeadPolo(lead, { cityHint: c.cidade, stateHint: c.estado });
+    if (settled.source === "city" && settled.cityPolo) newPolo = settled.cityPolo;
   }
   // the polo is known: the conversation and the lead go to that polo's commercial team right away
   if (newPolo) {
