@@ -318,8 +318,8 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   const fast = d.input === null ? null : fastIntent(lastText);
   // the price, the scholarship or the enrollment asked before the course was worked: the agent presents the course and asks the data for the
   // scholarship, and the consultant is called after that (Rules.holdsProposal)
-  // (whoever insists once more is handed over, unless there is a course to present now)
-  if (fast && fast.intent !== "human" && holdsProposal(state.slots) && (!state.slots.valueHeld || (!state.slots.courseExplained && !!(state.slots.courseId || state.slots.courseName)))) {
+  // (once: whoever asks the price again is handed over)
+  if (fast && fast.intent !== "human" && holdsProposal(state.slots) && !state.slots.valueHeld) {
     const worked = await valueReply(d, state.slots, ask, stageNeeds);
     const hook = await commercialTurn(d.ports, { userText: lastText, fast: fast.intent, patch: worked.patch, tools: worked.tools, hadText: true, replied: true, retract: false, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId, endsWithQuestion: true, holdValue: true });
     const latencyMs = Date.now() - started;

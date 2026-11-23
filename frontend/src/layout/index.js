@@ -187,21 +187,21 @@ const LoggedInLayout = ({ children }) => {
     setPeek(false);
   };
   const shown = drawerOpen || peek;
-  const alertsRef = useRef(null);
+  // the notices live inside the page, which is mounted again on every change of section (its key): a callback ref follows the element that
+  // is on the screen now (a ref read once kept watching the removed one, the height went to 0 and the box where the message is typed fell
+  // below the fold)
+  const [alertsEl, setAlertsEl] = useState(null);
   const [alertsH, setAlertsH] = useState(0);
-  // the notices only exist once the session has loaded (before that a loading screen is returned and the ref is empty)
-  const sessionLoading = useContext(AuthContext).loading;
   useEffect(() => {
-    const el = alertsRef.current;
-    if (!el) return undefined;
+    if (!alertsEl) return undefined;
     // the layout height (offsetHeight): a notice still animating in (a transform) would measure smaller and leave the page a few pixels too tall, with a second scrollbar
-    const measure = () => setAlertsH(el.offsetHeight);
+    const measure = () => setAlertsH(alertsEl.offsetHeight);
     measure();
     if (typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(measure);
-    ro.observe(el);
+    ro.observe(alertsEl);
     return () => ro.disconnect();
-  }, [sessionLoading]);
+  }, [alertsEl]);
   const { user } = useContext(AuthContext);
   const { darkMode, mode, toggleTheme } = useThemeContext();
   const location = useLocation();
@@ -282,7 +282,7 @@ const LoggedInLayout = ({ children }) => {
         <div key={location.pathname.split("/")[1]} className={clsx("page-enter", /^\/(chatbot|ai-agents\/blocos)\/\d+/.test(location.pathname) && "page-fill")} style={{ "--alerts-h": `${alertsH}px` }}>
           <div className={classes.appBarSpacer} />
           {/* the notices of the top take room: the screens below subtract it (var(--alerts-h)) so nothing ends up under the fold, like the box where the message is typed */}
-          <div ref={alertsRef}>
+          <div ref={setAlertsEl}>
             <Notices>
               <ConnectionAlert />
               <TaskAlert />
