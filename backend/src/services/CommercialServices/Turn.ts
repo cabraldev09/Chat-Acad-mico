@@ -14,13 +14,14 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { DOUBTS_QUESTION, ENTRY_LABEL, PRESENT_BRIDGE, VALUE_BRIDGE, VALUE_BRIDGE_SHORT, holdsProposal, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
+import { DOUBTS_QUESTION, ENTRY_LABEL, PRESENT_BRIDGE, VALUE_BRIDGE, VALUE_BRIDGE_SHORT, holdsProposal, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, modalityMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
 import { configOf } from "./Config";
 import { detectFromText, findConsultantByName } from "./Detect";
 import { AcademicCtx, closestOffered, findCourse, joinNames, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
 import { addActivity } from "../CrmServices/LeadCore";
 import { BOLSA_ASKS, bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
 import { stripGradeAnnouncement } from "./GradeChoice";
+import { areaAsked, areaText, courseLabel } from "./InventedCourse";
 import { studentFacts } from "./StudentFacts";
 import { mirror } from "./Slots";
 import { pendingSteps } from "../FlowServices/StepLock";
@@ -293,13 +294,20 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
 
   // a course that is not in the catalogue of the system is not offered: said at once, with the ones that are (the model never gets to talk about it)
   const named = d.input !== null && wrote ? courseMention(lastText) : null;
-  if (named && !(await findCourse({ courseName: named }))) {
+  if (named && !(await findCourse({ courseName: named }, modalityMention(lastText)))) {
     const list = await offeredCourses();
     if (list.length) {
       const pretty = named.replace(/\b([a-z])/g, m => m.toUpperCase());
-      const text = `Hoje a gente não oferece o curso de ${pretty}. Os cursos que oferecemos incluem ${joinNames(closestOffered(list, named, 6).map(c => c.name))}${list.length > 6 ? " e outros" : ""}. Algum deles te interessa?`;
+      const text = `Hoje a gente não oferece o curso de ${pretty}. Os cursos que oferecemos incluem ${joinNames(closestOffered(list, named, 6).map(c => courseLabel(c.name)))}${list.length > 6 ? " e outros" : ""}. Algum deles te interessa?`;
       return answered(text, null, "other", { patch: { unofferedCourse: pretty } });
     }
+  }
+
+  // "cursos na área da saúde": the courses of the catalogue that are of that area, with the format of each one (the model never lists from memory)
+  const area = d.input !== null && wrote && !named && !state.slots.enrolledStudent ? areaAsked(lastText) : null;
+  if (area) {
+    const list = await offeredCourses();
+    if (list.length) return answered(areaText(area, list), null, "other", { endsWithQuestion: true });
   }
 
   // the transcript arrives (a PDF among what the person just sent): the stage that asked for it goes on without the model

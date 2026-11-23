@@ -136,9 +136,16 @@ export const courseMention = (text: string): string | null => {
   if (!t || t.length > 200) return null;
   const m = t.match(COURSE_NOUN);
   if (!m) return null;
-  const name = m[1].split(COURSE_STOP)[0].replace(/\s+/g, " ").trim();
+  // the format is not part of the name ("radiologia semi presencial" is the course Radiologia)
+  const name = m[1].split(COURSE_STOP)[0].replace(MODALITY_WORDS, " ").replace(/\s+/g, " ").trim();
   if (name.length < 4 || NOT_A_COURSE.test(name)) return null;
   return name;
+};
+const MODALITY_WORDS = /\b(semi ?presencial|presencial|ead|a distancia|distancia|online|on line|hibrido)\b/g;
+// the format the person asked for, when said: it only chooses between two offers of the same course
+export const modalityMention = (text: string): string | null => {
+  const t = plain(text);
+  return /\bsemi ?presencial|hibrido\b/.test(t) ? "SEMIPRESENCIAL" : /\b(ead|a distancia|online|on line)\b/.test(t) ? "EAD" : /\bpresencial\b/.test(t) ? "PRESENCIAL" : null;
 };
 
 // the person takes back what made the lead "ready for the proposal"

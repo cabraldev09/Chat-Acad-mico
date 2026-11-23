@@ -1,3 +1,4 @@
+import { notOfferedWords } from "./InventedCourse";
 import { courseInstitutionWhere, currentInstitutionId, institutionsWithNumbers } from "../../helpers/Institution";
 import fs from "fs";
 import path from "path";
@@ -108,6 +109,9 @@ export const closestOffered = (list: OfferedCourse[], wanted: string, limit = 6)
 
 // "A, B e C"
 export const joinNames = (names: string[]): string => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`);
+
+// a course the model named that is not offered: said plainly, with the closest ones that are (InventedCourse.ts finds it)
+export const notOfferedText = (name: string, list: OfferedCourse[]): string => notOfferedWords(name, closestOffered(list, name, 6).map(c => c.name), list.length > 6);
 
 const plain = (s: string): string =>
   String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();

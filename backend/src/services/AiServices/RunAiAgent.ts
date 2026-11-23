@@ -32,7 +32,8 @@ import { unsupportedFact } from "../CommercialServices/Guards";
 import { forChannel } from "../../helpers/ChannelText";
 import { isHandoffNotice } from "../../helpers/ReplyPolish";
 import { connectionsOf } from "../../helpers/AgentConnections";
-import { offeredCourses } from "../CommercialServices/Academic";
+import { notOfferedText, offeredCourses } from "../CommercialServices/Academic";
+import { courseLabel, inventedCourse } from "../CommercialServices/InventedCourse";
 import { todayLine } from "../CommercialServices/Hours";
 import { maskNamedPerson, maskPii } from "./ChatExport";
 import { sameAgentInstitution } from "../FlowServices/AgentInstitution";
@@ -153,7 +154,7 @@ const stepsProgress = (stage: StageData, done: number[], held?: string): string 
 };
 
 // The stable part of the prompt (the same for every message): cached by the provider, so it costs a fraction after the first call.
-const staticPrompt = (agent: AiAgent, stage?: StageData, training = ""): string => {
+const staticPrompt = (agent: AiAgent, stage?: StageData, training = "", catalog = ""): string => {
   const p = agent.persona || {};
   if (stage) {
     return [
@@ -163,6 +164,7 @@ const staticPrompt = (agent: AiAgent, stage?: StageData, training = ""): string 
       p.forbidden ? `Nunca faça isto:\n${p.forbidden}` : null,
       styleRules(agent),
       stageBlock(stage),
+      catalog || null,
       training || null,
       STAGE_RULES
     ]
@@ -176,6 +178,7 @@ const staticPrompt = (agent: AiAgent, stage?: StageData, training = ""): string 
     p.rules ? `Regras do atendimento:\n${p.rules}` : null,
     p.forbidden ? `Nunca faça isto:\n${p.forbidden}` : null,
     styleRules(agent),
+    catalog || null,
     training || null,
     [
       "Regras fixas:",
@@ -323,15 +326,15 @@ const COMMERCIAL_RULES = [
 ].join("\n");
 
 // The courses of the catalogue of the system (the active ones): the only ones the institution offers. In the cached part of the prompt, it changes only when the catalogue does.
-const catalogBlock = async (): Promise<string> => {
-  const list = await offeredCourses();
+const catalogBlock = async (given?: Array<{ name: string; level?: string | null; modality?: string | null }>): Promise<string> => {
+  const list = given || (await offeredCourses());
   if (!list.length) return "";
   const byLevel = new Map<string, string[]>();
-  list.slice(0, 150).forEach(c => { const k = c.level || "Graduação"; byLevel.set(k, [...(byLevel.get(k) || []), c.name]); });
+  list.slice(0, 150).forEach(c => { const k = c.level || "Graduação"; byLevel.set(k, [...(byLevel.get(k) || []), c.modality ? `${courseLabel(c.name)}, ${String(c.modality).toLowerCase()}` : courseLabel(c.name)]); });
   return [
-    "Cursos que a instituição oferece (a lista completa; não existe nenhum outro):",
+    "Cursos que a instituição oferece (a lista completa; não existe nenhum outro), cada um com o seu formato:",
     ...[...byLevel.entries()].map(([level, names]) => `- ${level}: ${names.join("; ")}`),
-    "Fale SÓ de cursos desta lista. Se a pessoa pedir um curso que não está nela (por exemplo Direito, se não constar), diga com clareza que a instituição não oferece esse curso e sugira os da lista que mais se aproximam. Nunca invente valor, duração, grade ou vaga de um curso fora da lista."
+    "Fale SÓ de cursos desta lista e diga o formato que está nela, nunca outro. Se a pessoa pedir um curso que não está nela (por exemplo Medicina ou Enfermagem, se não constarem), diga com clareza que a instituição não oferece esse curso e sugira os da lista que mais se aproximam. Se pedir uma área (saúde, gestão, tecnologia), cite só os cursos da lista que são dessa área; se não houver nenhum, diga isso e pergunte o que mais interessa. Nunca invente valor, duração, grade ou vaga."
   ].join("\n");
 };
 
@@ -438,7 +441,9 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
   const academic = { ticket: opts.ticket, dryRun: !!opts.sandbox, slots: { ...(opts.commercial?.slots || {}) }, patch: {} as Record<string, any>, cacheHits: 0, agentId: agent.id };
   const training = await trainingBlock(agent.id);
   const channel: string | null = (opts.ticket as any)?.whatsapp?.channel || null;
-  const catalog = commercial ? await catalogBlock().catch(() => "") : "";
+  // the catalogue goes to every mode: a course or a format that is not in it is never said (and is checked in finish)
+  const offered = await offeredCourses().catch(() => [] as Awaited<ReturnType<typeof offeredCourses>>);
+  const catalog = await catalogBlock(offered).catch(() => "");
   const privateValues = [
     ...Object.entries(collected).filter(([key]) => /nome/i.test(key)).map(([, value]) => value),
     ...Object.entries(opts.commercial?.slots || {}).filter(([key]) => /nome/i.test(key)).map(([, value]) => value),
@@ -449,7 +454,7 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
     [key, /nome/i.test(key) && value ? "já informado" : /cpf|phone|telefone|celular|email/i.test(key) && value ? "informado" : value]
   ));
   const safeTraining = forProvider(training);
-  const staticText = forProvider(commercial ? commercialStatic(agent, stage as StageData, safeTraining, catalog) : staticPrompt(agent, stage, safeTraining));
+  const staticText = forProvider(commercial ? commercialStatic(agent, stage as StageData, safeTraining, catalog) : staticPrompt(agent, stage, safeTraining, catalog));
   const progress = stage ? stepsProgress(stage, opts.stepsDone || [], opts.stepsHeld) : "";
   const dynamicText = [
     commercial
@@ -466,6 +471,12 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
   };
   const usageOf = (usage: any) => ({ agentId: agent.id, ticketId: opts.accountingTicketId || opts.ticket?.id, model: agent.model, kind, usage, flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId, latencyMs: Date.now() - started } as any);
   const finish = (ctx: any): AiResult => {
+    // a course the institution does not offer, affirmed by the model ("Enfermagem e Medicina são semipresenciais"): never reaches the person
+    const invented = !ctx.flowStarted && text && !text.includes(HANDOFF_MARKER) && !text.includes(UNKNOWN_MARKER) ? inventedCourse(text, offered) : null;
+    if (invented) {
+      logger.warn(`AI agent "${agent.name}" named a course that is not offered (${invented}): answer replaced`);
+      text = notOfferedText(invented, offered);
+    }
     const qualified = !stage && !ctx.flowStarted && !text.includes(HANDOFF_MARKER) && !text.includes(UNKNOWN_MARKER) && missingSlots(agent, collected).length === 0 && Object.keys(collected).length > 0;
     // the handoff notice goes once: when the model already told the person a consultant will continue, it is not added again
     if (qualified && !isHandoffNotice(text)) text = [text, agent.handoffMessage || "Vou chamar um consultor para preparar sua proposta e continuar sua matrícula."].filter(Boolean).join("\n\n");
