@@ -40,7 +40,9 @@ export const textOfMessage = (m: Message): string => {
   const name = path.basename(file.split("?")[0]);
   // no caption: the body is only the name of the file
   const caption = !body || body === name || path.basename(body) === name || isMediaLabel(body) ? "" : body;
-  return [caption, markerOf(kind, name)].filter(Boolean).join(" ");
+  // a voice note already written down is read by what it said, in every turn after
+  const heard = kind === "audio" ? String((m as any).transcript || "").trim() : "";
+  return [caption, heard ? `[áudio] "${heard}"` : markerOf(kind, name)].filter(Boolean).join(" ");
 };
 
 export const mediaOfMessages = (rows: Message[]): MediaItem[] =>

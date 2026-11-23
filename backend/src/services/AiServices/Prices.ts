@@ -13,6 +13,11 @@ export const DEFAULT_PRICES: Record<string, { in: number; out: number }> = {
   "gpt-4.1": { in: 2, out: 8 },
   "gpt-5-mini": { in: 0.25, out: 2 },
   "o4-mini": { in: 1.1, out: 4.4 },
+  // OpenAI transcription of voice notes: charged by minute (US$ 0,006); the usage is logged in seconds of audio, so 100 per million
+  // "tokens" (seconds) is the same price
+  "whisper-1": { in: 100, out: 0 },
+  "gpt-4o-mini-transcribe": { in: 50, out: 0 },
+  "gpt-4o-transcribe": { in: 100, out: 0 },
   // Anthropic
   "claude-haiku-5-5": { in: 0.1, out: 0.5 },
   "claude-sonnet-5-5": { in: 2, out: 10 },

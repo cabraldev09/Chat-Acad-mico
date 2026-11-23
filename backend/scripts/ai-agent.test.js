@@ -69,7 +69,11 @@ function harness(provider = 'openai') {
     './Handoff': { handoffToHuman: async (_id, _agent, reason) => { handoffs.push(reason); ticket.aiActive = false; } },
     './Learning': { captureUnknown: async () => {}, notifyOwner: async () => {} },
     './Training': { trainingBlock: async () => '' },
-    './Media': { textOfMessage: m => m.body || '' },
+    './Media': { textOfMessage: m => m.body || '', burstOf: async () => state.burst || [] },
+    './Transcribe': { isVoiceNote: m => !!m.voice, transcribeMessage: async m => m.heard || null },
+    '../../models/Lead': { findOne: async () => null },
+    '../../models/LeadStage': {},
+    '../../helpers/AppTime': { getAppTz: () => 'America/Porto_Velho' },
     '../CommercialServices/Academic': { offeredCourses: async () => [] },
     '../CommercialServices/Hours': { todayLine: async () => '' },
     '../CommercialServices/Guards': { unsupportedFact: () => null },
@@ -138,7 +142,9 @@ for (const provider of ['openai', 'anthropic']) {
     const h = harness(provider);
     h.state.responses.push(h.toolCall({ nome: 'Ana', curso: 'Direito' }), h.response('Os dados estão registrados.'));
     const r = await h.service.respond(h.agent, { ticket: h.ticket, history: [{ role: 'user', content: 'Ana, quero Direito' }] });
-    assert.equal(r.qualified, true); assert.match(r.text, /dados estão registrados/); assert.match(r.text, /consultor/); assert.equal(r.text.includes('?'), false);
+    // the answer is kept, ends in no question, and the notice that a consultant continues goes as its own message (handoffText)
+    assert.equal(r.qualified, true); assert.match(r.text, /dados estão registrados/); assert.equal(r.text.includes('?'), false);
+    assert.match(r.handoffText, /consultor/); assert.equal(r.text.includes(r.handoffText), false);
     assert.equal(h.calls.length, 2);
   });
   test(`${provider}: budget is checked before each tool round`, async () => {
@@ -148,6 +154,17 @@ for (const provider of ['openai', 'anthropic']) {
     assert.equal(h.calls.length, 1);
   });
 }
+test('data left from an earlier attendance does not hand over on the first message, and the question is kept', async () => {
+  const h = harness(); h.state.responses.push(h.response('Que bom te ver de novo! Quer continuar de onde paramos?'));
+  const r = await h.service.respond(h.agent, { ticket: h.ticket, history: [{ role: 'user', content: 'Oi' }], collected: { nome: 'Ana', curso: 'Direito' } });
+  assert.equal(r.qualified, false); assert.equal(r.handoffText || null, null); assert.match(r.text, /continuar de onde paramos\?/);
+});
+test('a voice note that cannot be heard asks to write, without calling the model', async () => {
+  const h = harness(); const voice = { id: 'v1', fromMe: false, body: '[áudio]', voice: true, createdAt: new Date() };
+  h.state.burst = [voice]; h.state.history = [voice]; h.state.latest = voice;
+  await h.service.runAiForTicket(h.ticket.id, h.say);
+  assert.equal(h.calls.length, 0); assert.equal(h.sent.length, 1); assert.match(h.sent[0], /não consigo ouvir/i); assert.deepEqual(h.handoffs, []);
+});
 test('ready FAQ uses no API key or paid request only when explicitly enabled', async () => {
   const h = harness(); h.agent.apiKey = ''; h.agent.persona.readyAnswers = true; h.state.faq = { title: 'Curso', content: 'Informação aprovada.' };
   const r = await h.service.respond(h.agent, { ticket: null, sandbox: true, history: [{ role: 'user', content: 'Curso' }] });
