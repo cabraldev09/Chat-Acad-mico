@@ -172,7 +172,7 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
     const tutor = await mkUser("Tutor QA", "tutor@x.com", "tutor");
     const academico = await mkUser("Acadêmico QA", "academico@x.com", "academico");
     const relacionamento = await mkUser("Relacionamento QA", "relacionamento@x.com", "relacionamento");
-    ids = { joao: userId("joao@x.com"), gabrielli: userId("gabrielli@x.com"), laura: userId("laura@x.com"), coord: userId("coord@x.com"), admin: userId("admin@whaticket.com") };
+    ids = { joao: userId("joao@x.com"), gabrielli: userId("gabrielli@x.com"), laura: userId("laura@x.com"), coord: userId("coord@x.com"), tutor: userId("tutor@x.com"), admin: userId("admin@whaticket.com") };
 
     const w = await http.post("/whatsapp", { name: "Telegram", channel: "telegram", config: JSON.stringify({ botToken: "123:ABC" }), queueIds: [queueId] }, as(admin));
     assert(w.status === 200, `connection ${w.status}`);
@@ -697,6 +697,24 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       return { leadId: Number(id), ticket: t };
     };
     const taskOf = id => { const [doneAt, reason, userId] = sql(`SELECT COALESCE(doneAt::text, ''), COALESCE(closedReason, ''), COALESCE(userId::text, '') FROM LeadTasks WHERE id=${id}`).split("|"); return { done: !!doneAt, reason, userId: userId ? Number(userId) : null }; };
+    await test("tasks: non-managers own tasks they create and cannot link another lead's conversation", async () => {
+      const { leadId, ticket } = mkLeadFor(ids.joao, "Lead da tutoria com tarefa própria");
+      sql(`UPDATE Leads SET onboardingTutorId=${ids.tutor}, onboardingStatus='pending' WHERE id=${leadId}`);
+      const inaccessible = await http.post(`/leads/${leadId}/tasks`, { title: "Tarefa com conversa fora do escopo", dueAt: new Date(Date.now() + 3600000).toISOString(), ticketId: ticket.ticketId }, as(tutor));
+      assert(inaccessible.status === 403, `a tutor linked a conversation outside their role's scope: ${inaccessible.status}`);
+      const own = await http.post(`/leads/${leadId}/tasks`, { title: "Tarefa da tutoria", dueAt: new Date(Date.now() + 3600000).toISOString() }, as(tutor));
+      assert(own.status === 201 && own.data.userId === ids.tutor, `a task created by a tutor was assigned to someone else: ${own.status} ${JSON.stringify(own.data)}`);
+
+      const linkedLead = mkLeadFor(ids.joao, "Lead com conversa vinculada");
+      const valid = await http.post(`/leads/${linkedLead.leadId}/tasks`, { title: "Retorno da conversa certa", dueAt: new Date(Date.now() + 3600000).toISOString(), ticketId: linkedLead.ticket.ticketId }, as(joao));
+      assert(valid.status === 201 && valid.data.ticketId === linkedLead.ticket.ticketId, `the matching conversation could not be linked: ${valid.status} ${JSON.stringify(valid.data)}`);
+
+      const otherTicket = mkTicket({ owner: ids.joao });
+      const wrong = await http.post(`/leads/${linkedLead.leadId}/tasks`, { title: "Conversa de outro lead", dueAt: new Date(Date.now() + 3600000).toISOString(), ticketId: otherTicket.ticketId }, as(joao));
+      assert(wrong.status === 403, `a task linked to a different lead's conversation was accepted: ${wrong.status}`);
+      const missing = await http.post(`/leads/${linkedLead.leadId}/tasks`, { title: "Conversa inexistente", dueAt: new Date(Date.now() + 3600000).toISOString(), ticketId: 999999999 }, as(joao));
+      assert(missing.status === 404, `a task accepted a nonexistent conversation: ${missing.status}`);
+    });
     await test("tasks: the tabs never count a task twice (Atrasadas, Hoje, Próximos) and concluding says which one it is", async () => {
       const { leadId } = mkLeadFor(ids.joao, "Lead das abas");
       const mk = async (minutes, title) => (await http.post(`/leads/${leadId}/tasks`, { title, type: "ligar", dueAt: new Date(Date.now() + minutes * 60000).toISOString() }, as(joao))).data;
