@@ -20,6 +20,7 @@ import toastError from "../../errors/toastError";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 import { ErrorState } from "../../components/ui";
 import StatsHubBar from "../../components/StatsHub";
+import { GlowStat } from "../../components/peak";
 
 // Atendimento. Every figure appears once:
 //   Visão geral  what is happening now and what happened in the period (volume, matrículas, resolução, atendimentos). The management
@@ -35,16 +36,16 @@ const useStyles = makeStyles((theme) => {
   return {
     page: { padding: theme.spacing(3), maxWidth: 1280, margin: "0 auto", height: "auto", [theme.breakpoints.down("xs")]: { padding: theme.spacing(1.5) } },
     top: { display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: theme.spacing(2), marginBottom: theme.spacing(2.5) },
-    hello: { fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.2, margin: 0 },
+    hello: { fontSize: 26, fontWeight: 750, letterSpacing: "-0.03em", lineHeight: 1.15, margin: 0, [theme.breakpoints.down("xs")]: { fontSize: 22 } },
     sub: { color: theme.palette.text.secondary, fontSize: 14, marginTop: 4 },
     controls: { marginLeft: "auto", display: "flex", gap: theme.spacing(1), flexWrap: "wrap", alignItems: "center" },
-    seg: { display: "inline-flex", gap: 2, padding: 3, borderRadius: 10, background: soft, border: `1px solid ${line}` },
+    seg: { display: "inline-flex", gap: 2, padding: 4, borderRadius: 999, background: card, border: `1px solid ${line}`, boxShadow: "var(--shadow-card)" },
     segBtn: {
       border: 0, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 550, color: theme.palette.text.secondary,
-      padding: "5px 12px", borderRadius: 7, transition: "background-color .15s, color .15s", display: "inline-flex", alignItems: "center", gap: 6,
+      padding: "6px 14px", borderRadius: 999, transition: "background-color .15s, color .15s", display: "inline-flex", alignItems: "center", gap: 6,
       "&:hover": { color: theme.palette.text.primary },
     },
-    segOn: { background: card, color: theme.palette.text.primary, boxShadow: "0 1px 2px rgba(15,23,42,.08), 0 0 0 1px var(--line)" },
+    segOn: { background: "var(--accent-soft)", color: "var(--accent-strong) !important", boxShadow: "inset 0 0 0 1px var(--accent-line)" },
     datebox: { display: "inline-flex", alignItems: "center", gap: 2, border: `1px solid ${line}`, borderRadius: 10, padding: "3px 6px", background: card },
     iconBtn: {
       border: 0, background: "transparent", cursor: "pointer", color: theme.palette.text.primary, width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center",
@@ -53,20 +54,14 @@ const useStyles = makeStyles((theme) => {
     dateInput: { border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", colorScheme: theme.palette.type },
     layout: { display: "grid", gap: theme.spacing(2.5), gridTemplateColumns: "minmax(0, 1fr) 340px", alignItems: "start", [theme.breakpoints.down("md")]: { gridTemplateColumns: "1fr" } },
     stack: { display: "grid", gap: theme.spacing(2.5), minWidth: 0 },
-    panel: { background: card, border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: theme.spacing(2.25, 2.5), boxShadow: "var(--shadow-card)", minWidth: 0 },
+    panel: { background: "radial-gradient(120% 60% at 50% 122%, color-mix(in srgb, var(--tone, var(--c-leads)) 18%, transparent) 0%, color-mix(in srgb, var(--tone, var(--c-leads)) 6%, transparent) 42%, transparent 70%), var(--surface)", border: `1px solid ${line}`, borderRadius: 18, padding: theme.spacing(2.25, 2.5), boxShadow: "inset 0 -2px 0 color-mix(in srgb, var(--tone, var(--c-leads)) 40%, transparent), 0 1px 2px rgba(11,66,121,.05), 0 10px 24px -18px color-mix(in srgb, var(--c-brand) 55%, transparent)", minWidth: 0 },
     panelTitle: { fontSize: 14, fontWeight: 650, margin: 0, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 },
     panelSub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
-    band: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", background: card, border: `1px solid ${line}`, borderRadius: "var(--radius-card)", overflow: "hidden", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, 1fr)" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
-    cell: { padding: theme.spacing(2, 2.25), borderRight: `1px solid ${line}`, [theme.breakpoints.down("sm")]: { borderBottom: `1px solid ${line}` }, "&:last-child": { borderRight: 0 } },
-    cellLabel: { fontSize: 12.5, color: theme.palette.text.secondary, display: "flex", alignItems: "center", gap: 6, fontWeight: 500 },
-    cellValue: { fontSize: 30, fontWeight: 700, letterSpacing: "-0.035em", lineHeight: 1.1, marginTop: 8, fontVariantNumeric: "tabular-nums" },
-    cellNote: { fontSize: 12, marginTop: 6, color: theme.palette.text.secondary },
-    pill: { display: "inline-block", fontSize: 11.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999 },
     nowGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: theme.spacing(1), [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
     nowBtn: {
       border: `1px solid ${line}`, background: soft, borderRadius: 12, padding: "10px 12px", textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: "inherit",
       "&:hover": { borderColor: theme.palette.primary.main },
-      "& b": { display: "block", fontSize: 24, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" },
+      "& b": { display: "block", fontSize: 24, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: "var(--c-brand)" },
       "& span": { fontSize: 12, color: theme.palette.text.secondary },
     },
     group: { fontSize: 12, fontWeight: 700, color: theme.palette.text.secondary, margin: theme.spacing(2, 0, 0.5), display: "flex", alignItems: "center", gap: 6, textTransform: "uppercase", letterSpacing: ".04em" },
@@ -345,35 +340,18 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
         <div className={classes.layout}>
           <div className={classes.stack}>
             {data && data.insights && data.insights.length > 0 && <Insights items={data.insights} />}
-            <div className={classes.band}>
-              <div className={classes.cell}>
-                <div className={classes.cellLabel}><Users size={14} /> Atendimentos</div>
-                <div className={classes.cellValue}>{p ? p.attendances : "–"}</div>
-                <div className={classes.cellNote}>
-                  {p && (p.previousAttendances > 0 || diff !== 0) ? (
-                    <span className={classes.pill} style={{ background: diff >= 0 ? "rgba(22,163,74,.14)" : "rgba(245,158,11,.18)", color: diff >= 0 ? "#15803d" : "#b45309" }}>
-                      {diff >= 0 ? "+" : ""}{diff}
-                    </span>
-                  ) : null}{" "}
-                  {days === 1 ? "vs. dia anterior" : `vs. ${days} dias antes`}
-                </div>
+            {/* inside the overview of the statistics these numbers are already on top of the page: here they would only repeat */}
+            {!embedded && (
+              <div className="pk-grid">
+                <GlowStat id="attendances" label="Atendimentos" icon={Users} loading={!p} value={p ? p.attendances.toLocaleString("pt-BR") : "–"}
+                  delta={p && p.previousAttendances > 0 ? Math.round((diff / p.previousAttendances) * 100) : null}
+                  hint={days === 1 ? "Comparado com o dia anterior" : `Comparado com os ${days} dias antes`} />
+                <GlowStat id="messages" label="Mensagens" icon={MessageCircle} loading={!p} value={p ? (p.received + p.sent).toLocaleString("pt-BR") : "–"} hint={p ? `${p.received.toLocaleString("pt-BR")} recebidas, ${p.sent.toLocaleString("pt-BR")} enviadas` : ""} />
+                <GlowStat id="enrolled" label="Matrículas" icon={GraduationCap} tone="good" loading={!p} value={p ? p.enrolled.toLocaleString("pt-BR") : "–"} hint={p ? `${p.closed.toLocaleString("pt-BR")} conversas finalizadas` : ""} />
+                <GlowStat id="resolution" label="Tempo até finalizar" icon={Timer} loading={!overview} value={overview ? duration(overview.period.avgResolution) : "—"} hint="Média por conversa"
+                  onClick={manager ? () => setTab("equipe") : undefined} title={manager ? "Ver os tempos de resposta da equipe" : undefined} />
               </div>
-              <div className={classes.cell}>
-                <div className={classes.cellLabel}><MessageCircle size={14} /> Mensagens</div>
-                <div className={classes.cellValue}>{p ? p.received + p.sent : "–"}</div>
-                <div className={classes.cellNote}>{p ? `${p.received} recebidas · ${p.sent} enviadas` : ""}</div>
-              </div>
-              <div className={classes.cell}>
-                <div className={classes.cellLabel}><GraduationCap size={14} /> Matrículas</div>
-                <div className={classes.cellValue}>{p ? p.enrolled : "–"}</div>
-                <div className={classes.cellNote}>{p ? `${p.closed} conversas finalizadas` : ""}</div>
-              </div>
-              <div className={classes.cell}>
-                <div className={classes.cellLabel}><Timer size={14} /> Tempo até finalizar</div>
-                <div className={classes.cellValue}>{overview ? duration(overview.period.avgResolution) : "—"}</div>
-                <div className={classes.cellNote}>{manager ? <button type="button" className={classes.mute} style={{ padding: 0, color: "#0693E3", fontWeight: 600, fontFamily: "inherit", fontSize: 12 }} onClick={() => (embedded ? history.push("/reports") : setTab("equipe"))}>Ver tempos de resposta</button> : "média por conversa"}</div>
-              </div>
-            </div>
+            )}
 
             <div className={classes.panel}>
               <h2 className={classes.panelTitle}><MessageCircle size={16} /> Atendimentos do período</h2>

@@ -24,10 +24,23 @@ anterior; a meta em anel e a posição na equipe; o que foi feito hoje; o que fa
 as metas dos polos; as orientações. A posição vem em `team.position` de `/analytics/me/overview` (`{ rank, of }`, por matrículas
 no período): só o lugar e o total de consultores, nunca o número de um colega.
 
-**Visual:** os painéis usam o kit de `frontend/src/components/peak` (estilo do Peak Chart, de Louis Studios, no 21st.dev): `PeakChart`
-para o número principal com a linha, `GlowStat` para os cartões menores, `DotTile` para os contadores de agora, `GlowPanel`,
-`GlowRank`, `GlowRing` e `GlowFunnel` para blocos, rankings, metas e funil. No máximo quatro `PeakChart` por tela (cada um anima um
-canvas, só enquanto está visível). `useAnalytics` divide uma consulta por endereço e um socket por tela.
+**Visual:** os painéis usam o kit de `frontend/src/components/peak`. No topo, até quatro `PeakChart` (o cartão escuro do Peak
+Chart, de Louis Studios, no 21st.dev), com o número principal e a linha dia a dia; cada um anima um canvas só enquanto está visível.
+Abaixo, as caixas são claras e na cor da marca (`styles/peak.css`): fundo da superfície do tema, números em azul-marinho, detalhes
+em azul-claro e uma luz suave na base; no tema escuro ficam cinza-azuladas. Verde, âmbar e vermelho só indicam estado. As peças:
+`GlowStat` (cartão de número), `DotTile` (contador de agora), `GlowPanel`, `GlowRank`, `GlowRing` e `GlowFunnel`. Os painéis
+antigos (`useKit().panel`, Atendimento, Polos e metas) usam a mesma aparência. `useAnalytics` divide uma consulta por endereço e um
+socket por tela.
+
+**Cabeçalho:** as abas das Estatísticas são uma barra arredondada com a aba atual em azul-marinho; título e período ficam na mesma
+faixa. A faixa de tarefas e leads do topo (`TaskAlert`) não aparece nos painéis (Painel do CRM, Estatísticas, Atendimento e Meu
+desempenho), que já mostram essas contagens nos próprios cartões.
+
+**Sem repetição:** um número aparece uma vez por tela. Na Visão geral, o bloco Atendimento embutido não repete atendimentos,
+mensagens e matrículas do topo, e o Comercial não repete pessoas contatadas e matrículas.
+
+**Menu lateral:** "Meu desempenho" aparece para o consultor e também para a gestão (quem coordena e atende), abaixo de
+"Estatísticas".
 
 "Equipe agora" (`/gestao-comercial`, hoje um redirecionamento) e a "Visão do gestor" de Atendimento saíram, porque repetiam esses
 números. A aba Consultores junta os números comerciais com o tempo de resposta e onde cada conversa parou (clique em Conversas). A

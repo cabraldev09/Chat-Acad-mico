@@ -65,7 +65,9 @@ const TaskAlert = () => {
   const [hiddenAt, setHiddenAt] = useState(() => {
     try { return Number(sessionStorage.getItem("taskAlertHidden") || 0); } catch (e) { return 0; }
   });
-  if (!total || total <= hiddenAt || location.pathname.startsWith("/crm/tarefas")) return null;
+  // the task screen is the list itself; the panels (CRM, statistics, my performance) already show these counts in their own cards
+  const repeated = ["/crm/tarefas", "/crm/painel", "/estatisticas", "/meu-desempenho", "/reports"].some((p) => location.pathname.startsWith(p));
+  if (!total || total <= hiddenAt || repeated) return null;
   const late = overdue > 0 || triageLate > 0;
   const evening = new Date().getHours() >= 16;
   const hide = () => {

@@ -7,7 +7,7 @@ import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import StatsHubBar from "../../components/StatsHub";
-import { ChartCard, RankBars } from "../../components/charts";
+import { ChartCard } from "../../components/charts";
 import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num, fmt, minutesText } from "../../components/analytics/kit";
 import { PeakChart, PeakRow, GlowStat, GlowPanel, GlowRank, rankRows, dayLabel, ACCENT } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
@@ -19,11 +19,6 @@ import { Leads, mins } from "../CommercialCenter/ProcessTab";
 // own numbers (the server decides, whatever is asked); a tutor sees the tutoring. Every block handles loading, empty and error.
 
 const pct = (v) => (v === null || v === undefined ? "-" : `${String(Math.round(v * 10) / 10).replace(".", ",")}%`);
-const rank = (list, nameKey, valueKey, color, note) => {
-  const max = Math.max(1, ...list.map((r) => Number(r[valueKey]) || 0));
-  return list.slice(0, 8).map((r) => ({ key: String(r[nameKey]), name: String(r[nameKey]), value: num(r[valueKey]), bar: ((Number(r[valueKey]) || 0) / max) * 100, color, note: note ? note(r) : undefined }));
-};
-
 const Failed = ({ onRetry }) => <GlowPanel error onRetry={onRetry} />;
 
 const PERIOD_LABEL = { today: "Hoje", week: "7 dias", month: "Este mês", custom: "Período" };
@@ -84,13 +79,11 @@ const Commercial = ({ params }) => {
   if (error && !data) return <Failed onRetry={reload} />;
   const d = data || { volume: {}, stages: [], objections: { byType: [] }, lostReasons: [], sales: { byCity: [], byCourse: [], byConsultant: [] }, process: { skipped: [] } };
   const wait = loading && !data;
-  const enrollments = (d.sales.byConsultant || []).reduce((t, r) => t + r.n, 0);
   const stalled = (d.stages || []).reduce((t, s) => t + (s.stalled || 0), 0);
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div className="pk-grid">
-        <GlowStat id="people" label="Pessoas contatadas" tone="violet" loading={wait} value={num(d.volume.peopleContacted)} hint={`${num(d.volume.newContacts)} pela primeira vez`} />
-        <GlowStat id="sales" label="Matrículas dos consultores" tone="good" loading={wait} value={num(enrollments)} hint="Primeiras matrículas e cursos extras" />
+        <GlowStat id="newContacts" label="Contatos novos" tone="violet" loading={wait} value={num(d.volume.newContacts)} hint="Pessoas contatadas pela primeira vez no período" />
         <GlowStat id="stalled" label={`Parados há ${d.stalledDays || 7} dias ou mais`} tone={stalled ? "warn" : undefined} loading={wait} value={num(stalled)} hint="Leads abertos sem mudar de etapa" />
       </div>
       <div className="pk-grid-wide">
@@ -155,7 +148,7 @@ const Consultants = ({ params }) => {
     <div style={{ display: "grid", gap: 16 }}>
       <div className="pk-grid-wide">
         <GlowPanel id="rank-enrollments" tone="good" title="Ranking de matrículas" sub="Quem mais matriculou no período. Clique no nome para ver os detalhes." loading={wait} empty={!rows.length} emptyText="Nenhum consultor com atividade no período.">
-          <GlowRank rows={rankRows(byEnrollments, "name", "enrollments", { limit: 10, note: (r) => `${num(r.conversations)} conversas, ${num(r.peopleContacted)} pessoas`, onClick: (r) => setDetail(r.userId) })} />
+          <GlowRank rows={rankRows(byEnrollments, "name", "enrollments", { limit: 10, onClick: (r) => setDetail(r.userId) })} />
         </GlowPanel>
         <GlowPanel id="rank-reply" title="Tempo de resposta" sub="Mediana para responder o cliente, do mais rápido ao mais lento" loading={proc.loading && !proc.data} empty={!byReply.length} emptyText="Nenhuma resposta medida no período.">
           <GlowRank rows={byReply.slice(0, 10).map((r) => ({ key: String(r.userId), name: r.name, value: mins(r.reply), bar: (r.reply / slowest) * 100, note: r.sla === null || r.sla === undefined ? undefined : `${pct(r.sla)} dentro do prazo`, onClick: () => setDetail(r.userId) }))} />
@@ -345,7 +338,6 @@ const Training = ({ params }) => {
 };
 
 export const Tutoring = ({ params }) => {
-  const c = useKit();
   const { data, loading, error, reload } = useAnalytics("/analytics/tutoria", params);
   if (error && !data) return <Failed onRetry={reload} />;
   const d = data || { totals: {}, onboardingStalled: [], tutors: [] };
@@ -359,29 +351,27 @@ export const Tutoring = ({ params }) => {
         <GlowStat id="atRisk" label="Risco de evasão" tone={t.atRisk ? "bad" : undefined} loading={wait} value={num(t.atRisk)} hint={`${num(t.atRiskWithFee)} com taxa em aberto`} />
         <GlowStat id="reenrolled" label="Rematrículas" tone="good" loading={wait} value={num(t.reenrolled)} hint="No período" />
       </div>
-      <div className={c.cols}>
-        <ChartCard title="Onde a ambientação para" sub="Alunos com a etapa ainda aberta" loading={wait} empty={!d.onboardingStalled.some((s) => s.n)} emptyText="Nenhuma etapa da ambientação parada.">
-          <RankBars rows={rank(d.onboardingStalled, "label", "n", "warn")} />
-        </ChartCard>
-        <ChartCard title="Cada tutor" loading={wait} empty={!d.tutors.length} emptyText="Nenhum tutor com alunos.">
-          <div className={c.scroll}>
-            <table className={c.table}>
-              <thead><tr><th>Tutor</th><th className="r">Alunos</th><th className="r">Sem contato</th><th className="r">Em risco</th><th className="r">Rematrículas</th><th className="r">NPS</th></tr></thead>
-              <tbody>
-                {d.tutors.map((r) => (
-                  <tr key={r.tutorId} style={{ cursor: "default" }}>
-                    <td style={{ whiteSpace: "nowrap" }}>{r.name}</td>
-                    <td className="r">{num(r.students)}</td>
-                    <td className="r" style={{ color: r.noContact ? "#b45309" : undefined }}>{num(r.noContact)}</td>
-                    <td className="r" style={{ color: r.atRisk ? "#dc2626" : undefined }}>{num(r.atRisk)}</td>
-                    <td className="r">{num(r.reenrolled)}</td>
-                    <td className="r">{r.nps && r.nps.avg !== undefined && r.nps.avg !== null ? String(Math.round(r.nps.avg * 10) / 10).replace(".", ",") : "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </ChartCard>
+      <div className="pk-grid-wide">
+        <GlowPanel tone="warn" title="Onde a ambientação para" sub="Alunos com a etapa ainda aberta" loading={wait} empty={!d.onboardingStalled.some((s) => s.n)} emptyText="Nenhuma etapa da ambientação parada.">
+          <GlowRank rows={rankRows(d.onboardingStalled.filter((s) => s.n), "label", "n")} />
+        </GlowPanel>
+        <GlowPanel title="Cada tutor" loading={wait} empty={!d.tutors.length} emptyText="Nenhum tutor com alunos.">
+          <table className="pk-table pk-stack">
+            <thead><tr><th>Tutor</th><th className="r">Alunos</th><th className="r">Sem contato</th><th className="r">Em risco</th><th className="r">Rematrículas</th><th className="r">NPS</th></tr></thead>
+            <tbody>
+              {d.tutors.map((r) => (
+                <tr key={r.tutorId}>
+                  <td data-main="1" style={{ fontWeight: 600 }}>{r.name}</td>
+                  <td className="r" data-label="Alunos">{num(r.students)}</td>
+                  <td className="r" data-label="Sem contato" style={{ color: r.noContact ? "var(--pk-warn)" : undefined }}>{num(r.noContact)}</td>
+                  <td className="r" data-label="Em risco" style={{ color: r.atRisk ? "var(--pk-bad)" : undefined }}>{num(r.atRisk)}</td>
+                  <td className="r" data-label="Rematrículas">{num(r.reenrolled)}</td>
+                  <td className="r" data-label="NPS">{r.nps && r.nps.avg !== undefined && r.nps.avg !== null ? String(Math.round(r.nps.avg * 10) / 10).replace(".", ",") : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </GlowPanel>
       </div>
     </div>
   );

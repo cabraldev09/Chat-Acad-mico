@@ -1,26 +1,30 @@
-/* The look of the Peak Chart (navy glass lit from below, thin grid, large numbers) for everything that sits beside it.
-   The cards are dark in both themes: in the light theme they are the navy highlights of the page. */
+/* The boxes that sit under the Peak Chart: the surfaces of the theme with the blue of the brand (navy numbers, light-blue
+   details and a soft light rising from the base of the card, the gesture of the Peak Chart in a light version). In the dark theme
+   they are blue-grey. Green, amber and red only say a state. The Peak Chart itself stays dark: it is the highlight of the top. */
 .pk {
-  --pk-accent: #4f8ef7;
-  --pk-ink: #f4f7ff;
-  --pk-ink-2: #a7afc0;
-  --pk-ink-3: #7c869b;
-  --pk-line: rgba(140, 170, 230, 0.16);
-  --pk-good: #5fd39a;
-  --pk-bad: #f08a8a;
-  --pk-warn: #f2b65c;
+  --pk-accent: var(--c-leads);
+  --pk-num: var(--c-brand);
+  --pk-ink: var(--text-1);
+  --pk-ink-2: var(--text-2);
+  --pk-ink-3: var(--text-3);
+  --pk-line: var(--line);
+  --pk-good: var(--c-won);
+  --pk-bad: var(--c-lost);
+  --pk-warn: #b45309;
+  --pk-base: var(--surface);
   position: relative;
   min-width: 0;
   color: var(--pk-ink);
-  border-radius: 22px;
+  border-radius: 18px;
   border: 1px solid var(--pk-line);
   background:
-    radial-gradient(120% 70% at 50% 118%, color-mix(in srgb, var(--pk-accent) 62%, transparent) 0%, color-mix(in srgb, var(--pk-accent) 16%, transparent) 38%, transparent 68%),
-    linear-gradient(180deg, #0a1422 0%, #070d18 100%);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--pk-accent) 55%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 14px 30px -18px color-mix(in srgb, var(--pk-accent) 70%, transparent);
+    radial-gradient(120% 60% at 50% 122%, color-mix(in srgb, var(--pk-accent) 22%, transparent) 0%, color-mix(in srgb, var(--pk-accent) 7%, transparent) 42%, transparent 70%),
+    var(--pk-base);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--pk-accent) 45%, transparent), 0 1px 2px rgba(11, 66, 121, 0.05), 0 10px 24px -18px color-mix(in srgb, var(--c-brand) 55%, transparent);
   overflow: hidden;
   isolation: isolate;
 }
+:root[data-theme="dark"] .pk { --pk-base: #17202b; --pk-line: rgba(120, 160, 210, 0.16); --pk-warn: #fbbf24; box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--pk-accent) 50%, transparent); }
 /* the faint grid of the Peak Chart, fading upward */
 .pk::before {
   content: "";
@@ -28,15 +32,15 @@
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: linear-gradient(rgba(90, 135, 225, 0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(90, 135, 225, 0.2) 1px, transparent 1px);
+  background-image: linear-gradient(color-mix(in srgb, var(--pk-accent) 13%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--pk-accent) 13%, transparent) 1px, transparent 1px);
   background-size: 28px 28px;
-  -webkit-mask-image: radial-gradient(75% 60% at 50% 100%, #000 0%, transparent 100%);
-  mask-image: radial-gradient(75% 60% at 50% 100%, #000 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(75% 55% at 50% 100%, #000 0%, transparent 100%);
+  mask-image: radial-gradient(75% 55% at 50% 100%, #000 0%, transparent 100%);
 }
-.pk[data-tone="good"] { --pk-accent: #2ec99a; }
-.pk[data-tone="bad"] { --pk-accent: #ef5d6c; }
-.pk[data-tone="warn"] { --pk-accent: #f0a23a; }
-.pk[data-tone="violet"] { --pk-accent: #8b7cf6; }
+.pk[data-tone="good"] { --pk-accent: var(--c-won); --pk-num: var(--c-won); }
+.pk[data-tone="bad"] { --pk-accent: var(--c-lost); --pk-num: var(--c-lost); }
+.pk[data-tone="warn"] { --pk-accent: var(--c-warn); --pk-num: var(--pk-warn); }
+.pk[data-tone="violet"] { --pk-accent: var(--c-violet); }
 button.pk, a.pk { font: inherit; text-align: left; cursor: pointer; text-decoration: none; width: 100%; }
 button.pk:hover, a.pk:hover { border-color: color-mix(in srgb, var(--pk-accent) 60%, transparent); }
 button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent); outline-offset: 2px; }
@@ -55,19 +59,19 @@ button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent
 /* small stat card */
 .pk-stat { padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 6px; min-height: 132px; }
 .pk-label { font-size: 12.5px; font-weight: 500; color: var(--pk-ink-2); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.pk-label svg { color: color-mix(in srgb, var(--pk-accent) 70%, #fff); flex: none; }
-.pk-value { font-size: 30px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pk-label svg { color: var(--pk-accent); flex: none; }
+.pk-value { color: var(--pk-num); font-size: 30px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .pk-hint { font-size: 12px; color: var(--pk-ink-2); line-height: 1.35; }
-.pk-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 600; letter-spacing: 0; padding: 2px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: var(--pk-ink-2); white-space: nowrap; }
-.pk-chip[data-good="1"] { background: rgba(95, 211, 154, 0.16); color: var(--pk-good); }
-.pk-chip[data-good="0"] { background: rgba(240, 138, 138, 0.16); color: var(--pk-bad); }
+.pk-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 600; letter-spacing: 0; padding: 2px 7px; border-radius: 999px; background: var(--track); color: var(--pk-ink-2); white-space: nowrap; }
+.pk-chip[data-good="1"] { background: color-mix(in srgb, var(--pk-good) 14%, transparent); color: var(--pk-good); }
+.pk-chip[data-good="0"] { background: color-mix(in srgb, var(--pk-bad) 13%, transparent); color: var(--pk-bad); }
 .pk-spark { display: block; width: 100%; height: 38px; margin-top: auto; overflow: visible; }
 
 /* dot-matrix counter */
-.pk-dot { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-height: 116px; background: linear-gradient(180deg, #0b0f16 0%, #06080c 100%); }
+.pk-dot { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-height: 116px; }
 .pk-dot svg.pk-digits { height: 40px; width: auto; max-width: 100%; align-self: flex-start; }
-.pk-dot .on { fill: var(--pk-accent); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--pk-accent) 80%, transparent)); }
-.pk-dot .off { fill: rgba(255, 255, 255, 0.07); }
+.pk-dot .on { fill: var(--pk-num); filter: drop-shadow(0 0 2px color-mix(in srgb, var(--pk-accent) 55%, transparent)); }
+.pk-dot .off { fill: var(--track); }
 
 /* panel with a title */
 .pk-panel { padding: 18px 20px; }
@@ -75,9 +79,9 @@ button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent
 .pk-title { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .pk-sub { font-size: 12.5px; color: var(--pk-ink-2); margin-top: 3px; line-height: 1.4; }
 .pk-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 120px; text-align: center; font-size: 13.5px; color: var(--pk-ink-2); }
-.pk-btn { border: 1px solid var(--pk-line); background: rgba(255, 255, 255, 0.08); color: var(--pk-ink); border-radius: 10px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
-.pk-btn:hover { background: rgba(255, 255, 255, 0.14); }
-.pk-skel { border-radius: 8px; background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.05)); background-size: 200% 100%; animation: pk-shimmer 1.4s linear infinite; }
+.pk-btn { border: 1px solid var(--line-strong); background: var(--surface); color: var(--pk-ink); border-radius: 10px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.pk-btn:hover { background: var(--surface-2); }
+.pk-skel { border-radius: 8px; background: linear-gradient(90deg, var(--track), color-mix(in srgb, var(--pk-accent) 14%, transparent), var(--track)); background-size: 200% 100%; animation: pk-shimmer 1.4s linear infinite; }
 @keyframes pk-shimmer { to { background-position: -200% 0; } }
 
 /* ranking */
@@ -85,39 +89,39 @@ button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent
 .pk-rank li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; font-size: 13.5px; }
 .pk-rank .pos { font-size: 12px; color: var(--pk-ink-3); font-variant-numeric: tabular-nums; text-align: right; }
 .pk-rank .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pk-rank .val { font-weight: 650; font-variant-numeric: tabular-nums; }
+.pk-rank .val { color: var(--pk-num); font-weight: 650; font-variant-numeric: tabular-nums; }
 .pk-rank .note { grid-column: 2 / 4; font-size: 12px; color: var(--pk-ink-2); margin-top: -2px; }
-.pk-rank .track { grid-column: 2 / 4; height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
-.pk-rank .fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--pk-accent) 55%, #0a1422), var(--pk-accent)); box-shadow: 0 0 10px color-mix(in srgb, var(--pk-accent) 70%, transparent); transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pk-rank .track { grid-column: 2 / 4; height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.pk-rank .fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--pk-num), var(--pk-accent)); transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .pk-rank li[data-me="1"] .name { font-weight: 700; }
-.pk-rank li[data-me="1"] .fill { background: linear-gradient(90deg, #cfe2ff, #fff); box-shadow: 0 0 12px rgba(255, 255, 255, 0.7); }
+.pk-rank li[data-me="1"] .fill { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pk-accent) 30%, transparent); }
 .pk-rank button.name { border: 0; background: none; color: inherit; font: inherit; padding: 0; text-align: left; cursor: pointer; }
 .pk-rank button.name:hover { text-decoration: underline; }
 
 /* goal ring */
 .pk-ring { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .pk-ring svg { flex: none; overflow: visible; }
-.pk-ring .arc { transition: stroke-dashoffset 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--pk-accent) 80%, transparent)); }
-.pk-ring .big { font-size: 34px; font-weight: 650; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.pk-ring .arc { transition: stroke-dashoffset 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pk-ring .big { color: var(--pk-num); font-size: 34px; font-weight: 650; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
 .pk-facts { display: grid; gap: 6px 18px; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); flex: 1; min-width: 180px; }
 .pk-facts dt { font-size: 12px; color: var(--pk-ink-2); }
-.pk-facts dd { margin: 2px 0 0; font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.pk-facts dd { margin: 2px 0 0; color: var(--pk-num); font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
 
 /* funnel */
 .pk-funnel { display: grid; gap: 8px; }
 .pk-funnel .step { display: grid; grid-template-columns: minmax(90px, 30%) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; }
 .pk-funnel .step > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pk-ink-2); }
-.pk-funnel .bar { height: 22px; border-radius: 7px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
-.pk-funnel .bar i { display: block; height: 100%; min-width: 3px; border-radius: 7px; background: linear-gradient(90deg, color-mix(in srgb, var(--pk-accent) 45%, #0a1422), var(--pk-accent)); box-shadow: 0 0 12px color-mix(in srgb, var(--pk-accent) 55%, transparent); transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pk-funnel .bar { height: 22px; border-radius: 7px; background: var(--track); overflow: hidden; }
+.pk-funnel .bar i { display: block; height: 100%; min-width: 3px; border-radius: 7px; background: linear-gradient(90deg, color-mix(in srgb, var(--pk-accent) 70%, var(--c-brand)), var(--pk-accent)); transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .pk-funnel .n { font-weight: 650; font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
 
 /* table inside a panel */
 .pk-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .pk-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--pk-ink-2); padding: 8px 10px; border-bottom: 1px solid var(--pk-line); white-space: nowrap; }
-.pk-table td { padding: 10px; border-bottom: 1px solid rgba(140, 170, 230, 0.09); vertical-align: middle; }
+.pk-table td { padding: 10px; border-bottom: 1px solid var(--pk-line); vertical-align: middle; }
 .pk-table .r { text-align: right; font-variant-numeric: tabular-nums; }
 .pk-table tbody tr[data-click="1"] { cursor: pointer; }
-.pk-table tbody tr[data-click="1"]:hover { background: rgba(255, 255, 255, 0.05); }
+.pk-table tbody tr[data-click="1"]:hover { background: var(--accent-soft); }
 .pk-scroll { overflow-x: auto; }
 /* on a phone each row of the table becomes a card: nothing scrolls sideways */
 @media (max-width: 720px) {

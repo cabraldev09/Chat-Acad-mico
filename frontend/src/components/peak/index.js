@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowDownRight, ArrowUpRight } from "lucide-react";
 import PeakChart from "./PeakChart";
 import "../../styles/peak.css";
 
-// The pieces that sit beside the Peak Chart, in the same look (navy glass lit from below). Nothing here computes a number: each
+// The pieces that sit under the Peak Chart: light boxes in the blue of the brand (see styles/peak.css). Nothing here computes a number: each
 // piece shows what the screen gives it, and each one handles loading, empty and error.
 
 export { PeakChart };
@@ -59,8 +59,8 @@ export const Spark = ({ data, id }) => {
           <stop offset="1" stopColor="var(--pk-accent)" stopOpacity="1" />
         </linearGradient>
       </defs>
-      <path d={d} fill="none" stroke={`url(#${gid})`} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" style={{ filter: "drop-shadow(0 0 4px var(--pk-accent))" }} />
-      <circle cx={lx} cy={ly} r="3" fill="#dbe8ff" style={{ filter: "drop-shadow(0 0 5px var(--pk-accent))" }} />
+      <path d={d} fill="none" stroke={`url(#${gid})`} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={lx} cy={ly} r="3" fill="var(--pk-accent)" />
     </svg>
   );
 };
@@ -172,11 +172,11 @@ export const GlowRing = ({ pct, facts = [], size = 132, label = "da meta" }) => 
   return (
     <div className="pk-ring">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${Math.round(Number(pct) || 0)}% ${label}`}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth="10" />
         <circle className="arc" cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--pk-accent)" strokeWidth="10" strokeLinecap="round"
           strokeDasharray={len} strokeDashoffset={len * (1 - p / 100)} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-        <text x="50%" y="49%" textAnchor="middle" dominantBaseline="middle" fill="#fff" style={{ fontSize: size * 0.24, fontWeight: 650, letterSpacing: "-0.03em" }}>{Math.round(Number(pct) || 0)}%</text>
-        <text x="50%" y="68%" textAnchor="middle" fill="#a7afc0" style={{ fontSize: 11.5 }}>{label}</text>
+        <text x="50%" y="49%" textAnchor="middle" dominantBaseline="middle" fill="var(--pk-num)" style={{ fontSize: size * 0.24, fontWeight: 650, letterSpacing: "-0.03em" }}>{Math.round(Number(pct) || 0)}%</text>
+        <text x="50%" y="68%" textAnchor="middle" fill="var(--pk-ink-2)" style={{ fontSize: 11.5 }}>{label}</text>
       </svg>
       <dl className="pk-facts" style={{ margin: 0 }}>
         {facts.map((f) => <div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}

@@ -264,7 +264,7 @@ const Panel = ({ mode = "now" }) => {
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
                 <div style={{ flex: 1, minWidth: 260 }}>
-                  <SectionHead title={triage.total > 0 ? `Novos para conferir · ${triage.total}` : "Novos para conferir"} hint={triageScope === "mine" || !isManager ? "Seus leads novos que ninguém atendeu. Confira no mesmo dia, antes do dia fechar." : "Leads novos sem atendimento de toda a equipe."} />
+                  <SectionHead title="Novos para conferir" hint={triageScope === "mine" || !isManager ? "Seus leads novos que ninguém atendeu. Confira no mesmo dia, antes do dia fechar." : "Leads novos sem atendimento de toda a equipe."} />
                 </div>
                 {isManager && (
                   <div className={classes.chips} role="group" aria-label="De quem">
@@ -368,7 +368,7 @@ const Panel = ({ mode = "now" }) => {
               <SectionHead title="Resultados do período" hint="Leads que entraram e matrículas confirmadas entre as datas escolhidas, comparados com o período anterior." />
               <PeakRow label="Resultados do período">
                 <PeakChart title="Leads captados" value={Number(kpi.leads) || 0} data={series.map((r) => r.leads || 0)} labels={dayLabels} accent={ACCENT.brand}
-                  trend={!leadsDelta ? "none" : leadsDelta > 0 ? "up" : "down"} caption={leadsDelta === null ? `${nf(kpi.open)} em andamento agora` : `${leadsDelta > 0 ? "+" : ""}${leadsDelta}% contra o período anterior`} />
+                  trend={!leadsDelta ? "none" : leadsDelta > 0 ? "up" : "down"} caption={leadsDelta === null ? "Sem período anterior para comparar" : `${leadsDelta > 0 ? "+" : ""}${leadsDelta}% contra o período anterior`} />
                 <PeakChart title="Matrículas no período" value={Number(wonInPeriod) || 0} data={series.map((r) => r.matriculas || 0)} labels={dayLabels} accent={ACCENT.good}
                   caption={`${nf(kpi.won)} são de leads que entraram neste período`} />
                 <PeakChart title="Conversão" value={Number(kpi.conversion) || 0} decimals={1} valueSuffix="%" data={convSeries} labels={dayLabels} accent={ACCENT.violet}

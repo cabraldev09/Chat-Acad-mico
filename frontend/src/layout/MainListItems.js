@@ -358,7 +358,7 @@ const MainListItems = (props) => {
       )}
       {/* two separate places: the management sees the whole team (Estatísticas); a consultant sees only their own (Meu desempenho);
           the tutor keeps the numbers of the tutoring */}
-      {isManager(user) ? (
+      {isManager(user) && (
         <ListItemLink
           to="/estatisticas"
           alsoActive={["/reports", "/estatisticas/tutoria", "/estatisticas/captacao"]}
@@ -367,10 +367,12 @@ const MainListItems = (props) => {
           collapsed={collapsed}
           adornment={tasksBadge}
         />
-      ) : ["tutor", "academico"].includes(user.role) ? (
+      )}
+      {["tutor", "academico"].includes(user.role) && !isManager(user) ? (
         <ListItemLink to="/estatisticas/tutoria" primary="Minha tutoria" icon={<LineChartIcon className="ico" />} collapsed={collapsed} />
       ) : (
-        <ListItemLink to="/meu-desempenho" alsoActive={["/estatisticas", "/reports", "/estatisticas/captacao"]} primary="Meu desempenho" icon={<GaugeIcon className="ico" />} collapsed={collapsed} />
+        // everyone of the commercial side has their own results one click away: the consultant, and also who manages and attends
+        <ListItemLink to="/meu-desempenho" alsoActive={isManager(user) ? [] : ["/estatisticas", "/reports", "/estatisticas/captacao"]} primary="Meu desempenho" icon={<GaugeIcon className="ico" />} collapsed={collapsed} />
       )}
       {isManager(user) && (
         <>

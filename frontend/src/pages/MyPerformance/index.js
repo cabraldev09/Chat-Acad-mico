@@ -28,8 +28,7 @@ const RESULTS = [
   ["leadsWorked", "Leads trabalhados"],
   ["proposalsSent", "Propostas enviadas"],
   ["gradesSent", "Grades enviadas"],
-  ["conversion", "Conversão", "percent"],
-  ["firstContactMinutes", "Tempo do 1º contato", "minutes", true],
+  ["messagesSent", "Mensagens enviadas"],
 ];
 
 const Section = ({ title, hint, children, action }) => {
@@ -137,7 +136,7 @@ const MyPerformance = () => {
               {goals.slice(1).map((g) => (
                 <div key={g.id} style={{ marginTop: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13.5 }}><span>{g.title}</span><b>{num(g.mine.done)} / {num(g.mine.target)}</b></div>
-                  <div className="pk-rank" style={{ marginTop: 6 }}><span className="track" style={{ display: "block", height: 6, borderRadius: 999, background: "rgba(255,255,255,.08)", overflow: "hidden" }}><span className="fill" style={{ display: "block", width: `${g.mine.target ? Math.min(100, (g.mine.done / g.mine.target) * 100) : 0}%` }} /></span></div>
+                  <div className="pk-rank" style={{ marginTop: 6 }}><span className="track" style={{ display: "block", height: 6, borderRadius: 999, background: "var(--track)", overflow: "hidden" }}><span className="fill" style={{ display: "block", width: `${g.mine.target ? Math.min(100, (g.mine.done / g.mine.target) * 100) : 0}%` }} /></span></div>
                 </div>
               ))}
             </>
