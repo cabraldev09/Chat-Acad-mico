@@ -478,6 +478,29 @@ export const modalityTextOf = (courseName: string, view: any): string | null => 
   return [...parts, MODALITY_CHECK].join("\n\n");
 };
 
+// The same question about the format right after the explanation ("tem aula presencial?"): the answer in one or two lines, from the same rule,
+// instead of the whole explanation again. A text the team wrote for the course has no short form (null: the caller decides).
+export const MODALITY_SHORT_CHECK = "Ficou claro como funciona?";
+export const modalityShortOf = (courseName: string, view: any): string | null => {
+  const e = view && view.explicacao;
+  if (!e || String(view.commercialApprovedText || "").trim()) return null;
+  const area = String(e.area || view.area || "");
+  if (area === "presencial") return [`O curso de *${courseName}* é presencial: pelo menos 70% da carga horária acontece em atividades presenciais. Os dias e os horários na sua cidade o consultor confirma com você.`, MODALITY_SHORT_CHECK].join("\n\n");
+  const impacted = view.mecImpactado === true || /semi/i.test(String(view.modalidadeAtual || "")) || area === "educacao_ciencias" || area === "saude_eng_agro";
+  if (!impacted) return [`O curso de *${courseName}* é EAD, sem aulas práticas presenciais: você estuda pela plataforma, pelo celular ou computador.`, MODALITY_SHORT_CHECK].join("\n\n");
+  const today = String(view.currentDeliveryDuringTransition || "").trim();
+  if (today && !/^(ead|semipresencial|presencial|a dist[aâ]ncia)$/i.test(today)) return null;
+  const p = view.percentualPresencial !== null && view.percentualPresencial !== undefined && Number.isFinite(Number(view.percentualPresencial)) ? Number(view.percentualPresencial) : null;
+  const load = p ? `${p}% de carga ${area === "saude_eng_agro" ? "prática presencial, em laboratório" : "horária presencial"}` : "uma parte de atividades presenciais";
+  const t = e.turma || null;
+  const known = !!(t && (t.presencialStart || t.expectedCalendar || t.activityLocation || (t.practiceSchedule && t.practiceDefined !== false)));
+  return [
+    `Hoje, o curso de *${courseName}* funciona no formato EAD, pela plataforma. Com as mudanças do MEC, até maio de 2027 ele passará a ter ${load}.`,
+    known ? "Os detalhes da sua turma o consultor confirma com você." : "A quantidade exata de encontros presenciais ainda não foi definida.",
+    MODALITY_SHORT_CHECK
+  ].join("\n\n");
+};
+
 // "É 100% EAD?", "é online?", "tem aula presencial?", "precisa ir ao polo?": a question about the format, answered by the system from the rule of the course
 const MODALITY_ASK = /\b(100 ?% (ead|online|on line|a distancia|digital)|(e|eh|sera|vai ser|funciona) (todo |totalmente |tudo )?(ead|online|on line|a distancia|semipresencial|semi presencial|presencial)|(tem|terei|vou ter|precisa ter|e preciso ter|havera) (aula|aulas|encontro|encontros|atividade|atividades|prova|provas|pratica|praticas) presencia(l|is)|(preciso|precisa|tenho que|vou ter que|terei que) (ir|ir ate|comparecer|frequentar) (ao|no|o|a) (polo|faculdade|presencial)|como (funciona|funcionam|sao|e) (o curso|as aulas|a modalidade|o formato|o semipresencial|o ead)|qual (e )?(a modalidade|o formato)|mudanca(s)? do mec|novas regras do mec|semipresencial)\b/;
 export const modalityQuestion = (text: string): boolean => {

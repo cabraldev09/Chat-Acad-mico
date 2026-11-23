@@ -14,7 +14,7 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { DOUBTS_QUESTION, ENTRY_LABEL, PRESENT_BRIDGE, REUSE_TEXT, PRESENT_BRIDGE_PLAIN, ENROLL_BRIDGE, PRICE_ASKS, THINK_PROBE, THINK_BYE, laneAsksName, lanePending, personName, affirms, asksSomething, asksForTime, saysNoInterest, cityCandidateOf, priorStudy, afterCourseChange, formatPending, reuseAlreadySaid, VALUE_BRIDGE, VALUE_BRIDGE_SHORT, holdsProposal, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, modalityMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
+import { DOUBTS_QUESTION, ENTRY_LABEL, modalityShortOf, PRESENT_BRIDGE, REUSE_TEXT, PRESENT_BRIDGE_PLAIN, ENROLL_BRIDGE, PRICE_ASKS, THINK_PROBE, THINK_BYE, laneAsksName, lanePending, personName, affirms, asksSomething, asksForTime, saysNoInterest, cityCandidateOf, priorStudy, afterCourseChange, formatPending, reuseAlreadySaid, VALUE_BRIDGE, VALUE_BRIDGE_SHORT, holdsProposal, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, modalityMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
 import { configOf } from "./Config";
 import { detectFromText, findConsultantByName } from "./Detect";
 import { AcademicCtx, findCourse, notOfferedText, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
@@ -492,10 +492,17 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   }
 
   // "É 100% EAD?", "tem aula presencial?": the system explains the format of the course from its rule, in the words of the team (never "vou confirmar")
-  if (d.input !== null && wrote && !media.length && modalityQuestion(lastText) && !state.slots.enrolledStudent && !(modalityExplained(state.slots) && /ate aqui voce compreendeu|ficou claro como funciona|mesmas mudancas do mec/.test(plainText(lastBot)))) {
+  if (d.input !== null && wrote && !media.length && modalityQuestion(lastText) && !state.slots.enrolledStudent) {
     const named3 = courseMention(lastText);
-    const explained = await explainModality(d, named3 ? null : state.slots.courseId, named3 || state.slots.courseName);
-    if (explained) return answered(explained.text, null, "course_modality", { intent: "course_modality", patch: explained.patch, endsWithQuestion: true });
+    const sameCourse = !named3 || plainText(String(state.slots.courseName || "")).includes(plainText(named3));
+    // the explanation was the last thing said: the answer comes short, from the same rule, never the whole text again
+    if (sameCourse && modalityExplained(state.slots) && /ate aqui voce compreendeu|ficou claro como funciona|mesmas mudancas do mec/.test(plainText(lastBot))) {
+      const short = await shortModality(d, state.slots.courseId, state.slots.courseName);
+      if (short) return answered(short, null, "course_modality", { intent: "course_modality", endsWithQuestion: true });
+    } else {
+      const explained = await explainModality(d, named3 ? null : state.slots.courseId, named3 || state.slots.courseName);
+      if (explained) return answered(explained.text, null, "course_modality", { intent: "course_modality", patch: explained.patch, endsWithQuestion: true });
+    }
   }
 
   // an FAQ with a ready answer (the team's or one the agent learned) needs no model
@@ -791,6 +798,19 @@ const explainModality = async (d: TurnDeps, courseId: any, courseName: any): Pro
     ctx.patch.formatMarkCourse = name;
     await d.ports.event("modality_explained", { course: name }, true).catch(() => undefined);
     return { text, patch: { ...ctx.patch, modalityExplained: true, courseExplained: true, ...(view.mecImpactado ? { mecExplained: true } : {}) } };
+  } catch (err) {
+    return null;
+  }
+};
+
+// the format in one or two lines, for the question asked right after the explanation (null: the model answers from what was already said)
+const shortModality = async (d: TurnDeps, courseId: any, courseName: any): Promise<string | null> => {
+  if (!courseId && !courseName) return null;
+  try {
+    const ctx: AcademicCtx = { ticket: d.ticket, dryRun: d.sandbox || !d.ticket, slots: { ...d.ports.state.slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
+    const view = await runAcademicTool("buscar_regra_modalidade", { courseId: courseId || undefined, courseName: courseName || undefined }, ctx);
+    if (!view || view.erro) return null;
+    return modalityShortOf(courseLabel(String(ctx.patch.courseName || courseName || "o curso")), view);
   } catch (err) {
     return null;
   }

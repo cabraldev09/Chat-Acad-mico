@@ -4261,7 +4261,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/Sobre a tutoria, esse é um diferencial importante/.test(ma5) && /começa no 6º semestre e soma 640 horas/.test(ma5) && /convênios com órgãos públicos/.test(ma5), `MA tutoring and internship: ${ma5}`);
       assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
       out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /simular as bolsas disponíveis para você, pode me informar o seu nome completo e CPF/.test(x)), "MA name and CPF asked");
-      assert(/^Perfeito\. Para o consultor do seu polo simular as bolsas/.test(out[out.length - 1]), `MA bolsa: ${out}`);
+      // (no filler before the request: "Perfeito." in every message was one of the things the team asked to cut)
+      assert(/^\W*Para o consultor do seu polo simular as bolsas/.test(out[out.length - 1]), `MA bolsa: ${out}`);
       // the copilot follows the conversation: the name and the CPF were just asked, so it does not suggest asking again; it says it waits and
       // offers a short reminder (never the same message, never "Caso não tenha" out of place)
       const copWait = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
@@ -4312,11 +4313,12 @@ const postMeta = (id, payload, secret, badSig) => {
       out = await say(EA, "wamid.ea-3", "Sim, é a minha primeira graduação", t => t.some(x => /Você reside em qual cidade\?/.test(x)), `EA city asked (${sql(`SELECT string_agg(id||':'||name||':'||active||':'||COALESCE(level,'-'), ' ; ') FROM Courses WHERE name ILIKE '%empreend%'`)})`);
       out = await say(EA, "wamid.ea-4", "Sou de Cidade Estela", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "EA course presented");
       const ea4 = out.join("\n");
-      assert(/\*[^*]*Empreendedorismo\* tem duração de \*4 semestres\*, ou seja, aproximadamente \*2 anos\*/.test(ea4), `EA duration: ${ea4}`);
+      assert(/\*[^*]*Empreendedorismo[^*]*\* tem duração de \*4 semestres\*, ou seja, aproximadamente \*2 anos\*/.test(ea4), `EA duration: ${ea4}`);
       assert(/formato \*EAD\*, sem aulas práticas presenciais/.test(ea4) && /pela plataforma, pelo celular ou computador/.test(ea4) && /professores mestres e doutores/.test(ea4) && /tutoria desde a matrícula/.test(ea4), `EA format: ${ea4}`);
       assert(!emoji.test(ea4) && !/maio de 2027|% de carga|laboratório|ainda não foi definida/.test(ea4), `EA must not talk about practical classes or the MEC deadline: ${ea4}`);
       out = await say(EA, "wamid.ea-5", "Tem aula presencial?", t => t.some(x => /sem aulas práticas presenciais/.test(x)), "EA presential question");
-      assert(!/% de carga|laboratório/.test(out.join(" ")), `EA presential answer: ${out}`);
+      // (asked right after the explanation: the answer is short, from the same rule, without the model and without the whole text again)
+      assert(!/% de carga|laboratório/.test(out.join(" ")) && !/professores mestres e doutores/.test(out.join(" ")) && /Ficou claro como funciona\?/.test(out.join(" ")), `EA presential answer: ${out}`);
       // the print of the course: the management attaches it, the AI reads it, the management confirms, and the agent says the approved text from then on
       const eaCourseId = Number(sql(`SELECT id FROM Courses WHERE name ILIKE '%empreendedorismo%' AND active=true ORDER BY id LIMIT 1`));
       const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
