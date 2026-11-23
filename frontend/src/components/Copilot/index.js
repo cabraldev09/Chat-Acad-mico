@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, LinearProgress, makeStyles } from "@material-ui/core";
-import { Check, ChevronDown, ChevronUp, Compass, Flag, ListChecks, Send, Settings2, Sparkles, X, FileText, GraduationCap, RotateCcw, ThumbsUp, ThumbsDown, BookOpen, History } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Compass, Flag, ListChecks, Send, Settings2, Workflow, X, FileText, GraduationCap, RotateCcw, ThumbsUp, ThumbsDown, BookOpen, History } from "lucide-react";
 import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -208,12 +208,12 @@ function Panel({ ticket }) {
         <Button size="small" className={`${c.button} ${c.wide}`} disabled={busy || !canSend} startIcon={<Send size={13} />} title={next.text} onClick={() => run(() => sendReady(next.text))}>{next.action === "send_grade" && next.gradeId ? "Enviar com a grade" : "Enviar"}</Button>
       </>}
       <Button size="small" className={c.button} onClick={() => setOpen(v => !v)} aria-expanded={open} endIcon={open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}>{open ? "Fechar" : "Etapa"}</Button>
-      <Button variant="contained" size="small" className={c.primary} disabled={busy || !data.aiAvailable || !canSend} title={data.aiNote || "Escrever uma sugestão para a última mensagem"} aria-label="Sugerir resposta" startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <Sparkles size={14} />} onClick={() => suggest()}><span className={c.wide}>{busy ? "Aguarde…" : "Sugerir resposta"}</span></Button>
+      <Button variant="contained" size="small" className={c.primary} disabled={busy || !data.aiAvailable || !canSend} title={data.aiNote || "Escrever uma sugestão para a última mensagem"} aria-label="Sugerir resposta" startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <Workflow size={14} />} onClick={() => suggest()}><span className={c.wide}>{busy ? "Aguarde…" : "Sugerir resposta"}</span></Button>
     </div>
     <LinearProgress variant="determinate" value={required.length ? completed / required.length * 100 : 0} style={{ height: 2 }} aria-label="Progresso até a matrícula" />
     {open && <div className={c.content}>
       {!data.aiAvailable && data.aiNote && <div className={c.note} role="status">
-        <Sparkles size={14} /><span style={{ flex: 1 }}>{data.aiNote}</span>
+        <Workflow size={14} /><span style={{ flex: 1 }}>{data.aiNote}</span>
         {data.canManage && <Button size="small" className={c.button} href="/configuracoes?secao=prontidao">Resolver</Button>}
       </div>}
       {error && <div className={c.note} role="status"><span style={{ flex: 1 }}>O processo pode estar desatualizado.</span><Button size="small" className={c.button} onClick={reload}>Atualizar</Button></div>}
@@ -227,7 +227,7 @@ function Panel({ ticket }) {
         </ol>}
         {active && <div className={c.detail} aria-label="Próxima mensagem">
           <div className={c.actions}>
-            <span className={c.eyebrow} style={{ flex: 1 }}>{suggestion ? <Sparkles size={12} /> : <Compass size={12} />}{suggestion ? "Sugestão da IA · revise antes de enviar" : active.done ? "Etapa concluída" : "Próxima mensagem"}</span>
+            <span className={c.eyebrow} style={{ flex: 1 }}>{suggestion ? <Workflow size={12} /> : <Compass size={12} />}{suggestion ? "Sugestão da IA · revise antes de enviar" : active.done ? "Etapa concluída" : "Próxima mensagem"}</span>
             <Button size="small" className={c.link} startIcon={<ListChecks size={14} />} onClick={() => setAllSteps(v => !v)}>{allSteps ? "Ocultar etapas" : `Etapas ${completed}/${required.length}`}</Button>
           </div>
           <div className={c.title}>{active.label}</div>
@@ -273,7 +273,7 @@ function Panel({ ticket }) {
           <Button size="small" variant="outlined" className={c.button} disabled={!canSend} onClick={() => window.dispatchEvent(new CustomEvent("teamHandoffOpen", { detail: { ticketId: ticket.id } }))}>{b.encaminhar === "tutoria" ? "Chamar a tutoria" : "Chamar o consultor"}</Button>
         </div>}
         <div className={c.actions}>
-          {data.briefAvailable && <Button size="small" className={c.button} disabled={briefBusy} startIcon={briefBusy ? <CircularProgress size={12} color="inherit" /> : <Sparkles size={13} />} onClick={() => makeBrief(false)}>{b ? "Atualizar resumo" : "Resumir histórico"}</Button>}
+          {data.briefAvailable && <Button size="small" className={c.button} disabled={briefBusy} startIcon={briefBusy ? <CircularProgress size={12} color="inherit" /> : <Workflow size={13} />} onClick={() => makeBrief(false)}>{b ? "Atualizar resumo" : "Resumir histórico"}</Button>}
           {b && b.mensagemSugerida && <Button size="small" className={c.button} disabled={!canSend} title={canSend ? "Coloca a mensagem sugerida na caixa de texto para você revisar" : "Assuma a conversa para responder"} onClick={() => fill(b.mensagemSugerida)}>Usar mensagem sugerida</Button>}
           <Button size="small" className={c.link} onClick={summaryToggle}>{summaryOpen ? "Ocultar o que o agente anotou" : "O que o agente anotou"}</Button>
           <span style={{ flex: 1 }} />

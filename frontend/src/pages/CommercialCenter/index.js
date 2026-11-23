@@ -343,8 +343,8 @@ const PoloBoard = ({ data, polos, history, feedbackPeriod }) => {
     <div style={{ display: "grid", gap: 16 }}>
       <ManagementFeedback {...feedbackPeriod} />
       <div className={`${c.grid4} dash-stagger`}>
-        {[["Polos com equipe", withTeam.length, "#22d3ee"], ["Consultores vinculados", withTeam.reduce((s, p) => s + p.consultants, 0), "#818cf8"], ["Conversas no período", sum("attendances"), "#0693e3"], ["Matrículas no período", sum("enrollments"), "#4ade80"]].map(([label, value, tone]) => (
-          <div key={label} className={`${c.kpi} dash-card`} style={{ "--tone": tone }}>
+        {[["Polos com equipe", withTeam.length], ["Consultores vinculados", withTeam.reduce((s, p) => s + p.consultants, 0)], ["Conversas no período", sum("attendances")], ["Matrículas no período", sum("enrollments")]].map(([label, value]) => (
+          <div key={label} className={`${c.kpi} dash-card`}>
             <div className={c.kpiLabel}><span>{label}</span></div>
             <div className={c.kpiValue}><NumberTicker value={value} format={(n) => num(n)} /></div>
           </div>
@@ -355,12 +355,12 @@ const PoloBoard = ({ data, polos, history, feedbackPeriod }) => {
         <div className={`${c.cols} `} style={{ gridTemplateColumns: "1fr" }}>
           <div className={`${c.panel} dash-card`}>
             <BlockTitle title="Conversas, leads e matrículas por polo" help="Os números dos consultores de cada polo, somados." />
-            <CompareBars data={withTeam.slice(0, 8).map((p) => ({ name: p.name.split(" - ")[0].slice(0, 14), attendances: p.totals.attendances, leadsWorked: p.totals.leadsWorked, enrollments: p.totals.enrollments }))} keys={[["attendances", "Conversas", "#22d3ee"], ["leadsWorked", "Leads trabalhados", "#818cf8"], ["enrollments", "Matrículas", "#4ade80"]]} />
+            <CompareBars data={withTeam.slice(0, 8).map((p) => ({ name: p.name.split(" - ")[0].slice(0, 14), attendances: p.totals.attendances, leadsWorked: p.totals.leadsWorked, enrollments: p.totals.enrollments }))} keys={[["attendances", "Conversas", "leads"], ["leadsWorked", "Leads trabalhados", "brand"], ["enrollments", "Matrículas", "won"]]} />
           </div>
         </div>
       )}
 
-      <div className="dash-stagger" style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+      <div className="dash-stagger" style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))" }}>
         {ranked.map((p) => {
           const team = data.consultants.filter((b) => (b.user.poloIds || []).includes(p.poloId));
           return (
@@ -368,7 +368,7 @@ const PoloBoard = ({ data, polos, history, feedbackPeriod }) => {
               <div className="dash-polo-head">
                 <Ring value={p.totals.conversion} />
                 <div style={{ minWidth: 0 }}>
-                  <b style={{ display: "block", fontSize: 16, letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.name}>{p.name}</b>
+                  <b style={{ display: "block", fontSize: 15, lineHeight: 1.3, letterSpacing: "-0.01em", overflowWrap: "anywhere" }}>{p.name}</b>
                   <span className={c.sub}>{p.consultants ? `${p.consultants} ${p.consultants === 1 ? "consultor" : "consultores"} · conversão` : "Sem equipe ainda"}</span>
                 </div>
               </div>

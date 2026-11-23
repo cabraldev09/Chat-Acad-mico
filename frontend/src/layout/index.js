@@ -102,21 +102,6 @@ const useStyles = makeStyles((theme) => ({
   drawerDocked: {
     borderRight: 0,
   },
-  // opened by the mouse over the collapsed menu: it floats over the page (the conversation does not move) and closes when the mouse leaves
-  // it opens under the top bar: the logo and the menu button stay in sight (over the bar the top of the menu was an empty block)
-  drawerPeek: {
-    position: "absolute",
-    top: theme.sizing.appBar,
-    left: 0,
-    bottom: 0,
-    zIndex: theme.zIndex.drawer + 2,
-    boxShadow: "8px 0 24px -12px rgba(15,23,42,.45)",
-  },
-  drawerHolder: {
-    position: "relative",
-    flex: "none",
-    width: drawerCollapsedWidth,
-  },
   sidebarCard: {
     flex: 1,
     minHeight: 0,
@@ -134,8 +119,12 @@ const useStyles = makeStyles((theme) => ({
     padding: 0,
     overflowX: "hidden",
     overflowY: "auto",
+    // the list keeps its place when the menu changes size: the browser does not "follow" an item by scrolling on its own
+    overflowAnchor: "none",
     ...theme.scrollbarStyles,
   },
+  // folded (a column of icons): no scrollbar taking 8 of the 52 pixels and pushing the icons sideways
+  navListFolded: { scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } },
   sidebarFooter: {
     borderTop: "1px solid rgba(255,255,255,.12)",
     paddingTop: theme.spacing(1),
@@ -162,10 +151,10 @@ const LoggedInLayout = ({ children }) => {
   // tablets and landscape phones (up to 960px): the menu stays as a column of icons, so the page keeps its width
   const isCompact = useMediaQuery((theme) => theme.breakpoints.down("sm"), { noSsr: true });
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // desktop: the menu folds by itself when the person clicks anywhere else (a contact, the conversation) and opens again under the mouse
-  const [peek, setPeek] = useState(false);
+  // desktop: the menu folds by itself when the person clicks anywhere else (a contact, the conversation). Folded, it is a dock: the icons
+  // grow near the pointer and show their name; it only opens again by its button. (It used to open under the mouse: the width changed
+  // while the pointer was over it, so it shook and the list moved.)
   const drawerRef = useRef(null);
-  const peekTimer = useRef(null);
   useEffect(() => {
     if (isCompact || !drawerOpen) return undefined;
     const fold = (e) => {
@@ -176,17 +165,7 @@ const LoggedInLayout = ({ children }) => {
     document.addEventListener("mousedown", fold);
     return () => document.removeEventListener("mousedown", fold);
   }, [isCompact, drawerOpen]);
-  useEffect(() => () => clearTimeout(peekTimer.current), []);
-  const peekOn = () => {
-    if (isCompact || drawerOpen) return;
-    clearTimeout(peekTimer.current);
-    peekTimer.current = setTimeout(() => setPeek(true), 120);
-  };
-  const peekOff = () => {
-    clearTimeout(peekTimer.current);
-    setPeek(false);
-  };
-  const shown = drawerOpen || peek;
+  const shown = drawerOpen;
   // the notices live inside the page, which is mounted again on every change of section (its key): a callback ref follows the element that
   // is on the screen now (a ref read once kept watching the removed one, the height went to 0 and the box where the message is typed fell
   // below the fold)
@@ -211,7 +190,6 @@ const LoggedInLayout = ({ children }) => {
   }, [isCompact]);
 
   const drawerClose = () => {
-    setPeek(false);
     if (isCompact) {
       setDrawerOpen(false);
     }
@@ -223,8 +201,7 @@ const LoggedInLayout = ({ children }) => {
 
   return (
     <div className={classes.root}>
-      {/* while the mouse opens it, the menu floats over the page: a holder keeps the width of the folded menu so nothing moves */}
-      <div ref={drawerRef} className={peek && !drawerOpen ? classes.drawerHolder : undefined} onMouseEnter={peekOn} onMouseLeave={peekOff} style={{ display: "flex" }}>
+      <div ref={drawerRef} style={{ display: "flex" }}>
       <Drawer
         variant={isMobile ? "temporary" : "permanent"}
         className={shown ? classes.drawerPaper : classes.drawerPaperClose}
@@ -232,7 +209,6 @@ const LoggedInLayout = ({ children }) => {
           paper: clsx(
             classes.drawerPaper,
             !shown && classes.drawerPaperClose,
-            peek && !drawerOpen && classes.drawerPeek,
             classes.drawerSurface
           ),
           paperAnchorDockedLeft: classes.drawerDocked,
@@ -240,9 +216,9 @@ const LoggedInLayout = ({ children }) => {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       >
-        {!(peek && !drawerOpen) && <div className={classes.appBarSpacer} />}
+        <div className={classes.appBarSpacer} />
         <div className={classes.sidebarCard}>
-          <List className={classes.navList}>
+          <List className={clsx(classes.navList, !shown && classes.navListFolded)}>
             <MainListItems drawerClose={drawerClose} collapsed={!shown} />
           </List>
           <div className={classes.sidebarFooter}>

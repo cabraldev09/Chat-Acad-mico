@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 import { MenuItem, TextField } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { BarsChart, ChartLegend, ChartTooltip, Donut, RankBars, useChartTheme } from "../../components/charts";
+import { BarsChart, ChartLegend, ChartTooltip, useChartTheme } from "../../components/charts";
 import { BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, GraduationCap, MailOpen, MessageCircle, MessagesSquare, Reply, Timer, Users } from "lucide-react";
 
 import { CHANNELS } from "../../components/ChannelIcon";
@@ -20,7 +20,7 @@ import toastError from "../../errors/toastError";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 import { ErrorState } from "../../components/ui";
 import StatsHubBar from "../../components/StatsHub";
-import { GlowStat } from "../../components/peak";
+import { DonutChart, GlowPanel, GlowRank, GlowStat } from "../../components/peak";
 
 // Atendimento. Every figure appears once:
 //   Visão geral  what is happening now and what happened in the period (volume, matrículas, resolução, atendimentos). The management
@@ -54,7 +54,7 @@ const useStyles = makeStyles((theme) => {
     dateInput: { border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", colorScheme: theme.palette.type },
     layout: { display: "grid", gap: theme.spacing(2.5), gridTemplateColumns: "minmax(0, 1fr) 340px", alignItems: "start", [theme.breakpoints.down("md")]: { gridTemplateColumns: "1fr" } },
     stack: { display: "grid", gap: theme.spacing(2.5), minWidth: 0 },
-    panel: { background: "radial-gradient(120% 60% at 50% 122%, color-mix(in srgb, var(--tone, var(--c-leads)) 18%, transparent) 0%, color-mix(in srgb, var(--tone, var(--c-leads)) 6%, transparent) 42%, transparent 70%), var(--surface)", border: `1px solid ${line}`, borderRadius: 18, padding: theme.spacing(2.25, 2.5), boxShadow: "inset 0 -2px 0 color-mix(in srgb, var(--tone, var(--c-leads)) 40%, transparent), 0 1px 2px rgba(11,66,121,.05), 0 10px 24px -18px color-mix(in srgb, var(--c-brand) 55%, transparent)", minWidth: 0 },
+    panel: { background: "var(--card-bg)", border: "1px solid var(--card-line)", borderRadius: 14, padding: theme.spacing(2.25, 2.5), boxShadow: "var(--card-shadow)", minWidth: 0 },
     panelTitle: { fontSize: 14, fontWeight: 650, margin: 0, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 },
     panelSub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
     nowGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: theme.spacing(1), [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
@@ -301,37 +301,26 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
               {users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
             </TextField>
           </div>
-          {!overview ? (failed.overview || (failed.data && !data) ? <div className={classes.panel}><ErrorState title="Não foi possível carregar os números." onRetry={retry} compact /></div> : <div className={classes.panel} style={{ opacity: 0.6 }}>Carregando...</div>) : (
-            <>
-              <div className={classes.charts}>
-                <div className={classes.panel}>
-                  <h2 className={classes.panelTitle}>Por canal</h2>
-                  <div className={classes.panelSub}>De onde vieram as conversas do período.</div>
-                  {channelData.length === 0 ? <div className={classes.empty}>Nenhuma conversa no período.</div> : (
-                    <div style={{ marginTop: 14 }}>
-                      <Donut parts={channelData.map((c) => ({ label: c.name, value: c.value, color: c.color }))} centerLabel="conversas" />
-                    </div>
-                  )}
-                </div>
-                <div className={classes.panel}>
-                  <h2 className={classes.panelTitle}>Por fila</h2>
-                  <div className={classes.panelSub}>Atendimentos de cada fila no período.</div>
-                  <div style={{ marginTop: 14 }}>
-                    <RankBars rows={rankOf(overview.perQueue)} empty="Nenhum atendimento no período." />
-                  </div>
-                </div>
-              </div>
-              <div className={classes.panel}>
-                <h2 className={classes.panelTitle}>Por etiqueta</h2>
-                {overview.perTag.length === 0 ? (
-                  <div className={classes.empty}>Nenhum atendimento etiquetado no período.</div>
-                ) : (
-                  <div style={{ marginTop: 14 }}>
-                    <RankBars rows={rankOf(overview.perTag)} />
-                  </div>
-                )}
-              </div>
-            </>
+          {!overview ? (failed.overview || (failed.data && !data)
+            ? <GlowPanel error onRetry={retry} />
+            : <GlowPanel loading />
+          ) : channelData.length === 0 && !overview.perQueue.length && !overview.perTag.length ? (
+            // nothing in the period: one sentence, not three empty boxes saying the same
+            <GlowPanel empty emptyText="Nenhuma conversa no período escolhido. Mude o dia ou o período acima." />
+          ) : (
+            <div className="pk-grid-wide">
+              <GlowPanel title="Por canal" sub="De onde vieram as conversas do período." empty={!channelData.length} emptyText="Nenhuma conversa com canal no período.">
+                <DonutChart parts={channelData.map((c) => ({ label: c.name, value: c.value, color: c.color }))} centerLabel="conversas" />
+              </GlowPanel>
+              <GlowPanel title="Por fila" sub="Atendimentos de cada fila no período." empty={!overview.perQueue.length} emptyText="Nenhum atendimento em fila no período.">
+                <GlowRank rows={rankOf(overview.perQueue).map((r) => ({ ...r, value: Number(r.value).toLocaleString("pt-BR") }))} />
+              </GlowPanel>
+              {overview.perTag.length > 0 && (
+                <GlowPanel title="Por etiqueta" sub="Atendimentos com cada etiqueta no período.">
+                  <GlowRank rows={rankOf(overview.perTag).map((r) => ({ ...r, value: Number(r.value).toLocaleString("pt-BR") }))} />
+                </GlowPanel>
+              )}
+            </div>
           )}
         </div>
       )}

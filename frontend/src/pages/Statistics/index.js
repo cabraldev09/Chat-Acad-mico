@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Redirect, useHistory, useLocation } from "react-router-dom";
-import { AlertTriangle, Clock, Download, FileText, Inbox, ListTodo, Sparkles, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, Clock, Download, FileText, Inbox, ListTodo, TrendingUp, Users, Workflow } from "lucide-react";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
@@ -9,7 +9,8 @@ import toastError from "../../errors/toastError";
 import StatsHubBar from "../../components/StatsHub";
 import { ChartCard } from "../../components/charts";
 import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num, fmt, minutesText } from "../../components/analytics/kit";
-import { PeakChart, PeakRow, GlowStat, GlowPanel, GlowRank, rankRows, dayLabel, ACCENT } from "../../components/peak";
+import Drawer from "@material-ui/core/Drawer";
+import { PeakChart, PeakRow, GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, RingStat, rankRows, dayLabel, ACCENT } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
@@ -74,7 +75,39 @@ const Results = ({ params, period }) => {
   );
 };
 
+// Behind one skipped step: who skipped it, with which lead and when; each line opens the conversation
+const SkippedDetail = ({ step, params, onClose }) => {
+  const history = useHistory();
+  const query = useMemo(() => ({ ...params, step: step.step }), [params, step.step]);
+  const { data, loading, error, reload } = useAnalytics("/analytics/process/skipped", query);
+  const rows = (data && data.rows) || [];
+  const when = (iso) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return (
+    <Drawer anchor="right" open onClose={onClose} PaperProps={{ style: { width: "min(720px, 100vw)", background: "var(--surface-2)", padding: 16 } }}>
+      <GlowPanel title={`Etapa pulada: ${step.label}`} sub="Conversas em que esta etapa ficou sem fazer e uma etapa seguinte já foi feita. A data é a última atualização do processo da conversa."
+        action={<button type="button" className="pk-btn" onClick={onClose}>Fechar</button>}
+        loading={loading && !data} error={error && !data} onRetry={reload} empty={!!data && !rows.length} emptyText="Nenhuma conversa com esta etapa pulada no período.">
+        <table className="pk-table pk-stack">
+          <thead><tr><th>Consultor</th><th>Lead</th><th>Atualizado em</th><th aria-label="Abrir" /></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.ticketId}>
+                <td data-main="1" style={{ fontWeight: 600 }}>{r.consultant}</td>
+                <td data-label="Lead">{r.leadName}</td>
+                <td data-label="Atualizado em" style={{ whiteSpace: "nowrap" }}>{when(r.at)}</td>
+                <td className="r"><button type="button" className="pk-btn" onClick={() => history.push(`/tickets/${r.ticketId}`)} aria-label={`Abrir a conversa de ${r.leadName}`}>Abrir conversa</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length >= 200 ? <div className="pk-hint" style={{ marginTop: 10 }}>Mostrando as 200 mais recentes.</div> : null}
+      </GlowPanel>
+    </Drawer>
+  );
+};
+
 const Commercial = ({ params }) => {
+  const [skipped, setSkipped] = useState(null);
   const { data, loading, error, reload } = useAnalytics("/analytics/commercial", params);
   if (error && !data) return <Failed onRetry={reload} />;
   const d = data || { volume: {}, stages: [], objections: { byType: [] }, lostReasons: [], sales: { byCity: [], byCourse: [], byConsultant: [] }, process: { skipped: [] } };
@@ -102,18 +135,24 @@ const Commercial = ({ params }) => {
             </tbody>
           </table>
         </GlowPanel>
-        <GlowPanel tone="warn" title="Objeções mais comuns" sub="Da revisão diária das conversas e do agente de IA" loading={wait} empty={!d.objections.byType.length} emptyText="Nenhuma objeção registrada no período.">
-          <GlowRank rows={rankRows(d.objections.byType.map((o) => ({ ...o, total: o.n + o.agent })), "type", "total", { note: (o) => (o.unhandled ? `${o.unhandled} sem resposta` : undefined) })} />
+        <GlowPanel title="Objeções mais comuns" sub="Da revisão diária das conversas e do agente de IA" loading={wait} empty={!d.objections.byType.length} emptyText="Nenhuma objeção registrada no período.">
+          <DonutChart parts={d.objections.byType.slice(0, 7).map((o) => ({ label: o.type, value: o.n + o.agent, unhandled: o.unhandled }))} centerLabel="objeções" note={(o) => (o.unhandled ? `${o.unhandled} sem resposta` : "")} />
         </GlowPanel>
       </div>
       <div className="pk-grid-wide">
-        <GlowPanel tone="good" title="Matrículas por cidade" sub="Onde estão os alunos que se matricularam no período" loading={wait} empty={!d.sales.byCity.length}>
-          <GlowRank rows={rankRows(d.sales.byCity, "name", "n")} />
+        <GlowPanel title="Matrículas por cidade" sub="Onde estão os alunos que se matricularam no período" loading={wait} empty={!d.sales.byCity.length}>
+          <DonutChart parts={d.sales.byCity.slice(0, 7).map((x) => ({ label: x.name, value: x.n }))} centerLabel="matrículas" />
         </GlowPanel>
-        <GlowPanel tone="bad" title="Etapas do processo mais puladas" sub="Uma etapa sem fazer enquanto a seguinte já foi feita" loading={wait} empty={!d.process.skipped.length} emptyText="Nenhuma etapa pulada no período.">
-          <GlowRank rows={rankRows(d.process.skipped, "label", "n")} />
+        <GlowPanel title="Etapas do processo mais puladas" sub="Uma etapa sem fazer enquanto a seguinte já foi feita. Clique para ver quem pulou, com qual lead e quando."
+          loading={wait} empty={!d.process.skipped.length} emptyText="Nenhuma etapa pulada no período.">
+          <div className="pk-ringgrid">
+            {d.process.skipped.slice(0, 6).map((x) => (
+              <RingStat key={x.step} id={`skipped-${x.step}`} tone="bad" title={x.label} value={x.n} total={Math.max(x.n, d.process.samples || 0)} unit="conversas" action="Ver quem pulou" onClick={() => setSkipped(x)} />
+            ))}
+          </div>
         </GlowPanel>
       </div>
+      {skipped && <SkippedDetail step={skipped} params={params} onClose={() => setSkipped(null)} />}
       <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Origem dos leads, cursos mais procurados e motivos de perda estão na aba Captação.</div>
     </div>
   );
@@ -209,18 +248,12 @@ const conversationRange = (period) => {
   return { days: 1, date: "" };
 };
 
-const Section = ({ title, sub, children }) => {
-  const c = useKit();
-  return (
-    <section style={{ display: "grid", gap: 12, minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em" }}>{title}</h2>
-        {sub && <span className={c.sub} style={{ marginTop: 0 }}>{sub}</span>}
-      </div>
-      {children}
-    </section>
-  );
-};
+const Section = ({ title, sub, children }) => (
+  <section style={{ minWidth: 0 }}>
+    <SectionTitle title={title} hint={sub} />
+    {children}
+  </section>
+);
 
 // Agora: who is working, whose WhatsApp is down, what needs attention and the tasks nobody owns (live, whatever the period)
 const Now = ({ params }) => {
@@ -315,7 +348,7 @@ const Training = ({ params }) => {
       loading={loading && !data}
       empty={!list.length}
       emptyText="Ainda não há conversas lidas no período para sugerir treinamento."
-      action={list.some((x) => x.items.length) ? <button type="button" className={c.btnPrimary} disabled={busy} onClick={suggest} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><Sparkles size={14} />{busy ? "Escrevendo…" : "Sugerir treinamento"}</button> : null}
+      action={list.some((x) => x.items.length) ? <button type="button" className={c.btnPrimary} disabled={busy} onClick={suggest} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><Workflow size={14} />{busy ? "Escrevendo…" : "Sugerir treinamento"}</button> : null}
     >
       <div style={{ display: "grid", gap: 10 }}>
         {list.map((x) => (

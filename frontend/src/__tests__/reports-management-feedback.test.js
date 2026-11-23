@@ -9,7 +9,7 @@ vi.mock("../components/ui", () => ({
 }));
 vi.mock("lucide-react", () => {
   const Icon = () => null;
-  return { AlertTriangle: Icon, Building2: Icon, CheckCircle2: Icon, Gauge: Icon, MapPin: Icon, RefreshCw: Icon, Sparkles: Icon, Users: Icon };
+  return { AlertTriangle: Icon, Building2: Icon, CheckCircle2: Icon, Gauge: Icon, MapPin: Icon, RefreshCw: Icon, Sparkles: Icon, Workflow: Icon, Users: Icon };
 });
 vi.mock("recharts", () => {
   const ChartPart = () => null;

@@ -120,6 +120,7 @@ r.get("/analytics/config", isAuth, isManager, Analytics.getAnalyticsConfig);
 r.put("/analytics/config", isAuth, isManager, Analytics.putAnalyticsConfig);
 r.get("/analytics/consultant/:userId", isAuth, analyticsInstitution, Analytics.consultant);
 r.get("/analytics/process", isAuth, analyticsInstitution, isManager, Analytics.processTeam);
+r.get("/analytics/process/skipped", isAuth, analyticsInstitution, isManager, Analytics.processSkipped);
 r.get("/analytics/process/:userId", isAuth, analyticsInstitution, Analytics.processConsultant);
 // everyone logged in: the management sees the consultants it may see, anybody else only their own numbers (decided in the controller)
 r.get("/analytics/commercial", isAuth, analyticsInstitution, Analytics.commercial);
