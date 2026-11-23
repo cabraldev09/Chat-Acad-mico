@@ -471,3 +471,18 @@ button.gv-multi-row:hover .gv-multi-col i { background: color-mix(in srgb, var(-
 .pp-body { display: flex; align-items: center; gap: 14px; padding: 13px 14px 14px; flex: 1; }
 .pp-num { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--c-brand); }
 .pp-num small { font-size: 13px; font-weight: 500; color: var(--text-2); }
+
+/* ---- lines that open something, and short lists of notes ---- */
+.gv-item-btn { width: 100%; border-left: 0; border-right: 0; border-bottom: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; flex-wrap: nowrap; border-radius: 0; transition: background-color .15s ease; }
+.gv-rowlist > .gv-item-btn { padding-left: 6px; padding-right: 6px; }
+.gv-item-btn:hover { background: var(--surface-2); }
+.gv-item-btn:focus-visible { outline: 2px solid var(--c-leads); outline-offset: -2px; }
+.gv-item-btn .gv-item-main { min-width: 0; }
+.gv-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gv-notes { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13.5px; line-height: 1.5; }
+.gv-funnel-card > .pp-hero { height: 100%; }
+.gv-plain .pk-stat .pk-chip, .gv-plain .pk-count .pk-chip { background: var(--surface-3); color: var(--text-2); }
+.gv-plain .pk-stat .pk-chip[data-good="1"] { background: rgba(21, 128, 61, 0.12); color: #15803d; }
+.gv-plain .pk-stat .pk-chip[data-good="0"] { background: rgba(220, 38, 38, 0.1); color: #b91c1c; }
+.gv-plain .pk-stat .pk-spark path { stroke: var(--c-brand); }
+.gv-plain .pk-stat .pk-spark circle { fill: var(--c-brand); }
