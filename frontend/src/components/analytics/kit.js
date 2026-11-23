@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import MuiTooltip from "@material-ui/core/Tooltip";
 import { BarsChart, TimeChart } from "../charts";
-import { CalendarClock, CheckCheck, Clock, Eye, FileText, Flag, Inbox, MessageSquare, Send, Target, TrendingUp, AlertTriangle, ListTodo, UserCheck, Users, Zap } from "lucide-react";
+import { CalendarClock, CheckCheck, Clock, Eye, FileText, Inbox, MessageSquare, Send, Target, TrendingUp, AlertTriangle, ListTodo, UserCheck, Users, Zap } from "lucide-react";
 
 import api from "../../services/api";
 import openSocket from "../../services/socket-io";
@@ -17,25 +17,25 @@ export const BRAND = { blue: "#0B4279", cerulean: "#0693E3", gorse: "#FEF84C" };
 
 export const useKit = makeStyles((theme) => ({
   page: { padding: theme.spacing(3), maxWidth: 1480, margin: "0 auto", [theme.breakpoints.down("xs")]: { padding: theme.spacing(1.5) } },
-  head: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: theme.spacing(2.5) },
-  h1: { fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 },
+  head: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: theme.spacing(3) },
+  h1: { fontSize: 26, fontWeight: 750, letterSpacing: "-0.03em", lineHeight: 1.15, margin: 0, [theme.breakpoints.down("xs")]: { fontSize: 22 } },
   lead: { fontSize: 13.5, color: "var(--text-2)", marginTop: 4, maxWidth: 720 },
-  panel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(2.25, 2.5), minWidth: 0, position: "relative", boxShadow: "var(--shadow-card)" },
+  panel: { background: "radial-gradient(120% 60% at 50% 122%, color-mix(in srgb, var(--tone, var(--c-leads)) 18%, transparent) 0%, color-mix(in srgb, var(--tone, var(--c-leads)) 6%, transparent) 42%, transparent 70%), var(--surface)", border: "1px solid var(--line)", borderRadius: 18, padding: theme.spacing(2.25, 2.5), minWidth: 0, position: "relative", boxShadow: "inset 0 -2px 0 color-mix(in srgb, var(--tone, var(--c-leads)) 40%, transparent), 0 1px 2px rgba(11,66,121,.05), 0 10px 24px -18px color-mix(in srgb, var(--c-brand) 55%, transparent)" },
   hero: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(3), minWidth: 0 },
   h2: { fontSize: 14, fontWeight: 650, margin: 0, display: "flex", alignItems: "center", gap: 8, letterSpacing: "-0.01em" },
   sub: { fontSize: 12.5, color: "var(--text-2)", marginTop: 3 },
   grid: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
   cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", alignItems: "start" },
-  kpi: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: "14px 16px", minWidth: 0, position: "relative", boxShadow: "var(--shadow-card)", transition: "border-color .15s ease", "&:hover": { borderColor: "var(--line-strong)" } },
+  kpi: { background: "radial-gradient(120% 60% at 50% 122%, color-mix(in srgb, var(--tone, var(--c-leads)) 18%, transparent) 0%, color-mix(in srgb, var(--tone, var(--c-leads)) 6%, transparent) 42%, transparent 70%), var(--surface)", border: "1px solid var(--line)", borderRadius: 18, padding: "14px 16px", minWidth: 0, position: "relative", boxShadow: "inset 0 -2px 0 color-mix(in srgb, var(--tone, var(--c-leads)) 40%, transparent), 0 1px 2px rgba(11,66,121,.05), 0 10px 24px -18px color-mix(in srgb, var(--c-brand) 55%, transparent)", transition: "border-color .15s ease", "&:hover": { borderColor: "var(--line-strong)" } },
   kpiIcon: { display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 28, height: 28, borderRadius: 8, color: "var(--tone, var(--text-2))", background: "color-mix(in srgb, var(--tone, #64748b) 12%, transparent)" },
   kpiLabel: { fontSize: 12.5, fontWeight: 550, color: "var(--text-2)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 28 },
   grid4: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(4, minmax(0, 1fr))", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
   grid5: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(5, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
-  kpiValue: { fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15, marginTop: 6 },
+  kpiValue: { color: "var(--c-brand)", fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15, marginTop: 6 },
   kpiHint: { fontSize: 12, color: "var(--text-2)", marginTop: 4 },
-  chips: { display: "inline-flex", gap: 2, padding: 3, borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--line)", flexWrap: "wrap" },
-  chip: { border: 0, borderRadius: 7, padding: "5px 12px", fontFamily: "inherit", fontSize: 13, fontWeight: 550, cursor: "pointer", background: "transparent", color: "var(--text-2)", "&:hover": { color: "var(--text-1)" } },
-  chipOn: { background: "var(--surface)", color: "var(--text-1) !important", boxShadow: "0 1px 2px rgba(15,23,42,.08), 0 0 0 1px var(--line)" },
+  chips: { display: "inline-flex", gap: 2, padding: 4, borderRadius: 999, background: "var(--surface)", border: "1px solid var(--line)", boxShadow: "var(--shadow-card)", flexWrap: "wrap" },
+  chip: { border: 0, borderRadius: 999, padding: "6px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 550, cursor: "pointer", background: "transparent", color: "var(--text-2)", "&:hover": { color: "var(--text-1)" } },
+  chipOn: { background: "var(--accent-soft)", color: "var(--accent-strong) !important", boxShadow: "inset 0 0 0 1px var(--accent-line)" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13.5, "& th": { textAlign: "left", fontSize: 12, color: "var(--text-2)", fontWeight: 550, padding: "8px 10px", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }, "& td": { padding: "10px", borderBottom: "1px solid var(--line)", verticalAlign: "middle" }, "& .r": { textAlign: "right", fontVariantNumeric: "tabular-nums" }, "& tbody tr": { cursor: "pointer" }, "& tbody tr:hover": { background: "var(--surface-2)" } },
   scroll: { overflowX: "auto" },
   bar: { height: 6, borderRadius: 999, background: "var(--track)", overflow: "hidden" },
@@ -85,38 +85,72 @@ export const num = (v) => Number(v || 0).toLocaleString("pt-BR");
 export const minutesText = (v) => (v < 60 ? `${Math.round(v)} min` : v < 1440 ? `${Math.floor(v / 60)} h${Math.round(v % 60) ? ` ${Math.round(v % 60)} min` : ""}` : `${Math.round((v / 1440) * 10) / 10} d`.replace(".", ","));
 export const fmt = (v, unit) => (v === null || v === undefined ? "—" : unit === "percent" ? `${String(v).replace(".", ",")}%` : unit === "minutes" ? minutesText(v) : num(v));
 
-// one signal from the server (no numbers inside) makes the screen read the numbers again, through the same API that applies the permissions
-export const useAnalytics = (path, params, enabled = true) => {
-  const [state, setState] = useState({ data: null, loading: true, error: null });
-  const key = JSON.stringify(params || {});
-  const timer = useRef(null);
-  const seq = useRef(0);
-
-  const load = useCallback(() => {
-    if (!enabled) return Promise.resolve();
-    const mine = ++seq.current;
-    return api
+// one signal from the server (no numbers inside) makes the screen read the numbers again, through the same API that applies the permissions.
+// Every block of a screen that reads the same address shares one request, and the whole screen shares one socket and one timer.
+const stores = new Map();
+let liveSocket = null;
+let liveTimer = null;
+let livePoll = null;
+const refreshAll = () => stores.forEach((s) => { if (s.subs.size) s.load(); });
+const onVisible = () => { if (document.visibilityState === "visible") refreshAll(); };
+const startLive = () => {
+  if (liveSocket) return;
+  liveSocket = openSocket("analytics-live");
+  const again = () => { clearTimeout(liveTimer); liveTimer = setTimeout(refreshAll, 900); };
+  liveSocket.on("connect", () => liveSocket.emit("joinNotification"));
+  ["analytics", "appMessage", "ticket", "lead"].forEach((e) => liveSocket.on(e, again));
+  // only while the page is visible; coming back to the tab refreshes at once
+  livePoll = setInterval(onVisible, 60000);
+  document.addEventListener("visibilitychange", onVisible);
+};
+const stopLive = () => {
+  if (!liveSocket) return;
+  clearTimeout(liveTimer); clearInterval(livePoll);
+  document.removeEventListener("visibilitychange", onVisible);
+  liveSocket.disconnect();
+  liveSocket = null;
+};
+const storeFor = (path, key) => {
+  const id = `${path}?${key}`;
+  if (stores.has(id)) return stores.get(id);
+  const store = { state: { data: null, loading: true, error: null }, subs: new Set(), busy: null };
+  const set = (state) => { store.state = state; store.subs.forEach((fn) => fn(state)); };
+  store.load = () => {
+    if (store.busy) return store.busy;
+    store.busy = api
       .get(path, { params: JSON.parse(key) })
-      .then(({ data }) => { if (mine === seq.current) setState({ data, loading: false, error: null }); })
-      .catch((err) => { if (mine === seq.current) { setState((s) => ({ ...s, loading: false, error: err })); toastError(err); } });
-  }, [path, key, enabled]);
+      .then(({ data }) => set({ data, loading: false, error: null }))
+      .catch((err) => { set({ ...store.state, loading: false, error: err }); toastError(err); })
+      .then(() => { store.busy = null; });
+    return store.busy;
+  };
+  stores.set(id, store);
+  return store;
+};
 
-  useEffect(() => { setState((s) => ({ ...s, loading: true })); load(); }, [load]);
+export const useAnalytics = (path, params, enabled = true) => {
+  const key = JSON.stringify(params || {});
+  const [state, setState] = useState({ data: null, loading: true, error: null });
+  // while the numbers of another period load, the ones on screen stay (dimmed by who shows them) instead of blinking away
+  const kept = useRef(null);
 
   useEffect(() => {
     if (!enabled) return undefined;
-    const socket = openSocket("analytics-live");
-    const again = () => { clearTimeout(timer.current); timer.current = setTimeout(load, 900); };
-    socket.on("connect", () => socket.emit("joinNotification"));
-    ["analytics", "appMessage", "ticket", "lead"].forEach((e) => socket.on(e, again));
-    // only while the page is visible; coming back to the tab refreshes at once
-    const poll = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
-    const back = () => { if (document.visibilityState === "visible") load(); };
-    document.addEventListener("visibilitychange", back);
-    return () => { clearTimeout(timer.current); clearInterval(poll); document.removeEventListener("visibilitychange", back); socket.disconnect(); };
-  }, [load, enabled]);
+    const store = storeFor(path, key);
+    store.subs.add(setState);
+    setState(store.state);
+    startLive();
+    store.load();
+    return () => {
+      store.subs.delete(setState);
+      if (!store.subs.size) stores.delete(`${path}?${key}`);
+      if (![...stores.values()].some((s) => s.subs.size)) stopLive();
+    };
+  }, [path, key, enabled]);
 
-  return { ...state, reload: load };
+  if (state.data) kept.current = state.data;
+  const reload = useCallback(() => (enabled ? storeFor(path, key).load() : Promise.resolve()), [path, key, enabled]);
+  return { ...state, data: state.data || kept.current, reload };
 };
 
 let defsCache = null;

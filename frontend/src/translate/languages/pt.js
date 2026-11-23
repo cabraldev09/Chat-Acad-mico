@@ -712,6 +712,7 @@ const messages = {
         ERR_ENROLL_REQUIRED: "Para mover para Matriculado, confirme a matrícula com o RGM do aluno.",
         ERR_COURSE_NOT_FOUND: "Curso não encontrado.",
         ERR_SESSION_EXPIRED: "Sessão expirada. Por favor entre.",
+        ERR_SERVICE_UNAVAILABLE: "O sistema está instável neste momento. Tente de novo em instantes.",
         ERR_USER_CREATION_DISABLED:
           "A criação do usuário foi desabilitada pelo administrador.",
         ERR_REACTION_UNSUPPORTED: "Este canal não permite reagir a mensagens.",

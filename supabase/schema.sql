@@ -8,8 +8,8 @@
 --
 
 
--- Dumped from database version 16.15 (Homebrew)
--- Dumped by pg_dump version 16.15 (Homebrew)
+-- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -6082,6 +6082,13 @@ CREATE INDEX messages_contact_idx ON public."Messages" USING btree ("contactId")
 
 
 --
+-- Name: messages_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX messages_created_at ON public."Messages" USING btree ("createdAt");
+
+
+--
 -- Name: messages_created_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7853,6 +7860,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000007-speed-indexes.js') ON
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000008-tasks-and-notifications.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000009-institutions.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-legacy-institution.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-messages-created-at.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000002-messages-created-at.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

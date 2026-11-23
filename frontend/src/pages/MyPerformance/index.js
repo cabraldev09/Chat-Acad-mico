@@ -1,19 +1,20 @@
 import React, { useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { format, parseISO } from "date-fns";
-import { AlertTriangle, CalendarCheck2, ChevronRight, Clock3, Lightbulb, MessageCircle, Phone, RefreshCw, Target, TrendingUp } from "lucide-react";
+import { AlertTriangle, CalendarCheck2, ChevronRight, Clock3, Lightbulb, MessageCircle, Phone, RefreshCw } from "lucide-react";
 
-import { BlockTitle, HistoryChart, PeriodPicker, Progress, fmt, num, periodParams, useAnalytics, useKit } from "../../components/analytics/kit";
-import { Delta } from "../../components/charts";
+import { BlockTitle, PeriodPicker, fmt, minutesText, num, periodParams, useAnalytics, useKit } from "../../components/analytics/kit";
+import { ACCENT, DotTile, GlowFunnel, GlowPanel, GlowRing, GlowStat, PeakChart, PeakRow, dayLabel } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import "../../styles/dash.css";
 
 // Meu desempenho: the consultant's own place. Only their numbers (the server reads who is logged in, never a choice of the screen):
-// what to do now, the commercial results against the period before, the leads, the goals and the production of the day, and
-// orientation from the daily review and from the numbers, and the goals of every polo. The management has Estatísticas with the whole team.
+// the results of the period with the line over the days, the goal, the place among the consultants, what to do now, the leads and
+// the orientation from the daily review. The management has Estatísticas with the whole team.
 
 const when = (v) => { try { return format(parseISO(v), "dd/MM HH:mm"); } catch (e) { return ""; } };
 const TONE = { danger: "#dc2626", warn: "#d97706", good: "#16a34a", info: "#0693E3" };
+const PERIOD_LABEL = { today: "Hoje", week: "7 dias", month: "Este mês", custom: "Período" };
 // change against the period before, in percent (points for a rate); null when there is nothing to compare
 const change = (now, before, points) => {
   if (before === null || before === undefined || now === null || now === undefined) return null;
@@ -21,29 +22,29 @@ const change = (now, before, points) => {
   if (!before) return null;
   return Math.round(((now - before) / before) * 100);
 };
+const against = (d) => (d === null ? "Sem período anterior para comparar" : d === 0 ? "Igual ao período anterior" : `${d > 0 ? "+" : ""}${d}% contra o período anterior`);
 
 const RESULTS = [
   ["leadsWorked", "Leads trabalhados"],
-  ["peopleContacted", "Pessoas contatadas"],
   ["proposalsSent", "Propostas enviadas"],
   ["gradesSent", "Grades enviadas"],
-  ["enrollments", "Matrículas"],
-  ["conversion", "Conversão", "percent"],
-  ["firstContactMinutes", "Tempo do 1º contato", "minutes", true],
+  ["messagesSent", "Mensagens enviadas"],
 ];
 
 const Section = ({ title, hint, children, action }) => {
   const c = useKit();
   return (
-    <section style={{ marginTop: 22 }}>
+    <section style={{ marginTop: 26, minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-        <div><h2 className={c.h2} style={{ fontSize: 16 }}>{title}</h2>{hint && <div className={c.sub}>{hint}</div>}</div>
+        <div><h2 className={c.h2} style={{ fontSize: 17 }}>{title}</h2>{hint && <div className={c.sub}>{hint}</div>}</div>
         {action}
       </div>
       {children}
     </section>
   );
 };
+
+const ordinal = (n) => `${num(n)}º`;
 
 const MyPerformance = () => {
   const c = useKit();
@@ -52,17 +53,23 @@ const MyPerformance = () => {
   const params = useMemo(() => periodParams(period), [period]);
   const ready = period.range !== "custom" || (period.from && period.to);
   const { data, loading, error, reload } = useAnalytics("/analytics/me/overview", params, !!ready);
-  const today = useAnalytics("/analytics/me", { range: "today" }, true);
   const go = (link) => history.push(link);
 
   if (!data) {
     return (
       <div className={c.page}>
-        <h1 className={c.h1}>Meu desempenho</h1>
-        {loading && !error ? (
-          <div style={{ display: "grid", gap: 12, marginTop: 16 }}>{[0, 1, 2].map((i) => <div key={i} className={c.panel} style={{ height: 90, opacity: 0.5 }} />)}</div>
+        <div className={c.head}>
+          <h1 className={c.h1}>Meu desempenho</h1>
+          <PeriodPicker value={period} onChange={setPeriod} />
+        </div>
+        {!ready ? (
+          <div className={c.panel}>Escolha as duas datas do período.</div>
+        ) : loading && !error ? (
+          <PeakRow label="Carregando os seus resultados">
+            {[0, 1, 2].map((i) => <div key={i} className="pk pk-skel" style={{ aspectRatio: "540 / 696", borderRadius: 30, width: "100%", maxWidth: 340, justifySelf: "center" }} aria-hidden="true" />)}
+          </PeakRow>
         ) : (
-          <div className={c.panel} role="alert" style={{ marginTop: 16, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className={c.panel} role="alert" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <AlertTriangle size={16} color="#b45309" /><span style={{ flex: 1, minWidth: 0 }}>Não foi possível carregar o seu desempenho agora.</span>
             <button type="button" className={c.btn} onClick={reload}><RefreshCw size={13} style={{ verticalAlign: -2 }} /> Tentar de novo</button>
           </div>
@@ -72,24 +79,106 @@ const MyPerformance = () => {
   }
 
   const r = data.results || { now: {}, before: null };
-  const t = today.data ? today.data.metrics : data.metrics;
+  const before = r.before || {};
   const targets = data.targets || {};
   const leads = data.leads || { stages: [], open: 0, waiting: 0, stale: 0 };
-  const maxStage = Math.max(1, ...leads.stages.map((s) => s.n));
   const todo = data.insights || [];
   const coaching = data.coaching;
+  const team = data.team || {};
+  const series = data.series || [];
+  const labels = series.map((d) => dayLabel(d.day));
+  const badge = PERIOD_LABEL[period.range] || "Período";
+  // what was done today is the last day of the series, when the period reaches today
+  const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+  const today = series.find((d) => d.day === todayKey);
+  const goals = data.goals || [];
+  const main = goals[0];
+  const peaks = [
+    { key: "enrollments", title: "Matrículas", accent: ACCENT.good },
+    { key: "attendances", title: "Conversas atendidas", accent: ACCENT.brand },
+    { key: "peopleContacted", title: "Pessoas contatadas", accent: ACCENT.violet },
+  ];
+  const compare = [
+    ["Conversão", r.now.conversion, team.conversion, "percent", false],
+    ["Tempo do 1º contato", r.now.firstContactMinutes, team.firstContact === null || team.firstContact === undefined ? null : Math.round(team.firstContact), "minutes", true],
+  ];
 
   return (
-    <div className={`${c.page} dash-scope`}>
+    <div className={`${c.page} dash-scope`} style={{ opacity: loading ? 0.75 : 1, transition: "opacity .2s ease" }}>
       <div className={c.head}>
         <div style={{ minWidth: 0 }}>
           <h1 className={c.h1}>Meu desempenho</h1>
-          <div className={c.lead}>O que você precisa fazer agora, os seus resultados comerciais, os seus leads e metas. Só você vê estes números.</div>
+          <div className={c.lead}>Os seus resultados, a sua meta, o que fazer agora e os seus leads. Só você vê estes números.</div>
         </div>
         <PeriodPicker value={period} onChange={setPeriod} />
       </div>
 
-      {/* 1. what to do now */}
+      {/* 1. the results of the period, each with its line over the days */}
+      <PeakRow label="Meus resultados no período">
+        {peaks.map((p) => {
+          const d = change(r.now[p.key], before[p.key]);
+          return <PeakChart key={p.key} title={p.title} value={Number(r.now[p.key]) || 0} data={series.map((x) => x[p.key])} labels={labels} accent={p.accent} badge={badge}
+            trend={d === null || d === 0 ? "none" : d > 0 ? "up" : "down"} caption={against(d)} />;
+        })}
+      </PeakRow>
+
+      {/* 2. the goal and the place among the consultants */}
+      <div className="pk-grid-wide" style={{ marginTop: 6 }}>
+        <GlowPanel id="goal" tone="good" title={main ? main.title : "Minha meta"} sub={main ? (main.mine.reached ? "Meta batida." : `${num(main.daysLeft)} dias restantes`) : undefined} empty={!main} emptyText="Você ainda não está em nenhuma meta ativa.">
+          {main && (
+            <>
+              <GlowRing pct={main.mine.pct ?? (main.mine.target ? (main.mine.done / main.mine.target) * 100 : 0)} facts={[
+                { label: "Feitas", value: num(main.mine.done) },
+                { label: "Meta", value: num(main.mine.target) },
+                { label: "Faltam", value: num(main.mine.missing) },
+                { label: "Ritmo necessário", value: main.mine.reached || !main.mine.pace ? "—" : `${String(main.mine.pace).replace(".", ",")} por dia` },
+              ]} />
+              {goals.slice(1).map((g) => (
+                <div key={g.id} style={{ marginTop: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13.5 }}><span>{g.title}</span><b>{num(g.mine.done)} / {num(g.mine.target)}</b></div>
+                  <div className="pk-rank" style={{ marginTop: 6 }}><span className="track" style={{ display: "block", height: 6, borderRadius: 999, background: "var(--track)", overflow: "hidden" }}><span className="fill" style={{ display: "block", width: `${g.mine.target ? Math.min(100, (g.mine.done / g.mine.target) * 100) : 0}%` }} /></span></div>
+                </div>
+              ))}
+            </>
+          )}
+        </GlowPanel>
+        <GlowPanel id="position" title="Minha posição na equipe" sub="Em matrículas no período. Você vê só o seu lugar, nunca o número dos colegas.">
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 46, fontWeight: 650, letterSpacing: "-0.03em", lineHeight: 1 }}>{team.position ? ordinal(team.position.rank) : "—"}</span>
+            <span className="pk-hint">{team.position ? `de ${num(team.position.of)} consultores` : "Sem posição no período"}</span>
+          </div>
+          <table className="pk-table" style={{ marginTop: 14 }}>
+            <thead><tr><th>Comparação</th><th className="r">Você</th><th className="r">Equipe</th></tr></thead>
+            <tbody>
+              {compare.map(([label, mine, avg, unit, lowerIsBetter]) => {
+                const known = mine !== null && mine !== undefined && avg !== null && avg !== undefined;
+                const better = known && (lowerIsBetter ? mine <= avg : mine >= avg);
+                return (
+                  <tr key={label}>
+                    <td>{label}</td>
+                    <td className="r" style={{ fontWeight: 700, color: known ? (better ? "var(--pk-good)" : "var(--pk-warn)") : undefined }}>{fmt(mine, unit)}</td>
+                    <td className="r">{fmt(avg, unit)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </GlowPanel>
+      </div>
+
+      {/* 3. today */}
+      {today && (
+        <Section title="Hoje" hint="O que você fez desde a meia-noite.">
+          <div className="pk-grid">
+            <DotTile id="today-attendances" label="Conversas atendidas" value={today.attendances} hint={targets.dailyAttendances > 0 ? `Meta do dia: ${num(targets.dailyAttendances)}` : undefined} tone={targets.dailyAttendances > 0 && today.attendances >= targets.dailyAttendances ? "good" : undefined} />
+            <DotTile id="today-messages" label="Mensagens enviadas" value={today.messagesSent} hint={targets.dailyMessages > 0 ? `Meta do dia: ${num(targets.dailyMessages)}` : undefined} tone={targets.dailyMessages > 0 && today.messagesSent >= targets.dailyMessages ? "good" : undefined} />
+            <DotTile id="today-people" label="Pessoas contatadas" value={today.peopleContacted} tone="violet" />
+            <DotTile id="today-enrollments" label="Matrículas" value={today.enrollments} tone="good" />
+          </div>
+        </Section>
+      )}
+
+      {/* 4. what to do now */}
       <Section title="O que fazer agora" hint="Os pontos que dependem de você, do mais urgente ao menos.">
         <div className={c.cols}>
           <div className={c.panel}>
@@ -125,68 +214,34 @@ const MyPerformance = () => {
         </div>
       </Section>
 
-      {/* 2. commercial results */}
-      <Section title="Meus resultados comerciais" hint="No período escolhido. A seta compara com o período anterior de mesma duração.">
-        <div className={c.grid} style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
-          {RESULTS.map(([key, label, unit, inverse]) => {
-            const now = key === "gradesSent" ? r.now.gradesSent : r.now[key];
-            const before = r.before ? r.before[key] : null;
-            const d = key === "gradesSent" ? null : change(now, before, unit === "percent");
-            return (
-              <div key={key} className={c.kpi}>
-                <div className={c.kpiLabel}><span>{label}</span></div>
-                <div className={c.kpiValue}>{fmt(now, unit)}</div>
-                <div style={{ marginTop: 4, minHeight: 20 }}>{d !== null && <Delta value={d} unit={unit === "percent" ? " p.p." : "%"} inverse={inverse} />}</div>
-              </div>
-            );
+      {/* 5. the other results, each against the period before */}
+      <Section title="Mais resultados" hint="No período escolhido, comparados com o período anterior de mesma duração.">
+        <div className="pk-grid">
+          {RESULTS.map(([key, label, unit, lowerIsBetter]) => {
+            const now = r.now[key];
+            // the grades of the period before are not counted, so there is nothing to compare them with
+            const d = key === "gradesSent" ? null : change(now, before[key], unit === "percent");
+            return <GlowStat key={key} id={key} label={label} value={unit === "minutes" && now !== null && now !== undefined ? minutesText(now) : fmt(now, unit)} delta={d} upIsGood={!lowerIsBetter} />;
           })}
         </div>
       </Section>
 
-      {/* 3. leads and goals */}
-      <div className={c.cols} style={{ marginTop: 22 }}>
-        <div className={c.panel}>
-          <BlockTitle icon={<TrendingUp size={16} />} title={`Meus leads agora (${num(leads.open)} em andamento)`} help="Os seus leads em cada etapa do funil hoje." />
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0" }}>
-            {leads.waiting > 0 && <button type="button" className={c.btn} style={{ color: "#dc2626" }} onClick={() => go("/crm")}>{num(leads.waiting)} sem primeiro contato</button>}
-            {leads.stale > 0 && <button type="button" className={c.btn} style={{ color: "#b45309" }} onClick={() => go("/crm?followUp=overdue")}>{num(leads.stale)} esfriando</button>}
+      {/* 6. the leads */}
+      <Section title={`Meus leads agora (${num(leads.open)} em andamento)`} hint="Os seus leads em cada etapa do funil hoje."
+        action={<button type="button" className={c.btn} onClick={() => go("/crm")}>Abrir meu funil</button>}>
+        <GlowPanel empty={!leads.stages.some((s) => s.n > 0)} emptyText="Nenhum lead em andamento com você.">
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: leads.waiting > 0 || leads.stale > 0 ? 14 : 0 }}>
+            {leads.waiting > 0 && <button type="button" className="pk-btn" style={{ color: "var(--pk-bad)" }} onClick={() => go("/crm")}>{num(leads.waiting)} sem primeiro contato</button>}
+            {leads.stale > 0 && <button type="button" className="pk-btn" style={{ color: "var(--pk-warn)" }} onClick={() => go("/crm?followUp=overdue")}>{num(leads.stale)} esfriando</button>}
           </div>
-          {leads.stages.filter((s) => s.n > 0).length === 0 && <div className={c.sub}>Nenhum lead em andamento com você.</div>}
-          {leads.stages.filter((s) => s.n > 0).map((s) => (
-            <div key={s.id} style={{ display: "grid", gridTemplateColumns: "minmax(0, 150px) 1fr 40px", gap: 10, alignItems: "center", padding: "5px 0", fontSize: 13.5 }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.name}>{s.name}</span>
-              <div className={c.bar}><div className={c.fill} style={{ width: `${(s.n / maxStage) * 100}%`, background: s.color || undefined }} /></div>
-              <b style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{num(s.n)}</b>
-            </div>
-          ))}
-          <button type="button" className={c.btn} style={{ marginTop: 10 }} onClick={() => go("/crm")}>Abrir meu funil</button>
-        </div>
-        <div className={c.panel}>
-          <BlockTitle icon={<Target size={16} />} title="Hoje e minhas metas" help="O que você fez desde a meia-noite e quanto falta em cada meta ativa." />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 12, margin: "10px 0 14px" }}>
-            {[["Conversas", t.attendances, targets.dailyAttendances], ["Pessoas", t.peopleContacted, 0], ["Leads", t.leadsWorked, 0], ["Matrículas", t.enrollments, 0]].map(([label, value, target]) => (
-              <div key={label}>
-                <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{num(value)}{target > 0 ? <span style={{ fontSize: 13, opacity: 0.7 }}> / {num(target)}</span> : null}</div>
-                <div className={c.sub} style={{ marginTop: 0 }}>{label} hoje</div>
-                {target > 0 && <div style={{ marginTop: 4 }}><Progress value={value} max={target} color="#0693E3" /></div>}
-              </div>
-            ))}
-          </div>
-          {data.goals.length === 0 && <div className={c.sub}>Você ainda não está em nenhuma meta ativa.</div>}
-          {data.goals.map((g) => (
-            <div key={g.id} style={{ margin: "10px 0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 14 }}><span>{g.title}</span><b>{num(g.mine.done)} / {num(g.mine.target)}</b></div>
-              <Progress value={g.mine.done} max={g.mine.target || 0} />
-              <div className={c.sub}>{g.mine.reached ? "Meta batida." : g.mine.pace ? `Faltam ${num(g.mine.missing)}: ${String(g.mine.pace).replace(".", ",")} matrículas por dia nos ${g.daysLeft} dias restantes` : `${g.daysLeft} dias restantes`}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+          <GlowFunnel steps={leads.stages.filter((s) => s.n > 0).map((s) => ({ key: s.id, name: s.name, value: s.n, color: s.color || undefined }))} />
+        </GlowPanel>
+      </Section>
 
       {/* the goals of every polo: how the consultant's polo is doing and the others (the same cards the management sees) */}
       <div style={{ marginTop: 28 }}><PoloProgress title="Metas dos polos" /></div>
 
-      {/* 4. orientation */}
+      {/* 7. orientation */}
       <Section title="Orientações para você" hint="Da revisão diária das suas conversas e da comparação com a média da equipe.">
         <div className={c.cols}>
           <div className={c.panel}>
@@ -206,11 +261,6 @@ const MyPerformance = () => {
             )}
           </div>
         </div>
-      </Section>
-
-      {/* 5. evolution */}
-      <Section title="Minha evolução" hint="Mensagens, conversas e matrículas por dia no período.">
-        <div className={c.panel}><HistoryChart series={data.series} /></div>
       </Section>
     </div>
   );

@@ -14,6 +14,7 @@ import ShareFrame from "../../components/ShareFrame";
 import BrandLogo from "../../components/BrandLogo";
 import { copyPng, downloadPng, renderPng } from "../../utils/shareImage";
 import api from "../../services/api";
+import { ErrorState, SkeletonCards } from "../../components/ui";
 import toastError from "../../errors/toastError";
 import { fetchAllUsers } from "../Affiliates/shared";
 
@@ -66,7 +67,9 @@ const Goals = () => {
   const shareRef = useRef(null);
   const [busy, setBusy] = useState(false);
 
+  const [failed, setFailed] = useState(false);
   const load = useCallback(async (keep) => {
+    setFailed(false);
     try {
       const { data } = await api.get("/goals");
       setGoals(data);
@@ -74,7 +77,7 @@ const Goals = () => {
       setSelected(pick ? pick.id : null);
       setDraft(pick ? clean(pick) : null);
       setDirty(false);
-    } catch (e) { toastError(e); }
+    } catch (e) { setFailed(true); toastError(e); }
   }, [selected]);
   useEffect(() => { load(); fetchAllUsers().then(setUsers).catch(() => {}); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -153,6 +156,9 @@ const Goals = () => {
 
       <div className={classes.body}>
         <GoalsTabs current="team" />
+        {!goals && (failed
+          ? <ErrorState title="Não foi possível carregar as metas." onRetry={() => load()} />
+          : <div aria-busy="true"><SkeletonCards n={3} height={110} /></div>)}
         {goals && goals.length > 0 && (
           <div className={classes.tabs}>
             {goals.map((g) => (
