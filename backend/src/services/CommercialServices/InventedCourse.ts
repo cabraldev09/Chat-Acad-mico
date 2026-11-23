@@ -68,7 +68,9 @@ export const areaInContext = (text: string, previous: string): AskedArea | null 
   const t = plainName(text);
   if (!t || t.length > 120) return null;
   // the answer to "Qual dessas áreas combina mais...?": the area is in the words of the person
-  if (/qual dessas areas|qual outra area/.test(plainName(previous))) { const own = AREA_WORDS.find(([, r]) => r.test(t)); if (own) return own[0]; }
+  if (/qual dessas areas|qual outra area|na area de (saude|tecnologia|gestao|educacao) temos, por exemplo/.test(plainName(previous))) { const own = AREA_WORDS.find(([, r]) => r.test(t)); if (own) return own[0]; }
+  // "sim", "quero ver", "mostra a lista" after the offer of the whole list of an area
+  if (/lista completa dessa area/.test(plainName(previous)) && /^(sim|s|quero|quero ver|pode|pode ser|mostra|manda|ok|claro)\b|\b(lista|todos|todas|completa)\b/.test(t)) { const hit0 = AREA_WORD.find(([, r]) => r.test(plainName(previous))); if (hit0) return hit0[0]; }
   const refers = /\b(nessa|dessa|essa|nesta|desta|esta|na mesma) area\b/.test(t) || /^(e )?(quais|que) (sao )?(os |as )?(outros |outras |demais )?(cursos|opcoes|graduacoes)( (voces )?(tem|ofertam|oferecem))?$/.test(t);
   if (!refers) return null;
   const p = plainName(previous);
@@ -99,7 +101,7 @@ export const areasHelp = (list: Array<{ name: string }>): string | null => {
   const have = (Object.keys(AREA_LABEL) as AskedArea[]).filter(a => coursesOfArea(list, a).length);
   if (have.length < 2) return null;
   const names = have.map(a => AREA_LABEL[a]);
-  return `Temos cursos nas áreas de ${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}.\n\nQual dessas áreas combina mais com o que você procura?`;
+  return `Posso te ajudar a escolher. Temos cursos nas áreas de ${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}.\n\nQual dessas áreas combina mais com o que você quer para a sua carreira?`;
 };
 export const asksForCourses = (text: string): boolean =>
   /\b(quais (sao )?(os )?cursos|que cursos|lista de cursos|cursos (voces|vcs|vc|voce) tem|o que (voce|vc|voces|vcs) (indica|indicam|recomenda)|me indica|qualquer um|nao sei( ainda)?( qual)?|tanto faz|nao decidi|estou em duvida)\b/.test(plainName(text));
@@ -128,7 +130,10 @@ const areaOfName = (name: string): AskedArea | null => {
 // "we do not offer X": with the courses of the same area that are offered (the whole list), or else the closest ones
 export const notOfferedReply = (name: string, list: Array<{ name: string; modality?: string | null }>, closest: string[]): string => {
   const area = areaOfName(name);
-  if (area && coursesOfArea(list, area).length) return `Hoje a instituição não oferece o curso de ${name}.\n\n${areaText(area, list)}`;
+  const same = area ? coursesOfArea(list, area) : [];
+  // a few of the same area, not the whole catalogue; the whole list is one question away
+  if (area && same.length > 4) return `Hoje a instituição não oferece o curso de ${name}.\n\nNa área de ${AREA_LABEL[area]} temos, por exemplo, ${joinNames(same.slice(0, 3).map(c => courseLabel(c.name)))}. Quer ver a lista completa dessa área ou prefere me contar o que você busca na carreira?`;
+  if (area && same.length) return `Hoje a instituição não oferece o curso de ${name}.\n\n${areaText(area, list)}`;
   return notOfferedWords(name, closest, list.length > closest.length);
 };
 

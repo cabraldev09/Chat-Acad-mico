@@ -44,14 +44,24 @@ const MONEY = [
   /\b(tem|ha|existe|consigo|posso ter) (alguma )?(bolsa|desconto)\b/,
   /\b(bolsa|desconto|promocao|condicao especial|forma de pagamento|formas de pagamento)\b/,
   /\b(me )?(manda|envia|passa|faz|gera|quero|queria|gostaria d[ea]|preciso d[ea]) (a |uma |sua )?proposta\b/,
-  /\bquero saber quanto\b/
+  /\bquero saber quanto\b/,
+  // an estimate, "uma base", "mais ou menos quanto": still a price; so is the investment and the price range
+  /\b(estimativa|valor aproximado|uma base (de valor|de preco)?|so uma base|mais ou menos quanto|por volta de quanto|em media quanto|faixa de (preco|valor)|investimento|quanto (seria|sairia|ficaria|vou pagar|eu pago|e o valor|e a mensalidade)|qual (seria )?(a |o )?(mensalidade|valor|preco|custo))\b/,
+  /\b(custa|custo|custos)\b/,
+  /\b(me )?(passa|passe|fala|fale|diz|diga|manda|mande|informa|informe) (o |os |a |as )?(valor|valores|preco|precos|mensalidade)\b/,
+  /\bquanto (fica|ficam|e|esta|ta)\b(?! (o tempo|a duracao|tempo))/
 ];
 const ENROLL = [
   /quero (me )?matricular/,
   /quero (fazer|garantir|realizar) (a |minha )?(matricula|inscricao)/,
   /pode (prosseguir|seguir|continuar com a matricula)/,
   /vamos (fechar|prosseguir|matricular)/,
-  /como (eu )?(faco|fazer) (pra|para) (me )?matricular/
+  /como (eu )?(faco|fazer) (pra|para) (me )?(matricular|inscrever)/,
+  /(pode|podem|quero|vamos) (fazer|efetuar) (a )?minha matricula/,
+  /quero (garantir|reservar) (a )?minha vaga/,
+  /quero (fechar|comecar) (agora|hoje|ja|logo)/,
+  /quero (me )?inscrever/,
+  /\b(fazer|efetuar) (a )?(minha )?(matricula|inscricao) (hoje|agora|ja)\b/
 ];
 const NO_INTEREST = [/nao tenho (mais )?interesse/, /\bdesisti\b/, /nao quero (mais )?(fazer|continuar|saber|estudar|receber)/, /\bsem interesse\b/, /nao me interessa/, /par[ae]m? de (me )?(mandar|enviar) mensage/, /por enquanto nao quero/, /nao (me )?(mande|envie|manda) mais/];
 // "não tenho mais interesse", "para de me mandar mensagem": said in the words, whatever the model understood
@@ -63,7 +73,7 @@ export const asksSomething = (text: string): boolean => /\?/.test(text) || /^\s*
 // "sim", "entendi", "ok", "blz" as the answer to "Até aqui você compreendeu?" or to the question of the doubts: the process goes on
 export const affirms = (text: string, lastQuestion: string): boolean => {
   const q = plain(lastQuestion);
-  if (!/ate aqui voce compreendeu|ficou claro|alguma duvida|quer que eu te explique/.test(q)) return false;
+  if (!/ate aqui voce compreendeu|ficou claro|alguma duvida|quer que eu te explique|quer que eu ja peca|seguimos com/.test(q)) return false;
   return /^((sim|s|ss|entendi|compreendi|ok|okay|certo|beleza|blz|show|perfeito|otimo|claro|pode|pode sim|isso|uhum|aham|tudo certo|tudo bem|ta|ta bom|ficou claro|ficou|deu pra entender|entendido|legal|top)[ ,.!]*)+$/.test(plain(text).trim());
 };
 
@@ -545,15 +555,29 @@ export const afterCourseChange = (slots: Slots, patch: Record<string, any>): Slo
 // who asks the price, the scholarship or the enrollment is worked first: the agent presents the course (the value of it) and asks the data for the
 // consultant to simulate the scholarship; the consultant is called once that is done, or after VALUE_HOLD answers at most (never a loop)
 export const VALUE_HOLD = 8;
-// (the consultant is called when the steps are done, when the person asks the price for the third time, or after VALUE_HOLD answers)
-export const PRICE_ASKS = 2;
+// Who asks the price or wants to enroll is on the commercial lane: the agent answers that intent at once (never a value), confirms only
+// what the consultant needs and is not known yet (course, kind of entry, city, the name), and hands over. The academic presentation is not
+// forced on them. A second question about the price calls the consultant right away, with what is known.
+export const PRICE_ASKS = 1;
+export const laneAsksName = (slots: Slots): boolean => !slots.fullName && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
+export const lanePending = (slots: Slots): boolean =>
+  !(slots.courseId || slots.courseName) || slots.courseChoosing === true || !(slots.city || slots.poloId) || !slots.entryType || slots.entryType === "unknown" || laneAsksName(slots);
 export const processPending = (slots: Slots): boolean =>
   !(slots.courseId || slots.courseName) || !(slots.city || slots.poloId) || !slots.entryType || slots.entryType === "unknown" || !slots.courseExplained || slots.courseChoosing === true || formatPending(slots) || needsBolsaData(slots);
-export const holdsProposal = (slots: Slots): boolean => !slots.enrolledStudent && Number(slots.valueHeld || 0) < VALUE_HOLD && processPending(slots);
+export const holdsProposal = (slots: Slots): boolean => !slots.enrolledStudent && Number(slots.valueHeld || 0) < VALUE_HOLD && (slots.fastLane ? lanePending(slots) : processPending(slots));
 // the words for the moment of the price: values come from the consultant, and before that the course
 export const VALUE_BRIDGE = "Os valores e as bolsas dependem da sua situação e do seu polo, por isso quem simula a melhor bolsa para você é o consultor do seu polo. Vou encaminhar para ele, mas antes quero te mostrar o que o curso oferece.";
 // "quero me matricular": no talk of values was asked for
-export const ENROLL_BRIDGE = "Que bom! Quem conduz a sua matrícula e simula a bolsa é o consultor do seu polo. Antes de encaminhar, quero te mostrar como o curso funciona.";
+export const ENROLL_BRIDGE = "Que bom! Vou te encaminhar para o consultor do seu polo, que conduz a matrícula e apresenta a sua bolsa.";
+// the name of the contact is used only when it looks like the name of a person (never "Lead", "Cliente", a number or the name of a company)
+export const personName = (first: string): string => {
+  const f = String(first || "").trim();
+  if (!/^[A-Za-zÀ-ÿ]{3,20}$/.test(f)) return "";
+  return /^(lead|leads|teste|test|cliente|contato|consultor|consultora|comercial|atendimento|atendente|aluno|aluna|whatsapp|user|usuario|admin|suporte|vendas|polo|loja|empresa|sem|nome)$/i.test(f) ? "" : f;
+};
+// "vou pensar": one gentle question about what may still be unclear, then the decision of the person is respected
+export const THINK_PROBE = "Claro, sem pressa. Antes de você ir: ficou alguma dúvida sobre o curso, o formato ou o processo de matrícula que eu possa esclarecer?";
+export const THINK_BYE = "Tudo bem! Fico à disposição. Quando quiser retomar, é só me chamar por aqui.";
 export const VALUE_BRIDGE_SHORT = "Os valores e as bolsas dependem da sua situação e do seu polo, por isso quem simula a melhor bolsa para você é o consultor do seu polo.";
 
 export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES, requires?: readonly string[]): boolean => {
@@ -748,6 +772,9 @@ export const briefOf = (s: CommercialState, extra: { stageName?: string | null; 
     line("Interesse", INTEREST_LABEL[x.interestKind || ""] || null),
     x.preferredConsultantName ? line("Consultor pedido pelo lead", x.preferredConsultantName) : null,
     line("Ingresso", ENTRY_LABEL[x.entryType || "unknown"]),
+    optional("Formação anterior", [x.previousCourse, x.previousInstitution].filter(Boolean).join(" · ")),
+    optional("Intenção de matrícula", x.fastLane === "enrollment" ? "Quer se matricular agora (prioridade)" : x.fastLane ? "Perguntou valor ou bolsa" : null),
+    optional("Dados pendentes", [!(x.courseId || x.courseName) ? "curso" : null, !(x.city || x.poloId) ? "cidade" : null, !x.entryType || x.entryType === "unknown" ? "forma de ingresso" : null, !x.fullName ? "nome completo" : null, !x.cpfGiven ? "CPF" : null].filter(Boolean).join(", ")),
     line("Duração", x.courseDurationText || (x.courseDurationSemesters ? `${x.courseDurationSemesters} semestres` : null)),
     line("Modalidade", x.courseModality),
     line("MEC explicado", x.mecImpacted === false ? "Não se aplica" : yesNo(x.mecExplained)),

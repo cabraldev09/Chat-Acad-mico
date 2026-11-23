@@ -95,6 +95,10 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
     ["courseExplained", "modalityExplained", "mecExplained", "internshipExplained", "gradeSent"].forEach(k => { if (patch[k] !== true) s.slots[k] = false; });
     if (!patch.courseModality) { delete s.slots.courseModality; delete s.slots.mecImpacted; }
     delete s.slots.formatTried;
+    // everything that was read from the old course goes with it (the tools look the course up by these)
+    if (patch.courseId) s.slots.offerId = patch.courseId; else delete s.slots.offerId;
+    if (!patch.courseId) delete s.slots.courseId;
+    ["gradeId", "gradeVersion", "courseDurationSemesters", "courseDurationText", "courseDegree", "internshipSummary", "hasInternship", "hasTcc"].forEach(k => { if (patch[k] === undefined) delete s.slots[k]; });
     if (patch.bolsaDataAsked === undefined && !s.slots.fullName) s.slots.bolsaDataAsked = 0;
     reasons.push("Outro curso: o formato, a grade e as dúvidas recomeçam para ele.");
   }

@@ -137,8 +137,22 @@ Além do funil: quantos leads **entraram** no sistema (evento `lead_created`, po
    curso (`courseChoosing`), em cima de uma dúvida, de "vou pensar" ou de "não tenho interesse". Quem manda só o nome ouve o pedido do CPF.
 6. Com os dados, o consultor do polo. Toda passagem à equipe é avisada ao lead, inclusive a do limite de respostas da etapa.
 
-Quem pergunta valor, bolsa ou matrícula no começo segue os mesmos passos (`Rules.holdsProposal`): o agente diz que quem simula é o consultor e
-continua de onde o processo está. Na terceira pergunta de preço, ou depois de 8 respostas, o consultor é chamado.
+**Via comercial** (`Turn.laneStep`, `Rules.lanePending`): quem pergunta valor ou bolsa, ou diz que quer se matricular ("quero me matricular
+hoje", "quero garantir minha vaga", "como faço para me inscrever?"), não passa pela apresentação acadêmica. O agente responde na hora que
+valores e bolsas são do consultor do polo (nunca um valor, nem estimativa), confirma só o que o consultor precisa e ainda não se sabe
+(curso, primeira graduação ou não, cidade), pede o nome completo e o CPF uma vez e encaminha. O CPF nunca bloqueia o encaminhamento.
+A segunda pergunta de preço chama o consultor na hora, com o que já se sabe. "Quero me matricular" não conta como insistir no preço, e fica
+marcado no resumo do consultor como intenção de matrícula (prioridade).
+
+"Vou pensar": uma pergunta gentil sobre o que ainda pode estar em dúvida; dito de novo, a decisão é respeitada com uma despedida curta.
+
+Curso não ofertado: poucas alternativas da mesma área, com a lista completa a uma pergunta de distância; a lista inteira vem quando a
+pessoa pede a área. Quem não sabe o curso é perguntado pela área e pelo objetivo de carreira.
+
+O nome do contato só é usado quando parece o nome de uma pessoa (`Rules.personName`).
+
+Os 4 cenários e os 16 testes da auditoria de 23/11 rodam em conversas inteiras com `node scripts/lead-sim/scenarios.js` (falha se houver
+valor informado, pergunta repetida em seguida ou passagem sem aviso).
 
 Cursos: a lista vem só do catálogo (cursos ofertados). Erro de digitação e apelido são reconhecidos (`Detect.ts`); dois cursos na mesma
 mensagem viram uma pergunta de qual começar; quem não sabe o curso recebe as áreas; área não é curso; com um curso já escolhido, perguntar

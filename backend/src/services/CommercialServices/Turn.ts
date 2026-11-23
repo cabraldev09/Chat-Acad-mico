@@ -14,7 +14,7 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { DOUBTS_QUESTION, ENTRY_LABEL, PRESENT_BRIDGE, REUSE_TEXT, PRESENT_BRIDGE_PLAIN, ENROLL_BRIDGE, PRICE_ASKS, affirms, asksSomething, asksForTime, saysNoInterest, cityCandidateOf, priorStudy, afterCourseChange, formatPending, reuseAlreadySaid, VALUE_BRIDGE, VALUE_BRIDGE_SHORT, holdsProposal, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, modalityMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
+import { DOUBTS_QUESTION, ENTRY_LABEL, PRESENT_BRIDGE, REUSE_TEXT, PRESENT_BRIDGE_PLAIN, ENROLL_BRIDGE, PRICE_ASKS, THINK_PROBE, THINK_BYE, laneAsksName, lanePending, personName, affirms, asksSomething, asksForTime, saysNoInterest, cityCandidateOf, priorStudy, afterCourseChange, formatPending, reuseAlreadySaid, VALUE_BRIDGE, VALUE_BRIDGE_SHORT, holdsProposal, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, modalityMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
 import { configOf } from "./Config";
 import { detectFromText, findConsultantByName } from "./Detect";
 import { AcademicCtx, findCourse, notOfferedText, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
@@ -39,6 +39,8 @@ const scriptTexts = (d: { ports: { config?: any } }): { entry?: string; course?:
 const fixedText = (d: { ports: { config?: any }; agent?: any }, key: "proposal" | "tutoring" | "secretary" | "unknown" | "unknownHeld"): string =>
   (scriptTexts(d) as any)[key] || (key === "unknown" && d.agent && d.agent.persona && String(d.agent.persona.unknownMessage || "").trim()) || FIXED[key];
 
+// after the tutoring: the next step is offered, not one more "ficou alguma dúvida?"
+const BOLSA_OFFER = "Quer que eu já peça ao consultor do seu polo para simular a sua bolsa?";
 const plainText = (v: string): string => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 export const FIXED = {
@@ -238,7 +240,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     return help || next;
   };
   if (fresh && !d.turns && (d.input === null || isGreeting(lastText))) {
-    const first = String(state.slots.leadName || d.contactName || "").trim().split(/\s+/)[0] || "";
+    const first = personName(String(state.slots.fullName || state.slots.leadName || d.contactName || "").trim().split(/\s+/)[0] || "");
     const text = openingText(state.slots, first, !!state.slots.lastOutboundAt, d.agent.persona);
     const hook = await commercialTurn(d.ports, { userText: lastText, intent: d.input === null ? null : "greeting", tools: [], hadText: true, replied: d.input !== null, firstContactSent: true, nodeId: d.nodeId });
     const latencyMs = Date.now() - started;
@@ -302,10 +304,10 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     }
     // the tutoring and the doubts come before the data for the scholarship, also when there is no grade to send
     if (!slots.tutoringExplained && (slots.courseId || slots.courseName)) {
-      return answered(`${TUTORING_PITCH}\n\n${scriptTexts(d).doubts || DOUBTS_QUESTION}`, null, "other", { patch: { tutoringExplained: true, courseExplained: true }, endsWithQuestion: true });
+      return answered(`${TUTORING_PITCH}\n\n${BOLSA_OFFER}`, null, "other", { patch: { tutoringExplained: true, courseExplained: true }, endsWithQuestion: true });
     }
     if (needsBolsaData(slots)) {
-      const text = `Perfeito. ${bolsaRequestFor({ name: !slots.fullName, cpf: !slots.cpfGiven }, scriptTexts(d).bolsa)}`;
+      const text = bolsaRequestFor({ name: !slots.fullName, cpf: !slots.cpfGiven }, scriptTexts(d).bolsa);
       return answered(text, null, "other", { patch: { bolsaDataAsked: Number(slots.bolsaDataAsked || 0) + 1, courseExplained: true }, endsWithQuestion: true });
     }
     if (isQualified({ ...slots, courseExplained: true })) {
@@ -379,24 +381,67 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // scholarship, and the consultant is called after that (Rules.holdsProposal)
   // (once: whoever asks the price again is handed over)
   const slotsHeard = afterCourseChange(state.slots, { ...(heardNow.courseId ? { courseId: heardNow.courseId, courseName: heardNow.courseName } : {}), ...(heardNow.city ? { city: heardNow.city } : {}), ...(heardNow.poloId ? { poloId: heardNow.poloId } : {}) });
-  // (the third time the price is asked, the consultant is called)
-  if (fast && fast.intent !== "human" && holdsProposal(slotsHeard) && Number(state.slots.priceAsks || 0) < PRICE_ASKS) {
-    const worked = await valueReply(d, slotsHeard, ask, stageNeeds, fast.intent);
-    // ("quero me matricular" is not a question about the price: it does not count as insisting)
-    if (fast.intent !== "enrollment") worked.patch = { ...worked.patch, priceAsks: Number(state.slots.priceAsks || 0) + 1 };
-    const hook = await commercialTurn(d.ports, { userText: lastText, fast: fast.intent, patch: worked.patch, tools: worked.tools, hadText: true, replied: true, retract: false, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId, endsWithQuestion: true, holdValue: true });
+  const priceAsks = Number(state.slots.priceAsks || 0);
+  // The commercial lane: the price (or "quero me matricular") is answered at once, never with a value; only what the consultant needs and
+  // is not known is asked, one thing at a time; the second question about the price calls the consultant right away.
+  const laneStep = async (intent: string, bridge: string | null): Promise<CommercialTurnResult> => {
+    const kind = intent === "enrollment" || state.slots.fastLane === "enrollment" ? "enrollment" : "price";
+    const patch: Record<string, any> = { fastLane: kind, ...(intent === "price" || intent === "proposal" ? { priceAsks: priceAsks + 1 } : {}) };
+    // what the person says in this very message counts (the kind of entry, the city asked for)
+    const entrySaid = !slotsHeard.entryType || slotsHeard.entryType === "unknown" ? entryAnswer(lastText, lastBot) : null;
+    if (entrySaid) patch.entryType = entrySaid;
+    if (!slotsHeard.city && !slotsHeard.poloId && /reside em qual cidade|qual (e )?a sua cidade/.test(plainText(lastBot)) && !asksSomething(lastText)) {
+      const saidCity = cityCandidateOf(lastText, false) || (lastText.trim().split(/\s+/).length <= 4 ? lastText.trim().replace(/[.,!]+$/, "") : null);
+      if (saidCity && saidCity.length >= 3 && !/^(sim|nao|ok|oi|ola)$/i.test(plainText(saidCity))) patch.city = saidCity.replace(/\b([a-zà-ú])/g, m => m.toUpperCase()).slice(0, 60);
+    }
+    const probe = { ...slotsHeard, ...patch };
+    const next = await courseAskOrHelp(nextQuestionOf(probe, ask, undefined, scriptTexts(d)));
+    const head = bridge ? `${bridge}\n\n` : "";
+    const run = async (text: string, extra: Record<string, any>, hold: boolean) => {
+      const hook = await commercialTurn(d.ports, { userText: lastText.replace(/\d{6,}/g, "•"), fast: fast && fast.intent !== "human" ? fast.intent : (kind === "enrollment" ? "enrollment" : "price"), patch: { ...patch, ...extra }, tools: [], hadText: true, replied: true, retract: false, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId, endsWithQuestion: hold, holdValue: hold });
+      const latencyMs = Date.now() - started;
+      await log({ intent: kind, deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
+      if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
+      return { text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: kind, commercial: hook.trace, entry: ENTRY_LABEL[probe.entryType || "unknown"], latencyMs } } as CommercialTurnResult;
+    };
+    if (next) return run(`${head}${bridge ? "Para ele já te atender certo: " : ""}${bridge ? next.replace(/^./, c => c.toLowerCase()) : next}`, {}, true);
+    if (laneAsksName(probe)) return run(`${head}${bolsaRequestFor({ name: true, cpf: !probe.cpfGiven }, scriptTexts(d).bolsa)}`, { bolsaDataAsked: Number(probe.bolsaDataAsked || 0) + 1 }, true);
+    // everything the consultant needs is known: the conversation goes to them now
+    return run(`${head}${scriptTexts(d).handoff || FIXED.toProposal}`.trim(), {}, false);
+  };
+  if (fast && fast.intent !== "human") {
+    // (the price asked again: the consultant now, with what is known; "quero me matricular" is never "insisting on the price")
+    // (the wish to enroll said again instead of answering what was asked: the candidate is ready, the consultant takes it with what is known)
+    const insists = (fast.intent !== "enrollment" && priceAsks >= PRICE_ASKS) || (fast.intent === "enrollment" && !!state.slots.fastLane && /\?\s*$/.test(lastBot.trim()));
+    if (!insists && lanePending({ ...slotsHeard, fastLane: "x" })) return laneStep(fast.intent, fast.intent === "enrollment" ? ENROLL_BRIDGE : VALUE_BRIDGE_SHORT);
+    const text = scriptTexts(d).handoff || FIXED.toProposal;
+    const hook = await commercialTurn(d.ports, { userText: lastText, fast: fast.intent, patch: { fastLane: state.slots.fastLane || (fast.intent === "enrollment" ? "enrollment" : "price"), ...(heardNow.courseId ? { courseId: heardNow.courseId, courseName: heardNow.courseName } : {}) }, tools: [], hadText: true, replied: true, retract: false, nodeId: d.nodeId, holdValue: false });
     const latencyMs = Date.now() - started;
-    await log({ intent: fast.intent, deterministic: true, llmCalls: 0, toolCalls: worked.tools.length, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
+    await log({ intent: fast.intent, deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
     if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
-    return { text: worked.text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: fast.intent, commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
+    return { text, exit: hook.exit, collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: fast.intent, commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
   }
   if (fast) {
-    const text = fast.intent === "human" ? d.agent.handoffMessage || FIXED.human : state.slots.valueHeld || state.slots.priceAsks ? scriptTexts(d).handoff || FIXED.toProposal : fixedText(d, "proposal");
+    const text = d.agent.handoffMessage || FIXED.human;
     const hook = await commercialTurn(d.ports, { userText: lastText, fast: fast.intent, tools: [], hadText: true, replied: true, retract: false, nodeId: d.nodeId, holdValue: false });
     const latencyMs = Date.now() - started;
     await log({ intent: fast.intent, deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
     if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
     return { text, exit: hook.exit, collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: fast.intent, commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
+  }
+  // on the lane, an answer to what was asked (the kind of entry, the city, the course) moves straight to the next thing the consultant needs
+  if (state.slots.fastLane && d.input !== null && wrote && !media.length && !state.slots.enrolledStudent && !asksSomething(lastText) && !asksForTime(lastText) && !saysNoInterest(lastText) && !named) {
+    return laneStep(String(state.slots.fastLane), null);
+  }
+  // "sim", "ok", "pode" to the request of the name and the CPF: the same question is not asked again; the person is told how to send it
+  if (d.input !== null && wrote && !media.length && /nome completo e cpf|falta so o seu (cpf|nome completo)/.test(plainText(lastBot)) && /^(sim|s|ok|okay|pode|pode sim|claro|blz|beleza|ta|ta bom|certo|tudo bem)[ .!]*$/.test(plainText(lastText).trim())) {
+    return answered("Pode enviar por aqui mesmo, quando quiser: o nome completo e, em seguida, o CPF.", null, "other", { stay: true });
+  }
+  // "vou pensar": one gentle question about what may still be unclear; said again (or "não, é só isso"), the decision is respected
+  const thinkAnswered = !!state.slots.thinkAsked && /ficou alguma duvida sobre o curso, o formato ou o processo/.test(plainText(lastBot)) && /^(nao|n|nada|so isso|e so isso|tudo certo|ta tudo certo|nenhuma|sem duvidas?|nao,? obrigad[oa]|por enquanto nao)\b/.test(plainText(lastText).trim());
+  if (d.input !== null && wrote && !state.slots.enrolledStudent && (asksForTime(lastText) || thinkAnswered) && !saysNoInterest(lastText)) {
+    if (!state.slots.thinkAsked) return answered(THINK_PROBE, null, "other", { patch: { thinkAsked: true }, stay: true, endsWithQuestion: true });
+    return answered(THINK_BYE, null, "follow_up", { intent: "follow_up", followUp: { reason: "pediu um tempo para pensar", at: null } });
   }
 
   // a student who needs the tutoring or the secretary: the team of the polo takes it, without a sales talk (and without a model)
@@ -566,7 +611,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // the full name and the CPF are asked after all that, never in the message that carries the grade
   if (bolsaDue && !patchOut.gradeSent && !probe.tutoringExplained && !/tutoria/i.test(String(text || ""))) {
     // the tutoring and the doubts come first (the grade usually carries them; here there was none)
-    text = `${withoutClosingQuestion(String(text || "").trim())}\n\n${TUTORING_PITCH}\n\n${scriptTexts(d).doubts || DOUBTS_QUESTION}`.trim();
+    text = `${withoutClosingQuestion(String(text || "").trim())}\n\n${TUTORING_PITCH}\n\n${BOLSA_OFFER}`.trim();
     patchOut = { ...patchOut, tutoringExplained: true };
   } else if (bolsaDue && !patchOut.gradeSent) {
     text = `${String(text || "").trim()}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven }, scriptTexts(d).bolsa)}`.trim();
@@ -784,7 +829,7 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   const first = d.input !== null && !d.turns && !slots.lastOutboundAt;
   const out = await commercialAiTurnInner(d);
   if (first && out.text && out.text.trim() && !alreadyIntroduces(out.text)) {
-    const name = String(slots.leadName || d.contactName || "").trim().split(/\s+/)[0] || "";
+    const name = personName(String(slots.fullName || slots.leadName || d.contactName || "").trim().split(/\s+/)[0] || "");
     out.text = `${introText(d.agent.persona, name)}\n\n${out.text.trim()}`;
   }
   return out;
