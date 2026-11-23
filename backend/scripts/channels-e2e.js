@@ -933,13 +933,6 @@ const postMeta = (id, payload, secret, badSig) => {
       const r = await http.post("/api/v1/messages/send", { number: "5511988887777", body: "Olá {{name}}!", whatsappId: cid, name: "Lead API" }, { headers: { Authorization: `Bearer ${t}` } });
       assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
       assert(graph.sent.slice(before).some(x => x.body && x.body.to === "5511988887777"), "not sent through cloud api");
-      // a number that never wrote to us gets the message, and stays a contact: it becomes a lead only when it answers (the case of Gabriela)
-      const fresh = await http.post("/api/v1/messages/send", { number: "5511988886666", body: "Olá {{name}}!", whatsappId: cid, name: "Gabriela Teste" }, { headers: { Authorization: `Bearer ${t}` } });
-      assert(fresh.status === 200 && sql(`SELECT COUNT(*) FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number='5511988886666'`) !== "0", `send to a new number ${fresh.status}`);
-      await new Promise(r => setTimeout(r, 1500));
-      assert(sql(`SELECT COUNT(*) FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='5511988886666'`) === "0", "a contact the team wrote to became a lead before answering");
-      await postMeta(cid, cloudEvent([{ from: "5511988886666", id: "wamid.gab-1", type: "text", text: { body: "Oi, recebi sua mensagem" } }]), cloudCfg.appSecret);
-      await waitFor(() => sql(`SELECT COUNT(*) FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='5511988886666'`) === "1", 10000, "the contact became a lead when she wrote");
     });
 
     // -------------------------------------------------------------------- CRM
@@ -1042,10 +1035,10 @@ const postMeta = (id, payload, secret, badSig) => {
       // which opened the conversation and wrote, but she never answered: a contact, not a lead
       await http.post("/api/v1/contacts", { name: "Contato da equipe", number: "5531977772222" }, headers);
       const contactId = sql(`SELECT id FROM Contacts WHERE number='5531977770000'`);
-      const tk = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('closed', ${contactId}, ${tgId}, 0, false, 'sales', NOW(), NOW()) RETURNING id`);
+      const tk = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('closed', ${contactId}, ${tgId}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('bf-in-1', ${tk}, 'oi, quero saber dos cursos', false, true, 'chat', 0, NOW(), NOW())`);
       const teamOnly = sql(`SELECT id FROM Contacts WHERE number='5531977772222'`);
-      const tk2 = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${teamOnly}, ${tgId}, 0, false, 'sales', NOW(), NOW()) RETURNING id`);
+      const tk2 = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${teamOnly}, ${tgId}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('bf-out-1', ${tk2}, 'Olá, Gabriela!', true, true, 'chat', 0, NOW(), NOW())`);
       const r = await http.post("/crm/backfill", {}, auth());
       assert(r.status === 200 && r.data.created >= 1, `backfill ${JSON.stringify(r.data)}`);
@@ -1067,6 +1060,11 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(s.body.template.name === "inscricoes_abertas" && s.body.template.language.code === "pt_BR", "template payload");
       assert(s.body.template.components[0].parameters[0].text === "Rita", "first name parameter");
       assert(s.body.to === "5511966665555", "recipient");
+      // the campaign opened a conversation with someone who never wrote: she stays a contact, out of the CRM, until she answers
+      // (the case of Gabriela: a contact the team reached first does not count as a lead in the panel)
+      await waitFor(() => sql(`SELECT COUNT(*) FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number='5511966665555'`) !== "0", 10000, "the conversation of the campaign");
+      await new Promise(r => setTimeout(r, 1500));
+      assert(!leadOf("5511966665555"), "a contact reached only by the campaign became a lead");
     });
     await test("a campaign with several messages delivers them in order, then marks the recipient as sent", async () => {
       await postMeta(cid, cloudEvent([{ from: "5511955554444", id: "wamid.sequence.optin", type: "text", text: { body: "Pode me explicar a inscrição?" } }]), cloudCfg.appSecret);
