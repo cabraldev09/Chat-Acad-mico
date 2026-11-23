@@ -5276,7 +5276,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await inboundCloud("5511910000009", "wamid.learn-1", "Vocês têm bolsa para atletas?");
       await waitFor(() => sentTexts(before).some(t => t.includes("passar sua dúvida")), 15000, "unknown reply");
       const t = ticketOf("5511910000009");
-      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "0", "ticket should go to a person");
+      await waitFor(() => sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "0", 8000, "ticket handoff");
       assert(sql(`SELECT status FROM AiLearnings WHERE ticketId=${t}`) === "aguardando_equipe", "question not kept");
       const told = graph.sent.slice(before).find(x => x.body && x.body.to === "5511999990000" && x.body.text && x.body.text.body.includes("não soube responder"));
       assert(told && told.body.text.body.includes("bolsa para atletas"), "owner was not told on WhatsApp");
