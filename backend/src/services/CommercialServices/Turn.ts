@@ -77,6 +77,8 @@ export interface TurnDeps {
   audioUnreadable?: boolean;
   // the daily limit of tokens was reached: only the answers that need no model are still given
   capped?: boolean;
+  // the person came back after a while: where the conversation stopped (see resumeContextOf)
+  resume?: string | null;
   // the checklist of the stage: the steps (1-based) already done in this run, and what the lock refused to end in the last turn
   stepsDone?: number[];
   stepsHeld?: string;
@@ -388,6 +390,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
 
   // 2) the model, once
   const result = await respond(d.agent, {
+    resume: d.resume || null,
     ticket: d.ticket, history: d.history, summary: state.summary, collected: null, sandbox: d.sandbox, stage: d.stage, flowId: d.flowId, nodeId: d.nodeId,
     commercial: { slots: mirror(state) }, topics: topicsOf(lastText), leadId: state.leadId || null, stepsDone: d.stepsDone, stepsHeld: d.stepsHeld
   });

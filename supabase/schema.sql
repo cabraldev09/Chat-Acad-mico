@@ -2500,7 +2500,8 @@ CREATE TABLE public."Messages" (
     starred boolean DEFAULT false NOT NULL,
     reactions text,
     "isEdited" boolean DEFAULT false NOT NULL,
-    "isGif" boolean DEFAULT false NOT NULL
+    "isGif" boolean DEFAULT false NOT NULL,
+    transcript text
 );
 
 
@@ -5795,17 +5796,17 @@ CREATE UNIQUE INDEX goal_polos_unique ON public."GoalPolos" USING btree ("goalId
 
 
 --
--- Name: institutions_slug; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX institutions_slug ON public."Institutions" USING btree (slug);
-
-
---
 -- Name: institutions_one_default; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX institutions_one_default ON public."Institutions" USING btree ((true)) WHERE ("isDefault" = true);
+
+
+--
+-- Name: institutions_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX institutions_slug ON public."Institutions" USING btree (slug);
 
 
 --
@@ -7852,6 +7853,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000006-consultant-reviews.js
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000007-speed-indexes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000008-tasks-and-notifications.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000009-institutions.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000010-message-transcript.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

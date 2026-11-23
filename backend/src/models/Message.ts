@@ -35,6 +35,10 @@ class Message extends Model<Message> {
   @Column(DataType.TEXT)
   body: string;
 
+  // what a voice note said (written down once by the transcription), read by the AI in the turns after
+  @Column(DataType.TEXT)
+  transcript: string;
+
   @Column(DataType.TEXT)
   get mediaUrl(): string | null {
     if (this.getDataValue("mediaUrl")) {

@@ -145,7 +145,9 @@ const FindOrCreateTicketService = async (
           chatbotNodeId: null,
           aiActive: true,
           closedAt: null,
-          ...(recent ? {} : { firstResponseAt: null })
+          // a new attendance (more than 2 hours later) starts the count of answers of the AI again; what it learned (the data
+          // collected, the summary) stays as the memory of the conversation
+          ...(recent ? {} : { firstResponseAt: null, aiTurns: 0 })
         } as any,
         { where: { id: ticket.id, status: "closed" } as any }
       );

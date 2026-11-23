@@ -28,7 +28,7 @@ import { Effects, StageTurn, StageTurnArgs, matchPolo } from "./Engine";
 import { FlowNode } from "./Graph";
 import { cleanStage } from "./StageSpec";
 import { stepsOf, takeSteps } from "./StepLock";
-import { findAgentForTicket, loadHistory, respond } from "../AiServices/RunAiAgent";
+import { findAgentForTicket, loadHistory, respond, resumeContextOf } from "../AiServices/RunAiAgent";
 import { signed, styleOf } from "../AiServices/Style";
 import { configOf } from "../CommercialServices/Config";
 import { HandoffReason, handoffToHuman } from "../AiServices/Handoff";
@@ -46,7 +46,7 @@ import { splitIntoBlocks } from "../CommercialServices/Blocks";
 import Message from "../../models/Message";
 import TicketEvent from "../../models/TicketEvent";
 import AgentMetricEvent from "../../models/AgentMetricEvent";
-import { transcribeAudio } from "../AiServices/Transcribe";
+import { transcribeMessage, isVoiceNote } from "../AiServices/Transcribe";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 import { noteAutomation } from "../AutomationServices/AutomationTrace";
@@ -156,6 +156,8 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
         vars.__answeredAt = new Date(newest.createdAt).toISOString();
       }
       const last = history[history.length - 1];
+      // the person came back after a while: the agent resumes where the conversation stopped
+      const resume = input === null ? null : await resumeContextOf(ticket, ticket.aiSummary).catch(() => null);
       // the commercial agent: the state of the lead, the rules and the funnel are code; the model only talks and understands
       if (stage.hooks.includes("commercial")) {
         const { lead, ports } = await commercialOf(node);
@@ -164,22 +166,25 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
         const media = mediaOfMessages(burst);
         let said = input === null ? null : last.content;
         let audioUnreadable = false;
-        const audios = media.filter(m => m.kind === "audio").slice(0, 3);
-        if (audios.length) {
+        // the voice notes of the burst are written down once and kept on the message: the turns after read what was said
+        const voices = burst.filter(isVoiceNote).slice(0, 3);
+        if (voices.length) {
           const heard: string[] = [];
-          for (const a of audios) {
+          for (const v of voices) {
             // eslint-disable-next-line no-await-in-loop
-            const t = await transcribeAudio(a.file, agent.id);
+            const t = await transcribeMessage(v, agent.id);
             if (t) heard.push(t);
           }
-          if (heard.length === audios.length && said !== null) {
+          if (heard.length === voices.length && said !== null) {
             let n = 0;
-            said = said.replace(/\[áudio\]/g, () => `[áudio] “${heard[n++] || ""}”`);
+            said = /\[áudio\]/.test(said)
+              ? said.replace(/\[áudio\](?: "[^"]*")?/g, () => `[áudio] "${heard[n++] || ""}"`)
+              : [said, ...heard.map(h => `[áudio] "${h}"`)].filter(Boolean).join("\n");
             last.content = said;
           } else audioUnreadable = true;
         }
         const prior = history.filter(h => h.role === "user").slice(0, -1).slice(-4).map(h => h.content);
-        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: flowCtx.flowId, ports, ticket, lead, history, input: said, sandbox: false, contactName: ticket.contact?.name, turns, media, priorUserTexts: prior, audioUnreadable, capped, ...steps });
+        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: flowCtx.flowId, ports, ticket, lead, history, input: said, sandbox: false, contactName: ticket.contact?.name, turns, media, priorUserTexts: prior, audioUnreadable, capped, resume, ...steps });
         if (turn.why) vars.__why = turn.why;
         // what the person was told is not said again by the handoff of the exit
         if (turn.text && turn.exit) vars.__spoke = turn.exit;
@@ -193,7 +198,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       }
       const known: Record<string, string> = { ...(ticket.aiSlots || {}) };
       stage.fields.forEach(f => { if (vars[f.key]) known[f.key] = String(vars[f.key]); });
-      const result = await respond(agent, { ticket, history, summary: ticket.aiSummary, collected: known, stage, flowId: flowCtx.flowId, nodeId: node.id, ...steps });
+      const result = await respond(agent, { ticket, history, summary: ticket.aiSummary, collected: known, stage, flowId: flowCtx.flowId, nodeId: node.id, resume, ...steps });
       let text = result.text;
       if (result.exit === "off") {
         if (agent.learnFromTeam !== false && lastText) await captureUnknown(agent, ticket, lastText, ticket.contact?.name);

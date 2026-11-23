@@ -3265,6 +3265,46 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${t} AND type='handoff' AND note LIKE '%Paulo Mendes%'`) === "1", "handoff summary note missing");
       assert(sql(`SELECT aiSlots FROM Tickets WHERE id=${t}`).includes("Ji-Paraná"), "collected data not saved on the ticket");
     });
+    await test("a person who comes back days later: the AI resumes where it stopped (no handover on the first oi), hears a voice note and remembers it", async () => {
+      const num = "5511910000004";
+      const t = ticketOf(num);
+      const to = (from) => graph.sent.slice(from).filter(x => x.body && x.body.to === num && x.body.text).map(x => x.body.text.body);
+      // the attendance before (Paulo, data collected, handed over) ended three days ago
+      sql(`UPDATE Messages SET createdAt = createdAt - INTERVAL '3 days' WHERE ticketId=${t}`);
+      sql(`UPDATE Tickets SET status='closed', userId=NULL, updatedAt = NOW() - INTERVAL '3 days' WHERE id=${t}`);
+      let calls = anthropic.requests.length, before = graph.sent.length;
+      await inboundCloud(num, "wamid.ai-back1", "Oi");
+      await waitFor(() => to(before).length >= 1, 20000, "the answer to the return");
+      await sleep(1500);
+      assert(!to(before).some(x => /consultor da equipe continua|Vou chamar um consultor/.test(x)), `handed over on the first oi: ${JSON.stringify(to(before))}`);
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "1", "the AI handed the returning person over");
+      const req = anthropic.requests.slice(calls).find(r => Array.isArray(r.tools) && r.tools.some(x => x.name === "salvar_lead"));
+      assert(req, "the model was not asked");
+      const sys = req.system.map(x => x.text).join("\n");
+      assert(/Retomada da conversa/.test(sys) && /3 dias/.test(sys) && /encerrado/.test(sys), `the return is not told to the model: ${sys.slice(-900)}`);
+      assert(req.messages.some(m => typeof m.content === "string" && /\[Nova conversa em [^\]]*3 dias depois da anterior\]/.test(m.content)), `the history does not mark the return: ${JSON.stringify(req.messages).slice(0, 600)}`);
+      // a voice note: written down once, kept on the message and answered; the next turn still reads what was said
+      assert((await http.put("/ai-settings", { openai: "sk-openai-test" }, auth())).status === 200, "openai key");
+      try {
+        const heardBefore = anthropic.transcriptions || 0;
+        before = graph.sent.length;
+        await postMeta(cid, cloudEvent([{ from: num, id: "wamid.ai-back2", type: "audio", audio: { id: "MEDIAOGGBACK", mime_type: "audio/ogg; codecs=opus" } }], { contacts: [{ wa_id: num, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
+        await waitFor(() => to(before).some(x => /Direito/.test(x)), 25000, "the answer to what the voice note said");
+        await sleep(2000);
+        assert((anthropic.transcriptions || 0) === heardBefore + 1, "the voice note was not transcribed once");
+        assert(/valor do curso de Direito/.test(sql(`SELECT transcript FROM Messages WHERE id='wamid.ai-back2'`)), "the transcript was not kept on the message");
+        calls = anthropic.requests.length;
+        await inboundCloud(num, "wamid.ai-back3", "entendi, e o que mais preciso saber?");
+        const asked = () => anthropic.requests.slice(calls).find(r => Array.isArray(r.tools) && JSON.stringify(r.messages).includes("o que mais preciso saber"));
+        await waitFor(() => asked(), 20000, "the model is asked about the next message");
+        assert(JSON.stringify(asked().messages).includes("qual o valor do curso de Direito"), "the next turn forgot what the voice note said");
+        assert((anthropic.transcriptions || 0) === heardBefore + 1, "the voice note was transcribed again");
+        await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${t} AND fromMe=true AND createdAt > NOW() - INTERVAL '1 minute'`)) >= 3, 15000, "the last answer stored");
+        await sleep(1500);
+      } finally {
+        assert((await http.put("/ai-settings", { openai: "" }, auth())).status === 200, "openai key removed");
+      }
+    });
     await test("asking for a person hands over right away", async () => {
       const calls = anthropic.requests.length, before = graph.sent.length;
       await inboundCloud("5511910000005", "wamid.ai-d1", "quero falar com uma pessoa");
