@@ -174,7 +174,7 @@ const Routes = () => {
                 <Route exact path="/crm/tarefas" component={CrmTasks} isPrivate />
                 <Route exact path="/crm/comissoes" component={CrmCommissions} isPrivate salesOnly />
                 <Route exact path="/configuracoes" component={SettingsHub} isPrivate managerOnly />
-                <Route exact path="/crm/metas" component={Goals} isPrivate managerOnly />
+                <Route exact path="/crm/metas" component={Goals} isPrivate />
                 <Route exact path="/crm/metas-polos" component={PoloGoals} isPrivate />
                 <Route exact path="/crm/retencao" component={Retention} isPrivate retentionOnly />
                 <Route exact path="/afiliados" component={Affiliates} isPrivate salesOnly />

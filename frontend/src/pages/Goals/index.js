@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Prompt } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Autocomplete } from "@material-ui/lab";
@@ -18,6 +18,8 @@ import api from "../../services/api";
 import { ErrorState, SkeletonCards } from "../../components/ui";
 import toastError from "../../errors/toastError";
 import { fetchAllUsers } from "../Affiliates/shared";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
 
 const SHARE_WIDTH = 600;
 const MONTHS = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
@@ -57,6 +59,9 @@ const Goals = () => {
   const classes = useStyles();
   const [goals, setGoals] = useState(null);
   const [users, setUsers] = useState([]);
+  const { user } = useContext(AuthContext);
+  // the whole team reads the goals of every consultant; only the management edits them
+  const manager = isManager(user);
   const [selected, setSelected] = useState(null);
   const [draft, setDraft] = useState(null);
   const [dirty, setDirty] = useState(false);
@@ -80,7 +85,7 @@ const Goals = () => {
       setDirty(false);
     } catch (e) { setFailed(true); toastError(e); }
   }, [selected]);
-  useEffect(() => { load(); fetchAllUsers().then(setUsers).catch(() => {}); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); if (manager) fetchAllUsers().then(setUsers).catch(() => {}); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // unsaved targets are never lost on the way: closing or reloading the tab asks first, and so does leaving the screen (see <Prompt>)
   useEffect(() => {
@@ -161,7 +166,7 @@ const Goals = () => {
       <MainHeader>
         <Title>Metas da equipe</Title>
         <MainHeaderButtonsWrapper>
-          <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => { const t = new Date(); const y = t.getFullYear(); const m = t.getMonth(); setPeriod({ startsOn: `${m === 0 ? y - 1 : y}-${String(m === 0 ? 12 : m).padStart(2, "0")}-26`, endsOn: `${y}-${String(m + 1).padStart(2, "0")}-26` }); setNewOpen(true); }}>Nova meta</Button>
+          {manager && <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => { const t = new Date(); const y = t.getFullYear(); const m = t.getMonth(); setPeriod({ startsOn: `${m === 0 ? y - 1 : y}-${String(m === 0 ? 12 : m).padStart(2, "0")}-26`, endsOn: `${y}-${String(m + 1).padStart(2, "0")}-26` }); setNewOpen(true); }}>Nova meta</Button>}
         </MainHeaderButtonsWrapper>
       </MainHeader>
 
@@ -179,10 +184,36 @@ const Goals = () => {
         )}
 
         {goals && goals.length === 0 && (
-          <div className={classes.empty}>Nenhum período de metas ainda. Use “Nova meta” para criar o primeiro, por exemplo de 26/09 a 26/10.</div>
+          <div className={classes.empty}>{manager ? "Nenhum período de metas ainda. Use “Nova meta” para criar o primeiro, por exemplo de 26/09 a 26/10." : "Ainda não há metas de consultores cadastradas. A gestão vai cadastrar em breve."}</div>
         )}
 
-        {view && (
+        {view && !manager && (
+          <div className={classes.card} style={{ maxWidth: 760 }}>
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+              <div>
+                <div className={classes.hint}>{view.title || "Matrículas do período"} · {dm(view.startsOn)} até {dm(view.endsOn)}</div>
+                <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em" }}>{view.total.done}{view.total.target ? <span className={classes.hint} style={{ fontSize: 16 }}> / {view.total.target}</span> : null}</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div className={classes.hint}>{view.daysLeft > 0 ? `Faltam ${view.daysLeft} dia${view.daysLeft === 1 ? "" : "s"} · ${view.elapsedPct}% do prazo` : "Prazo encerrado"}</div>
+                <div className={classes.bar} style={{ marginTop: 6 }}><div className={classes.fill} style={{ width: `${view.total.pct || 0}%` }} /></div>
+              </div>
+            </div>
+            {view.members.length === 0 && <div className={classes.hint}>Nenhum consultor neste período.</div>}
+            {view.members.map((m, i) => (
+              <div key={m.id || `r${i}`} style={{ padding: "10px 0", borderTop: "1px solid rgba(11,66,121,.1)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+                  <b style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.label || "Sem nome"}</b>
+                  <b style={{ fontVariantNumeric: "tabular-nums", flex: "none" }}>{m.done}{m.target ? ` / ${m.target}` : ""}</b>
+                </div>
+                <div className={classes.bar} style={{ marginTop: 6 }}><div className={classes.fill} style={{ width: `${m.pct || 0}%`, background: m.reached ? "#16a34a" : "#0693E3" }} /></div>
+                <div className={classes.hint} style={{ marginTop: 4 }}>{m.reached ? "Meta batida" : m.target ? `Faltam ${m.missing}${m.pace ? ` (${String(m.pace).replace(".", ",")} por dia)` : ""}` : "Sem meta definida"}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {view && manager && (
           <div className={classes.layout}>
             <div>
               <div className={classes.card}>

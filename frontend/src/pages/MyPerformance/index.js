@@ -4,8 +4,8 @@ import { format, parseISO } from "date-fns";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
 import { PeriodPicker, fmt, minutesText, num, periodParams, useAnalytics, useKit } from "../../components/analytics/kit";
-import { BarsChart, BoardHead, CompareStat, CountStat, EmptyNote, Funnel, GlowPanel, GlowStat, MultiBars, Person, PriorityList, SectionTitle, Switch } from "../../components/peak";
-import PoloProgress, { PaceRing } from "../../components/analytics/PoloProgress";
+import { BoardHead, CompareStat, CountStat, EmptyNote, Funnel, GlowPanel, GlowStat, Person, PriorityList, SectionTitle } from "../../components/peak";
+import { PaceRing } from "../../components/analytics/PoloProgress";
 import "../../styles/dash.css";
 
 // Meu desempenho: the consultant's own place. Only their numbers (the server reads who is logged in, never a choice of the screen):
@@ -21,7 +21,6 @@ const change = (now, before, points) => {
   if (!before) return null;
   return Math.round(((now - before) / before) * 100);
 };
-const share = (a, b) => (b > 0 ? `${(Math.round((a / b) * 1000) / 10).toLocaleString("pt-BR")}%` : null);
 const SERIES = [
   { key: "enrollments", title: "Matrículas", unit: "matrículas" },
   { key: "attendances", title: "Conversas atendidas", unit: "conversas" },
@@ -43,13 +42,11 @@ const Section = ({ title, hint, children, action }) => (
   </section>
 );
 
-const ordinal = (n) => `${num(n)}º`;
 
 const MyPerformance = () => {
   const c = useKit();
   const history = useHistory();
   const [period, setPeriod] = useState({ range: "month", from: "", to: "" });
-  const [shown, setShown] = useState("all");
   const params = useMemo(() => periodParams(period), [period]);
   const ready = period.range !== "custom" || (period.from && period.to);
   const { data, loading, error, reload } = useAnalytics("/analytics/me/overview", params, !!ready);
@@ -88,7 +85,6 @@ const MyPerformance = () => {
   const leads = data.leads || { stages: [], open: 0, waiting: 0, stale: 0 };
   const todo = data.insights || [];
   const coaching = data.coaching;
-  const team = data.team || {};
   const series = data.series || [];
   const badge = period.cycle ? "Ciclo" : PERIOD_LABEL[period.range] || "Período";
   // what was done today is the last day of the series, when the period reaches today
@@ -96,19 +92,6 @@ const MyPerformance = () => {
   const today = series.find((d) => d.day === todayKey);
   const goals = data.goals || [];
   const main = goals[0];
-  const won = Number(r.now.enrollments) || 0;
-  // how each front turned into enrollments in the period
-  const rates = {
-    enrollments: r.now.conversion === null || r.now.conversion === undefined ? null : `${fmt(r.now.conversion, "percent")} dos leads trabalhados`,
-    attendances: share(won, Number(r.now.attendances)) ? `${share(won, Number(r.now.attendances))} viraram matrícula` : null,
-    peopleContacted: share(won, Number(r.now.peopleContacted)) ? `${share(won, Number(r.now.peopleContacted))} viraram matrícula` : null,
-    messagesSent: won > 0 ? `${num(Math.round((Number(r.now.messagesSent) || 0) / won))} mensagens por matrícula` : null,
-  };
-  const current = SERIES.find((k) => k.key === shown);
-  const compare = [
-    ["Conversão", r.now.conversion, team.conversion, "percent", false],
-    ["Tempo do 1º contato", r.now.firstContactMinutes, team.firstContact === null || team.firstContact === undefined ? null : Math.round(team.firstContact), "minutes", true],
-  ];
   // the funnel by who is in a stage or beyond it; the number written is who is in the stage today
   const stages = leads.stages || [];
   const funnel = stages.map((s, i) => ({ key: s.id ?? s.name, name: s.name, value: Number(s.n) || 0, reach: stages.slice(i).reduce((a, x) => a + (Number(x.n) || 0), 0) }));
@@ -121,12 +104,12 @@ const MyPerformance = () => {
     <div className={`${c.page} dash-scope gv-plain`} style={{ opacity: loading ? 0.75 : 1, transition: "opacity .2s ease" }}>
       {head}
 
-      {/* 1. the period beside the period before, the goal and the place in the team */}
+      {/* 1. the period beside the period before, and the goal (the goals of every polo and consultant are in Metas, in the menu) */}
       <div className="gv-board">
         {SERIES.slice(0, 3).map((k) => (
           <CompareStat key={k.key} id={k.key} title={k.title} nowLabel={badge} now={Number(r.now[k.key]) || 0} before={before && before[k.key] !== undefined && before[k.key] !== null ? before[k.key] : null} />
         ))}
-        <section className="gv-funnel-card" data-panel="goal" style={{ display: "grid", minWidth: 0 }}>
+        <section className="gv-funnel-card" data-panel="goal" style={{ display: "grid", minWidth: 0, gridColumn: "1 / -1" }}>
           {main ? (
             <div className="pp-hero" style={{ alignContent: "center" }}>
               <PaceRing pct={main.mine.pct ?? (main.mine.target ? (main.mine.done / main.mine.target) * 100 : 0)} color="#fff" size={104} stroke={10} />
@@ -145,42 +128,6 @@ const MyPerformance = () => {
             </div>
           ) : (
             <div className="gv-card"><h3 className="gv-title">Minha meta</h3><EmptyNote>Você ainda não está em nenhuma meta ativa.</EmptyNote></div>
-          )}
-        </section>
-        <section className="gv-card gv-side-card" data-panel="position">
-          <h3 className="gv-title">Minha posição na equipe</h3>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 44, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: "var(--c-brand)" }}>{team.position ? ordinal(team.position.rank) : "—"}</span>
-            <span className="gv-cap">{team.position ? `de ${num(team.position.of)} ${team.position.of === 1 ? "consultor" : "consultores"}, em matrículas` : "Sem posição no período"}</span>
-          </div>
-          <div className="gv-rowlist">
-            {compare.map(([label, mine, avg, unit, lowerIsBetter]) => {
-              const known = mine !== null && mine !== undefined && avg !== null && avg !== undefined;
-              const better = known && (lowerIsBetter ? mine <= avg : mine >= avg);
-              return (
-                <div key={label} className="gv-item" style={{ flexWrap: "nowrap" }}>
-                  <div className="gv-item-main" style={{ minWidth: 0 }}><b>{label}</b><small>Equipe: {fmt(avg, unit)}</small></div>
-                  <b style={{ fontSize: 18, fontVariantNumeric: "tabular-nums", color: known ? (better ? "#15803d" : "#a05a00") : undefined }}>{fmt(mine, unit)}</b>
-                </div>
-              );
-            })}
-          </div>
-          <span className="gv-cap">Você vê só o seu lugar, nunca o número dos colegas.</span>
-        </section>
-
-        {/* 2. the work of every day, all the fronts or one */}
-        <section className="gv-card gv-wide" data-panel="bars">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <h3 className="gv-title">{current ? `${current.title} por dia` : "Meu trabalho por dia"} · {badge}</h3>
-            <Switch label="O que mostrar" value={shown} onChange={setShown} options={[["all", "Todas"], ...SERIES.map((k) => [k.key, k.title])]} />
-          </div>
-          {current ? (
-            <>
-              <BarsChart days={series.map((d) => ({ day: d.day, value: d[current.key] }))} unit={current.unit} />
-              {rates[current.key] && <div className="gv-ffoot">Conversão no período: <b>{rates[current.key]}</b></div>}
-            </>
-          ) : (
-            <MultiBars onPick={setShown} rows={SERIES.map((k) => ({ key: k.key, title: k.title, unit: k.unit, total: Number(r.now[k.key]) || 0, note: rates[k.key], days: series.map((d) => ({ day: d.day, value: d[k.key] })) }))} />
           )}
         </section>
       </div>
@@ -260,7 +207,6 @@ const MyPerformance = () => {
       </Section>
 
       {/* the goals of the consultant's polos (the same cards the management sees) */}
-      <div style={{ marginTop: 28 }}><PoloProgress title="Metas dos meus polos" onlyMine /></div>
 
       {/* 7. orientation */}
       <Section title="Orientações para você" hint="Da revisão diária das suas conversas e da comparação com a média da equipe.">
