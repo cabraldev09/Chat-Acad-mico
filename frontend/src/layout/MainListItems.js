@@ -361,7 +361,7 @@ const MainListItems = (props) => {
       {isManager(user) ? (
         <ListItemLink
           to="/estatisticas"
-          alsoActive={["/gestao-comercial", "/reports", "/estatisticas/tutoria", "/estatisticas/captacao"]}
+          alsoActive={["/reports", "/estatisticas/tutoria", "/estatisticas/captacao"]}
           primary="Gestão comercial"
           icon={<BarChartIcon className="ico" />}
           collapsed={collapsed}

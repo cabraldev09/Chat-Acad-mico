@@ -477,3 +477,17 @@ export const managerOverview = async (req: Request, res: Response): Promise<Resp
   const key = `dash-manager:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
   return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagerOverview(p)));
 };
+
+// The goals of every polo in the current semester, for everyone who works on the enrollments (the consultant sees how their polo and the
+// others are doing): only the target, what was done and the pace of each polo, never a person or a conversation. "mine" marks the polos
+// the person belongs to.
+export const polosProgress = async (req: Request, res: Response): Promise<Response> => {
+  const board = await remember("polos-progress", Number(process.env.DASHBOARD_CACHE_MS ?? 60000), () => buildPoloBoard());
+  const PoloMember = (await import("../models/PoloMember")).default;
+  const mine = (await PoloMember.findAll({ where: { userId: Number(req.user.id) }, attributes: ["poloId"] })).map(m => Number(m.poloId));
+  const polos = ((board.rows || []) as any[]).map(r => ({
+    poloId: r.poloId, name: r.name, target: r.target, done: r.done, pct: r.pct, status: r.status,
+    missing: r.missing, perDay: r.perDay, expectedPct: r.expectedPct, forecast: r.forecast
+  }));
+  return res.json({ goal: board.goal || null, totals: board.totals || null, polos, mine });
+};

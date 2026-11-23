@@ -1,19 +1,32 @@
-# Analytics comercial: Centro de Gestão × Estatísticas do consultor
+# Analytics comercial: Estatísticas da gestão × Meu desempenho do consultor
 
 Dois ambientes, **uma única fonte**. Quem calcula é `backend/src/services/AnalyticsServices/AnalyticsService.ts`.
 As definições de cada indicador estão em `definitions.ts` e saem em `GET /analytics/definitions` (as telas mostram a definição no ícone ⓘ).
 
 | Ambiente | Tela | API | Quem acessa |
 |---|---|---|---|
-| Centro de Gestão Comercial | `/gestao-comercial` | `GET /analytics/team`, `/analytics/consultant/:id`, `/analytics/team/export.csv`, `GET/PUT /analytics/config` | administração (todos) e coordenação (consultores dos seus polos; sem polo vinculado, todos) |
-| Estatísticas (consultor) | `/reports` | `GET /analytics/me` | cada consultor, **somente os próprios números** (a rota ignora `userId` em URL, query ou cabeçalho) |
+| Estatísticas (gestão) | `/estatisticas` com as abas Visão geral, Consultores, Polos e metas e Treinamento (`?aba=`), mais Captação, Atendimento e Tutoria | `GET /analytics/team`, `/analytics/commercial`, `/analytics/process`, `/analytics/consultant/:id`, `/analytics/team/export.csv`, `GET/PUT /analytics/config`, `GET /dashboard` e `GET /stats/overview` (o período de atendimento) | administração (todos) e coordenação (consultores dos seus polos; sem polo vinculado, todos) |
+| Meu desempenho (consultor) | `/meu-desempenho` | `GET /analytics/me`, `/analytics/me/overview` | cada consultor, **somente os próprios números** (a rota ignora `userId` em URL, query ou cabeçalho) |
+| Metas dos polos | Visão geral, Polos e metas e Meu desempenho | `GET /dashboard/polos-progress` | todos os logados: só meta, feito e ritmo de cada polo, sem pessoas; marca os polos de quem vê |
+
+**Visão geral (gestão)** é a tela principal, de cima para baixo:
+1. **Agora:** quem está trabalhando, WhatsApp desconectado, alertas e tarefas sem responsável.
+2. **Progresso dos polos:** meta do semestre, ritmo esperado e previsão de cada polo.
+3. **Período:** leitura do período, atendimentos, mensagens, matrículas, tempo até finalizar, fila agora, atendimentos e gráficos
+   (o mesmo bloco de Atendimento, embutido como `ConversationsOverview`).
+4. **Comercial:** pessoas contatadas, matrículas dos consultores, leads parados, onde os leads param, objeções, cidades e etapas
+   puladas.
+
+"Equipe agora" (`/gestao-comercial`, hoje um redirecionamento) e a "Visão do gestor" de Atendimento saíram, porque repetiam esses
+números. A aba Consultores junta os números comerciais com o tempo de resposta e onde cada conversa parou (clique em Conversas). A
+aba Polos e metas traz as metas do semestre, os números de cada polo e os horários e metas diárias da equipe.
 
 Os dois leem o mesmo pacote por pessoa (`bundlesFor`): mesmos filtros de período (`resolvePeriod`: hoje, 7 dias, mês, intervalo), mesmos critérios.
 
 ## O que conta (e o que nunca conta)
 - **Conversas atendidas** (`attendances`): conversas (tickets) de clientes com ao menos uma mensagem humana no período. Cada conversa conta uma vez, quantas mensagens tiver. É o número principal da produção.
 - **Pessoas contatadas** (`peopleContacted`): contatos diferentes que receberam mensagem humana no período. Quem tem duas conversas conta uma vez.
-- **Mensagens enviadas** (só no detalhe, aba Atendimento e processo): envios humanos feitos pelo sistema (tabela `OutboundMessages`, `status=sent`, `sentAt`, `userId` = autor real). Idempotente por `clientKey`: repetir o envio não conta de novo. Nunca contam mensagens da IA, de robôs/campanhas, nem **abrir uma conversa**. Envio recusado (conversa de outro) não gera registro.
+- **Mensagens enviadas** (no período de atendimento e na exportação dos consultores): envios humanos feitos pelo sistema (tabela `OutboundMessages`, `status=sent`, `sentAt`, `userId` = autor real). Idempotente por `clientKey`: repetir o envio não conta de novo. Nunca contam mensagens da IA, de robôs/campanhas, nem **abrir uma conversa**. Envio recusado (conversa de outro) não gera registro.
 - **Matrículas**: `Leads.wonAt` no período, `ownerId` = consultor (mesma regra das Metas).
 - Limite conhecido: mensagens digitadas direto no celular e encaminhamentos/enquetes/cartões não passam pelo envio do sistema e não têm autoria registrada; não entram na contagem.
 

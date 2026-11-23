@@ -5,11 +5,12 @@ import { AlertTriangle, CalendarCheck2, ChevronRight, Clock3, Lightbulb, Message
 
 import { BlockTitle, HistoryChart, PeriodPicker, Progress, fmt, num, periodParams, useAnalytics, useKit } from "../../components/analytics/kit";
 import { Delta } from "../../components/charts";
+import PoloProgress from "../../components/analytics/PoloProgress";
 import "../../styles/dash.css";
 
 // Meu desempenho: the consultant's own place. Only their numbers (the server reads who is logged in, never a choice of the screen):
 // what to do now, the commercial results against the period before, the leads, the goals and the production of the day, and
-// orientation from the daily review and from the numbers. The management has its own area (Gestão comercial) with the whole team.
+// orientation from the daily review and from the numbers, and the goals of every polo. The management has Estatísticas with the whole team.
 
 const when = (v) => { try { return format(parseISO(v), "dd/MM HH:mm"); } catch (e) { return ""; } };
 const TONE = { danger: "#dc2626", warn: "#d97706", good: "#16a34a", info: "#0693E3" };
@@ -181,6 +182,9 @@ const MyPerformance = () => {
           ))}
         </div>
       </div>
+
+      {/* the goals of every polo: how the consultant's polo is doing and the others (the same cards the management sees) */}
+      <div style={{ marginTop: 28 }}><PoloProgress title="Metas dos polos" /></div>
 
       {/* 4. orientation */}
       <Section title="Orientações para você" hint="Da revisão diária das suas conversas e da comparação com a média da equipe.">

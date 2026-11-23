@@ -11,7 +11,8 @@ import { WhatsAppsProvider } from "../context/WhatsApp/WhatsAppsContext";
 import { ThemeProvider } from "../context/DarkMode";
 import BackdropLoading from "../components/BackdropLoading";
 import PageErrorBoundary from "../components/PageErrorBoundary";
-import { lazyPage as lazy } from "../utils/lazyPage";
+import { lazyPage as lazy, prefetchPages } from "../utils/lazyPage";
+import PageLoading from "../components/PageLoading";
 import Route from "./Route";
 
 // every page is its own file: the first screen downloads only what it shows
@@ -43,7 +44,6 @@ const AiAgents = lazy(() => import("../pages/AiAgents/"));
 const AiAgentCentral = lazy(() => import("../pages/AiAgents/Central"));
 const Webhooks = lazy(() => import("../pages/Webhooks/"));
 const Reports = lazy(() => import("../pages/Reports/"));
-const CommercialCenter = lazy(() => import("../pages/CommercialCenter/"));
 const Statistics = lazy(() => import("../pages/Statistics/"));
 const TutoriaStats = lazy(() => import("../pages/Statistics/TutoriaStats"));
 const MyPerformance = lazy(() => import("../pages/MyPerformance/"));
@@ -98,9 +98,15 @@ const Guarded = ({ children }) => {
   return <PageErrorBoundary resetKey={pathname}>{children}</PageErrorBoundary>;
 };
 
-// the two pages everyone opens next are fetched in the background right after the first paint
+// after the first paint the conversations come first, then every other page of a logged-in person is fetched in the background
+// (one at a time, while the browser is idle), so moving between screens never shows a loading screen
 const warmUp = () => {
-  const go = () => { import("../pages/Tickets/"); import("../pages/Reports/"); };
+  const go = () => {
+    import("../pages/Tickets/");
+    let logged = false;
+    try { logged = !!localStorage.getItem("token"); } catch (e) { logged = false; }
+    if (logged) prefetchPages();
+  };
   if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(go, { timeout: 4000 });
   else setTimeout(go, 2000);
 };
@@ -127,7 +133,8 @@ const Routes = () => {
             <WhatsAppsProvider>
               <LoggedInLayout>
                 <Guarded>
-                <Suspense fallback={<BackdropLoading />}>
+                {/* a page still downloading shows a thin bar at the top of the content, never a dark screen over everything */}
+                <Suspense fallback={<PageLoading />}>
                 <Switch>
                 {/* the conversations are the home of the system */}
                 <Route exact path="/" component={() => <Redirect to="/tickets" />} isPrivate />
@@ -155,7 +162,8 @@ const Routes = () => {
                 <Route exact path="/ai-agents" component={AiAgents} isPrivate managerOnly />
                 <Route exact path="/integrations" component={Webhooks} isPrivate adminOnly />
                 <Route exact path="/reports" component={Reports} isPrivate />
-                <Route exact path="/gestao-comercial" component={CommercialCenter} isPrivate managerOnly />
+                {/* "Equipe agora" is now part of Estatísticas (Visão geral, Consultores, Polos e metas): old links still arrive */}
+                <Route exact path="/gestao-comercial" component={() => <Redirect to="/estatisticas" />} isPrivate />
                 <Route exact path="/estatisticas" component={Statistics} isPrivate />
                 <Route exact path="/meu-desempenho" component={MyPerformance} isPrivate />
                 <Route exact path="/estatisticas/tutoria" component={TutoriaStats} isPrivate />

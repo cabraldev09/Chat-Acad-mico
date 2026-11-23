@@ -13,19 +13,11 @@ import { onColor, tint } from "../../utils/color";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import NumberTicker from "../../components/NumberTicker";
-import ProcessTab from "./ProcessTab";
-import StatsHubBar from "../../components/StatsHub";
 import { BRAND, BlockTitle, CompareBars, HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
 import { ManagementFeedback } from "../Reports/Management";
 
 const DAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
 const LEVEL = { high: "#dc2626", medium: "#d97706", low: "#0693E3" };
-const TAB_HELP = {
-  geral: "Quem está trabalhando agora e o que precisa da sua atenção. Os totais do período estão em Visão geral e Captação.",
-  consultores: "Uma lista só: WhatsApp, polos e números de cada consultor. Vincule a polos aqui mesmo e clique no nome para ver a evolução, as metas e as tarefas.",
-  polos: "Os números somados por polo e quem está em cada equipe. Para vincular alguém, use a aba Consultores.",
-  config: "Defina horários de trabalho, metas diárias e a regra de inatividade. Vale para esta tela e para a de cada consultor.",
-};
 // where a click on an alert takes the manager (the task screen opens already filtered on that person)
 // only the overdue tasks have a screen filtered on the person; every other alert opens that person's detail here (the generic links were MY inbox / MY panel)
 const alertLink = (a) => `/crm/tarefas?scope=all&status=overdue&userId=${a.userId}`;
@@ -48,7 +40,6 @@ const supervisorPeriod = (period) => {
   return { date: today, days: 1 };
 };
 
-const COLS = [["attendances", "Conversas"], ["peopleContacted", "Pessoas"], ["messagesSent", "Mensagens"], ["leadsWorked", "Leads"], ["reactivated", "Reativ."], ["firstContactMinutes", "1º contato"], ["pendingReply", "Pendentes"], ["enrollments", "Matrículas"], ["conversion", "Conv."], ["tasksOverdue", "Atrasadas"]];
 
 const ConfigPanel = ({ config, consultants, onSaved }) => {
   const c = useKit();
@@ -330,140 +321,6 @@ const Alerts = ({ alerts, onOpen, history }) => {
 };
 
 // the polos of a person, as chips, and a small menu to link or unlink them right here (the person can be in more than one polo)
-const PoloCell = ({ b, polos, onChanged }) => {
-  const [anchor, setAnchor] = useState(null);
-  const [busy, setBusy] = useState(null);
-  const [saved, setSaved] = useState(null);
-  const changed = React.useRef(false);
-  // the screen answers at once (the check appears right away); the server confirms in the background and the choice goes back if it refuses
-  const [ids, setIds] = useState(b.user.poloIds || []);
-  useEffect(() => setIds(b.user.poloIds || []), [b.user.poloIds]);
-  const mine = new Set(ids);
-  const toggle = async (polo) => {
-    const had = mine.has(polo.id);
-    setIds((cur) => (had ? cur.filter((x) => x !== polo.id) : [...cur, polo.id]));
-    setBusy(polo.id);
-    try {
-      if (had) await api.delete(`/polos/${polo.id}/members/${b.user.id}`);
-      else await api.post(`/polos/${polo.id}/members/${b.user.id}`, { role: "comercial" });
-      // the table reloads when the menu closes: reloading now would rebuild the row under the open menu and throw it to a corner
-      changed.current = true;
-      setSaved(polo.id);
-    } catch (err) {
-      setIds((cur) => (had ? [...cur, polo.id] : cur.filter((x) => x !== polo.id)));
-      toastError(err);
-    }
-    setBusy(null);
-  };
-  const chips = polos.filter((p) => mine.has(p.id));
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 150 }} onClick={(e) => e.stopPropagation()}>
-      {chips.map((p) => <span key={p.id} title={p.name} style={{ maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: "rgba(6,147,227,.12)", color: BRAND.blue }}>{p.name}</span>)}
-      <button type="button" aria-label={`Vincular ${b.user.name} a polos`} onClick={(e) => setAnchor(e.currentTarget)} style={{ display: "inline-flex", alignItems: "center", gap: 3, border: "1px dashed rgba(127,140,160,.6)", background: "transparent", color: "inherit", borderRadius: 999, padding: "2px 9px", fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: chips.length ? 0.7 : 1 }}>
-        {chips.length ? <Plus size={12} /> : <><MapPin size={12} /> Vincular</>}
-      </button>
-      <Popover open={!!anchor} anchorEl={anchor} onClose={() => { setAnchor(null); setSaved(null); if (changed.current) { changed.current = false; onChanged(); } }} anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }}>
-        <div style={{ padding: 8, minWidth: 240, maxHeight: 340, overflowY: "auto" }}>
-          <div style={{ padding: "6px 10px", fontSize: 12, opacity: 0.7, display: "flex", justifyContent: "space-between", gap: 8 }}><span>Polos de {b.user.name}</span>{busy ? <span>Salvando...</span> : saved ? <span style={{ color: "#15803d", opacity: 1, fontWeight: 600 }}>Salvo</span> : null}</div>
-          {polos.length === 0 && <div style={{ padding: "8px 10px", fontSize: 13 }}>Nenhum polo cadastrado ainda.</div>}
-          {polos.map((p) => (
-            <button key={p.id} type="button" className="polo-option" aria-pressed={mine.has(p.id)} disabled={busy === p.id} onClick={() => toggle(p)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, border: 0, opacity: busy === p.id ? 0.6 : 1, color: "inherit", padding: "8px 10px", borderRadius: 8, fontFamily: "inherit", fontSize: 14, textAlign: "left", cursor: "pointer" }}>
-              <span style={{ width: 18, height: 18, borderRadius: 5, display: "grid", placeItems: "center", border: `2px solid ${mine.has(p.id) ? BRAND.cerulean : "rgba(127,140,160,.7)"}`, background: mine.has(p.id) ? BRAND.cerulean : "transparent", color: "#fff", flex: "none" }}>{mine.has(p.id) && <Check size={12} strokeWidth={3} />}</span>
-              <span style={{ flex: 1, minWidth: 0 }}>{p.name}{p.city ? <span style={{ opacity: 0.6 }}> · {p.city}{p.state ? `/${p.state}` : ""}</span> : null}</span>
-            </button>
-          ))}
-        </div>
-      </Popover>
-    </div>
-  );
-};
-
-const WaCell = ({ p }) => {
-  const wa = WA[p.whatsapp.state];
-  const down = p.whatsapp.state !== "connected";
-  return (
-    <span title={wa.label + (p.whatsapp.name ? ` · ${p.whatsapp.name}` : "")} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600, color: wa.color, whiteSpace: "nowrap" }}>
-      {down ? <WifiOff size={14} /> : <Wifi size={14} />}{down ? (p.whatsapp.state === "none" ? "Sem número" : "Desconectado") : "Conectado"}
-    </span>
-  );
-};
-
-const ConsultantsTable = ({ ranked, totals, polos, defs, selected, onSelect, onChanged }) => {
-  const c = useKit();
-  const [sort, setSort] = useState({ key: "enrollments", dir: -1 });
-  const [q, setQ] = useState("");
-  const [poloFilter, setPoloFilter] = useState("");
-  const [waFilter, setWaFilter] = useState("");
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    const list = ranked.filter((b) => (!term || b.user.name.toLowerCase().includes(term))
-      && (!poloFilter || (poloFilter === "none" ? !(b.user.poloIds || []).length : (b.user.poloIds || []).includes(Number(poloFilter))))
-      && (!waFilter || (waFilter === "down" ? b.presence.whatsapp.state !== "connected" : b.presence.whatsapp.state === "connected")));
-    const val = (b) => (sort.key === "name" ? b.user.name.toLowerCase() : b.metrics[sort.key] === null || b.metrics[sort.key] === undefined ? -1 : b.metrics[sort.key]);
-    return [...list].sort((a, b2) => (val(a) < val(b2) ? -1 : val(a) > val(b2) ? 1 : 0) * sort.dir);
-  }, [ranked, q, poloFilter, waFilter, sort]);
-  const head = (key, label, right) => (
-    <th key={key} className={right ? "r" : undefined} title={defs[key] && defs[key].description} onClick={() => setSort((s) => ({ key, dir: s.key === key ? -s.dir : key === "name" ? 1 : -1 }))} style={{ cursor: "pointer", whiteSpace: "nowrap" }}>
-      {label}{sort.key === key ? (sort.dir === 1 ? <ChevronUp size={12} style={{ verticalAlign: -1, marginLeft: 3 }} /> : <ChevronDown size={12} style={{ verticalAlign: -1, marginLeft: 3 }} />) : null}
-    </th>
-  );
-  const fmtOf = (k) => (k === "conversion" ? "percent" : k === "firstContactMinutes" ? "minutes" : "count");
-  return (
-    <div className={c.panel}>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0 10px", height: 34, borderRadius: 10, border: "1px solid rgba(127,140,160,.35)", minWidth: 200, flex: "1 1 200px", maxWidth: 320 }}>
-          <Search size={15} style={{ opacity: 0.6 }} />
-          <input aria-label="Buscar consultor" placeholder="Buscar consultor" value={q} onChange={(e) => setQ(e.target.value)} style={{ border: 0, outline: "none", background: "transparent", color: "inherit", font: "inherit", fontSize: 13.5, width: "100%" }} />
-        </label>
-        <select aria-label="Filtrar por polo" className={c.input} value={poloFilter} onChange={(e) => setPoloFilter(e.target.value)} style={{ height: 34 }}>
-          <option value="">Todos os polos</option>
-          <option value="none">Sem polo</option>
-          {polos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <select aria-label="Filtrar por WhatsApp" className={c.input} value={waFilter} onChange={(e) => setWaFilter(e.target.value)} style={{ height: 34 }}>
-          <option value="">WhatsApp: todos</option>
-          <option value="down">Sem WhatsApp conectado</option>
-          <option value="up">Com WhatsApp conectado</option>
-        </select>
-        <span className={c.sub} style={{ marginLeft: "auto" }}>{rows.length} de {ranked.length} consultores</span>
-      </div>
-      <div className={c.scroll}>
-        <table className={c.table} style={{ minWidth: 1040 }}>
-          <thead><tr>{head("name", "Consultor")}<th>WhatsApp</th><th>Polos</th>{COLS.map(([k, l]) => head(k, l, true))}</tr></thead>
-          <tbody>
-            {rows.map((b) => {
-              const p = b.presence;
-              return (
-                <tr key={b.user.id} onClick={() => onSelect(b.user.id)} style={selected === b.user.id ? { background: "rgba(6,147,227,.1)" } : undefined}>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ position: "relative", width: 34, height: 34, flex: "none" }}>
-                        <span style={{ width: 34, height: 34, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 800, background: "rgba(11,66,121,.1)", color: BRAND.blue }}>{initials(b.user.name)}</span>
-                        <span title={p.online ? "Online agora" : "Offline"} style={{ position: "absolute", right: -1, bottom: -1, width: 10, height: 10, borderRadius: "50%", background: p.online ? "#16a34a" : "#94a3b8", border: "2px solid var(--ui-surface, #fff)" }} />
-                      </span>
-                      <span style={{ display: "grid" }}>
-                        <b>{b.user.name}</b>
-                        <span className={c.sub} style={{ marginTop: 0 }}><PresenceDot state={p.state} />{PRESENCE[p.state].label}</span>
-                      </span>
-                    </span>
-                  </td>
-                  <td><WaCell p={p} /></td>
-                  <td><PoloCell b={b} polos={polos} onChanged={onChanged} /></td>
-                  {COLS.map(([k]) => <td key={k} className="r" style={k === "tasksOverdue" && b.metrics[k] > 0 ? { color: "#dc2626", fontWeight: 700 } : undefined}>{fmt(b.metrics[k], fmtOf(k))}</td>)}
-                </tr>
-              );
-            })}
-            {rows.length === 0 && <tr style={{ cursor: "default" }}><td colSpan={3 + COLS.length} className={c.sub}>Nenhum consultor com esses filtros.</td></tr>}
-            <tr style={{ cursor: "default", fontWeight: 700 }}><td>Total</td><td /><td />{COLS.map(([k]) => <td key={k} className="r">{fmt(totals[k], fmtOf(k))}</td>)}</tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-
-// ring that fills (the conversion of a polo)
 const Ring = ({ value }) => {
   const r = 26;
   const len = 2 * Math.PI * r;
@@ -476,7 +333,7 @@ const Ring = ({ value }) => {
   );
 };
 
-const PoloBoard = ({ data, polos, history, setTab, feedbackPeriod }) => {
+const PoloBoard = ({ data, polos, history, feedbackPeriod }) => {
   const c = useKit();
   const byId = new Map(data.polos.map((p) => [p.poloId, p]));
   // every polo of the system appears, with or without team
@@ -530,7 +387,7 @@ const PoloBoard = ({ data, polos, history, setTab, feedbackPeriod }) => {
                   <div className="dash-team">{team.map((b) => <span key={b.user.id}><i>{(b.user.name || "?").charAt(0).toUpperCase()}</i>{b.user.name.split(" ")[0]}</span>)}</div>
                 </>
               ) : (
-                <button type="button" className={`${c.btn} dash-link`} onClick={() => setTab("consultores")}>Vincular consultores</button>
+                <button type="button" className={`${c.btn} dash-link`} onClick={() => history.push("/polos")}>Vincular consultores</button>
               )}
             </article>
           );
@@ -541,88 +398,5 @@ const PoloBoard = ({ data, polos, history, setTab, feedbackPeriod }) => {
   );
 };
 
-const CommercialCenter = () => {
-  const c = useKit();
-  const history = useHistory();
-  const defs = useDefinitions();
-  const [period, setPeriod] = useState({ range: "today", from: "", to: "" });
-  const [tab, setTab] = useState("geral");
-  const [selected, setSelected] = useState(null);
-  const [config, setConfig] = useState(null);
-  const params = useMemo(() => periodParams(period), [period]);
-  const feedbackPeriod = useMemo(() => supervisorPeriod(period), [period]);
-  const ready = period.range !== "custom" || (period.from && period.to);
-  const { data, loading, error, reload } = useAnalytics("/analytics/team", params, !!ready);
-  useEffect(() => { if (data) setConfig(data.config); }, [data]);
-  // the polos that exist, to link people to them without leaving this screen
-  const [polos, setPolos] = useState([]);
-  useEffect(() => { api.get("/polos").then(({ data: list }) => setPolos(Array.isArray(list) ? list.filter((p) => p.active !== false) : [])).catch(() => undefined); }, []);
-
-  const exportCsv = async () => {
-    try {
-      const { data: csv } = await api.get("/analytics/team/export.csv", { params, responseType: "blob" });
-      const url = URL.createObjectURL(csv);
-      const a = document.createElement("a");
-      a.href = url; a.download = `gestao-comercial-${period.range}.csv`; a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) { toastError(err); }
-  };
-
-  const ranked = useMemo(() => (data ? [...data.consultants].sort((a, b) => b.metrics.enrollments - a.metrics.enrollments || b.metrics.attendances - a.metrics.attendances) : []), [data]);
-
-  return (
-    <div className={`${c.page} dash-scope`}>
-      <StatsHubBar />
-      <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card, 14px)", padding: "clamp(14px, 3vw, 20px) clamp(14px, 3vw, 22px) 0", marginBottom: 18, boxShadow: "var(--shadow-card)", position: "relative", overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-          <div>
-            <h1 className={c.h1}>Equipe agora</h1>
-            <div className={c.lead}>{TAB_HELP[tab]}</div>
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <PeriodPicker value={period} onChange={setPeriod} />
-            <button type="button" onClick={exportCsv} className={c.btn}><Download size={14} style={{ verticalAlign: -2 }} /> Exportar</button>
-          </div>
-        </div>
-        <div role="tablist" style={{ display: "flex", gap: 4, marginTop: 14, overflowX: "auto" }}>
-          {[["geral", "Agora"], ["consultores", "Consultores"], ["processo", "Atendimento e processo"], ["polos", "Polos"], ["config", "Configuração"]].map(([k, label]) => (
-            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ border: 0, background: "transparent", color: tab === k ? "var(--text-1)" : "var(--text-2)", fontFamily: "inherit", fontSize: 14, fontWeight: 600, padding: "10px 14px", cursor: "pointer", borderBottom: `2px solid ${tab === k ? "var(--c-brand, #0B4279)" : "transparent"}`, whiteSpace: "nowrap" }}>{label}</button>
-          ))}
-        </div>
-      </div>
-
-      {loading && !data && <div className={c.sub}>Carregando…</div>}
-      {error && !data && <div role="alert" className={c.sub}>Não foi possível carregar os dados da equipe. <button type="button" className={c.btn} onClick={reload}>Tentar novamente</button></div>}
-      {data && tab === "geral" && (
-        <div style={{ display: "grid", gap: 16 }}>
-          {data.unassigned && data.unassigned.open > 0 && (
-            <div role="status" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 14, background: "rgba(217,119,6,.12)", border: "1px solid rgba(217,119,6,.35)" }}>
-              <AlertTriangle size={18} style={{ color: "#d97706", flex: "none" }} />
-              <span style={{ flex: 1, minWidth: 220, fontSize: 14 }}>
-                <b>{data.unassigned.open} {data.unassigned.open === 1 ? "tarefa sem responsável" : "tarefas sem responsável"}</b>
-                {data.unassigned.overdue > 0 ? ` (${data.unassigned.overdue} atrasada${data.unassigned.overdue === 1 ? "" : "s"})` : ""}: eram de quem não conectou o WhatsApp e nenhuma conversa do lead está com outra pessoa.
-              </span>
-              <button type="button" className={c.btnPrimary} onClick={() => history.push("/crm/tarefas?scope=all&status=open&userId=0")}>Distribuir</button>
-            </div>
-          )}
-          <div className={c.cols}>
-            <Team consultants={data.consultants} onOpen={(id) => { setSelected(id); setTab("consultores"); }} />
-            <Alerts alerts={data.alerts} onOpen={(id) => { setSelected(id); setTab("consultores"); }} history={history} />
-          </div>
-        </div>
-      )}
-
-      {data && tab === "consultores" && (
-        <ConsultantsTable ranked={ranked} totals={data.totals} polos={polos} defs={defs} selected={selected} onSelect={setSelected} onChanged={reload} />
-      )}
-      {selected && <Detail userId={selected} period={params} defs={defs} onClose={() => setSelected(null)} />}
-
-      {tab === "processo" && ready && <ProcessTab params={params} />}
-      {data && tab === "polos" && <PoloBoard data={data} polos={polos} history={history} setTab={setTab} feedbackPeriod={feedbackPeriod} />}
-
-      {data && tab === "config" && config && <ConfigPanel config={config} consultants={data.consultants} onSaved={setConfig} />}
-    </div>
-  );
-};
-
-export default CommercialCenter;
+// "Equipe agora" became part of Estatísticas: the pieces below are used by its tabs (Visão geral, Consultores, Polos e metas)
+export { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod };

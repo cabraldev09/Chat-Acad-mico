@@ -37,7 +37,7 @@ const ROLES = {
 // every address of the private area (parameters filled with something that exists or does not)
 const ROUTES = [
   "/tickets", "/tickets/1", "/contacts", "/connections", "/quickAnswers", "/schedules", "/reports", "/ambientacao",
-  "/estatisticas", "/meu-desempenho", "/estatisticas/tutoria", "/gestao-comercial", "/meus-alunos", "/crm/matriculas",
+  "/estatisticas", "/meu-desempenho", "/estatisticas/tutoria", "/meus-alunos", "/crm/matriculas",
   "/crm", "/crm/painel", "/crm/tarefas", "/crm/comissoes", "/crm/metas-polos", "/crm/metas", "/crm/config",
   "/afiliados", "/afiliados?aba=materiais", "/afiliados?aba=campanhas", "/afiliados?aba=bonificacoes", "/afiliados?aba=regras",
   "/cursos", "/campaigns", "/chatbot", "/chatbot/1", "/chatbot-antigo", "/ai-agents", "/monitor", "/integrations",

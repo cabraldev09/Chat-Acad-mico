@@ -12,7 +12,6 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import openSocket from "../../services/socket-io";
 import api from "../../services/api";
 import Management from "./Management";
-import ManagerView from "./ManagerView";
 import MyDay from "./MyDay";
 import { Insights } from "./shared";
 import { isManager } from "../../utils/access";
@@ -22,10 +21,9 @@ import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 import { ErrorState } from "../../components/ui";
 import StatsHubBar from "../../components/StatsHub";
 
-// Estatísticas: the one place for the numbers. Every figure appears once.
-// Administration and coordination open on the "Visão do gestor" (what needs attention + progress of the polos);
-// "Detalhes" keeps the full tabs:
-//   Visão geral  what is happening now and what happened in the period (volume, matrículas, resolução, atendimentos)
+// Atendimento. Every figure appears once:
+//   Visão geral  what is happening now and what happened in the period (volume, matrículas, resolução, atendimentos). The management
+//                sees it in Estatísticas → Visão geral (ConversationsOverview); the other roles see it here
 //   Equipe       response times by hour, department, attendant and polo (managers)
 //   Canais       where the conversations come from: channel, queue and tag (managers)
 // The period (day, 7 days, 30 days or a chosen date) is set once at the top and applies to every tab.
@@ -133,22 +131,21 @@ const rankOf = (list) => {
   return rows.map((r) => ({ key: r.name, name: r.name, value: r.value, bar: (r.value / max) * 100, color: r.color }));
 };
 
-const ReportsClassic = () => {
+// embedded: the overview alone (Estatísticas → Visão geral shows it with its own period); the screen of its own keeps the rest
+const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) => {
   const classes = useStyles();
   const ct = useChartTheme();
   const history = useHistory();
   const { user } = useContext(AuthContext);
   const manager = isManager(user);
   const today = useMemo(() => iso(new Date()), []);
-  const [tab, setTab] = useState("geral");
-  // managers open on the lean view; everyone else only has the details
-  const [view, setView] = useState("gestor");
-  const [overviewMgr, setOverviewMgr] = useState(null);
-  const [mgrError, setMgrError] = useState(false);
-  // a server that does not have the manager overview yet (an older version still running): the full tabs open instead of an error
-  const [leanMissing, setLeanMissing] = useState(false);
-  const [date, setDate] = useState("");
-  const [days, setDays] = useState(1);
+  // the overview of the conversations lives in Estatísticas → Visão geral for the management; this screen keeps the team and the channels
+  const [tabState, setTab] = useState(isManager(user) ? "equipe" : "geral");
+  const tab = embedded ? "geral" : tabState;
+  const [dateState, setDate] = useState("");
+  const [daysState, setDays] = useState(1);
+  const date = embedded ? dateProp || "" : dateState;
+  const days = embedded ? daysProp || 1 : daysState;
   const [queueId, setQueueId] = useState("");
   const [userId, setUserId] = useState("");
   const [queues, setQueues] = useState([]);
@@ -187,34 +184,16 @@ const ReportsClassic = () => {
   }, [date, days, manager]);
   useEffect(() => { load(); }, [load]);
 
-  const lean = manager && view === "gestor" && !leanMissing;
-  const loadLean = useCallback(() => {
-    setMgrError(false);
-    api.get("/dashboard/manager", { params: { date: date || undefined, days } })
-      .then(({ data: m }) => setOverviewMgr(m))
-      .catch((err) => {
-        if (err && err.response && err.response.status === 404) { setLeanMissing(true); return; }
-        setMgrError(true);
-        toastError(err);
-      });
-  }, [date, days]);
-  useEffect(() => { if (lean) loadLean(); }, [lean, loadLean]);
-  useEffect(() => {
-    if (!lean) return undefined;
-    const poll = setInterval(() => { if (document.visibilityState === "visible") loadLean(); }, 60000);
-    return () => clearInterval(poll);
-  }, [lean, loadLean]);
-
   // the heavier numbers are fetched only for the tab that shows them
   useEffect(() => {
-    if (!data || lean) return;
+    if (!data) return;
     if (tab === "equipe" && manager) api.get("/dashboard/management", { params: { date: date || undefined, days } }).then(({ data: m }) => { setMgmt(m); setFailed((f) => ({ ...f, mgmt: false })); }).catch((e) => { setFailed((f) => ({ ...f, mgmt: true })); toastError(e); });
     if (tab !== "equipe") {
       api.get("/stats/overview", { params: { from: range.from, to: range.to, queueId: queueId || undefined, userId: userId || undefined } })
         .then(({ data: o }) => { setOverview(o && typeof o === "object" ? { ...o, perQueue: o.perQueue || [], perTag: o.perTag || [], period: o.period || {} } : null); setFailed((f) => ({ ...f, overview: false })); })
         .catch((e) => { setFailed((f) => ({ ...f, overview: true })); toastError(e); });
     }
-  }, [tab, data, lean, range.from, range.to, queueId, userId, date, days, manager, attempt]);
+  }, [tab, data, range.from, range.to, queueId, userId, date, days, manager, attempt]);
   const retry = () => { setFailed({ data: false, overview: false, mgmt: false }); setAttempt((n) => n + 1); load(); };
 
   useEffect(() => {
@@ -277,12 +256,12 @@ const ReportsClassic = () => {
     </div>
   ));
 
-  const tabs = manager ? TABS : TABS.slice(0, 1);
+  const tabs = manager ? TABS.slice(1) : TABS.slice(0, 1);
 
   return (
-    <div className={classes.page}>
-      <StatsHubBar />
-      <div className={classes.top}>
+    <div className={embedded ? undefined : classes.page}>
+      {!embedded && <StatsHubBar />}
+      {!embedded && <div className={classes.top}>
         <div>
           <h1 className={classes.hello}>Atendimento e canais</h1>
           <div className={classes.sub}>{data && data.scope === "all" ? "Toda a equipe" : "Seus atendimentos"} · {periodName}</div>
@@ -301,19 +280,9 @@ const ReportsClassic = () => {
           </div>
           {!isToday && <button type="button" className={classes.segBtn} style={{ border: "1px solid currentColor" }} onClick={() => setDate("")}>Hoje</button>}
         </div>
-      </div>
+      </div>}
 
-      {manager && !leanMissing && (
-        <div className={classes.seg} role="tablist" aria-label="Tipo de visão" style={{ marginBottom: 14 }}>
-          {[["gestor", "Visão do gestor"], ["detalhes", "Detalhes"]].map(([k, l]) => (
-            <button key={k} type="button" role="tab" aria-selected={view === k} className={`${classes.segBtn} ${view === k ? classes.segOn : ""}`} onClick={() => setView(k)}>{l}</button>
-          ))}
-        </div>
-      )}
-
-      {lean && <ManagerView data={overviewMgr} error={mgrError} onRetry={loadLean} periodName={periodName} />}
-
-      {!lean && tabs.length > 1 && (
+      {!embedded && tabs.length > 1 && (
         <div className={classes.seg} role="tablist" aria-label="Visão" style={{ marginBottom: 20, display: "flex", width: "fit-content" }}>
           {tabs.map(([k, l, Icon]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} className={`${classes.segBtn} ${tab === k ? classes.segOn : ""}`} onClick={() => setTab(k)}><Icon size={15} /> {l}</button>
@@ -321,11 +290,11 @@ const ReportsClassic = () => {
         </div>
       )}
 
-      {!lean && tab === "geral" && !manager && <div style={{ marginBottom: 20 }}><MyDay data={myDay} /></div>}
+      {tab === "geral" && !manager && <div style={{ marginBottom: 20 }}><MyDay data={myDay} /></div>}
 
-      {!lean && tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} failed={failed.mgmt || (failed.data && !data)} onRetry={retry} date={date || undefined} days={days} />}
+      {tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} failed={failed.mgmt || (failed.data && !data)} onRetry={retry} date={date || undefined} days={days} />}
 
-      {!lean && tab === "canais" && manager && (
+      {tab === "canais" && manager && (
         <div className={classes.stack}>
           <div className={classes.filters}>
             <TextField select size="small" label="Fila" variant="outlined" value={queueId} onChange={(e) => setQueueId(e.target.value)} style={{ minWidth: 160 }}>
@@ -372,7 +341,7 @@ const ReportsClassic = () => {
         </div>
       )}
 
-      {!lean && tab === "geral" && (
+      {tab === "geral" && (
         <div className={classes.layout}>
           <div className={classes.stack}>
             {data && data.insights && data.insights.length > 0 && <Insights items={data.insights} />}
@@ -402,7 +371,7 @@ const ReportsClassic = () => {
               <div className={classes.cell}>
                 <div className={classes.cellLabel}><Timer size={14} /> Tempo até finalizar</div>
                 <div className={classes.cellValue}>{overview ? duration(overview.period.avgResolution) : "—"}</div>
-                <div className={classes.cellNote}>{manager ? <button type="button" className={classes.mute} style={{ padding: 0, color: "#0693E3", fontWeight: 600, fontFamily: "inherit", fontSize: 12 }} onClick={() => setTab("equipe")}>Ver tempos de resposta</button> : "média por conversa"}</div>
+                <div className={classes.cellNote}>{manager ? <button type="button" className={classes.mute} style={{ padding: 0, color: "#0693E3", fontWeight: 600, fontFamily: "inherit", fontSize: 12 }} onClick={() => (embedded ? history.push("/reports") : setTab("equipe"))}>Ver tempos de resposta</button> : "média por conversa"}</div>
               </div>
             </div>
 
@@ -443,7 +412,7 @@ const ReportsClassic = () => {
                       <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} tickMargin={8} interval="preserveStartEnd" minTickGap={16} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} />
                       <Tooltip cursor={{ fill: ct.cursor }} content={<ChartTooltip />} />
-                      <Bar dataKey="created" name="Novos" radius={[3, 3, 0, 0]} maxBarSize={22} style={{ cursor: "pointer" }} onClick={(d) => { if (d) { setDays(1); setDate(d.key >= today ? "" : d.key); } }} isAnimationActive={false}>
+                      <Bar dataKey="created" name="Novos" radius={[3, 3, 0, 0]} maxBarSize={22} style={{ cursor: "pointer" }} onClick={(d) => { if (d && !embedded) { setDays(1); setDate(d.key >= today ? "" : d.key); } }} isAnimationActive={false}>
                         {series.map((s) => <Cell key={s.key} fill={s.key === shown ? ct.c.brand : ct.c.leads} />)}
                       </Bar>
                       <Bar dataKey="closed" name="Finalizados" fill={ct.c.muted} fillOpacity={0.45} radius={[3, 3, 0, 0]} maxBarSize={22} isAnimationActive={false} />
@@ -462,7 +431,7 @@ const ReportsClassic = () => {
 
           <div className={classes.stack}>
             <div className={classes.panel}>
-              <h2 className={classes.panelTitle}><Clock3 size={16} /> Agora</h2>
+              <h2 className={classes.panelTitle}><Clock3 size={16} /> {embedded ? "Fila agora" : "Agora"}</h2>
               <div className={classes.panelSub}>O que está na mesa neste momento</div>
               <div className={classes.nowGrid} style={{ marginTop: 12 }}>
                 {[["Em atendimento", now && now.open, "open"], ["Aguardando", now && now.pending, "pending"], ["Não lidas", now && now.unread, "unread"]].map(([label, value, key]) => (
@@ -506,5 +475,7 @@ const Reports = () => {
   const consultant = user && user.profile !== "admin" && (user.role === "consultor" || !user.role);
   return consultant ? <Redirect to="/meu-desempenho" /> : <ReportsClassic />;
 };
+
+export const ConversationsOverview = ({ days, date }) => <ReportsClassic embedded days={days} date={date} />;
 
 export default Reports;
