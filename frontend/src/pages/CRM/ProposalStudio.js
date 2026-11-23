@@ -38,6 +38,7 @@ const useStyles = makeStyles((theme) => ({
   dlLabel: { fontSize: 11.5, fontWeight: 600, color: theme.palette.text.secondary, textTransform: "uppercase", letterSpacing: ".03em" },
   dlValue: { fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
   missing: { display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: theme.palette.type === "dark" ? "#fbbf24" : "#b45309", minWidth: 0 },
+  footInfo: { flex: 1, minWidth: 0, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", [theme.breakpoints.down("xs")]: { flexBasis: "100%" } },
   savedAt: { fontSize: 12.5, color: theme.palette.text.secondary, display: "inline-flex", alignItems: "center", gap: 4 },
   lockRow: { display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2, flexWrap: "wrap" },
 }));
@@ -411,8 +412,8 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                 <>
                   <div className={classes.deadline}>
                     <div className={`${classes.dl} ${classes.dlMain}`}><div className={classes.dlLabel}>Prazo do boleto</div><div className={classes.dlValue}>{fmtDay(turma.boletoDeadline)}</div></div>
-                    <div className={classes.dl}><div className={classes.dlLabel}>Liberação no AVA</div><div className={classes.dlValue}>{turma.releaseDate ? `até ${fmtDay(turma.releaseDate)}` : "—"}</div></div>
-                    <div className={classes.dl}><div className={classes.dlLabel}>Parcelas no semestre</div><div className={classes.dlValue}>{turma.installments}</div></div>
+                    <div className={classes.dl}><div className={classes.dlLabel}>AVA liberado até</div><div className={classes.dlValue}>{turma.releaseDate ? fmtDay(turma.releaseDate) : "—"}</div></div>
+                    <div className={classes.dl}><div className={classes.dlLabel}>Parcelas</div><div className={classes.dlValue}>{turma.installments}</div></div>
                   </div>
                   <div className={classes.note} style={{ marginTop: 8 }}>
                     Matrículas de {fmtDay(turma.from)} a {fmtDay(turma.to)}{turma.veteranosFrom ? ` · veteranos a partir de ${fmtDay(turma.veteranosFrom)}` : ""}. A 1ª mensalidade vence no prazo do boleto; as demais, todo dia {f.dueDay || "—"}.
@@ -565,8 +566,8 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
       )}
 
       <div className={classes.foot}>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          {!locked && missing.length > 0 && <span className={classes.missing}><AlertTriangle size={15} /> Para gerar o PDF ou enviar, falta: {missing.join(", ")}.</span>}
+        <div className={classes.footInfo}>
+          {!locked && missing.length > 0 && <span className={classes.missing}><AlertTriangle size={15} style={{ flex: "none" }} /> Falta para gerar o PDF ou enviar: {missing.join(", ")}.</span>}
           {!locked && (dirty
             ? <span className={classes.savedAt}>Alterações não salvas</span>
             : savedAt ? <span className={classes.savedAt}><Check size={14} /> Salvo às {savedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span> : null)}
@@ -580,7 +581,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
         {!locked && <Button variant="contained" color="primary" startIcon={<SendHorizonal size={16} />} disabled={blocked || missing.length > 0} onClick={() => setSendOpen(true)}>Enviar ao candidato</Button>}
       </div>
 
-      <Dialog open={leaveOpen} onClose={() => setLeaveOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={leaveOpen} onClose={() => setLeaveOpen(false)} maxWidth="sm">
         <DialogTitle>Salvar antes de sair?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="textSecondary">Esta proposta tem alterações que ainda não foram salvas.</Typography>

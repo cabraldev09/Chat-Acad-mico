@@ -401,8 +401,8 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                           1ª mensalidade {Number(pr.firstMonthly).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · bolsa {Number(pr.bolsaPct).toFixed(2).replace(".", ",")}%
                         </div>
                         <div className={classes.tlMeta}>
-                          {pr.status === "draft" ? "Rascunho" : `Enviada ${ago(pr.sentAt)}${pr.viewedAt ? ` · visualizada ${ago(pr.viewedAt)}` : " · ainda não visualizada"}`}
-                          {pr.author ? ` · ${pr.author.name}` : ""}
+                          {pr.status === "draft" ? "" : `Enviada ${ago(pr.sentAt)}${pr.viewedAt ? ` · visualizada ${ago(pr.viewedAt)}` : " · ainda não visualizada"}`}
+                          {pr.author ? `${pr.status === "draft" ? "" : " · "}${pr.author.name}` : ""}
                           {pr.affiliate ? ` · indicado pelo afiliado ${pr.affiliate.name}` : ""}
                         </div>
                       </div>
