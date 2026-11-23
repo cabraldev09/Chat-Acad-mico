@@ -10,6 +10,7 @@ import User from "../../models/User";
 import { connectionOfTeam, TUTORIA_SEGMENTS } from "../ChannelServices/ConnectionTeam";
 import { openingTemplateOf } from "../TicketServices/OpeningTemplate";
 import { analyticsInstitutionScope } from "../AnalyticsServices/InstitutionScope";
+import { legacyInstitutionId as getLegacyInstitutionId } from "../../helpers/Institution";
 
 const MARK = "‎";
 const H = 3600000;
@@ -55,9 +56,10 @@ export const studentState = (lead: { onboardingStatus: string; enrolledAt: Date 
 };
 
 // what the conversations of the tutoring side say about each contact (one query for all of them)
-const factsKey = (contactId: number, institutionId: number | null): string => `${contactId}:${institutionId ?? "null"}`;
+const factsKey = (contactId: number, institutionId: number | null, legacyId: number | null): string => `${contactId}:${institutionId ?? legacyId ?? "null"}`;
 const factsOf = async (pairs: Array<{ contactId: number; institutionId: number | null }>, institution: { id: number; isDefault: boolean; isLegacy?: boolean } | null): Promise<Map<string, ContactFacts>> => {
   const out = new Map<string, ContactFacts>();
+  const legacyId = await getLegacyInstitutionId();
   const contactIds = [...new Set(pairs.map(p => p.contactId))];
   if (!contactIds.length) return out;
   const rows = (await sequelize.query(
@@ -87,18 +89,24 @@ const factsOf = async (pairs: Array<{ contactId: number; institutionId: number |
     { replacements: { ids: rows.map(r => Number(r.ticketId)).concat([0]) }, type: QueryTypes.SELECT }
   )) as any[];
   const statusOf = new Map(status.map(s => [Number(s.id), String(s.status)]));
-  rows.forEach(r => out.set(factsKey(Number(r.contactId), r.institutionId === null ? null : Number(r.institutionId)), {
-    ticketId: r.ticketId ? Number(r.ticketId) : null,
-    status: r.ticketId ? statusOf.get(Number(r.ticketId)) || null : null,
-    unread: Number(r.unread || 0),
-    lastIn: r.lastIn ? new Date(r.lastIn) : null,
-    lastOut: r.lastOut ? new Date(r.lastOut) : null,
-    callAt: null,
-    callNote: null
-  }));
+  rows.forEach(r => {
+    const key = factsKey(Number(r.contactId), r.institutionId === null ? null : Number(r.institutionId), legacyId);
+    const previous = out.get(key);
+    const ticketId = Math.max(Number(r.ticketId) || 0, previous?.ticketId || 0) || null;
+    const latest = (a: Date | null, b: Date | null): Date | null => !a ? b : !b ? a : a > b ? a : b;
+    out.set(key, {
+      ticketId,
+      status: ticketId ? statusOf.get(ticketId) || previous?.status || null : null,
+      unread: Number(r.unread || 0) + (previous?.unread || 0),
+      lastIn: latest(previous?.lastIn || null, r.lastIn ? new Date(r.lastIn) : null),
+      lastOut: latest(previous?.lastOut || null, r.lastOut ? new Date(r.lastOut) : null),
+      callAt: previous?.callAt || null,
+      callNote: previous?.callNote || null
+    });
+  });
   // the last call of each contact (the query is ordered: the newest wins)
   calls.forEach(c => {
-    const key = factsKey(Number(c.contactId), c.institutionId === null ? null : Number(c.institutionId));
+    const key = factsKey(Number(c.contactId), c.institutionId === null ? null : Number(c.institutionId), legacyId);
     const f = out.get(key) || { ticketId: null, status: null, unread: 0, lastIn: null, lastOut: null, callAt: null, callNote: null };
     out.set(key, { ...f, callAt: new Date(c.callAt), callNote: c.callNote || null });
   });
@@ -141,11 +149,12 @@ export const listStudents = async (q: StudentsQuery) => {
     limit: 2000
   });
   const tutors = new Map((await User.findAll({ where: { id: [...new Set(leads.map(l => l.onboardingTutorId).filter(Boolean))] } as any, attributes: ["id", "name"] })).map(u => [u.id, u.name]));
-  const facts = await factsOf(leads.filter(l => l.contactId).map(l => ({ contactId: Number(l.contactId), institutionId: l.institutionId == null ? null : Number(l.institutionId) })), institution);
+  const legacyId = await getLegacyInstitutionId();
+  const facts = await factsOf(leads.filter(l => l.contactId).map(l => ({ contactId: Number(l.contactId), institutionId: l.institutionId == null ? legacyId : Number(l.institutionId) })), institution);
   const blank: ContactFacts = { ticketId: null, status: null, unread: 0, lastIn: null, lastOut: null, callAt: null, callNote: null };
   const now = Date.now();
   const students = leads.map(l => {
-    const f = (l.contactId && facts.get(factsKey(Number(l.contactId), l.institutionId == null ? null : Number(l.institutionId))) ) || blank;
+    const f = (l.contactId && facts.get(factsKey(Number(l.contactId), l.institutionId == null ? legacyId : Number(l.institutionId), legacyId)) ) || blank;
     const checklist = (() => { try { return typeof l.onboardingChecklist === "string" ? JSON.parse(l.onboardingChecklist as any) : l.onboardingChecklist || {}; } catch { return {}; } })();
     const steps = Object.values(checklist || {});
     return {
