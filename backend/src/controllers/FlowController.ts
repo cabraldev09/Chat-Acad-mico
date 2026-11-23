@@ -7,6 +7,8 @@ import ChatFlowRun from "../models/ChatFlowRun";
 import ChatFlowStat from "../models/ChatFlowStat";
 import ChatFlowVersion from "../models/ChatFlowVersion";
 import AiAgent from "../models/AiAgent";
+import Whatsapp from "../models/Whatsapp";
+import { legacyInstitutionId } from "../helpers/Institution";
 import { withDraft } from "./AiAgentController";
 import User from "../models/User";
 import AutomationTrigger from "../models/AutomationTrigger";
@@ -16,6 +18,7 @@ import { generateFlow } from "../services/FlowServices/Generate";
 import { Graph, maskGraphSecrets, parseGraph, restoreGraphSecrets, stripGraphSecrets, validateGraph } from "../services/FlowServices/Graph";
 import { flowStats, hasActiveAiAgent, parseEntry } from "../services/FlowServices/Runner";
 import { TEMPLATES, autoLayout, blankGraph, legacyToGraph } from "../services/FlowServices/Templates";
+import { sameAgentInstitution, stageAgentIds } from "../services/FlowServices/AgentInstitution";
 
 const uid = (req: Request): number => Number(req.user.id);
 const clip = (v: any, n: number): string => String(v || "").trim().slice(0, n);
@@ -35,6 +38,24 @@ const entryOf = (raw: any) => {
 const cleanGraph = (raw: any): Graph => {
   const g = parseGraph(raw);
   return { nodes: g.nodes.slice(0, 120), edges: g.edges.slice(0, 400) };
+};
+
+const assertStageAgentInstitutions = async (flowAgentId: number | null, whatsappId: number | null, graph: Graph): Promise<void> => {
+  const ids = stageAgentIds(graph);
+  if (!ids.length && !flowAgentId) return;
+  const legacyId = await legacyInstitutionId();
+  const baseAgent = flowAgentId ? await AiAgent.findByPk(flowAgentId, { attributes: ["id", "institutionId"] }) : null;
+  const whatsapp = whatsappId ? await Whatsapp.findByPk(whatsappId, { attributes: ["id", "institutionId"] }) : null;
+  if (whatsappId && !whatsapp) throw new AppError("ERR_FLOW_AGENT_INSTITUTION", 400);
+  const targetInstitutionId = whatsapp?.institutionId || baseAgent?.institutionId || null;
+  // A generic flow without a university or a connection has no safe institution context for an explicit AI stage.
+  if (!baseAgent && !whatsappId) throw new AppError("ERR_FLOW_AGENT_INSTITUTION", 400);
+  if (!targetInstitutionId && !legacyId) throw new AppError("ERR_FLOW_AGENT_INSTITUTION", 400);
+  if (baseAgent && !sameAgentInstitution(baseAgent.institutionId, targetInstitutionId, legacyId)) throw new AppError("ERR_FLOW_AGENT_INSTITUTION", 400);
+  const agents = await AiAgent.findAll({ where: { id: ids } as any, attributes: ["id", "institutionId"] });
+  if (agents.length !== ids.length || agents.some(agent => !sameAgentInstitution(agent.institutionId, targetInstitutionId, legacyId))) {
+    throw new AppError("ERR_FLOW_AGENT_INSTITUTION", 400);
+  }
 };
 
 // the agent an AI stage talks as in the simulator: the one of the flow, else any active one
@@ -99,6 +120,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     agentId = Number(b.agentId) || null;
     if (!agentId || !(await AiAgent.findByPk(agentId))) throw new AppError("ERR_FIELD_REQUIRED_agentId", 400);
   }
+  await assertStageAgentInstitutions(agentId, b.whatsappId ? Number(b.whatsappId) : null, graph);
   const flow = await ChatFlow.create({
     name,
     kind,
@@ -124,6 +146,9 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (b.whatsappId !== undefined) patch.whatsappId = b.whatsappId ? Number(b.whatsappId) : null;
   if (b.entry !== undefined) patch.entry = entryOf(b.entry);
   if (b.graph !== undefined) patch.draft = JSON.stringify(restoreGraphSecrets(cleanGraph(b.graph), parseGraph(flow.draft)));
+  if (patch.draft !== undefined || patch.whatsappId !== undefined) {
+    await assertStageAgentInstitutions(flow.agentId || null, patch.whatsappId !== undefined ? patch.whatsappId : flow.whatsappId || null, parseGraph(patch.draft !== undefined ? patch.draft : flow.draft));
+  }
   await flow.update(patch);
   return res.json(await present(flow, true));
 };
@@ -138,6 +163,7 @@ export const validate = async (req: Request, res: Response): Promise<Response> =
 export const publish = async (req: Request, res: Response): Promise<Response> => {
   const flow = await load(req.params.id);
   const graph = restoreGraphSecrets(cleanGraph(req.body?.graph || flow.draft), parseGraph(flow.draft));
+  await assertStageAgentInstitutions(flow.agentId || null, flow.whatsappId || null, graph);
   const issues = validateGraph(graph, { hasAiAgent: await hasActiveAiAgent(), kind: flow.kind });
   if (issues.some(i => i.level === "error")) return res.status(422).json({ error: "ERR_FLOW_HAS_ERRORS", issues });
   await flow.update({ draft: JSON.stringify(graph), published: JSON.stringify(graph), status: "published", version: flow.version + 1, publishedAt: new Date() });

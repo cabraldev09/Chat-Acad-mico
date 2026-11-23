@@ -2,6 +2,7 @@ import path from "path";
 import multer from "multer";
 import { randomBytes } from "crypto";
 import { PUBLIC_DIR } from "./paths";
+import { publicUploadFileFilter } from "../helpers/PublicUploadPolicy";
 
 const publicFolder = PUBLIC_DIR;
 export default {
@@ -20,5 +21,6 @@ export default {
 
       return cb(null, fileName);
     }
-  })
+  }),
+  fileFilter: publicUploadFileFilter
 };

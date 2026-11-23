@@ -7,6 +7,10 @@ import { getAdapter } from "../../channels";
 export const StartWhatsAppSession = async (
   whatsapp: Whatsapp
 ): Promise<void> => {
+  // Automated E2E runs must not start a real WWebJS/Chromium session when
+  // creating or updating a QR-code connection. API channel adapters still run.
+  if (process.env.SKIP_WHATSAPP_SESSIONS && whatsapp.channel === "whatsapp") return;
+
   await whatsapp.update({ status: "OPENING" });
 
   const io = getIO();

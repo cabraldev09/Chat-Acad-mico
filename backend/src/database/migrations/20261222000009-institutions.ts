@@ -3,8 +3,8 @@ import { QueryInterface, DataTypes } from "sequelize";
 // One system for the 9 universities of the group: each institution has its brand (name, short name, slug of the public pages, color,
 // site, e-mail sender, footer), one of them is the default, and every number, conversation, lead, campaign and AI agent knows its
 // university. Polos can serve several (PoloInstitutions); a university can override any setting (InstitutionSettings).
-// Existing rows with institutionId = NULL belong to the default. Keeping them NULL avoids a full-table update while these operational
-// tables are locked by PostgreSQL's schema changes.
+// Existing rows with institutionId = NULL belong to the default selected during this migration. Keeping them NULL avoids a full-table
+// update while these operational tables are locked by PostgreSQL's schema changes; Settings.legacy_institution_id pins that interpretation.
 module.exports = {
   up: async (q: QueryInterface) => {
     await q.sequelize.transaction(async transaction => {
@@ -53,6 +53,10 @@ module.exports = {
         const [[created]]: any = await q.sequelize.query(`INSERT INTO "Institutions" (name, active, "createdAt", "updatedAt") VALUES (:name, true, NOW(), NOW()) RETURNING id`, { ...o, replacements: { name } });
         id = created.id;
       }
+      await q.sequelize.query(
+        `INSERT INTO "Settings" (key, value, "createdAt", "updatedAt") VALUES ('legacy_institution_id', :id, NOW(), NOW()) ON CONFLICT (key) DO NOTHING`,
+        { ...o, replacements: { id: String(id) } }
+      );
       await q.sequelize.query(`UPDATE "Institutions" SET "isDefault" = (id = :id)`, { ...o, replacements: { id } });
       await q.sequelize.query(`CREATE UNIQUE INDEX "institutions_one_default" ON "Institutions" ((true)) WHERE "isDefault" = true`, o);
       // a slug for every institution (the address of its public pages): the name in lowercase, without accents, words joined by "-"
@@ -66,7 +70,7 @@ module.exports = {
         // eslint-disable-next-line no-await-in-loop
         await q.sequelize.query(`UPDATE "Institutions" SET slug = :slug WHERE id = :id`, { ...o, replacements: { slug, id: r.id } });
       }
-      // Existing operational rows remain NULL (= default); do not rewrite entire, potentially large tables during app startup.
+      // Existing operational rows remain NULL (= migration-time default); do not rewrite entire, potentially large tables during app startup.
       await q.sequelize.query(`INSERT INTO "PoloInstitutions" ("poloId", "institutionId", "createdAt", "updatedAt") SELECT id, :id, NOW(), NOW() FROM "Polos" ON CONFLICT DO NOTHING`, { ...o, replacements: { id } });
     });
   },

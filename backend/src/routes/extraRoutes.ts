@@ -5,6 +5,7 @@ import * as MetaTemplates from "../controllers/MetaTemplatesController";
 import isRetentionOperator from "../middleware/isRetentionOperator";
 import express from "express";
 import multer from "multer";
+import AppError from "../errors/AppError";
 import * as Materials from "../controllers/CourseMaterialController";
 
 import isAuth from "../middleware/isAuth";
@@ -54,16 +55,19 @@ import * as AffMat from "../controllers/AffiliateMaterialController";
 import { affiliateUpload } from "../config/affiliateUpload";
 import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
 import rateLimit from "../middleware/rateLimit";
+import { uploadCapacity } from "../middleware/uploadCapacity";
+import { PUBLIC_UPLOAD_MAX_FILE_BYTES } from "../helpers/PublicUploadPolicy";
+import { isAllowedTrainingUpload } from "../services/AiServices/TrainZip";
 
-const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
+const upload = multer({ ...uploadConfig, limits: { fileSize: PUBLIC_UPLOAD_MAX_FILE_BYTES, files: 1 } });
 const materialUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
 const certUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
-const trainUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const trainUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 }, fileFilter: (_req, file, cb) => isAllowedTrainingUpload(file.originalname) ? cb(null, true) : cb(new AppError("ERR_UPLOAD_TYPE", 400) as unknown as Error) });
 const kbUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 const r = express.Router();
 
 // generic upload used by campaigns / schedules to attach media
-r.post("/uploads", isAuth, upload.single("file"), (req, res) =>
+r.post("/uploads", isAuth, rateLimit({ windowMs: 60 * 60 * 1000, max: 30, key: req => String(req.user?.id || req.ip) }), uploadCapacity(PUBLIC_UPLOAD_MAX_FILE_BYTES + 1024 * 1024), upload.single("file"), (req, res) =>
   res.json({
     filename: req.file?.filename,
     originalname: req.file?.originalname,
@@ -232,7 +236,7 @@ r.put("/ai-rules/:id", isAuth, isManager, Ai.ruleUpdate);
 r.delete("/ai-rules/:id", isAuth, isManager, Ai.ruleRemove);
 r.post("/ai-agents/:id/coach", isAuth, isManager, Ai.coach);
 r.post("/ai-agents/:id/ping", isAuth, isManager, Ai.ping);
-r.post("/ai-agents/:id/train/upload", isAuth, isManager, trainUpload.single("file"), Ai.trainUpload);
+r.post("/ai-agents/:id/train/upload", isAuth, isManager, rateLimit({ windowMs: 10 * 60 * 1000, max: 4, key: req => String(req.user?.id || req.ip) }), trainUpload.single("file"), Ai.trainUpload);
 r.post("/ai-agents/:id/train/analyze", isAuth, isManager, Ai.trainAnalyze);
 r.post("/ai-agents/:id/train/apply", isAuth, isManager, Ai.trainApply);
 r.post("/ai-agents/:id/train/from-conversation", isAuth, isManager, Ai.trainFromConversation);

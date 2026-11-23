@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import AiAgent from "../models/AiAgent";
+import Institution from "../models/Institution";
+import { defaultInstitution, legacyInstitutionId } from "../helpers/Institution";
 import { lastProcessEval, runProcessEval } from "../services/AiServices/ProcessEval";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import { getSecretSetting, setSecretSetting } from "../helpers/SecretSettings";
@@ -31,7 +33,6 @@ import { ExportedChat, looksLikeWhatsAppExport, maskPii, parseWhatsAppExport, to
 import { analyze as analyzeFile, planOf } from "../services/AiServices/TrainAnalyze";
 import { cleanStage } from "../services/FlowServices/StageSpec";
 import { build as buildGraph } from "../services/FlowServices/Templates";
-import JSZip from "jszip";
 import crypto from "crypto";
 import { approve, discard } from "../services/AiServices/Learning";
 import { respond } from "../services/AiServices/RunAiAgent";
@@ -50,10 +51,14 @@ import { defaultProvider } from "../services/AiServices/Keys";
 import { ensurePipeline } from "../services/CommercialServices/Pipeline";
 import { cleanCommercial } from "../services/CommercialServices/Config";
 import { cleanConnectionIds } from "../helpers/AgentConnections";
+import { kbDocumentBelongsToAgent } from "../services/AiServices/KnowledgeBaseScope";
+import { textOfZip } from "../services/AiServices/TrainZip";
+import { resolveAgentInstitutionId } from "../services/AiServices/AgentInstitution";
 
 const crud = makeCrud(AiAgent, {
   fields: [
     "name",
+    "institutionId",
     "provider",
     "model",
     "apiKey",
@@ -77,9 +82,19 @@ const crud = makeCrud(AiAgent, {
     "learnFromTeam"
   ],
   required: ["name", "model"],
-  beforeSave: (data, req, existing) => {
+  beforeSave: async (data, req, existing) => {
     // how the agent stands before this save: the history keeps what the save changed (written in afterSave, before the answer goes out)
     if (existing) (req as any).agentBefore = snapshotOf(existing);
+    if (data.institutionId !== undefined) {
+      const institutionId = Number(data.institutionId);
+      const institution = Number.isInteger(institutionId) && institutionId > 0
+        ? await Institution.findOne({ where: { id: institutionId, active: true } as any, attributes: ["id"] })
+        : null;
+      if (!institution) throw new AppError("ERR_INSTITUTION_NOT_FOUND", 404);
+      data.institutionId = institution.id;
+    } else if (!existing) {
+      data.institutionId = (await defaultInstitution())?.id || undefined;
+    }
     if (data.provider !== undefined && !["openai", "anthropic"].includes(data.provider)) throw new AppError("ERR_AI_PROVIDER_INVALID");
     const limits: Record<string, [number, number, number]> = {
       maxTokens: [350, 100, 1200], maxHistory: [12, 6, 24], waitSeconds: [4, 0, 15],
@@ -137,7 +152,16 @@ const crud = makeCrud(AiAgent, {
   }
 });
 
-export const { index, show, store, update } = crud;
+const crudIndex = crud.index;
+export const index = async (req: Request, res: Response): Promise<Response> => {
+  const legacyId = await legacyInstitutionId();
+  const proxy: any = { ...res, json: (rows: any[]) => res.json(rows.map(row => {
+    const value = row?.toJSON ? row.toJSON() : row;
+    return { ...value, institutionId: value.institutionId || legacyId };
+  })) };
+  return crudIndex(req, proxy);
+};
+export const { show, store, update } = crud;
 
 // the agent goes with its blocks (the flows of kind agent that talk as it)
 export const remove = async (req: Request, res: Response): Promise<Response> => {
@@ -185,6 +209,7 @@ export const agentTemplates = async (_req: Request, res: Response): Promise<Resp
 // An agent made from a ready example: the persona, a few answers in the knowledge base and the blocks. It starts turned off (and as
 // a draft): nobody is answered until the team reviews it, publishes it and turns it on.
 interface NewAgent {
+  institutionId: number;
   name: string;
   persona: { systemPrompt: string; tone: string; rules: string; forbidden: string; handoffMessage: string; unknownMessage: string; assistantName?: string };
   faq: Array<{ title: string; content: string; keywords?: string }>;
@@ -200,6 +225,7 @@ const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agent
   const access = await defaultProvider();
   const agent = await AiAgent.create({
     name: a.name,
+    institutionId: a.institutionId,
     provider: access.provider,
     model: access.model || DEFAULT_MODEL,
     systemPrompt: a.persona.systemPrompt,
@@ -234,6 +260,9 @@ export const introPreview = async (req: Request, res: Response): Promise<Respons
 };
 
 export const fromTemplate = async (req: Request, res: Response): Promise<Response> => {
+  const institutionId = await resolveAgentInstitutionId(req.body?.institutionId, (await defaultInstitution())?.id || null, async id =>
+    Institution.findOne({ where: { id, active: true } as any, attributes: ["id"] })
+  );
   const t = AGENT_TEMPLATES.find(x => x.key === req.body?.template);
   if (!t) throw new AppError("ERR_NOT_FOUND", 404);
   // one name on the screen: the commercial agent is known inside the system by the name it introduces itself with
@@ -245,17 +274,20 @@ export const fromTemplate = async (req: Request, res: Response): Promise<Respons
   const assistantName = String(req.body?.assistantName || "").trim().slice(0, 40);
   const tone = String(req.body?.tone || "").trim().slice(0, 200);
   const persona = { ...(t.persona as any), ...(assistantName ? { assistantName } : {}), ...(tone ? { tone } : {}) };
-  return res.status(201).json(await createAgentWithFlow({ name, persona, faq: t.faq, kb: t.kb, graph: t.graph, description: `Modelo: ${t.name}`, funnel }, uid(req)));
+  return res.status(201).json(await createAgentWithFlow({ institutionId, name, persona, faq: t.faq, kb: t.kb, graph: t.graph, description: `Modelo: ${t.name}`, funnel }, uid(req)));
 };
 
 // "Criar com IA": a description of the business becomes the agent, its answers and its blocks (checked and fixed by the system before
 // it is shown); it opens as a draft for the team to review
 export const generate = async (req: Request, res: Response): Promise<Response> => {
+  const institutionId = await resolveAgentInstitutionId(req.body?.institutionId, (await defaultInstitution())?.id || null, async id =>
+    Institution.findOne({ where: { id, active: true } as any, attributes: ["id"] })
+  );
   const description = String(req.body?.description || "").trim().slice(0, 3000);
   if (description.length < 20) throw new AppError("ERR_FIELD_REQUIRED_description", 400);
   const out = await generateAgent(description, req.body?.segment);
   const name = String(req.body?.name || out.agent.name).trim().slice(0, 80) || out.agent.name;
-  const made = await createAgentWithFlow({ name, persona: out.agent.persona, faq: out.agent.faq, graph: out.agent.graph, description: "Criado com IA a partir da sua descrição" }, uid(req));
+  const made = await createAgentWithFlow({ institutionId, name, persona: out.agent.persona, faq: out.agent.faq, graph: out.agent.graph, description: "Criado com IA a partir da sua descrição" }, uid(req));
   return res.status(201).json({ ...made, attempts: out.attempts, issues: out.issues });
 };
 
@@ -274,6 +306,13 @@ const loadAgent = async (id: string) => {
   const agent = await AiAgent.findByPk(id);
   if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
   return agent;
+};
+
+const loadKbDocumentForAgent = async (req: Request) => {
+  const agent = await loadAgent(req.params.id);
+  const doc = await KbDocument.findByPk(req.params.docId);
+  if (!doc || !kbDocumentBelongsToAgent(doc.agentId, agent.id)) throw new AppError("ERR_NOT_FOUND", 404);
+  return doc;
 };
 
 export const kbList = async (req: Request, res: Response): Promise<Response> => {
@@ -296,8 +335,7 @@ export const kbList = async (req: Request, res: Response): Promise<Response> => 
 };
 
 export const kbShow = async (req: Request, res: Response): Promise<Response> => {
-  const doc = await KbDocument.findByPk(req.params.docId);
-  if (!doc) throw new AppError("ERR_NOT_FOUND", 404);
+  const doc = await loadKbDocumentForAgent(req);
   return res.json(doc);
 };
 
@@ -334,8 +372,7 @@ export const kbAdd = async (req: Request, res: Response): Promise<Response> => {
 };
 
 export const kbUpdate = async (req: Request, res: Response): Promise<Response> => {
-  const doc = await KbDocument.findByPk(req.params.docId);
-  if (!doc) throw new AppError("ERR_NOT_FOUND", 404);
+  const doc = await loadKbDocumentForAgent(req);
   const { title, content, keywords, topic, courseId } = req.body || {};
   await doc.update({
     ...(topic !== undefined ? { topic: topicOf(topic) } : {}),
@@ -349,8 +386,9 @@ export const kbUpdate = async (req: Request, res: Response): Promise<Response> =
 };
 
 export const kbRemove = async (req: Request, res: Response): Promise<Response> => {
-  await KbChunk.destroy({ where: { documentId: req.params.docId } });
-  await KbDocument.destroy({ where: { id: req.params.docId } });
+  const doc = await loadKbDocumentForAgent(req);
+  await KbChunk.destroy({ where: { documentId: doc.id } });
+  await doc.destroy();
   return res.json({ message: "deleted" });
 };
 
@@ -743,15 +781,6 @@ const sweepUploads = (): void => {
   });
   // never more than a handful in memory
   [...uploads.keys()].slice(0, Math.max(0, uploads.size - 20)).forEach(k => uploads.delete(k));
-};
-
-// the text inside a .zip of WhatsApp (the conversation is the .txt; photos and audios are ignored)
-const textOfZip = async (buffer: Buffer): Promise<string> => {
-  const zip = await JSZip.loadAsync(buffer);
-  const names = Object.keys(zip.files).filter(n => !zip.files[n].dir && /\.txt$/i.test(n) && !/^__MACOSX\//.test(n));
-  if (!names.length) throw new AppError("ERR_TRAIN_ZIP_EMPTY");
-  names.sort((a, b) => (/_chat\.txt$/i.test(b) ? 1 : 0) - (/_chat\.txt$/i.test(a) ? 1 : 0) || a.length - b.length);
-  return zip.files[names[0]].async("string");
 };
 
 export const trainUpload = async (req: Request, res: Response): Promise<Response> => {

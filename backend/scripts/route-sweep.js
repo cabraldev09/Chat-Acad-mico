@@ -1,7 +1,7 @@
-// Calls every GET route of the API as the administrator, a consultant and a tutor, against a running API (the same stack as the
+// Calls every GET route of the API as all six roles, against a running API (the same stack as the
 // screen sweep), and fails on what a person would hit as a broken screen:
 //   - an answer 500 (or no answer);
-//   - a route of the management (isManager / isAdmin) answering 200 to a consultant or a tutor (data of others leaking);
+//   - a route of the management (isManager / isAdmin) answering 200 to a role without management access (data of others leaking);
 // slow answers (over 3 s) are listed, not failed (a cold database on the runner is slow by nature).
 // The routes come from the route files (the same reading as audit-routes.js); ids in the path come from the database.
 // Usage: API=http://localhost:8080 node scripts/route-sweep.js   (env: ADMIN_EMAIL, ADMIN_PASSWORD, PG* or DB_* for the ids)
@@ -51,9 +51,9 @@ const fill = p => p.replace(/:(\w+)\??/g, (_, name) => (IDS[name] ? IDS[name]() 
   if (!admin) { console.error("Não foi possível entrar como administrador."); process.exit(1); }
   const as = token => ({ headers: { Authorization: `Bearer ${token}` } });
   const people = { admin };
-  for (const role of ["consultor", "tutor"]) {
+  for (const role of ["coordenacao", "consultor", "tutor", "academico", "relacionamento"]) {
     const email = `route-sweep-${role}@x.com`;
-    await http.post("/users", { name: `Varredura de rotas ${role}`, email, password: PASS, role }, as(admin));
+    await http.post("/users", { name: `Varredura de rotas ${role}`, email, password: PASS, role, coordArea: role === "coordenacao" ? "comercial" : undefined }, as(admin));
     people[role] = await login(email, PASS);
   }
 
@@ -74,16 +74,16 @@ const fill = p => p.replace(/:(\w+)\??/g, (_, name) => (IDS[name] ? IDS[name]() 
       // 502/503 is the answer for a service outside that refused (the Meta with a test token): told on the screen, not a failure of ours
       if (status === 502 || status === 503) external.push(`${who.padEnd(9)} GET ${url} → ${status}`);
       else if (typeof status !== "number" || status >= 500) failures.push(`${who.padEnd(9)} GET ${url} → ${status} (${r.file})`);
-      else if (r.manager && who !== "admin" && status === 200) failures.push(`${who.padEnd(9)} GET ${url} → 200 numa rota da gestão (${r.file})`);
+      else if (r.manager && !["admin", "coordenacao"].includes(who) && status === 200) failures.push(`${who.padEnd(9)} GET ${url} → 200 numa rota da gestão (${r.file})`);
       if (ms > SLOW_MS) slow.push(`${who.padEnd(9)} GET ${url} → ${ms} ms`);
     }
   }
-  console.log(`Varredura de rotas: ${routes.length} rotas GET com login, ${calls} chamadas (admin, consultor e tutor).`);
+  console.log(`Varredura de rotas: ${routes.length} rotas GET com login, ${calls} chamadas (seis perfis).`);
   if (external.length) console.log(`\nServiço externo indisponível (502/503, mensagem clara na tela):\n${external.join("\n")}`);
   if (slow.length) console.log(`\nLentas (acima de ${SLOW_MS / 1000} s):\n${slow.join("\n")}`);
   if (failures.length) {
     console.log(`\nFalhas (${failures.length}):\n${failures.join("\n")}`);
     process.exit(1);
   }
-  console.log("\nNenhuma falha: nenhuma rota respondeu 500 e nenhuma rota da gestão abriu para consultor ou tutor.");
+  console.log("\nNenhuma falha: nenhuma rota respondeu 500 e nenhuma rota da gestão abriu para equipe sem acesso gerencial.");
 })().catch(e => { console.error(e); process.exit(1); });

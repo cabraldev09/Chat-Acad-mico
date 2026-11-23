@@ -1,4 +1,4 @@
-import { institutionName } from "../../helpers/Institution";
+import { institutionName, institutionFor, legacyInstitutionId } from "../../helpers/Institution";
 import { withReactiveReply } from "../../helpers/ReactiveReply";
 import { callWithBudget } from "./Budget";
 import { boundedInt, policyOf, wantsToStop, withNextStep, usageCounts } from "./Policy";
@@ -34,6 +34,8 @@ import { isHandoffNotice } from "../../helpers/ReplyPolish";
 import { connectionsOf } from "../../helpers/AgentConnections";
 import { offeredCourses } from "../CommercialServices/Academic";
 import { todayLine } from "../CommercialServices/Hours";
+import { maskNamedPerson, maskPii } from "./ChatExport";
+import { sameAgentInstitution } from "../FlowServices/AgentInstitution";
 
 export const HANDOFF_MARKER = "[HANDOFF]";
 // the agent found nothing about a fact of the institution: the question is kept for the owner to teach
@@ -45,8 +47,26 @@ const RECENT_TURNS = 12; // short memory: older context lives in the rolling sum
 const SUMMARY_EVERY = 4; // answers between summary updates
 const MAX_TOOL_ROUNDS = 2;
 
+const activeAgentsForTicket = async (ticket: Ticket): Promise<AiAgent[]> => {
+  const institution = await institutionFor({ ticket });
+  const legacyId = await legacyInstitutionId();
+  const institutionId = institution?.id || legacyId;
+  const owners: any[] = [{ institutionId }];
+  if (institutionId === legacyId) owners.push({ institutionId: { [Op.is]: null } });
+  return AiAgent.findAll({ where: { active: true, [Op.or]: owners } as any, order: [["id", "ASC"]] });
+};
+
+export const agentForTicketInstitution = async (ticket: Ticket, agentId: number): Promise<AiAgent | null> => {
+  const agent = await AiAgent.findByPk(agentId);
+  const institution = await institutionFor({ ticket });
+  const legacyId = await legacyInstitutionId();
+  if (!agent) return null;
+  const ticketInstitutionId = institution?.id || legacyId;
+  return sameAgentInstitution(agent.institutionId, ticketInstitutionId, legacyId) ? agent : null;
+};
+
 export const findAgentForTicket = async (ticket: Ticket): Promise<AiAgent | null> => {
-  const agents = await AiAgent.findAll({ where: { active: true }, order: [["id", "ASC"]] });
+  const agents = await activeAgentsForTicket(ticket);
   // most specific match first: queue, then connection, then global
   const byQueue = agents.find(a => a.queueId && ticket.queueId && a.queueId === ticket.queueId);
   const byConn = agents.find(a => !a.queueId && connectionsOf(a).includes(ticket.whatsappId));
@@ -66,13 +86,14 @@ export const commercialAgent = async (active?: AiAgent[]): Promise<AiAgent | nul
   const id = flows.find(f => sells(f.published) || sells(f.draft))?.agentId;
   return agents.find(a => a.id === id) || agents[0];
 };
+export const commercialAgentForTicket = async (ticket: Ticket): Promise<AiAgent | null> => commercialAgent(await activeAgentsForTicket(ticket));
 // the agent a person can hand a conversation to (the button "IA qualificar"): the one that serves it, else the commercial one
-export const agentToQualify = async (ticket: Ticket): Promise<AiAgent | null> => (await findAgentForTicket(ticket)) || commercialAgent();
+export const agentToQualify = async (ticket: Ticket): Promise<AiAgent | null> => (await findAgentForTicket(ticket)) || commercialAgentForTicket(ticket);
 
 // An agent that was given this queue or this connection on purpose (not the one that serves everything nobody else serves): the person who
 // set it up expects it to answer first, ahead of the flows that start on any message and of the old menu.
 export const findDedicatedAgent = async (ticket: Ticket): Promise<AiAgent | null> => {
-  const agents = await AiAgent.findAll({ where: { active: true }, order: [["id", "ASC"]] });
+  const agents = await activeAgentsForTicket(ticket);
   return (
     agents.find(a => a.queueId && ticket.queueId && a.queueId === ticket.queueId) ||
     agents.find(a => !a.queueId && connectionsOf(a).includes(ticket.whatsappId)) ||
@@ -418,15 +439,26 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
   const training = await trainingBlock(agent.id);
   const channel: string | null = (opts.ticket as any)?.whatsapp?.channel || null;
   const catalog = commercial ? await catalogBlock().catch(() => "") : "";
-  const staticText = commercial ? commercialStatic(agent, stage as StageData, training, catalog) : staticPrompt(agent, stage, training);
+  const privateValues = [
+    ...Object.entries(collected).filter(([key]) => /nome/i.test(key)).map(([, value]) => value),
+    ...Object.entries(opts.commercial?.slots || {}).filter(([key]) => /nome/i.test(key)).map(([, value]) => value),
+    (opts.ticket as any)?.contact?.name
+  ].map(value => String(value || "").trim()).filter(value => value.length >= 3);
+  const forProvider = (value: string) => privateValues.reduce((safe, privateValue) => maskNamedPerson(safe, privateValue), maskPii(value));
+  const promptSlots = (source: Record<string, any> = {}) => Object.fromEntries(Object.entries(source).map(([key, value]) =>
+    [key, /nome/i.test(key) && value ? "já informado" : /cpf|phone|telefone|celular|email/i.test(key) && value ? "informado" : value]
+  ));
+  const safeTraining = forProvider(training);
+  const staticText = forProvider(commercial ? commercialStatic(agent, stage as StageData, safeTraining, catalog) : staticPrompt(agent, stage, safeTraining));
   const progress = stage ? stepsProgress(stage, opts.stepsDone || [], opts.stepsHeld) : "";
   const dynamicText = [
     commercial
-      ? commercialDynamic(opts.commercial?.slots || {}, opts.summary || null, passages, stage as StageData)
-      : dynamicPrompt(agent, opts.summary || null, collected, passages, slots, stage),
+      ? commercialDynamic(promptSlots(opts.commercial?.slots || {}), opts.summary || null, passages.map(forProvider), stage as StageData)
+      : dynamicPrompt(agent, opts.summary || null, promptSlots(collected), passages.map(forProvider), slots, stage),
     progress,
     channel === "instagram" || channel === "messenger" ? "Canal: mensagem direta do Instagram/Messenger. Não use *negrito*, _itálico_ nem listas com símbolos; escreva texto simples, em blocos curtos." : null
   ].filter(Boolean).join("\n\n");
+  const safeDynamicText = forProvider(dynamicText);
   // a tool that failed is counted (the quality panel shows how often), never in the tester
   const toolFailed = async (name: string, err: unknown): Promise<void> => {
     if (opts.sandbox) return;
@@ -446,7 +478,7 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
   };
 
   if (agent.provider === "openai") {
-    const messages: any[] = [{ role: "system", content: `${staticText}\n\n${dynamicText}` }, ...recent];
+    const messages: any[] = [{ role: "system", content: `${staticText}\n\n${safeDynamicText}` }, ...recent.map(turn => ({ ...turn, content: forProvider(turn.content) }))];
     const tools = (stage ? stageToolDefs(stage) : toolDefs(agent)).map((tool: any) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.input_schema } }));
     const ctx: any = { agent, ticket: opts.ticket, dryRun: !!opts.sandbox, collected, stage, academic, userText: recent.filter(t => t.role === "user").map(t => t.content).join("\n"), stepsDone: [...(opts.stepsDone || [])] };
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
@@ -485,10 +517,10 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
     return finish(ctx);
   }
 
-  const messages: any[] = recent.map(t => ({ role: t.role, content: t.content }));
+  const messages: any[] = recent.map(t => ({ role: t.role, content: forProvider(t.content) }));
   const system = [
     { type: "text", text: staticText, cache_control: { type: "ephemeral" } },
-    { type: "text", text: dynamicText }
+    { type: "text", text: safeDynamicText }
   ];
   const tools = stage ? stageToolDefs(stage) : toolDefs(agent);
   const ctx: any = { agent, ticket: opts.ticket, dryRun: !!opts.sandbox, collected, stage, academic, userText: recent.filter(t => t.role === "user").map(t => t.content).join("\n"), stepsDone: [...(opts.stepsDone || [])] };
@@ -583,7 +615,9 @@ export const loadHistory = async (ticket: Ticket, limit: number): Promise<ChatTu
   for (const m of rows.reverse()) {
     const role = m.fromMe ? "assistant" : "user";
     // a file message is shown by what it is, never by its file name; one message is cut so a pasted wall of text cannot fill the prompt
-    const body = textOfMessage(m).slice(0, 1500);
+    const rawBody = textOfMessage(m);
+    const contactName = String(ticket.contact?.name || "").trim();
+    const body = maskPii(maskNamedPerson(rawBody, contactName)).slice(0, 1500);
     if (!body) continue;
     const last = turns[turns.length - 1];
     if (last && last.role === role) last.content += `\n${body}`;
@@ -601,7 +635,8 @@ const refreshSummary = async (agent: AiAgent, ticket: Ticket): Promise<void> => 
     const history = await loadHistory(ticket, 24);
     if (history.length < 4) return;
     const transcript = history.map(t => `${t.role === "user" ? "Aluno" : "Atendente"}: ${t.content}`).join("\n").slice(-6000);
-    const out = await askOnce(agent, apiKey, "Você resume conversas de atendimento.", `Resuma em até 5 linhas, em português, o que o aluno quer e o que já foi combinado. Só fatos, sem enfeite.\n\n${ticket.aiSummary || ""}\n${transcript}`, 220, { ticketId: ticket.id, kind: "summary" });
+    const oldSummary = maskPii(maskNamedPerson(String(ticket.aiSummary || ""), ticket.contact?.name));
+    const out = await askOnce(agent, apiKey, "Você resume conversas de atendimento.", `Resuma em até 5 linhas, em português, o que o aluno quer e o que já foi combinado. Só fatos, sem enfeite. Identificadores pessoais foram removidos; não tente inferi-los.\n\n${oldSummary}\n${transcript}`, 220, { ticketId: ticket.id, kind: "summary" });
 
     if (out.text) await ticket.update({ aiSummary: out.text });
   } catch (err) {

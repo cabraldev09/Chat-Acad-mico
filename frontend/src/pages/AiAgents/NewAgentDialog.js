@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Button, CircularProgress, Dialog, DialogActions, DialogContent, Switch, TextField, makeStyles } from "@material-ui/core";
+import { Button, CircularProgress, Dialog, DialogActions, DialogContent, MenuItem, Switch, TextField, makeStyles } from "@material-ui/core";
 import { Check, ChevronDown, GraduationCap, Headphones, Info, Pencil, Bot, MessageSquare, Workflow, X } from "lucide-react";
 
 import useIntro from "./useIntro";
@@ -70,6 +70,9 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
   const classes = useStyles();
   const [mode, setMode] = useState("template");
   const [templates, setTemplates] = useState([]);
+  const [institutions, setInstitutions] = useState([]);
+  const [institutionId, setInstitutionId] = useState("");
+  const [institutionsLoaded, setInstitutionsLoaded] = useState(false);
   const [template, setTemplate] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -82,8 +85,19 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
 
   useEffect(() => {
     if (!open) return;
+    let live = true;
     setMode("quick"); setName(""); setDescription(""); setFunnel(true); setFunnelInfo(false); setAssistantName(""); setTone(TONES[0].text); setOthers(false);
     api.get("/ai-agent-templates").then(({ data }) => { setTemplates(data); const c = data.find((t) => t.commercial) || data[0]; setTemplate(c ? c.key : ""); }).catch(() => undefined);
+    setInstitutionsLoaded(false);
+    api.get("/institutions").then(({ data }) => {
+      if (!live) return;
+      const active = (Array.isArray(data) ? data : []).filter((item) => item.active !== false);
+      const current = active.find((item) => item.isDefault) || active[0];
+      setInstitutions(active);
+      setInstitutionId(current ? String(current.id) : "");
+      setInstitutionsLoaded(true);
+    }).catch(() => { if (live) { setInstitutions([]); setInstitutionId(""); setInstitutionsLoaded(true); } });
+    return () => { live = false; };
   }, [open]);
 
   const chosen = templates.find((t) => t.key === template);
@@ -94,17 +108,17 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
     setBusy(true);
     try {
       const { data } = mode === "ai"
-        ? await api.post("/ai-agents/generate", { description, name: name || undefined })
+        ? await api.post("/ai-agents/generate", { description, name: name || undefined, institutionId: Number(institutionId) })
         : mode === "quick"
-          ? await api.post("/ai-agents/from-template", { template: commercial ? commercial.key : template, name: name || undefined, assistantName: assistantName.trim() || undefined, tone, createFunnel: funnel })
-          : await api.post("/ai-agents/from-template", { template, name: name || undefined, createFunnel: chosen && chosen.commercial ? funnel : undefined });
+          ? await api.post("/ai-agents/from-template", { template: commercial ? commercial.key : template, name: name || undefined, assistantName: assistantName.trim() || undefined, tone, createFunnel: funnel, institutionId: Number(institutionId) })
+          : await api.post("/ai-agents/from-template", { template, name: name || undefined, createFunnel: chosen && chosen.commercial ? funnel : undefined, institutionId: Number(institutionId) });
       onCreated(data);
     } catch (e) { toastError(e); }
     setBusy(false);
   };
 
   const label = busy ? (mode === "ai" ? "A IA está desenhando…" : "Criando…") : mode === "ai" ? "Criar com IA" : mode === "manual" ? "Continuar" : "Criar agente";
-  const disabled = busy || (mode === "ai" && description.trim().length < 20) || (mode === "template" && !template) || (mode === "quick" && !commercial);
+  const disabled = busy || !institutionsLoaded || !institutionId || (mode === "ai" && description.trim().length < 20) || (mode === "template" && !template) || (mode === "quick" && !commercial);
   const preview = useIntro(assistantName.trim(), "");
 
   return (
@@ -119,6 +133,13 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
       </div>
 
       <DialogContent className={classes.body}>
+        {mode !== "manual" && (
+          <TextField select fullWidth variant="outlined" size="small" label="Universidade" required value={institutionId} disabled={!institutionsLoaded || busy}
+            onChange={(e) => setInstitutionId(e.target.value)} style={{ marginBottom: 16 }}
+            helperText={!institutionsLoaded ? "Carregando universidades…" : institutions.length ? "O agente será criado para esta universidade." : "Nenhuma universidade ativa disponível."}>
+            {institutions.map((institution) => <MenuItem key={institution.id} value={String(institution.id)}>{institution.name}{institution.isDefault ? " (padrão)" : ""}</MenuItem>)}
+          </TextField>
+        )}
         {mode === "quick" && (
           <>
             <p className={classes.lead}>Um agente comercial completo, pronto para atender quem chega. Você só escolhe como ele se apresenta.</p>
