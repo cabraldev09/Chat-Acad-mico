@@ -15,6 +15,9 @@ const NAMES = /^(e|ev|evt|event)$/;
 // members that only exist on events (so `error.message` or `edge.target` of other objects never count)
 const EVENT_MEMBERS = new Set(["target", "currentTarget", "key", "keyCode", "which", "code", "clipboardData", "dataTransfer", "nativeEvent", "clientX", "clientY", "pageX", "pageY", "shiftKey", "ctrlKey", "metaKey", "altKey", "relatedTarget"]);
 
+// callbacks these run before returning: reading the event inside them is as early as reading it in the handler
+const IMMEDIATE = new Set(["map", "filter", "forEach", "find", "findIndex", "some", "every", "reduce", "reduceRight", "flatMap", "sort", "replace", "from", "includes", "indexOf", "startTransition", "batch", "unstable_batchedUpdates"]);
+
 const files = [];
 const walk = (dir) => {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -63,6 +66,13 @@ for (const file of files) {
           if (/^set[A-Z]\w*$/.test(calleeName) || ["setState", "setTimeout", "setInterval", "requestAnimationFrame", "queueMicrotask", "then", "catch", "finally"].includes(calleeName)) {
             late = true;
             why = `inside a function given to ${calleeName}(), which runs after the handler returned`;
+            break;
+          }
+          // a callback handed to any other function (a helper like change(fn) that passes it on to a state updater) may
+          // run later too: only the ones known to run on the spot are let through
+          if (!IMMEDIATE.has(calleeName)) {
+            late = true;
+            why = `inside a function given to ${calleeName || "another function"}(), which may run after the handler returned`;
             break;
           }
         }

@@ -219,9 +219,9 @@ const Goals = () => {
               <div className={classes.card}>
                 <div className={classes.head}>
                   <CalendarDays size={18} />
-                  <TextField size="small" variant="outlined" type="date" label="Início" value={view.startsOn} onChange={(e) => change((d) => { d.startsOn = e.target.value; })} InputLabelProps={{ shrink: true }} />
-                  <TextField size="small" variant="outlined" type="date" label="Prazo" value={view.endsOn} onChange={(e) => change((d) => { d.endsOn = e.target.value; })} InputLabelProps={{ shrink: true }} />
-                  <TextField size="small" variant="outlined" label="Título (opcional)" placeholder="Ex.: Meta de outubro" value={view.title || ""} onChange={(e) => change((d) => { d.title = e.target.value; })} style={{ minWidth: 200 }} />
+                  <TextField size="small" variant="outlined" type="date" label="Início" value={view.startsOn} onChange={(e) => { const v = e.target.value; change((d) => { d.startsOn = v; }); }} InputLabelProps={{ shrink: true }} />
+                  <TextField size="small" variant="outlined" type="date" label="Prazo" value={view.endsOn} onChange={(e) => { const v = e.target.value; change((d) => { d.endsOn = v; }); }} InputLabelProps={{ shrink: true }} />
+                  <TextField size="small" variant="outlined" label="Título (opcional)" placeholder="Ex.: Meta de outubro" value={view.title || ""} onChange={(e) => { const v = e.target.value; change((d) => { d.title = v; }); }} style={{ minWidth: 200 }} />
                   <span style={{ flex: 1 }} />
                   <Tooltip title="Repetir para o próximo período"><IconButton size="small" aria-label="Repetir para o próximo período" onClick={repeat}><Repeat2 size={18} /></IconButton></Tooltip>
                   <Tooltip title="Excluir período"><IconButton size="small" aria-label="Excluir período" onClick={remove}><Trash2 size={18} /></IconButton></Tooltip>
