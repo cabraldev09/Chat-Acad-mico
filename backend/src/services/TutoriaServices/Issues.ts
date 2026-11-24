@@ -131,25 +131,25 @@ const markRead = (ticketId: number, lastMessageId: string): Promise<any> =>
   Ticket.update({ tutoringAuditedMessageId: lastMessageId } as any, { where: { id: ticketId }, silent: true } as any);
 
 // the numbers of protocols in the messages become registered protocols of the student (the tutor and the management see them; no notice:
-// a registered protocol needs nothing now). Returns how many were new.
+// a registered protocol needs nothing now). Returns the ids of the new ones.
 export const captureProtocols = async (
   at: { ticketId: number; leadId: number | null; tutorId: number | null; institutionId: number | null; lastMessageId?: string | null },
   msgs: Array<{ body?: string }>
-): Promise<number> => {
-  let n = 0;
+): Promise<number[]> => {
+  const created: number[] = [];
   for (const number of findProtocolNumbers(msgs.map(m => String(m.body || "")))) {
     // eslint-disable-next-line no-await-in-loop
     const known = await TutoringIssue.findOne({ where: { protocolNumber: number, [Op.or]: [{ ticketId: at.ticketId }, ...(at.leadId ? [{ leadId: at.leadId }] : [])] } as any, attributes: ["id"] });
     if (known) continue;
     // eslint-disable-next-line no-await-in-loop
-    await TutoringIssue.create({
+    const issue = await TutoringIssue.create({
       ticketId: at.ticketId, leadId: at.leadId, tutorId: at.tutorId, institutionId: at.institutionId, kind: "protocolo",
       summary: "Protocolo citado na conversa, registrado automaticamente.", protocolNumber: number, protocolName: "Citado na conversa",
       status: "registrada", source: "ia", detectedAt: new Date(), lastMessageId: at.lastMessageId || null
     } as any);
-    n += 1;
+    created.push(issue.id);
   }
-  return n;
+  return created;
 };
 
 // the management is told only what needs it: protocols registered with no news for N days (setting, 7 by default), once a day
@@ -194,12 +194,13 @@ export const auditTicket = async (c: any, access: { agent: any; apiKey: string }
   ].join("\n");
   const { askOnce } = await import("../AiServices/RunAiAgent");
   const answer = await askOnce(access.agent, access.apiKey, SYSTEM, user, 300, { kind: "reading", ticketId });
-  const parsed = parseAuditAnswer(answer.text, open.map(i => i.id));
+  // a protocol registered in this very reading cannot be resolved by it (an older "resolveu" in the history is about another case)
+  const parsed = parseAuditAnswer(answer.text, open.map(i => i.id).filter(id => !captured.includes(id)));
   const tokens = Number(answer.usage?.total_tokens || (answer.usage?.input_tokens || 0) + (answer.usage?.output_tokens || 0) || 0);
   const created: TutoringIssue[] = [];
   for (const p of parsed.pendencias) {
     // a protocol found in code in this same reading is that case: not a second "protocol opened" pending item
-    if (p.tipo === "protocolo" && captured > 0) continue;
+    if (p.tipo === "protocolo" && captured.length > 0) continue;
     // eslint-disable-next-line no-await-in-loop
     created.push(await TutoringIssue.create({
       ticketId, leadId: who?.leadId ? Number(who.leadId) : null, tutorId, institutionId: c.institutionId || null, kind: p.tipo, summary: p.resumo,
@@ -211,7 +212,7 @@ export const auditTicket = async (c: any, access: { agent: any; apiKey: string }
   }
   await markRead(ticketId, c.lastMessageId);
   run.read += 1;
-  run.found += created.length;
+  run.found += created.length + captured.length;
   run.resolved += parsed.resolvidas.length;
   if (created.length) {
     const first = String(who?.contact || "o aluno").trim().split(/\s+/)[0];
@@ -233,7 +234,7 @@ const FREE_SCAN = 200;
 const captureOnly = async (c: any): Promise<number> => {
   const msgs = await rows(`SELECT m.body FROM Messages m WHERE m.ticketId = :ticketId AND m.isDeleted = false AND m.body IS NOT NULL ORDER BY m.createdAt DESC LIMIT ${MAX_MESSAGES}`, { ticketId: Number(c.id) });
   const [lead] = await rows(`SELECT l.id, l.onboardingTutorId FROM Leads l WHERE l.contactId = :contactId ORDER BY l.updatedAt DESC LIMIT 1`, { contactId: c.contactId });
-  return captureProtocols({ ticketId: Number(c.id), leadId: lead ? Number(lead.id) : null, tutorId: Number(c.userId) || (lead ? Number(lead.onboardingTutorId) || null : null), institutionId: c.institutionId || null, lastMessageId: c.lastMessageId }, msgs);
+  return (await captureProtocols({ ticketId: Number(c.id), leadId: lead ? Number(lead.id) : null, tutorId: Number(c.userId) || (lead ? Number(lead.onboardingTutorId) || null : null), institutionId: c.institutionId || null, lastMessageId: c.lastMessageId }, msgs)).length;
 };
 
 // The round of the worker: at most N conversations a day (setting), stopping at the first budget refusal (the rest waits for tomorrow)
