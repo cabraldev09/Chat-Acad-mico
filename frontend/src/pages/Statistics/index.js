@@ -20,20 +20,7 @@ import { Leads, mins } from "../CommercialCenter/ProcessTab";
 
 const pct = (v) => (v === null || v === undefined ? "-" : `${String(Math.round(v * 10) / 10).replace(".", ",")}%`);
 const Failed = ({ onRetry }) => <GlowPanel error onRetry={onRetry} />;
-// a small ring with the share in the middle (the lines of "Etapas do processo mais puladas")
-const MiniRing = ({ pct: value, tone }) => {
-  const r = 16;
-  const len = 2 * Math.PI * r;
-  const color = tone === "bad" ? "#dc2626" : "#d97706";
-  return (
-    <svg className="mx-ring" viewBox="0 0 40 40" aria-hidden="true">
-      <circle className="bg" cx="20" cy="20" r={r} />
-      <circle cx="20" cy="20" r={r} stroke={color} strokeLinecap="round" strokeDasharray={`${(len * Math.min(100, value)) / 100} ${len}`} transform="rotate(-90 20 20)" />
-      <text x="20" y="24" textAnchor="middle">{value}%</text>
-    </svg>
-  );
-};
-
+const PERIOD_LABEL = { today: "Hoje", week: "Últimos 7 dias", month: "Este mês", custom: "Período" };
 
 // the production of the whole team, day by day: the days of every consultant added up
 const teamSeries = (consultants) => {
@@ -154,19 +141,39 @@ const Commercial = ({ params }) => {
         <GlowPanel title="Matrículas por cidade" sub="Onde estão os alunos que se matricularam no período" loading={wait} empty={!d.sales.byCity.length}>
           <DonutChart parts={d.sales.byCity.slice(0, 7).map((x) => ({ label: x.name, value: x.n }))} centerLabel="matrículas" />
         </GlowPanel>
-        <GlowPanel title="Etapas do processo mais puladas" sub="Uma etapa sem fazer enquanto a seguinte já foi feita. Clique para ver quem pulou, com qual lead e quando."
-          loading={wait} empty={!d.process.skipped.length} emptyText="Nenhuma etapa pulada no período.">
-          <div className="mx-list">
-            {d.process.skipped.slice(0, 6).map((x) => {
-              const total = Math.max(x.n, d.process.samples || 0);
-              const share = total ? Math.round((x.n / total) * 100) : 0;
-              const tone = share >= 25 ? "bad" : "warn";
-              return (
-                <button key={x.step} type="button" className="mx-item mx-skip" data-tone={tone} onClick={() => setSkipped(x)} aria-label={`${x.label}: ${x.n} de ${total} conversas. Ver quem pulou`}>
-                  <MiniRing pct={share} tone={tone} />
-                  <span className="mx-text"><b>{x.label}</b><small>{num(x.n)} de {num(total)} conversas</small></span>
-                  <span className="mx-go">Ver quem pulou <ChevronRight size={15} aria-hidden="true" /></span>
-                </button>
+        <GlowPanel title="Etapas do processo" sub={`Cada etapa obrigatória, na ordem do processo: quantas das ${num(d.process.samples || 0)} conversas do período pularam (fizeram a seguinte sem fazer esta). Clique para ver quem pulou.`}
+          loading={wait} empty={!(d.process.steps || []).length && !d.process.skipped.length} emptyText="Nenhuma conversa com o processo no período.">
+          <div className="mx-list" style={{ gap: 6 }}>
+            {(d.process.steps && d.process.steps.length ? d.process.steps : d.process.skipped.map((x) => ({ step: x.step, label: x.label, skipped: x.n, share: d.process.samples ? (x.n * 100) / d.process.samples : 0, done: null, previousShare: null, top: null }))).map((x, idx) => {
+              const share = Math.round(x.share || 0);
+              const tone = share >= 25 ? "#dc2626" : share >= 10 ? "#d97706" : share > 0 ? "#64748b" : "#16a34a";
+              const trend = x.previousShare === null || x.previousShare === undefined ? null : Math.round((x.share || 0) - x.previousShare);
+              const body = (
+                <>
+                  <span style={{ width: 22, height: 22, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 11.5, fontWeight: 700, flex: "none", background: "var(--surface-2, rgba(100,116,139,.12))", color: "var(--text-2)" }}>{idx + 1}</span>
+                  <span style={{ flex: 1, minWidth: 0, display: "grid", gap: 4 }}>
+                    <span style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                      <b style={{ fontSize: 13.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.label}</b>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: tone, flex: "none" }}>{x.skipped ? `${share}% pularam` : "Ninguém pulou"}</span>
+                    </span>
+                    <span style={{ position: "relative", height: 6, borderRadius: 999, background: "var(--track, rgba(100,116,139,.15))", overflow: "hidden" }}>
+                      <span style={{ position: "absolute", inset: 0, width: `${Math.min(100, share)}%`, background: tone, borderRadius: 999 }} />
+                    </span>
+                    <span style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12, color: "var(--text-2)" }}>
+                      {x.skipped > 0 && <span>{num(x.skipped)} de {num(d.process.samples || 0)} conversas</span>}
+                      {x.done !== null && x.done !== undefined && <span>{num(x.done)} fizeram</span>}
+                      {x.top && <span>Mais pulou: <b style={{ color: "var(--text-1)" }}>{x.top.name}</b> ({num(x.top.n)})</span>}
+                      {trend !== null && trend !== 0 && <span style={{ color: trend > 0 ? "#dc2626" : "#16a34a", fontWeight: 600 }}>{trend > 0 ? `+${trend}` : trend} p.p. que o período anterior</span>}
+                    </span>
+                  </span>
+                  {x.skipped > 0 && <ChevronRight size={15} aria-hidden="true" style={{ opacity: 0.6, flex: "none" }} />}
+                </>
+              );
+              return x.skipped > 0 ? (
+                <button key={x.step} type="button" className="mx-item" onClick={() => setSkipped({ step: x.step, label: x.label, n: x.skipped })} aria-label={`${x.label}: ${share}% pularam. Ver quem pulou`}
+                  style={{ display: "flex", gap: 10, alignItems: "center", width: "100%", textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit" }}>{body}</button>
+              ) : (
+                <div key={x.step} className="mx-item" style={{ display: "flex", gap: 10, alignItems: "center", opacity: 0.8 }}>{body}</div>
               );
             })}
           </div>
@@ -303,7 +310,11 @@ const Now = ({ params }) => {
         </div>
       )}
       <div className={c.cols}>
-        <Team consultants={data.consultants} onOpen={setSelected} />
+        <Team
+          members={data.team || (data.consultants || []).map((b) => ({ user: { ...b.user, role: "consultor", area: "comercial" }, presence: b.presence, ownNumber: false }))}
+          canOpen={new Set((data.consultants || []).map((b) => b.user.id))}
+          onOpen={setSelected}
+        />
         <Alerts alerts={data.alerts} onOpen={setSelected} history={history} />
       </div>
       {selected && <Detail userId={selected} period={live} defs={defs} onClose={() => setSelected(null)} />}

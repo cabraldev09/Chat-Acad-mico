@@ -369,6 +369,17 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const csv = (await http.get("/analytics/team/export.csv?range=today", { ...as(coord), responseType: "text" })).data;
       assert(/João Vitor/.test(csv) && !/Gabrielli/.test(csv) && !/Laura/.test(csv), "the export leaked another polo");
     });
+    await test("Equipe agora lists the whole team (tutors, academic and relationship too), each with its area; the coordination sees its polo", async () => {
+      const team = (await A(admin, "/analytics/team?range=today")).data.team;
+      const byId = new Map(team.map(m => [m.user.id, m]));
+      const area = email => (byId.get(userId(email)) || {}).user?.area;
+      assert(area("joao@x.com") === "comercial" && area("tutor@x.com") === "tutoria" && area("academico@x.com") === "tutoria" && area("relacionamento@x.com") === "relacionamento" && area("coord@x.com") === "gestao", `areas: ${JSON.stringify(team.map(m => [m.user.name, m.user.area]))}`);
+      assert(team.every(m => m.presence && typeof m.presence.online === "boolean" && typeof m.ownNumber === "boolean"), "presence of the team");
+      // the coordinator tied to the polo above sees the people of that polo (and itself), never the others
+      const scoped = (await A(coord, "/analytics/team?range=today")).data.team.map(m => m.user.id);
+      assert(scoped.includes(ids.joao) && !scoped.includes(ids.gabrielli) && !scoped.includes(ids.tutor), `coordination scope of the team: ${JSON.stringify(scoped)}`);
+      assert((await A(joao, "/analytics/team?range=today")).status === 403, "a consultant read the team");
+    });
 
     // ------------------------------------------------------------ new leads to check: the responsible is who answers the conversation
     console.log("\nNovos para conferir");

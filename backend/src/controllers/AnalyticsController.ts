@@ -7,7 +7,7 @@ import { KPI_DEFINITIONS } from "../services/AnalyticsServices/definitions";
 import { focusFor } from "../services/AnalyticsServices/Focus";
 import { remember } from "../helpers/TtlCache";
 import {
-  alertsOf, bundlesFor, byPolo, canSeeConsultant, getConfig, resolvePeriod, saveConfig, totalsOf, unassignedTasks, visibleConsultantIds
+  alertsOf, bundlesFor, byPolo, canSeeConsultant, getConfig, resolvePeriod, saveConfig, teamPresence, totalsOf, unassignedTasks, visibleConsultantIds
 } from "../services/AnalyticsServices/AnalyticsService";
 
 const period = (req: Request) => {
@@ -42,13 +42,16 @@ export const team = async (req: Request, res: Response): Promise<Response> => {
   const p = resolvePeriod(req.query);
   // the screen asks again on every tab change and on every reconnection: a few seconds of memory spares the database the whole count
   const key = `analytics-team:${req.user.id}:${p.from}:${p.to}:${analyticsInstitutionId() || 0}`;
-  return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), async () => {
+  // a short memory: the screen follows the team in real time (each arrival, departure or action asks again)
+  return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 3000), async () => {
     const ids = await visibleConsultantIds(req.user);
     const bundles = await bundlesFor(ids, p);
     const config = await getConfig();
     return {
       period: period(req),
       consultants: bundles,
+      // the whole team (tutors, academic, relationship, coordination) for "Equipe agora"
+      team: await teamPresence(req.user),
       totals: totalsOf(bundles),
       polos: await byPolo(bundles),
       alerts: await withCoaching(alertsOf(bundles, config), bundles.map(b => ({ id: b.user.id, name: b.user.name }))),
