@@ -26,6 +26,9 @@ import { getIO } from "../libs/socket";
 import makeCrud from "./crudFactory";
 import { assertOwnList, tutorIdOf, tutoriaConnectionId } from "../services/CampaignServices/Access";
 import { assertCampaignCost, campaignCost } from "../services/CampaignServices/CostGate";
+import { assertCampaignQuota, quotaOf } from "../services/CampaignServices/SendQuota";
+import User from "../models/User";
+import { isManagerRole, roleOf } from "../helpers/Roles";
 import { CampaignStep, MAX_CAMPAIGN_STEPS, cleanSteps, stepsOf } from "../helpers/CampaignText";
 import { legacyInstitutionId } from "../helpers/Institution";
 
@@ -57,6 +60,7 @@ const crud = makeCrud(Campaign, {
   event: "campaign",
   fields: [
     "name",
+    "objective",
     "message",
     "mediaUrl",
     "steps",
@@ -84,6 +88,10 @@ const crud = makeCrud(Campaign, {
   beforeSave: async (data, _req, existing) => {
     // who created it; the tutor sends only to their own lists, through the tutoring number
     if (!existing) data.createdById = Number(_req.user.id);
+    // what the send is for: asked on every new campaign (the management follows it in Estatísticas → Disparos)
+    if (data.objective !== undefined) data.objective = String(data.objective || "").replace(/\s+/g, " ").trim().slice(0, 300);
+    if (!existing && !data.objective) throw new AppError("ERR_CAMPAIGN_OBJECTIVE", 400);
+    if (existing && data.objective === "" && existing.objective) throw new AppError("ERR_CAMPAIGN_OBJECTIVE", 400);
     if (tutorIdOf(_req)) {
       data.whatsappId = await tutoriaConnectionId();
       await assertOwnList(_req, data.contactListId !== undefined ? data.contactListId : existing?.contactListId);
@@ -124,7 +132,10 @@ const crud = makeCrud(Campaign, {
       if (changed && at < Date.now() - 60000) throw new AppError("ERR_CAMPAIGN_SCHEDULE_PAST");
       if (["draft", "scheduled"].includes(status) && at > Date.now()) {
         const listId = data.contactListId !== undefined ? data.contactListId : existing?.contactListId;
-        if (!(await ContactListItem.count({ where: { contactListId: listId } }))) throw new AppError("ERR_CAMPAIGN_EMPTY_LIST");
+        const people = await ContactListItem.count({ where: { contactListId: listId } });
+        if (!people) throw new AppError("ERR_CAMPAIGN_EMPTY_LIST");
+        // it starts by itself at that time: it has to fit the creator's quota of sends of the month now
+        await assertCampaignQuota(existing?.createdById || Number(_req.user.id), people, _req.user as any);
         data.status = "scheduled";
       }
     } else if (data.scheduledAt === null && status === "scheduled") {
@@ -168,7 +179,10 @@ export const index = async (_req: Request, res: Response): Promise<Response> => 
     ],
     order: [["id", "DESC"]]
   });
-  return res.json(await withCounters(campaigns));
+  // who created each one (the management sees whose send it is)
+  const ids = [...new Set(campaigns.map(c => Number(c.createdById)).filter(Boolean))];
+  const names = new Map((ids.length ? await User.findAll({ where: { id: ids }, attributes: ["id", "name"] }) : []).map(u => [u.id, u.name]));
+  return res.json((await withCounters(campaigns)).map((c: any) => ({ ...c, createdByName: names.get(Number(c.createdById)) || null })));
 };
 
 const SHIPPING_STATUS = ["pending", "sending", "uncertain", "sent", "failed", "cancelled"];
@@ -222,7 +236,10 @@ export const start = async (req: Request, res: Response): Promise<Response> => {
   // the recipients are copied from the list the first time the campaign starts
   await ensureShippings(campaign);
   // a Marketing template only with permission, and never past the cap of the month of the Meta
-  await assertCampaignCost(campaign, await connectionOf(campaign), await CampaignShipping.count({ where: { campaignId: campaign.id, status: "pending" } }));
+  const pending = await CampaignShipping.count({ where: { campaignId: campaign.id, status: "pending" } });
+  await assertCampaignCost(campaign, await connectionOf(campaign), pending);
+  // the recipients still waiting count against its creator's quota of the month from the moment it runs
+  await assertCampaignQuota(campaign.createdById, pending, req.user as any);
 
   const now = req.body?.now === true || req.body?.now === "true";
   const future = !now && campaign.scheduledAt && campaign.scheduledAt.getTime() > Date.now();
@@ -265,6 +282,8 @@ export const retryFailed = async (req: Request, res: Response): Promise<Response
   if (campaign.whatsappId) await assertConnectionUse(req, campaign.whatsappId);
   // the "check the delivery" ones may have arrived: they go back only when the person confirms (a resend can duplicate)
   const statuses = req.body?.includeUncertain === true ? ["failed", "uncertain"] : ["failed"];
+  // the failed ones that go back count again against the creator's quota (a paused campaign is checked when it starts again)
+  if (campaign.status !== "paused") await assertCampaignQuota(campaign.createdById, await CampaignShipping.count({ where: { campaignId: campaign.id, status: "failed" } }), req.user as any);
   const [requeued] = await CampaignShipping.update(
     { status: "pending", error: null },
     { where: { campaignId: campaign.id, status: statuses, [Op.or]: [{ error: { [Op.is]: null } }, { error: { [Op.notLike]: "%pediu para não receber%" } }] } as any }
@@ -283,6 +302,7 @@ export const duplicate = async (req: Request, res: Response): Promise<Response> 
   if (!c) throw new AppError("ERR_NOT_FOUND", 404);
   const copy = await Campaign.create({
     name: `${c.name} (cópia)`.slice(0, 250),
+    objective: c.objective,
     message: c.message,
     mediaUrl: c.mediaUrl,
     steps: c.steps,
@@ -336,7 +356,7 @@ const chunk = <T>(list: T[], size: number): T[][] => {
 export const preflight = async (req: Request, res: Response): Promise<Response> => {
   const campaign = await Campaign.findByPk(req.params.id);
   if (!campaign) throw new AppError("ERR_NOT_FOUND", 404);
-  return res.json(await preflightOf(campaign));
+  return res.json(await preflightOf(campaign, req));
 };
 
 // the same check for a campaign still being written (the last step of the form, before saving)
@@ -351,10 +371,10 @@ export const preflightDraft = async (req: Request, res: Response): Promise<Respo
   draft.intervalMax = Number(body.intervalMax) || draft.intervalMax || 60;
   draft.batchSize = Number(body.batchSize) || draft.batchSize || 20;
   draft.batchPause = Number(body.batchPause) || draft.batchPause || 300;
-  return res.json(await preflightOf(draft));
+  return res.json(await preflightOf(draft, req));
 };
 
-const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => {
+const preflightOf = async (campaign: Campaign, req: Request): Promise<Record<string, any>> => {
   const whatsapp = await connectionOf(campaign);
 
   const shipped = campaign.id ? await CampaignShipping.count({ where: { campaignId: campaign.id } }) : 0;
@@ -431,10 +451,18 @@ const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => 
   const cost = await campaignCost(campaign, whatsapp, canReceive);
   if (cost.category === "MARKETING" && cost.categoryKnown) warnings.push(cost.marketingAllowed ? "O modelo escolhido é de Marketing: cada envio custa cerca de 9 vezes um modelo de Utilidade." : "O modelo escolhido é de Marketing (cerca de 9 vezes o preço de Utilidade) e o uso de Marketing em campanhas está desligado em Operação e custos.");
   if (!cost.fitsMonth) warnings.push("Esta campanha passaria do teto do mês do WhatsApp oficial (Operação e custos): ela não começa.");
+  // the quota of sends of the month of the campaign's creator (a manager starting it has none); a running campaign already counts
+  const owner = Number(campaign.createdById) || Number(req.user.id);
+  const starterIsManager = isManagerRole(roleOf(req.user as any));
+  const q = await quotaOf(owner, owner === Number(req.user.id) ? (req.user as any) : null);
+  const adds = campaign.status === "running" ? 0 : canReceive;
+  const quota = { ...q, limited: q.limited && !starterIsManager, adds, fits: !q.limited || starterIsManager || adds <= (q.left as number) };
+  if (!quota.fits) warnings.push(`Esta campanha passaria da cota de disparos do mês (restam ${q.left} de ${q.quota + q.extra} mensagens). Peça liberação à gestão para enviar.`);
   return {
     total,
     canReceive,
     cost,
+    quota,
     blocked: { optedOut, cold, noConsent },
     noConsent,
     messagesPerPerson,

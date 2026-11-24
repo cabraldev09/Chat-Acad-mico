@@ -28,6 +28,10 @@ class AiUsage extends Model<AiUsage> {
   @Column
   leadId: number;
 
+  // who asked for the call (the copilot, a test, a generation); empty: automation
+  @Column
+  userId: number;
+
   @AllowNull(false)
   @Column
   model: string;

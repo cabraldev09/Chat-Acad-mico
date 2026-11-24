@@ -46,6 +46,7 @@ import toastError from "../../errors/toastError";
 import { downloadFile } from "../../utils/saveBlob";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
+import SendReleaseDialog, { QuotaLine } from "../../components/SendRelease";
 
 const useStyles = makeStyles((theme) => ({
   body: { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 },
@@ -321,6 +322,7 @@ const ReportDialog = ({ campaignId, onClose, onChanged }) => {
 const StartDialog = ({ campaign, onClose, onStarted }) => {
   const [pre, setPre] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   useEffect(() => { api.get(`/campaigns/${campaign.id}/preflight`).then(({ data }) => setPre(data)).catch((e) => { toastError(e); onClose(); }); }, [campaign.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const waiting = campaign.status === "scheduled";
   // consent is registered, not required: whoever has none can be taken out of the list before the first send
@@ -366,6 +368,10 @@ const StartDialog = ({ campaign, onClose, onStarted }) => {
               </div>
             ))}
             {pre.total > 0 && pre.canReceive === 0 && <Typography variant="body2" color="error" style={{ marginTop: 10 }}>Ninguém receberia por esta conexão: resolva os avisos acima antes de iniciar.</Typography>}
+            {pre.quota && <QuotaLine quota={pre.quota} />}
+            {pre.quota && !pre.quota.fits && !pre.quota.pending && (
+              <Button size="small" variant="outlined" color="primary" style={{ marginTop: 10, marginRight: 8 }} onClick={() => setAsking(true)}>Pedir liberação à gestão</Button>
+            )}
             {pre.noConsent > 0 && campaign.status === "draft" && (
               <Button size="small" variant="outlined" style={{ marginTop: 10 }} disabled={busy} onClick={removeNoConsent}>Tirar da lista quem não tem consentimento ({pre.noConsent})</Button>
             )}
@@ -374,8 +380,12 @@ const StartDialog = ({ campaign, onClose, onStarted }) => {
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Voltar</Button>
-        <Button variant="contained" color="primary" disabled={!pre || busy || pre.total === 0 || pre.canReceive === 0} onClick={go}>{waiting ? "Iniciar agora" : campaign.status === "paused" ? "Retomar" : "Iniciar campanha"}</Button>
+        <Button variant="contained" color="primary" disabled={!pre || busy || pre.total === 0 || pre.canReceive === 0 || (pre.quota && !pre.quota.fits)} onClick={go}>{waiting ? "Iniciar agora" : campaign.status === "paused" ? "Retomar" : "Iniciar campanha"}</Button>
       </DialogActions>
+      {pre && pre.quota && (
+        <SendReleaseDialog open={asking} suggested={Math.max(1, (pre.quota.adds || 0) - (pre.quota.left || 0))} context={{ type: "campanha", name: campaign.name, recipients: pre.canReceive }}
+          onClose={(q) => { setAsking(false); if (q) setPre((p) => ({ ...p, quota: { ...p.quota, ...q, fits: false } })); }} />
+      )}
     </Dialog>
   );
 };
@@ -602,7 +612,7 @@ const Campaigns = () => {
             reloadKey={reloadKey}
             dialogWidth="md"
             wizard={[
-              { title: "Público", hint: "Dê um nome e escolha quem recebe. Dá para criar a lista aqui mesmo.", fields: ["name", "contactListId"] },
+              { title: "Público", hint: "Dê um nome, diga para que serve o disparo e escolha quem recebe. Dá para criar a lista aqui mesmo.", fields: ["name", "objective", "contactListId"] },
               { title: "Mensagem", hint: "Na API oficial, quem nunca respondeu só recebe por um modelo aprovado pela Meta.", fields: ["whatsappId", "template", "steps"] },
               { title: "Envio", hint: "O ritmo protege o número. Sem data, a campanha espera você clicar em Iniciar.", fields: ["pace", "scheduledAt"] },
               { title: "Revisar", fields: [], review: (payload) => <DraftReview payload={payload} lists={lists} connections={connections} /> },
@@ -633,6 +643,7 @@ const Campaigns = () => {
             canDelete={(r) => !["running"].includes(r.status)}
             fields={[
               { name: "name", label: "Nome da campanha", required: true },
+              { name: "objective", label: "Objetivo do disparo", required: true, helper: "Ex.: lembrar quem não pagou a matrícula. A gestão acompanha os disparos de cada pessoa.", inputProps: { maxLength: 300 } },
               {
                 name: "contactListId",
                 type: "custom",
@@ -675,7 +686,13 @@ const Campaigns = () => {
               { name: "scheduledAt", label: "Agendar início (vazio = iniciar manualmente)", type: "datetime", helper: "Com uma data, a campanha começa sozinha nesse horário. Dá para iniciar antes pelo botão de iniciar." },
             ]}
             columns={[
-              { header: "Campanha", field: "name" },
+              { header: "Campanha", render: (r) => (
+                <span style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                  <span>{r.name}</span>
+                  {r.objective ? <span style={{ fontSize: 12.5, color: "var(--text-2)", overflowWrap: "anywhere" }}>{r.objective}</span> : null}
+                </span>
+              ) },
+              ...(isManager(user) ? [{ header: "Criado por", render: (r) => r.createdByName || "—" }] : []),
               { header: "Lista", render: (r) => r.contactList?.name },
               {
                 header: "Situação",

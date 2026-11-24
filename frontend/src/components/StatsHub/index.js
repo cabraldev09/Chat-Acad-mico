@@ -18,6 +18,7 @@ export const hubSections = (user) => {
         { to: "/estatisticas?aba=consultores", label: "Consultores" },
         { to: "/estatisticas?aba=polos", label: "Polos e metas" },
         { to: "/estatisticas?aba=treinamento", label: "Treinamento" },
+        { to: "/estatisticas?aba=disparos", label: "Disparos" },
         { to: "/estatisticas/captacao", label: "Captação" },
         { to: "/reports", label: "Atendimento" },
         { to: "/estatisticas/tutoria", label: "Tutoria" },

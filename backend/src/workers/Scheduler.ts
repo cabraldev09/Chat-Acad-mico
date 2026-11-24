@@ -1,3 +1,4 @@
+import { withActor } from "../helpers/Actor";
 import { Op } from "sequelize";
 
 import OutboundDelivery from "../models/OutboundDelivery";
@@ -52,14 +53,15 @@ export const tick = async (): Promise<void> => {
         // eslint-disable-next-line no-await-in-loop
         const tapped = step.mediaUrl ? { body: step.body, choices: null } : withButtons(whatsapp.channel, step.body, step.buttons);
         // eslint-disable-next-line no-await-in-loop
-        await SendToContact({
+        // what the scheduled message sends is recorded as the person who scheduled it
+        await withActor(schedule.userId, () => SendToContact({
           contact,
           whatsapp,
           body: tapped.body,
           choices: tapped.choices,
           mediaUrl: step.mediaUrl,
           idempotencyKey: index === 0 ? `schedule:${schedule.id}` : `schedule:${schedule.id}:${index}`
-        });
+        }));
         const next = steps[index + 1];
         // eslint-disable-next-line no-await-in-loop
         await schedule.update(next

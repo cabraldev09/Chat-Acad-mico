@@ -40,6 +40,10 @@ class Campaign extends Model<Campaign> {
   @Column
   name: string;
 
+  // what the send is for (asked when the campaign is created; old campaigns have none)
+  @Column(DataType.TEXT)
+  objective: string;
+
   // the university of the group this belongs to (see models/Institution)
   @Column
   institutionId: number;
