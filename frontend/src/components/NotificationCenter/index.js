@@ -114,17 +114,16 @@ export const NoticeList = ({ notices, onNavigate }) => {
   // text under it; grouped by day, with the filter of the unread ones
   return (
     <div>
-      <div className="mac-notes-head">
-        <b>Avisos</b>
+      <div className="mac-notes-head" style={{ gap: 8, flexWrap: "wrap", paddingLeft: 10 }}>
+        <span style={{ display: "flex", gap: 4 }}>
+          <button type="button" onClick={() => setOnlyUnread(false)} aria-pressed={!onlyUnread} style={pill(!onlyUnread)}>Todos</button>
+          <button type="button" onClick={() => setOnlyUnread(true)} aria-pressed={onlyUnread} style={pill(onlyUnread)}>Não lidos{unread ? ` ${unread}` : ""}</button>
+        </span>
         {unread > 0 && (
-          <button type="button" className="mac-notes-clear" onClick={markAll}>
-            <CheckCheck size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Marcar todos como lidos
+          <button type="button" className="mac-notes-clear" onClick={markAll} title="Marcar todos como lidos" aria-label="Marcar todos como lidos">
+            <CheckCheck size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Marcar lidos
           </button>
         )}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 10px 6px", flexWrap: "wrap" }}>
-        <button type="button" onClick={() => setOnlyUnread(false)} aria-pressed={!onlyUnread} style={pill(!onlyUnread)}>Todos</button>
-        <button type="button" onClick={() => setOnlyUnread(true)} aria-pressed={onlyUnread} style={pill(onlyUnread)}>Não lidos{unread ? ` ${unread}` : ""}</button>
       </div>
       {groups.length === 0 && <div style={{ padding: 16, fontSize: 13, color: "var(--text-2, #64748b)" }}>Tudo lido.</div>}
       {groups.map((g) => (
