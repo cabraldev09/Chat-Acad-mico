@@ -457,6 +457,25 @@ async function sweepRole(browser, name, def, detailRoutes = []) {
         return out.slice(0, 12);
       }).catch(() => []);
       touch.forEach(([kind, text]) => note(kind, text));
+      // what receives the focus by itself (a field when a screen or a dialog opens, a dialog, a drawer, a panel) shows no second
+      // frame on itself or on the boxes around it: Safari drew a stray blue rectangle there. Every field and every focus target of
+      // the screen is tried, not only the first one.
+      const rings = await page.evaluate(() => {
+        const out = new Set();
+        const label = (el) => `${el.tagName.toLowerCase()}.${String(el.className.baseVal ?? el.className).split(" ")[0].slice(0, 30)}`;
+        const framed = (el) => { const c = getComputedStyle(el); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; };
+        const targets = [...document.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=range]), textarea, select, [contenteditable="true"], [tabindex="-1"], [role=dialog], .MuiDrawer-paper, .MuiPopover-paper')]
+          .filter((el) => el.offsetWidth > 0 && !el.disabled).slice(0, 40);
+        const before = document.activeElement;
+        targets.forEach((el) => {
+          el.focus({ preventScroll: true });
+          if (document.activeElement !== el) return;
+          [el, el.parentElement, el.parentElement && el.parentElement.parentElement].filter(Boolean).forEach((box) => { if (framed(box)) out.add(label(box)); });
+        });
+        if (before && before.focus) before.focus({ preventScroll: true }); else if (document.activeElement) document.activeElement.blur();
+        return [...out].slice(0, 6);
+      }).catch(() => []);
+      rings.forEach((r) => note("foco", `moldura extra com o foco: ${r}`));
     }
   await ctx.close();
   return issues;
@@ -512,7 +531,7 @@ async function sweepRole(browser, name, def, detailRoutes = []) {
   console.log(lines.join("\n") || "no findings");
   // what fails the check: an error page, a script error, a blank page, a failed login, a 5xx, a screen that did not open in time, a page
   // wider than the phone, a control too small for a finger, a control without a name, a click the keyboard cannot reach, a failed preparation, and an error toast that was not expected (console messages are only reported)
-  const failing = all.filter((i) => ["ERROR PAGE", "script", "blank", "login", "timeout", "mobile", "setup", "toque", "nome", "teclado"].includes(i.kind) || i.kind.startsWith("http") || i.kind === "toast");
+  const failing = all.filter((i) => ["ERROR PAGE", "script", "blank", "login", "timeout", "mobile", "setup", "toque", "nome", "teclado", "foco"].includes(i.kind) || i.kind.startsWith("http") || i.kind === "toast");
   if (failing.length) console.log(`\n${failing.length} finding(s) fail the check.`);
   process.exit(failing.length ? 1 : 0);
 })();

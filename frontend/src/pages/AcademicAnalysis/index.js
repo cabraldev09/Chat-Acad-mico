@@ -205,7 +205,7 @@ const List = () => {
                 return (
                   <Card key={r.id} className={cn("group relative h-full overflow-hidden rounded-2xl border border-slate-200 border-l-4 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-t-sky-200 hover:shadow-lg", accent)}>
                     <CardContent className="flex h-full flex-col p-4 sm:p-5">
-                      <button type="button" onClick={() => history.push(`/analise-academica/${r.id}`)} className="group/link min-w-0 flex-1 rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-ring">
+                      <button type="button" onClick={() => history.push(`/analise-academica/${r.id}`)} className="group/link min-w-0 flex-1 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         <div className="truncate font-semibold text-slate-900 group-hover/link:text-brand-navy">{r.studentName || "Aluno sem nome"}</div>
                         <div className="mt-1 truncate text-sm text-slate-600">{r.courseName || "Curso não identificado"}{r.rgm ? ` · RGM ${r.rgm}` : ""}</div>
                         <div className="mt-3 flex flex-wrap items-center gap-2">
