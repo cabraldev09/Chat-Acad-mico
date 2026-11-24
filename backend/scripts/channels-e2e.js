@@ -7674,7 +7674,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${tutorUser.id}, 0, false, 'onboarding', NOW(), NOW()) RETURNING id`).split("\n")[0];
       const say = (id, fromMe, body, minutesAgo) => sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticketId}, ${contactId}, '${body}', ${fromMe}, true, 'chat', 1, NOW() - INTERVAL '${minutesAgo} minutes', NOW())`);
       say(`aud-${ticketId}-1`, false, "Não consigo entrar na plataforma, meu RGM 12345678", 120);
-      say(`aud-${ticketId}-2`, true, "Abri um chamado no CAA, protocolo 2026112400123, e te dou retorno", 100);
+      say(`aud-${ticketId}-2`, true, "Abri um chamado no CAA e te dou retorno assim que tiver o número", 100);
       sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-2', lastMessageFromMe=true, lastMessageAt=NOW() - INTERVAL '100 minutes' WHERE id=${ticketId}`);
       // the AI does not qualify nor sell on the tutoring
       assert((await http.post(`/tickets/${ticketId}/ai`, { active: true }, auth())).data.error === "ERR_AI_NOT_ON_TUTORING", "the AI was handed a tutoring conversation");
@@ -7729,6 +7729,41 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post("/tutoria/audit/run", {}, auth());
       const after = (await http.get("/tutoria/issues", { params: { status: "resolvida" }, ...auth() })).data.items.find(i => i.id === issue.id);
       assert(after && after.status === "resolvida" && after.protocolNumber === "2026112400123", `resolved ${JSON.stringify(after)}`);
+      // a protocol number written in the conversation is registered by itself: found in code (the model never sees it), no notice
+      // (a registered protocol needs nothing now), and the tutor sees it in their list
+      const noticesBefore = Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='tutoring_issue'`));
+      say(`aud-${ticketId}-5`, true, "Abri outra solicitação no CAA, protocolo 2026112400777, sobre a nota da prova", 58);
+      sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-5', lastMessageAt=NOW() - INTERVAL '58 minutes' WHERE id=${ticketId}`);
+      const freeRun = (await http.post("/tutoria/audit/run", {}, auth())).data;
+      const auto = (await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.find(i => i.protocolNumber === "2026112400777");
+      assert(auto && auto.source === "ia" && auto.ticketId === Number(ticketId), `protocol found in the conversation ${JSON.stringify(auto)} run ${JSON.stringify(freeRun)} ticket ${sql(`SELECT CONCAT(lastMessageId,'|',tutoringAuditedMessageId,'|',lastMessageAt) FROM Tickets WHERE id=${ticketId}`)}`);
+      // the free part does not depend on the daily limit of the AI: with no reading left today, a number written is still registered
+      sql(`UPDATE Settings SET value='0' WHERE key='tutoring_audit_count'`);
+      const limit = await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 1 }, auth());
+      assert(limit.status === 200, `audit settings ${limit.status}`);
+      sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('tutoring_audit_count', '1', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value='1'`);
+      sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('tutoring_audit_day', '${new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" })}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
+      say(`aud-${ticketId}-6`, true, "Abri o requerimento 7788990011 para a segunda chamada", 57);
+      sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-6', lastMessageAt=NOW() - INTERVAL '57 minutes' WHERE id=${ticketId}`);
+      const capped = (await http.post("/tutoria/audit/run", {}, auth())).data;
+      assert(capped.reason === "daily_limit" && capped.read === 0, `the AI read past its daily limit ${JSON.stringify(capped)}`);
+      assert((await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.some(i => i.protocolNumber === "7788990011"), "the free part stopped at the daily limit of the AI");
+      await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 40 }, auth());
+      sql(`UPDATE Settings SET value='0' WHERE key='tutoring_audit_count'`);
+      assert(!JSON.stringify(anthropic.requests.slice(-5).concat((anthropic.openai || []).slice(-5))).includes("2026112400777"), "the protocol number went to the model");
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='tutoring_issue'`)) === noticesBefore, "a protocol registered by itself notified the management");
+      assert((await http.get("/tutoria/protocols", asUser(tutorTok))).data.items.some(i => i.protocolNumber === "2026112400777" && i.status === "registrada"), "the tutor does not see the protocol found");
+      // a new protocol from the list (Meus alunos > Protocolos), for a student of the tutor who never wrote to the tutoring
+      const quiet = sql(`INSERT INTO Leads (name, stageId, enrolledAt, onboardingTutorId, isHistorical, createdAt, updatedAt) VALUES ('Aluno Sem Conversa', (SELECT id FROM LeadStages ORDER BY id LIMIT 1), NOW(), ${tutorUser.id}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const byHand = await http.post("/tutoria/protocols", { leadId: Number(quiet), protocolNumber: "55667788", protocolName: "Revisão de nota", notifyStudent: true }, asUser(tutorTok));
+      assert(byHand.status === 201 && /ainda não tem conversa/.test(byHand.data.warning || ""), `protocol by student ${byHand.status} ${JSON.stringify(byHand.data)}`);
+      const listed = (await http.get("/tutoria/protocols", asUser(tutorTok))).data.items.find(i => i.protocolNumber === "55667788");
+      assert(listed && listed.student === "Aluno Sem Conversa" && listed.status === "registrada", `the protocol by hand ${JSON.stringify(listed)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${quiet} AND body LIKE '%55667788%'`)) === 1, "the protocol is not in the student's history");
+      assert((await http.post("/tutoria/protocols", { leadId: Number(quiet), protocolNumber: "55667788", protocolName: "De novo" }, asUser(tutorTok))).status === 409, "the same protocol was registered twice");
+      assert((await http.post("/tutoria/protocols", { leadId: Number(quiet), protocolNumber: "1", protocolName: "x" }, asUser(otherTok))).status === 403, "another tutor wrote a protocol for someone else's student");
+      assert((await http.post("/tutoria/protocols", { protocolNumber: "1", protocolName: "x" }, asUser(tutorTok))).data.error === "ERR_PROTOCOL_STUDENT", "a protocol without a student was accepted");
+      assert((await http.post(`/tutoria/protocols/${listed.id}/resolve`, {}, asUser(tutorTok))).status === 200, "a protocol without a conversation cannot be resolved");
       // a case written by hand, and the switch
       const manual = await http.post("/tutoria/issues", { kind: "documento", summary: "Histórico do ensino médio pedido ao aluno" }, auth());
       assert(manual.status === 201 && manual.data.status === "aberta", "manual issue");

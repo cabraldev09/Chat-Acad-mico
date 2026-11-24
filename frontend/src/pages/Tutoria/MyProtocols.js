@@ -31,9 +31,12 @@ export default function MyProtocols() {
   const done = items.filter((i) => i.status === "resolvida");
   return (
     <div style={{ display: "grid", gap: 12, paddingBottom: 16 }}>
-      <div style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.5 }}>
-        Registre o número e o assunto de cada chamado aberto para o aluno. O aluno pode ser avisado pela conversa e tudo fica no histórico dele.
-        Para registrar um protocolo novo, abra a conversa do aluno e use Mais ações, Registrar protocolo.
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.5, flex: "1 1 320px", minWidth: 0 }}>
+          Registre o número e o assunto de cada chamado aberto para o aluno (CAA, protocolo, solicitação). O aluno pode ser avisado pela conversa e
+          tudo fica no histórico dele. Quando o número aparece na conversa, ele é registrado aqui sozinho.
+        </div>
+        <Button variant="contained" color="primary" disableElevation style={{ ...btn, flex: "none" }} startIcon={<Plus size={16} />} onClick={() => setDialog({ kind: "new" })}>Novo protocolo</Button>
       </div>
       {open.length === 0 && (
         <div style={{ textAlign: "center", padding: "28px 12px", border: "1px dashed var(--line-strong)", borderRadius: 12, color: "var(--text-2)", fontSize: 13.5 }}>
@@ -58,6 +61,7 @@ export default function MyProtocols() {
           </div>
         </article>
       ))}
+      <ProtocolDialog open={!!dialog && dialog.kind === "new"} onClose={() => setDialog(null)} pickStudent onDone={load} />
       <ProtocolDialog open={!!dialog && dialog.kind === "register"} onClose={() => setDialog(null)} ticketId={dialog && dialog.issue && dialog.issue.ticketId} issue={dialog && dialog.issue} onDone={load} />
       <ResolveDialog open={!!dialog && dialog.kind === "resolve"} onClose={() => setDialog(null)} issue={dialog && dialog.issue} onDone={load} />
     </div>

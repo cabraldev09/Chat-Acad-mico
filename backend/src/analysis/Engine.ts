@@ -29,7 +29,8 @@ import { enrollmentBlocks, enrollmentMessage, enrollmentWarning } from "./domain
 import { DEFAULT_ACADEMIC_CALENDAR, buildAcademicCalendar } from "./domain/academic-calendar/calendar";
 import { zonedDateParts } from "./lib/time";
 import { extractAcademicDocument } from "./services/academic-documents/adapters";
-import { autoMapHistorySnapshot } from "./services/academic-analysis/history-mapping";
+import { autoMapHistorySnapshot, isHistorySnapshot } from "./services/academic-analysis/history-mapping";
+import { applyCourseMatrix } from "./domain/academic-analysis/history-period-inference";
 import { classifyAcademicDocument, type AcademicDocumentType } from "./services/academic-documents/classifier";
 import { normalizeExtraction } from "./services/pipeline/normalize";
 import { readHeaderMetadata } from "./services/pipeline/cross-check";
@@ -383,6 +384,14 @@ export const readAcademicPdf = async (bytes: Buffer, filename: string, previous?
     snapshot = extractAcademicDocument(local, filename, previous ?? undefined);
   } catch (err) {
     throw new AnalysisError((err as Error).message || "Não foi possível identificar este documento.");
+  }
+  // the digital history has no curricular period: the série of each discipline comes from the official matrix of the course
+  if (isHistorySnapshot(snapshot) && snapshot.disciplines.some(d => d.inMainCurriculum && (d.period === null || d.curricularPeriodProvenance?.confirmed === false))) {
+    const { matrixFor } = await import("./services/commercial-grades/matrix-lookup");
+    const matrix = await matrixFor(snapshot.courseName);
+    // a current period the tutor confirmed stays; one the system confirmed by itself is computed again
+    const tutorPeriod = Boolean(previous?.result.currentPeriodConfirmed && previous.result.currentPeriod !== null && previous.periodSuggestion?.inferred !== previous.result.currentPeriod);
+    if (matrix) snapshot = applyCourseMatrix(snapshot, matrix, tutorPeriod).snapshot;
   }
   snapshot = autoMapHistorySnapshot(snapshot).snapshot;
   return { documentType, snapshot, contentFingerprintSource: local.textByPage.join("\n"), pageCount: local.pageCount };

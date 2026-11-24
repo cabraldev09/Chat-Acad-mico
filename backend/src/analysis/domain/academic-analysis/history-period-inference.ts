@@ -142,8 +142,8 @@ export interface AppliedHistoryMapping {
  */
 export function applyHistoryPeriodInference(
   input: AcademicGridSnapshot,
-  assigned?: number[],
-  origin?: { source: string; confirmed: boolean },
+  assigned?: number[] | ((ordered: AcademicDiscipline[]) => number[]),
+  origin?: { source: string; confirmed: boolean; label?: string },
 ): AppliedHistoryMapping {
   const snapshot = structuredClone(input);
   const sourceIndexes = snapshot.disciplines
@@ -153,7 +153,7 @@ export function applyHistoryPeriodInference(
     .map(({ index }) => index);
   const ordered = sourceIndexes.map((index) => snapshot.disciplines[index]);
   const inference = inferHistoryPeriods(ordered);
-  const periods = assigned ?? inference.periods;
+  const periods = typeof assigned === "function" ? assigned(ordered) : (assigned ?? inference.periods);
   const trusted = Boolean(assigned) || inference.confident;
   const needsMapping = ordered.some((row) => row.inMainCurriculum && row.period === null);
   if (!trusted || !needsMapping || periods.length !== ordered.length)
@@ -171,7 +171,7 @@ export function applyHistoryPeriodInference(
   ordered.forEach((row, i) => {
     if (row.period !== null || !(periods[i] >= 1 && periods[i] <= 20)) return;
     row.period = periods[i];
-    row.rawPeriod = `${periods[i]}º período (${origin && !origin.confirmed ? "sugerido pelo semestre letivo" : "identificado automaticamente"})`;
+    row.rawPeriod = `${periods[i]}º período (${origin?.label ?? (origin && !origin.confirmed ? "sugerido pelo semestre letivo" : "identificado automaticamente")})`;
     row.curricularPeriodProvenance = { source, confirmed: origin?.confirmed ?? true };
     if (
       row.normalizedStatus === "A CURSAR" &&
@@ -183,8 +183,9 @@ export function applyHistoryPeriodInference(
     mappedRows++;
   });
 
+  // the period of what the student takes in the latest term: an earlier term may hold a later série (entry in the middle of the cycle)
   const latestTermPeriod = assigned
-    ? Math.max(0, ...ordered.filter((row) => isAcademicTerm(row.academicTerm)).map((row) => row.period ?? 0)) || null
+    ? Math.max(0, ...ordered.filter((row) => latestTerm && row.academicTerm === latestTerm).map((row) => row.period ?? 0)) || null
     : inference.currentPeriod;
   // never trust the order of the history alone: the period is deduced two ways and only confirmed when they agree
   const suggestion = estimatePeriod(snapshot.disciplines, latestTermPeriod);
@@ -206,4 +207,58 @@ export function applyHistoryPeriodInference(
     );
   if (!currentPeriodConfirmed && suggestion.inferred !== null) snapshot.extractionWarnings.push(suggestion.note);
   return { snapshot, applied: mappedRows > 0, mappedRows, inference };
+}
+
+export const COURSE_MATRIX_SOURCE = "COURSE_MATRIX";
+/** Below this share of the history found in the matrix, the matrix is another version of the course and is not used. */
+const MATRIX_MIN_COVERAGE = 0.9;
+
+export interface CourseMatrixComponent {
+  semester: number;
+  code: string | null;
+  name: string;
+}
+
+const bareCode = (code: string | null | undefined): string => (code ?? "").trim().replace(/^0+(?=\d)/, "");
+
+/** The série of each row in the official matrix: by the code, or by the same name when the code is not there. 0 when the matrix does not say (or says two séries). */
+export function matrixPeriodsOf(rows: Array<Pick<AcademicDiscipline, "code" | "name">>, matrix: CourseMatrixComponent[]): number[] {
+  return rows.map((row) => {
+    const code = bareCode(row.code);
+    const byCode = code ? matrix.filter((m) => bareCode(m.code) === code) : [];
+    const found = byCode.length ? byCode : matrix.filter((m) => sortKey(m.name) === sortKey(row.name));
+    const semesters = new Set(found.map((m) => m.semester));
+    return semesters.size === 1 ? found[0].semester : 0;
+  });
+}
+
+/**
+ * The digital history groups by semestre letivo and prints what is still to come without any period. The série of each
+ * discipline then comes from the official matrix of the course (catalog of grades), never from a guess: it replaces the
+ * suggestion made from the order of the terms, keeps what the tutor or the extract mapped, and the current period is still
+ * confirmed only when the matrix and the integralized workload agree.
+ */
+export function applyCourseMatrix(
+  input: AcademicGridSnapshot,
+  matrix: CourseMatrixComponent[],
+  keepCurrentPeriod = false,
+): AppliedHistoryMapping {
+  const fromDocument = input.disciplines.filter((row) => row.sourcePage > 0);
+  const found = matrixPeriodsOf(fromDocument, matrix).filter((period) => period > 0).length;
+  if (!fromDocument.length || found / fromDocument.length < MATRIX_MIN_COVERAGE)
+    return { snapshot: input, applied: false, mappedRows: 0, inference: inferHistoryPeriods([]) };
+  const snapshot = structuredClone(input);
+  for (const row of snapshot.disciplines)
+    if (row.period !== null && !row.manualEdited && row.curricularPeriodProvenance?.confirmed === false) {
+      row.period = null;
+      row.rawPeriod = "";
+    }
+  if (!keepCurrentPeriod) snapshot.result = { ...snapshot.result, currentPeriodConfirmed: false };
+  snapshot.extractionWarnings = snapshot.extractionWarnings.filter((warning) => warning !== input.periodSuggestion?.note);
+  const mapped = applyHistoryPeriodInference(snapshot, (ordered) => matrixPeriodsOf(ordered, matrix), {
+    source: COURSE_MATRIX_SOURCE,
+    confirmed: true,
+    label: "matriz do curso",
+  });
+  return mapped.applied ? mapped : { ...mapped, snapshot: input };
 }

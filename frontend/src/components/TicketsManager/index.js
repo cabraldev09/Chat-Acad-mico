@@ -63,7 +63,7 @@ const useStyles = makeStyles((theme) => {
       backgroundColor: c.panelAlt,
       border: "1px solid transparent",
       transition: "border-color .15s, background-color .15s",
-      "&:focus-within": { borderColor: c.accent, backgroundColor: c.panel },
+      "&:focus-within": { backgroundColor: c.panel },
       "& svg": { fontSize: 20, color: c.textSecondary },
     },
     searchInput: { flex: 1, fontSize: 14, color: c.text },
