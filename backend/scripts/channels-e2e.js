@@ -2663,11 +2663,13 @@ const postMeta = (id, payload, secret, badSig) => {
       const a = await mkUser("Lista A", "lista-a@x.com");
       const b = await mkUser("Lista B", "lista-b@x.com");
       const ta = (await http.post("/auth/login", { email: "lista-a@x.com", password: "senha123" })).data.token;
-      const cA = sql(`SELECT id FROM Contacts WHERE number='tg_5551'`), cB = sql(`SELECT id FROM Contacts WHERE number='tg_5552'`);
+      // people of their own (one live conversation per person and per number: the tutoring one of A is on another line)
+      const mkc = num => sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Lista ${num}', '${num}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cA = mkc("tg_lista_a"), cB = mkc("tg_lista_b"), cT = mkc("tg_lista_t");
       const mkTicket = (contactId, userId, status, segment) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('${status}', ${contactId}, ${tgId}, ${q.id}, ${userId === null ? "NULL" : userId}, 0, false, '${segment}', NOW(), NOW()) RETURNING id`).split("\n")[0];
       const mine = mkTicket(cA, a.id, "open", "sales");
       const colleagues = mkTicket(cB, b.id, "open", "sales");
-      const tutoring = mkTicket(cA, null, "pending", "onboarding");
+      const tutoring = mkTicket(cT, null, "pending", "onboarding");
       const list = async (token, params = {}) => (await http.get("/tickets", { params: { showAll: "true", queueIds: JSON.stringify([q.id]), ...params }, ...asUser(token) })).data.tickets.map(t => String(t.id));
       const got = await list(ta);
       assert(got.includes(String(mine)), "own conversation missing from the list");
@@ -3102,11 +3104,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${cid}`) === "1", "a second conversation was opened for the same person");
       assert(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${tid} AND body LIKE 'oi de novo%'`) === "1", "message not in the same thread");
 
-      // a duplicate that already exists: reopening answers with the open one instead of failing
-      const dup = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('closed', ${cid}, ${tgId}, 0, false, 'sales', false, NOW(), NOW() - INTERVAL '9 days') RETURNING id`).split("\n")[0];
-      const r = await http.put(`/tickets/${dup}`, { status: "open" }, auth());
-      assert(r.status === 400 && r.data.error === "ERR_OTHER_OPEN_TICKET" && r.data.data && Number(r.data.data.ticketId) === Number(tid), `reopen response ${r.status} ${JSON.stringify(r.data)}`);
-      sql(`DELETE FROM Tickets WHERE id=${dup}`);
+      // a second live conversation of the same person on the same number cannot exist: the database itself refuses it
+      let refused = "";
+      try {
+        sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('closed', ${cid}, ${tgId}, 0, false, 'sales', false, NOW(), NOW() - INTERVAL '9 days') RETURNING id`);
+      } catch (e) { refused = String(e.message); }
+      assert(refused.includes("tickets_one_live_per_number"), `a duplicate conversation was accepted ${refused.slice(0, 120)}`);
 
       // a new conversation started by the team reopens the closed one too
       sql(`UPDATE Tickets SET status='closed', closedAt=NOW() WHERE id=${tid}`);
@@ -3218,7 +3221,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await kind("docs")).some(m => m.id === "dr-doc-1"), "docs tab");
       const links = await kind("links");
       assert(links.length === 1 && links[0].url === "https://cruzeirodosulvirtual.com.br/cursos", `links tab ${JSON.stringify(links)}`);
-      assert((await kind("starred")).map(m => m.id).join() === "dr-star-1", "starred tab");
+      // the person's one conversation may hold stars from before: the new star is there, and only starred messages are
+      const starred = (await kind("starred")).map(m => m.id);
+      assert(starred.includes("dr-star-1") && !["dr-img-1", "dr-doc-1", "dr-link-1"].some(id => starred.includes(id)), `starred tab ${starred.join()}`);
       await http.post("/users", { name: "Tutor Gaveta", email: "gaveta-tutor@x.com", password: "senha123", role: "tutor" }, auth());
       const tutorLogin = await http.post("/auth/login", { email: "gaveta-tutor@x.com", password: "senha123" });
       const tutorRead = await http.get(`/messages/${t}/list`, { params: { kind: "media" }, ...asUser(tutorLogin.data.token) });
@@ -5906,8 +5911,11 @@ const postMeta = (id, payload, secret, badSig) => {
       assert([tA.id, tB.id].includes(tutorId), "tutor not from the polo");
       assert(stageName(lead.id) === "Matriculado", `stage ${stageName(lead.id)}`);
       assert(sql(`SELECT onboardingStatus FROM Leads WHERE id=${lead.id}`) === "pending", "status");
-      assert(sql(`SELECT status FROM Tickets WHERE id=${salesTicket}`) === "closed", "sales conversation still open");
       const ob = r.data.ticketId;
+      // the same number for both sides (no tutoring number here): the person's one conversation on it goes to the tutor, never a
+      // second one beside it (that showed two cards of the same person, one of them "Sem mensagens")
+      assert(Number(ob) === Number(salesTicket), `a second conversation on the same number: ${ob} beside ${salesTicket}`);
+      assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${ob}) AND whatsappId=${cid} AND isHistorical=false`) === "1", "two live conversations on the same number");
       assert(sql(`SELECT CONCAT(segment,'|',status,'|',userId) FROM Tickets WHERE id=${ob}`) === `onboarding|open|${tutorId}`, "onboarding ticket");
       assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND userId=${tutorId} AND title LIKE 'Ambientar%'`) === "1", "tutor task");
       // nothing is sent to the student by the system: the tutor decides if and when to greet
@@ -7496,7 +7504,7 @@ const postMeta = (id, payload, secret, badSig) => {
     });
     await test("deleting a conversation preserves its delivery and budget ledger", async () => {
       inDb(`const Ticket=require("./dist/models/Ticket").default,Delivery=require("./dist/models/OutboundDelivery").default;
-        const original=await Ticket.findByPk(${tgTicket});const temporary=await Ticket.create({contactId:original.contactId,whatsappId:original.whatsappId,status:"closed",unreadMessages:0,isGroup:false});
+        const original=await Ticket.findByPk(${tgTicket});const temporary=await Ticket.create({contactId:original.contactId,whatsappId:original.whatsappId,status:"closed",unreadMessages:0,isGroup:false,isHistorical:true});
         const delivery=await Delivery.create({key:"test:retained-charge",ticketId:temporary.id,contactId:original.contactId,whatsappId:original.whatsappId,channel:"telegram",status:"sent",estimatedUsd:0});
         await temporary.destroy();await delivery.reload();assert.equal(delivery.ticketId,null);assert.equal(delivery.status,"sent");`);
     });
@@ -7560,8 +7568,8 @@ const postMeta = (id, payload, secret, badSig) => {
           assert.equal(await TicketTag.count({where:{ticketId:t.id,tagId:tag.id}}),1);
           const fresh=await Ticket.findByPk(t.id);
           assert.equal(fresh.userId,1,"the tutor of the enrollment did not keep the student");
-          // a conversation with messages is never folded
-          const real=await Ticket.create({contactId:contact.id,whatsappId:${cid},status:"open",userId:1,segment:"onboarding",isGroup:false,unreadMessages:0});
+          // a conversation with messages is never folded (the same one of the person on that number, open again and with a message)
+          const real=empty;await real.update({status:"open",userId:1,segment:"onboarding",closedAt:null});
           await Message.create({id:"gemeo-"+real.id,ticketId:real.id,contactId:contact.id,body:"oi",fromMe:false,read:true,mediaType:"chat",ack:0});
           await FindOrCreate(contact,tutoring.id,1);
           await real.reload();assert.equal(real.status,"open");
@@ -7625,9 +7633,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketId} AND type='protocol'`)) === 1, "the protocol is not in the history of the conversation");
       assert((await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.some(i => i.id === issue.id && i.protocolName === "Acesso ao AVA"), "the management does not see the protocol of the tutor");
       // a protocol of a commercial conversation is refused
-      const sales = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${tutorUser.id}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      // a commercial conversation of someone else (one live conversation per person and per number)
+      const salesContact = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Lead Comercial Auditoria', '5569944443334', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const sales = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${salesContact}, ${cid}, ${tutorUser.id}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
       assert((await http.post("/tutoria/protocols", { ticketId: sales, protocolNumber: "9", protocolName: "y" }, asUser(tutorTok))).status === 400, "a protocol was written on a commercial conversation");
       sql(`DELETE FROM Tickets WHERE id=${sales}`);
+      sql(`DELETE FROM Contacts WHERE id=${salesContact}`);
       // the student says it was solved: the next reading closes it
       say(`aud-${ticketId}-3`, false, "Já foi liberado, resolveu, obrigada", 60);
       say(`aud-${ticketId}-4`, true, "Que bom! Qualquer coisa me chama", 59);

@@ -18,6 +18,7 @@ import Polo from "../../models/Polo";
 import PoloMember from "../../models/PoloMember";
 import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
+import { createLiveTicket, liveTicketOf } from "../TicketServices/LiveTicket";
 import TicketEvent from "../../models/TicketEvent";
 import User from "../../models/User";
 import { connectionOfTeam, TUTORIA_SEGMENTS } from "../ChannelServices/ConnectionTeam";
@@ -200,8 +201,19 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
       await ticket.save();
     }
   }
+  // the tutoring talks on the same number as the commercial side (no number of its own yet): the person's conversation on that number
+  // (just closed above) becomes the tutoring one, never a second one beside it (it showed two cards, one "Sem mensagens"); the tutor's
+  // attendance starts from here (the time of the first answer is the tutor's)
   if (!ticket) {
-    ticket = await Ticket.create({
+    const same = await liveTicketOf(contact.id, whatsapp.id);
+    if (same) {
+      same.set({ status: tutor ? "open" : "pending", userId: tutor?.id || null, queueId: queue.id, segment: "onboarding", leadId: same.leadId || lead.id, closedAt: null, aiActive: false, chatbotNodeId: -1, firstResponseAt: null } as any);
+      await same.save();
+      ticket = same;
+    }
+  }
+  if (!ticket) {
+    ticket = await createLiveTicket({
       contactId: contact.id,
       whatsappId: whatsapp.id,
       status: tutor ? "open" : "pending",
@@ -213,7 +225,7 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
       unreadMessages: 0,
       aiActive: false,
       chatbotNodeId: -1
-    } as any);
+    });
   }
   await TicketEvent.create({
     ticketId: ticket.id,

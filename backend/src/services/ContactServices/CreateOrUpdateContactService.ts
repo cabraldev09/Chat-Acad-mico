@@ -57,10 +57,16 @@ const CreateOrUpdateContactService = async ({
     contactByNumber && contactByLid && contactByNumber.id !== contactByLid.id;
 
   if (shouldMerge) {
-    await Ticket.update(
-      { contactId: contactByNumber.id },
-      { where: { contactId: contactByLid.id } }
-    );
+    // the conversations of the old id come to the contact of the number; where that contact already has a conversation on the same
+    // number, the two become one (one live conversation per person and per number)
+    const { liveTicketOf, mergeTicketsInto } = await import("../TicketServices/LiveTicket");
+    const moving = await Ticket.findAll({ where: { contactId: contactByLid.id } });
+    for (const t of moving) {
+      // eslint-disable-next-line no-await-in-loop
+      const there = !t.isGroup && !t.isHistorical ? await liveTicketOf(contactByNumber.id, t.whatsappId) : null;
+      // eslint-disable-next-line no-await-in-loop
+      if (there) await mergeTicketsInto(there.id, [t.id]); else await t.update({ contactId: contactByNumber.id });
+    }
 
     await contactByLid.destroy();
 

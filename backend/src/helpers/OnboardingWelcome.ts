@@ -90,12 +90,13 @@ export const welcomeFacts = async (ticket: Ticket, actorId: number): Promise<{ t
   const course = enrollment?.courseName || recordMeta.courseName ? null : lead?.courseId ? await Course.findByPk(lead.courseId, { attributes: ["name"] }) : null;
   const consultantId = enrollment?.ownerId || lead?.ownerId || recordMeta.actorId || null;
   const consultant = consultantId ? await User.findByPk(consultantId, { attributes: ["name"] }) : null;
-  // the student wrote and nobody answered yet: the text answers them
-  const wrote = !ticket.firstResponseAt && (await Message.count({ where: { ticketId: ticket.id, fromMe: false } })) > 0;
+  const enrolledAt = enrollment?.enrolledAt || lead?.enrolledAt || null;
+  // the student wrote and nobody answered yet: the text answers them. Only what came after the enrollment counts: on a shared number the
+  // conversation is the same one the consultant had, and what the student wrote to the consultant is not a message to the tutor
+  const wrote = !ticket.firstResponseAt && (await Message.count({ where: { ticketId: ticket.id, fromMe: false, ...(enrolledAt ? { createdAt: { [Op.gte]: enrolledAt } } : {}) } as any })) > 0;
   const fullName = String(contact?.name || "").trim();
   const firstName = fullName.split(/\s+/)[0] || "";
   const courseName = enrollment?.courseName || recordMeta.courseName || course?.name || "";
-  const enrolledAt = enrollment?.enrolledAt || lead?.enrolledAt || null;
   return {
     tutorPreferences: tutor?.preferences || null,
     facts: {

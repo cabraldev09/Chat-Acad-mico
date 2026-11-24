@@ -271,8 +271,9 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
     await test("the client's consultant in the CRM wins over whoever attended last, and the rotation does not take the client away", async () => {
       const t = mkTicket({ closed: true, owner: ids.joao });
       const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY id LIMIT 1`).split("\n")[0];
-      // Gabrielli already attended this client before (an older conversation) and is the owner in the CRM
-      sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, aiActive, unreadMessages, isGroup, isHistorical, createdAt, updatedAt) VALUES ('closed', ${t.contactId}, ${connectionId}, ${queueId}, ${ids.gabrielli}, false, 0, false, false, NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days')`);
+      // Gabrielli already attended this client before (an older conversation, from the copied history: one live conversation per
+      // person and per number) and is the owner in the CRM
+      sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, aiActive, unreadMessages, isGroup, isHistorical, createdAt, updatedAt) VALUES ('closed', ${t.contactId}, ${connectionId}, ${queueId}, ${ids.gabrielli}, false, 0, false, true, NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days')`);
       sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Lead carteira', '5569000009${seq}', 'Telegram', ${stage}, ${ids.gabrielli}, ${t.contactId}, false, NOW(), NOW())`);
       tg.updates.push({ update_id: 500 + seq, message: { message_id: 900 + seq, chat: { id: Number(t.chat), type: "private" }, from: { first_name: "Lead" }, text: "quero continuar a matrícula" } });
       await waitFor(() => row(t.ticketId).status === "open", 10000, "ticket back with the CRM owner").catch(e => {
