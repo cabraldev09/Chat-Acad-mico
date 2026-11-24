@@ -6,6 +6,7 @@ vi.mock("../../../src/models/Contact", () => ({ default: {} }));
 vi.mock("../../../src/models/Course", () => ({ default: {} }));
 vi.mock("../../../src/models/Lead", () => ({ default: {} }));
 vi.mock("../../../src/models/LeadEnrollment", () => ({ default: {} }));
+vi.mock("../../../src/models/LeadActivity", () => ({ default: {} }));
 vi.mock("../../../src/models/Message", () => ({ default: {} }));
 vi.mock("../../../src/models/Polo", () => ({ default: {} }));
 vi.mock("../../../src/models/Queue", () => ({ default: {} }));

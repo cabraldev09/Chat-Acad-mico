@@ -1,8 +1,10 @@
+import { Op } from "sequelize";
 import { getSetting } from "./AppSettings";
 import { institutionNameFor } from "./Institution";
 import Contact from "../models/Contact";
 import Course from "../models/Course";
 import Lead from "../models/Lead";
+import LeadActivity from "../models/LeadActivity";
 import LeadEnrollment from "../models/LeadEnrollment";
 import Message from "../models/Message";
 import Polo from "../models/Polo";
@@ -70,19 +72,24 @@ export interface WelcomeFacts {
 export const welcomeFacts = async (ticket: Ticket, actorId: number): Promise<{ table: Record<string, string>; facts: WelcomeFacts; tutorPreferences: string | null }> => {
   const contact = await Contact.findByPk(ticket.contactId, { attributes: ["name"] });
   // what the enrollment recorded: the course and the polo of the student, the tutor chosen there, the RGM and the consultant's note
-  const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "courseId", "poloId", "onboardingTutorId", "enrolledAt", "rgm"], order: [["updatedAt", "DESC"]] });
+  const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "courseId", "poloId", "onboardingTutorId", "enrolledAt", "rgm", "ownerId"], order: [["updatedAt", "DESC"]] });
+  // a second enrollment has its own row; the first one is recorded on the lead and in the activity of the enrollment (with the note)
   const enrollment = lead ? await LeadEnrollment.findOne({ where: { leadId: lead.id }, order: [["enrolledAt", "DESC"], ["id", "DESC"]] }) : null;
+  const record = lead && !enrollment ? await LeadActivity.findOne({ where: { leadId: lead.id, meta: { [Op.like]: '%"kind":"enrollment"%' } } as any, order: [["id", "DESC"]] }) : null;
+  const recordMeta = (() => { try { return record?.meta ? JSON.parse(record.meta) : {}; } catch (e) { return {}; } })();
+  const recordNote = recordMeta.note || (record?.body ? (String(record.body).match(/Obs\.: (.+)$/) || [])[1] : null) || null;
   const tutor = await User.findByPk(ticket.userId || enrollment?.tutorId || lead?.onboardingTutorId || actorId, { attributes: ["name", "preferences"] });
   const queue = ticket.queueId ? await Queue.findByPk(ticket.queueId, { attributes: ["poloId"] }) : null;
   const poloId = enrollment?.poloId || lead?.poloId || queue?.poloId || null;
   const polo = poloId ? await Polo.findByPk(poloId, { attributes: ["name"] }) : null;
-  const course = enrollment?.courseName ? null : lead?.courseId ? await Course.findByPk(lead.courseId, { attributes: ["name"] }) : null;
-  const consultant = enrollment?.ownerId ? await User.findByPk(enrollment.ownerId, { attributes: ["name"] }) : null;
+  const course = enrollment?.courseName || recordMeta.courseName ? null : lead?.courseId ? await Course.findByPk(lead.courseId, { attributes: ["name"] }) : null;
+  const consultantId = enrollment?.ownerId || lead?.ownerId || recordMeta.actorId || null;
+  const consultant = consultantId ? await User.findByPk(consultantId, { attributes: ["name"] }) : null;
   // the student wrote and nobody answered yet: the text answers them
   const wrote = !ticket.firstResponseAt && (await Message.count({ where: { ticketId: ticket.id, fromMe: false } })) > 0;
   const fullName = String(contact?.name || "").trim();
   const firstName = fullName.split(/\s+/)[0] || "";
-  const courseName = enrollment?.courseName || course?.name || "";
+  const courseName = enrollment?.courseName || recordMeta.courseName || course?.name || "";
   const enrolledAt = enrollment?.enrolledAt || lead?.enrolledAt || null;
   return {
     tutorPreferences: tutor?.preferences || null,
@@ -92,7 +99,7 @@ export const welcomeFacts = async (ticket: Ticket, actorId: number): Promise<{ t
       poloName: polo?.name || null,
       rgm: enrollment?.rgm || lead?.rgm || null,
       consultantName: consultant?.name || null,
-      note: enrollment?.note ? String(enrollment.note).trim() || null : null,
+      note: (enrollment?.note ? String(enrollment.note).trim() : recordNote ? String(recordNote).trim() : "") || null,
       enrolledAt: enrolledAt ? new Date(enrolledAt).toISOString() : null
     },
     table: {
