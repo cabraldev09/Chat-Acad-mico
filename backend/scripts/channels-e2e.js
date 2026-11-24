@@ -1049,6 +1049,23 @@ const postMeta = (id, payload, secret, badSig) => {
       const made = await http.post(`/leads/from-contact/${teamOnly}`, {}, auth());
       assert([200, 201].includes(made.status) && leadOf("5531977772222"), `the contact was not put in the CRM: ${made.status}`);
     });
+    await test("a conversation the team opened, with no message yet, is nobody waiting in Responder agora", async () => {
+      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn" }, auth())).data.token}` } };
+      await http.post("/api/v1/contacts", { name: "So salvei", number: "5531977773333" }, headers);
+      const savedId = Number(sql(`SELECT id FROM Contacts WHERE number='5531977773333'`));
+      const adminUserId = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
+      const opened = await http.post("/tickets", { contactId: savedId, userId: adminUserId, status: "open" }, auth());
+      assert(opened.status === 200, `open conversation ${opened.status} ${JSON.stringify(opened.data).slice(0, 160)}`);
+      assert(sql(`SELECT IFNULL(lastMessageId,'') FROM Tickets WHERE id=${opened.data.id}`) === "", "the new conversation already has a message");
+      const before = (await http.get("/analytics/me", auth())).data;
+      assert(!(before.focus.conversations || []).some(c => c.ticketId === opened.data.id), "a conversation with no message is in Responder agora");
+      // the person answers: now they are waiting
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('rn-in-1', ${opened.data.id}, 'oi', false, false, 'chat', 0, NOW(), NOW())`);
+      sql(`UPDATE Tickets SET lastMessageId='rn-in-1', lastMessageFromMe=false, lastMessageAt=NOW() WHERE id=${opened.data.id}`);
+      const after = (await http.get("/analytics/me", auth())).data;
+      assert((after.focus.conversations || []).some(c => c.ticketId === opened.data.id), "the person answered and is not in Responder agora");
+      await http.put(`/tickets/${opened.data.id}`, { status: "closed" }, auth());
+    });
     await test("Cloud API campaign sends the approved template, not free text", async () => {
       assert((await http.put("/operations/config", { outbound_allow_templates: "true" }, auth())).status === 200, "admin template authorization");
       const list = (await http.post("/contact-lists", { name: "Vestibular" }, auth())).data;

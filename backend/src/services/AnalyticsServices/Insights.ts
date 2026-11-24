@@ -52,7 +52,7 @@ export const insightsFor = async (user: any, now: Date = new Date(), opts: { sel
   });
 
   await safe("pendingReply", async () => {
-    const [r] = await rows(`SELECT COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND t.updatedAt < :hourAgo AND ${VALID_TICKET}`, rep);
+    const [r] = await rows(`SELECT COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND t.updatedAt < :hourAgo AND ${VALID_TICKET}`, rep);
     const n = Number(r?.n || 0);
     if (n) out.push({ key: "pending_reply", tone: n >= 5 ? "danger" : "warn", title: `${plural(n, "conversa espera", "conversas esperam")} resposta há mais de 1 hora`, detail: "A última mensagem é do cliente. Responda antes que ele esfrie.", link: "/tickets" });
   });
