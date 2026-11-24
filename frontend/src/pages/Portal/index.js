@@ -275,12 +275,6 @@ export const PortalActivate = () => {
         <TextField {...field} autoFocus label="Nova senha" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} helperText={password.length > 0 && password.length < 8 ? "Use 8 ou mais caracteres." : ""} />
         <TextField {...field} label="Repita a senha" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)}
           error={again.length > 0 && again !== password} helperText={again.length > 0 && again !== password ? "As senhas não são iguais." : ""} />
-        {staff && (
-          <div role="alert" className={c.help} style={{ borderColor: "#f59e0b", background: "rgba(245,158,11,.10)" }}>
-            <ShieldCheck size={18} style={{ flex: "none", marginTop: 1 }} aria-hidden="true" />
-            <span>Este é um acesso da equipe, não de aluno. Funcionários entram pelo login da equipe. <Link href="/login" underline="always" style={{ fontWeight: 700 }}>Ir para o login da equipe</Link></span>
-          </div>
-        )}
         <Button type="submit" fullWidth variant="contained" className={c.cta} disabled={busy || !ok}>{busy ? <CircularProgress size={22} color="inherit" /> : "Salvar a senha"}</Button>
       </form>
     </AuthShell>
