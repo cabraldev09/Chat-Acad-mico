@@ -8,6 +8,10 @@ export const isManager = (user) => accessLevel(user) !== "user";
 // the retention area: the maintainer (administrator) and the academic coordinator
 export const canOperateRetention = (user) => accessLevel(user) === "admin" || (!!user && user.role === "coordenacao" && user.coordArea === "academica");
 export const isStrictAdmin = (user) => accessLevel(user) === "admin";
+// a QR Code number the management gave to this person (they read its QR Code on their own phone)
+export const isOwnQrNumber = (user, w) => !!user && !!w && w.ownerId === user.id && (w.channel || "whatsapp") === "whatsapp";
+// Conexões: the management, or whoever has a QR Code number of their own to keep connected
+export const canSeeConnections = (user, whatsApps) => isManager(user) || (whatsApps || []).some((w) => isOwnQrNumber(user, w));
 
 export const COORD_AREA_LABEL = { comercial: "Coordenação comercial", academica: "Coordenação acadêmica" };
 export const roleLabel = (u) =>

@@ -319,7 +319,8 @@ r.get("/stats/overview", isAuth, Stats.overview);
 r.get("/channels", isAuth, Channel.index);
 // Instagram login: the app of Meta is set once (managers); anyone signed in connects their own account
 r.get("/channels/instagram/status", isAuth, ChannelOAuth.status);
-r.get("/channels/instagram/authorize", isAuth, ChannelOAuth.authorize);
+// only the management connects an Instagram account (Conexões)
+r.get("/channels/instagram/authorize", isAuth, isManager, ChannelOAuth.authorize);
 r.get("/channels/instagram/app", isAuth, isManager, ChannelOAuth.getApp);
 r.put("/channels/instagram/app", isAuth, isManager, ChannelOAuth.putApp);
 r.get("/channels/:whatsappId/info", isAuth, isManager, Channel.info);

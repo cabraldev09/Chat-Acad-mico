@@ -9,6 +9,24 @@
   - O consultor assina as mensagens com o próprio nome. A opção "Assinar" do campo de mensagem vem ligada.
 - **O WhatsApp corporativo do consultor (QR code)** fica só para quem ainda não migrou. É uma conexão não oficial e corre risco de banimento, principalmente com contatos frios e envios em volume.
 
+## Quem cria e quem vê as conexões
+- **Só a gestão** (`admin` e `coordenacao`) adiciona, edita e apaga conexões, incluindo o Instagram. Consultores e tutores não criam
+  número próprio.
+- **Número QR Code de uma pessoa:** ao criar um WhatsApp por QR Code, a gestão escolhe em **"Responsável pelo número"** o consultor
+  ou tutor. O número vira dele:
+  - as conversas que chegam nele vão para ele;
+  - vira o número de envio dele.
+
+  A gestão pode trocar o responsável ou devolver o número à empresa depois.
+- **Conexões para quem não é da gestão:** o item aparece no menu só para quem tem um número QR Code próprio.
+  - A tela mostra só esse número. A pessoa lê o QR Code com o celular, reconecta, desconecta e escolhe quais grupos viram conversas.
+  - Os números da empresa, o Instagram e os botões de adicionar, editar e apagar não aparecem.
+  - Sem número próprio, o endereço `/connections` leva para Conversas.
+- **No servidor:**
+  - `POST /whatsapp`, `DELETE /whatsapp/:id` e `/channels/instagram/authorize` são só da gestão;
+  - as rotas de sessão (`/whatsappsession/:id`) e `PUT /whatsapp/:id` aceitam a gestão e o dono do número QR (`canManageWhatsapp`);
+  - no `PUT`, o dono só muda os grupos (`groupsMode` e `allowedGroups`).
+
 ## Como a carteira funciona
 - **Dono do cliente**: é o **responsável no CRM**, se ele já conversou com o cliente. Se não, é **quem atendeu por último**.
 - **Quando o cliente escreve de novo** num número compartilhado (sem dono), a conversa vai direto para esse consultor: sem robô, sem fluxo e sem rodízio.

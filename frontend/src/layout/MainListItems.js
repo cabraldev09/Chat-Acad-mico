@@ -20,7 +20,7 @@ import GaugeIcon from "lucide-react/dist/esm/icons/gauge";
 import LineChartIcon from "lucide-react/dist/esm/icons/line-chart";
 import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
 import LayoutDashboardIcon from "lucide-react/dist/esm/icons/layout-dashboard";
-import { canOperateRetention, isManager } from "../utils/access";
+import { canOperateRetention, canSeeConnections, isManager, isOwnQrNumber } from "../utils/access";
 import { useMyTasks } from "../components/TaskAlert";
 import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
 import MonitorCheckIcon from "lucide-react/dist/esm/icons/monitor-check";
@@ -268,7 +268,7 @@ const MainListItems = (props) => {
       if (whatsApps.length > 0) {
         const offlineWhats = whatsApps.filter((whats) => {
           // only the numbers this person can reconnect (all for the management, their own for the others)
-          if (!isManager(user) && whats.ownerId !== user.id) return false;
+          if (!isManager(user) && !isOwnQrNumber(user, whats)) return false;
           return (
             whats.status === "qrcode" ||
             whats.status === "PAIRING" ||
@@ -322,10 +322,11 @@ const MainListItems = (props) => {
           collapsed={collapsed}
         />
       )}
-      {/* administration and coordination find these two in Configurações; everyone else keeps them here */}
+      {/* administration and coordination find these two in Configurações; everyone else keeps them here (Conexões only for the
+          person who has a QR Code number of their own to keep connected) */}
       {!isManager(user) && (
         <>
-          {connectionsLink}
+          {canSeeConnections(user, whatsApps) && connectionsLink}
           <ListItemLink
             to="/quickAnswers"
             primary={i18n.t("mainDrawer.listItems.quickAnswers")}

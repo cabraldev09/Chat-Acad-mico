@@ -15,7 +15,6 @@ import { getAdapter } from "../channels";
 import AppError from "../errors/AppError";
 import User from "../models/User";
 import Whatsapp from "../models/Whatsapp";
-import { getSetting } from "../helpers/AppSettings";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { startOfTodayApp } from "../helpers/AppTime";
 import { QueryTypes } from "sequelize";
@@ -116,21 +115,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     if ((await Whatsapp.count({ where: { channel: "whatsapp" } })) >= cap) throw new AppError("ERR_CONNECTION_CAPACITY", 400);
   }
 
-  if (!isAdminReq(req)) {
-    // anyone else connects only their own QR Code number, up to the limit the administrator set
-    const limit = Number(await getSetting("max_connections_per_user", "1")) || 1;
-    if ((await Whatsapp.count({ where: { ownerId: me(req) } })) >= limit) throw new AppError("ERR_CONNECTION_LIMIT", 400);
-    const user = await User.findByPk(me(req));
-    const first = String(user?.name || "Usuário").split(" ")[0];
-    let candidate = String(name || "").trim().length >= 2 ? String(name).trim() : `WhatsApp de ${first}`;
-    for (let n = 2; await Whatsapp.findOne({ where: { name: candidate } }); n += 1) candidate = `WhatsApp de ${first} ${n}`;
-    name = candidate;
-    channel = "whatsapp";
-    queueIds = [];
-    config = undefined;
-    status = undefined;
+  // only the management reaches this (route); a number given to a person belongs to a real user and is never the default
+  if (ownerId) {
+    if (!(await User.count({ where: { id: ownerId } }))) throw new AppError("ERR_NO_USER_FOUND", 404);
     isDefault = false;
-    ownerId = me(req);
   }
 
   const { whatsapp, oldDefaultWhatsapp } = await CreateWhatsAppService({
@@ -206,11 +194,10 @@ export const update = async (
   res: Response
 ): Promise<Response> => {
   const { whatsappId } = req.params;
-  // the owner may rename their number and choose which of its groups become conversations;
-  // everything else is the administrator's
+  // the owner of a QR Code number chooses which of its groups become conversations; everything else is the management's
   const whatsappData = isAdminReq(req)
     ? req.body
-    : ["name", "groupsMode", "allowedGroups"].reduce(
+    : ["groupsMode", "allowedGroups"].reduce(
         (acc: Record<string, unknown>, key) => {
           if (req.body[key] !== undefined) acc[key] = req.body[key];
           return acc;
@@ -222,6 +209,22 @@ export const update = async (
     whatsappData,
     whatsappId
   });
+
+  // the management gives a QR Code number to a person (or takes it back to the company): it becomes their sending number
+  if (isAdminReq(req) && req.body.ownerId !== undefined && (whatsapp.channel || "whatsapp") === "whatsapp") {
+    const ownerId = Number(req.body.ownerId) > 0 ? Number(req.body.ownerId) : null;
+    if (ownerId && !(await User.count({ where: { id: ownerId } }))) throw new AppError("ERR_NO_USER_FOUND", 404);
+    if (ownerId !== (whatsapp.ownerId || null)) {
+      await whatsapp.update({ ownerId, ...(ownerId ? { team: null, isDefault: false } : {}) } as any);
+      if (ownerId) {
+        const owner = await User.findByPk(ownerId);
+        if (owner) {
+          const current = owner.whatsappId ? await Whatsapp.findByPk(owner.whatsappId, { attributes: ["id", "ownerId"] }) : null;
+          if (!current || current.ownerId !== ownerId) await owner.update({ whatsappId: whatsapp.id });
+        }
+      }
+    }
+  }
 
   // API based channels pick up new credentials by restarting
   if (whatsapp.channel !== "whatsapp" && whatsappData.config !== undefined) {
