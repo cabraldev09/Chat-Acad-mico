@@ -12,17 +12,17 @@ const useStyles = makeStyles((theme) => ({
   on: { background: theme.palette.cards.background, color: theme.palette.text.primary, boxShadow: "0 1px 4px rgba(11,66,121,.16)" },
 }));
 
-// the two goal screens are one place: by polo (everyone) and by consultant (administration and coordination)
+// the goal screens are one place: by polo and by consultant (everyone reads them); the list of enrollments is for the management
 const GoalsTabs = ({ current }) => {
   const classes = useStyles();
   const history = useHistory();
   const { user } = useContext(AuthContext);
-  if (!isManager(user)) return null;
+  const manager = isManager(user);
   return (
     <div className={classes.wrap} role="tablist">
       <button type="button" role="tab" aria-selected={current === "polo"} className={`${classes.tab} ${current === "polo" ? classes.on : ""}`} onClick={() => history.push("/crm/metas-polos")}><MapPin size={15} /> Por polo</button>
       <button type="button" role="tab" aria-selected={current === "team"} className={`${classes.tab} ${current === "team" ? classes.on : ""}`} onClick={() => history.push("/crm/metas")}><Users size={15} /> Por consultor</button>
-      <button type="button" role="tab" aria-selected={current === "enrollments"} className={`${classes.tab} ${current === "enrollments" ? classes.on : ""}`} onClick={() => history.push("/crm/matriculas")}><ListChecks size={15} /> Matrículas realizadas</button>
+      {manager && <button type="button" role="tab" aria-selected={current === "enrollments"} className={`${classes.tab} ${current === "enrollments" ? classes.on : ""}`} onClick={() => history.push("/crm/matriculas")}><ListChecks size={15} /> Matrículas realizadas</button>}
     </div>
   );
 };

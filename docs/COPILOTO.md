@@ -36,3 +36,16 @@ Para desligar apenas o consumo de IA, desative as sugestões. O roteiro e seus t
 - Configurações → Copiloto → **Uso pela equipe**: sugestões, resumos, taxa de "enviada como veio" e de "editada", e os 👍/👎 por consultor (`GET /copilot/usage`).
 - O custo aparece em Agentes de IA, nas chamadas do tipo `copilot`. Essas chamadas não contam como "conversas atendidas" pelo agente.
 
+## A sugestão acompanha a conversa
+
+`GET /tickets/:id/copilot` devolve, além da etapa e do texto, o contexto (`context`: quem falou por último, a última mensagem do lead, há
+quantos minutos) e o tipo da sugestão (`suggestion.kind`):
+
+- `next`: a etapa ainda não foi dita; o texto é a mensagem da etapa.
+- `waiting`: a etapa já foi enviada e o lead não respondeu. A tela mostra "Aguardando o lead" e um lembrete curto para quando ele demorar,
+  nunca a mesma mensagem de novo. O botão de um clique na barra some.
+- `reply`: o lead respondeu outra coisa (uma pergunta). A tela mostra a última mensagem dele, pede para responder primeiro (com "Sugerir
+  resposta") e traz o texto para retomar a etapa.
+
+O "Caso não tenha" só aparece quando a pergunta das dúvidas foi a última coisa enviada.
+

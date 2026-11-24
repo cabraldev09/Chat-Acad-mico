@@ -220,6 +220,10 @@ button.pk-count:hover .go { color: var(--c-brand); }
   background:
     radial-gradient(90% 150% at -6% 55%, #6cc0ff 0%, #3b8cff 22%, #2457e6 42%, rgba(25, 58, 160, 0.55) 60%, rgba(11, 30, 66, 0) 80%),
     linear-gradient(100deg, #1b3fae 0%, #0c2147 62%, #0a1a38 100%);
+  /* the gradient is measured from the border and painted once: under a translucent border it would repeat, and its dark end would
+     show as a strip along the opposite edge and the corners */
+  background-origin: border-box;
+  background-repeat: no-repeat;
   box-shadow: 0 1px 2px rgba(11, 30, 66, 0.2), 0 14px 26px -16px rgba(20, 60, 160, 0.65);
 }
 .pk-stat .pk-value, .pk-count .n, .pk[data-tone="bad"].pk-stat .pk-value, .pk[data-tone="warn"].pk-stat .pk-value, .pk[data-tone="bad"].pk-count .n, .pk[data-tone="warn"].pk-count .n { color: #fff; }
@@ -350,22 +354,25 @@ button.gv-frow:hover .gv-fbar { background: color-mix(in srgb, var(--c-brand) 86
 .gv-head .gv-dates input { border-color: rgba(255, 255, 255, 0.3); }
 
 /* ---- the funnel drawn as a funnel: every stage a slice that narrows into the next one ---- */
-.gv-fun { display: grid; gap: 3px; flex: 1; align-content: start; }
-.gv-fun-row { display: grid; grid-template-columns: minmax(96px, 26%) minmax(0, 1fr) 84px; align-items: center; gap: 10px; border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; width: 100%; border-radius: 6px; }
+.gv-fun { display: grid; gap: 2px; flex: 1; align-content: start; padding: 4px 0; }
+.gv-fun-row { display: grid; grid-template-columns: minmax(110px, 24%) minmax(0, 1fr) 56px; align-items: stretch; gap: 14px; border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; width: 100%; border-radius: 8px; transition: opacity .2s ease; }
 button.gv-fun-row { cursor: pointer; }
-.gv-fun-name { font-size: 13px; color: var(--text-1); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gv-fun[data-hover] .gv-fun-row:not([data-on]) { opacity: 0.45; }
+.gv-fun-name { align-self: center; font-size: 13px; color: var(--text-1); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gv-fun-row[data-empty="1"] .gv-fun-name { color: var(--text-2); font-weight: 450; }
-.gv-fun-shape { position: relative; display: block; height: 32px; min-width: 0; }
-.gv-fun-slice { position: absolute; inset: 0; background: color-mix(in srgb, var(--c-brand) calc(100% - var(--k) * 62%), #9cc8f5); transition: clip-path .5s cubic-bezier(.2,.8,.2,1), filter .15s ease; }
-.gv-fun-row[data-empty="1"] .gv-fun-slice { opacity: 0.45; }
-button.gv-fun-row:hover .gv-fun-slice { filter: brightness(1.12); }
-.gv-fun-in { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
-.gv-fun-val { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.gv-fun-val b { font-size: 13.5px; font-weight: 700; color: var(--text-1); }
+.gv-fun-shape { position: relative; display: block; min-height: 38px; min-width: 0; }
+.gv-fun-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; transform-origin: center top; animation: gv-fun-in .55s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i) * 45ms); }
+.gv-fun-layer { fill: var(--c-brand); transition: transform .3s cubic-bezier(.2,.8,.2,1); transform-origin: center; transform-box: fill-box; }
+.gv-fun-row[data-on] .gv-fun-layer:nth-child(1) { transform: scaleX(1.12); }
+.gv-fun-row[data-on] .gv-fun-layer:nth-child(2) { transform: scaleX(1.06); }
+.gv-fun-pill { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 2px 9px; border-radius: 999px; background: var(--surface, #fff); color: var(--text-1); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 1px 4px rgba(11, 26, 46, .18); pointer-events: none; white-space: nowrap; }
+.gv-fun-val { align-self: center; display: flex; justify-content: flex-end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gv-fun-val b { font-size: 15px; font-weight: 700; color: var(--text-1); }
 .gv-fun-row[data-empty="1"] .gv-fun-val b { color: var(--text-3); font-weight: 600; }
-.gv-fun-val span { font-size: 12px; color: var(--text-2); min-width: 36px; text-align: right; }
-:root[data-theme="dark"] .gv-fun-in { color: #0b1a2e; }
-@media (prefers-reduced-motion: reduce) { .gv-fun-slice { transition: none; } }
+@keyframes gv-fun-in { from { transform: scaleX(0.2); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
+:root[data-theme="dark"] .gv-fun-layer { fill: #6aa8ec; }
+:root[data-theme="dark"] .gv-fun-pill { background: #0f1b2b; color: #e8eef7; box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+@media (prefers-reduced-motion: reduce) { .gv-fun-svg { animation: none; } .gv-fun-layer { transition: none; } }
 
 /* ---- shares: one bar with every part and a line for each ---- */
 .gv-sharelist { display: grid; gap: 12px; min-width: 0; }
@@ -401,7 +408,7 @@ button.gv-prio-row:hover { border-color: var(--tone); background: color-mix(in s
 .gv-prio-txt span { font-size: 12.5px; color: var(--text-2); line-height: 1.4; }
 .gv-prio-go { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: 12.5px; font-weight: 650; color: var(--c-brand); white-space: nowrap; }
 :root[data-theme="dark"] .gv-prio li { --tone-ink: var(--tone); }
-@media (max-width: 520px) { .gv-prio-row { flex-wrap: wrap; } .gv-prio-txt { flex-basis: calc(100% - 56px); } .gv-prio-go { margin-left: 52px; } .gv-fun-row { grid-template-columns: minmax(88px, 32%) minmax(0, 1fr) 70px; gap: 6px; } .gv-fun-name { white-space: normal; font-size: 12.5px; line-height: 1.2; } }
+@media (max-width: 520px) { .gv-prio-row { flex-wrap: wrap; } .gv-prio-txt { flex-basis: calc(100% - 56px); } .gv-prio-go { margin-left: 52px; } .gv-fun-row { grid-template-columns: minmax(84px, 34%) minmax(0, 1fr) 34px; gap: 8px; } .gv-fun-name { white-space: normal; font-size: 12.5px; line-height: 1.2; } }
 
 .gv-av { flex: none; border-radius: 50%; display: inline-grid; place-items: center; font-weight: 700; letter-spacing: 0.01em; }
 .gv-rowlist { display: grid; }
@@ -456,6 +463,7 @@ button.gv-multi-row:hover .gv-multi-col i { background: color-mix(in srgb, var(-
    name of every polo on a navy band ---- */
 .pp-hero { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 20px 24px; border-radius: 16px; color: #fff; --text-1: #fff; --text-2: rgba(255, 255, 255, 0.8); --track: rgba(255, 255, 255, 0.2);
   background: radial-gradient(90% 150% at -6% 55%, #6cc0ff 0%, #3b8cff 22%, #2457e6 42%, rgba(25, 58, 160, 0.55) 60%, rgba(11, 30, 66, 0) 80%), linear-gradient(100deg, #1b3fae 0%, #0c2147 62%, #0a1a38 100%);
+  background-origin: border-box; background-repeat: no-repeat;
   border: 1px solid rgba(255, 255, 255, 0.14); box-shadow: 0 14px 26px -16px rgba(20, 60, 160, 0.65); }
 .pp-hero-num { font-size: 40px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
 .pp-hero-num small { font-size: 20px; font-weight: 600; opacity: 0.72; }
@@ -471,3 +479,36 @@ button.gv-multi-row:hover .gv-multi-col i { background: color-mix(in srgb, var(-
 .pp-body { display: flex; align-items: center; gap: 14px; padding: 13px 14px 14px; flex: 1; }
 .pp-num { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--c-brand); }
 .pp-num small { font-size: 13px; font-weight: 500; color: var(--text-2); }
+
+/* ---- lines that open something, and short lists of notes ---- */
+.gv-item-btn { width: 100%; border-left: 0; border-right: 0; border-bottom: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; flex-wrap: nowrap; border-radius: 0; transition: background-color .15s ease; }
+.gv-rowlist > .gv-item-btn { padding-left: 6px; padding-right: 6px; }
+.gv-item-btn:hover { background: var(--surface-2); }
+.gv-item-btn:focus-visible { outline: 2px solid var(--c-leads); outline-offset: -2px; }
+.gv-item-btn .gv-item-main { min-width: 0; }
+.gv-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gv-notes { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13.5px; line-height: 1.5; }
+.gv-funnel-card > .pp-hero { height: 100%; }
+.gv-plain .pk-stat .pk-chip, .gv-plain .pk-count .pk-chip { background: var(--surface-3); color: var(--text-2); }
+.gv-plain .pk-stat .pk-chip[data-good="1"] { background: rgba(21, 128, 61, 0.12); color: #15803d; }
+.gv-plain .pk-stat .pk-chip[data-good="0"] { background: rgba(220, 38, 38, 0.1); color: #b91c1c; }
+.gv-plain .pk-stat .pk-spark path { stroke: var(--c-brand); }
+.gv-plain .pk-stat .pk-spark circle { fill: var(--c-brand); }
+
+/* ---- the period on a phone: the five choices share the width and the two dates sit side by side under them, each as wide as
+   the other (a date field keeps a wide natural size on phones and pushed the second one out of the band) ---- */
+.gv-dates input { min-width: 0; -webkit-appearance: none; appearance: none; text-align: left; color-scheme: light; }
+.gv-dates input::-webkit-date-and-time-value { text-align: left; }
+@media (max-width: 620px) {
+  .gv-head { padding: 14px 16px; }
+  .gv-head-side, .gv-head > .gv-range { width: 100%; }
+  .gv-range { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 100%; }
+  .gv-seg { display: flex; width: 100%; overflow: visible; }
+  .gv-seg button { flex: 1 1 0; min-width: 0; padding: 0 4px; min-height: 40px; font-size: 13px; }
+  .gv-dates { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; width: 100%; }
+  .gv-dates input { width: 100%; min-height: 44px; font-size: 16px; padding: 0 8px; }
+}
+@media (max-width: 380px) { .gv-seg { padding: 2px; gap: 0; } .gv-seg button { font-size: 12px; padding: 0 1px; letter-spacing: -0.01em; } }
+/* the chosen period keeps its ink while the pointer (or the finger, where "hover" sticks after a tap) is still on it */
+.gv-seg button[aria-pressed="true"]:hover:not(:disabled) { color: var(--c-brand); }
+.gv-head .gv-seg button[aria-pressed="true"], .gv-head .gv-seg button[aria-pressed="true"]:hover:not(:disabled) { background: #fff; color: #0b4279; }

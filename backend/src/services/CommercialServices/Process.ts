@@ -1,4 +1,5 @@
 import { institutionName } from "../../helpers/Institution";
+import { fmtTime } from "../../helpers/AppTime";
 import { Op } from "sequelize";
 import CopilotProgress from "../../models/CopilotProgress";
 import { configOf } from "../CopilotServices/Settings";
@@ -40,7 +41,11 @@ export interface Copilot {
   // what the MEC asks of the course of the lead (the consultant says the same as the agent): "EAD: sem aulas práticas presenciais", "Semipresencial: 40% de prática presencial"
   course: { name: string; formato: string; resumo: string; percentualPresencial: number | null; semPratica: boolean; fonte: string } | null;
   // the next message, ready to use (what the team says at this step), and what the screen can do for it
-  suggestion: { text: string; action: "send_grade" | "proposal" | "enroll" | null; gradeId?: number | null } | null;
+  // "next": the step was not said yet; "waiting": it was already sent and the lead did not answer (the text is a short reminder, not the same
+  // message again); "reply": the lead answered with something else (a question), so the consultant answers it and takes the step up again
+  suggestion: { text: string; action: "send_grade" | "proposal" | "enroll" | null; gradeId?: number | null; kind: "next" | "waiting" | "reply"; note: string | null } | null;
+  // where the conversation is right now: who spoke last, what the lead said, how long ago
+  context: { lastFrom: "lead" | "team" | null; lastLeadText: string | null; leadAsked: boolean; minutesSince: number | null; askedCurrentAt: string | null };
 }
 
 export const STEP_LABEL: Record<StepKey, string> = {
@@ -64,7 +69,11 @@ export const STEP_LABEL: Record<StepKey, string> = {
 const plain = (s: string): string => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 // what the conversation says, in order: the lead's words fill what is missing; what the consultant sent marks what was already done
-export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: string | null): Promise<{ slots: Slots; asked: Set<StepKey>; got: Set<StepKey>; proposalSent: boolean }> => {
+export interface ConversationNow { lastFrom: "lead" | "team" | null; lastAt: Date | null; lastLeadText: string | null; lastTeamText: string | null; askedAt: Partial<Record<StepKey, Date>>; leadAfter: Partial<Record<StepKey, boolean>> }
+export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: string | null): Promise<{ slots: Slots; asked: Set<StepKey>; got: Set<StepKey>; proposalSent: boolean; now: ConversationNow }> => {
+  const now: ConversationNow = { lastFrom: null, lastAt: null, lastLeadText: null, lastTeamText: null, askedAt: {}, leadAfter: {} };
+  // the question of a step was sent (now): the answer of the lead is awaited from this moment
+  const sent = (k: StepKey, at: Date) => { now.askedAt[k] = at; now.leadAfter[k] = false; };
   const out: Slots = { ...slots };
   const asked = new Set<StepKey>();
   // what the lead already gave (the documents and data of the form, the proof of payment, the objective)
@@ -74,9 +83,20 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
   let lastMine = "";
   for (const m of rows.reverse()) {
     const text = String(m.body || "").replace(/^[‎‏]+/, "");
+    const at = new Date(m.createdAt as any);
+    if (text.trim() || m.mediaType) { now.lastFrom = m.fromMe ? "team" : "lead"; now.lastAt = at; }
     if (m.fromMe) {
       lastMine = text;
       const t = plain(text);
+      if (text.trim()) now.lastTeamText = text;
+      if (/primeira graduacao|ja tem alguma faculdade/.test(t)) sent("entry", at);
+      if (/qual curso|o que voce esta procurando/.test(t)) sent("course", at);
+      if (/reside em qual cidade|qual (e )?a sua cidade|mora em qual cidade/.test(t)) sent("city", at);
+      if (/ate aqui voce (compreendeu|conseguiu compreender)|ficou claro como funciona/.test(t)) sent("format", at);
+      if (/alguma duvida|tem algo que eu posso/.test(t)) sent("doubts", at);
+      if (/nome completo e (o )?cpf|falta so o seu (cpf|nome completo)/.test(t)) sent("bolsa", at);
+      if (/ficha de matricula|nome completo da mae/.test(t)) sent("ficha", at);
+      if (/\b(pix|boleto)\b/.test(t) && /taxa|matricula|copia e cola/.test(t)) sent("taxa", at);
       if (/ate aqui voce compreendeu/.test(t)) { out.modalityExplained = true; out.courseExplained = true; }
       if (/matriz curricular|grade do curso|grade curricular/.test(t) || (m.mediaType === "document" && /(?:matriz|grade)[^\n]*\.pdf/.test(t))) out.gradeSent = true;
       if (/alguma duvida|tem algo que eu posso/.test(t)) asked.add("doubts");
@@ -91,6 +111,8 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
       if (/afiliad|programa de indicac|indicar (um|uma|alguem)/.test(t)) asked.add("afiliado");
       continue;
     }
+    if (text.trim() && !/^\[/.test(text)) now.lastLeadText = text;
+    (Object.keys(now.askedAt) as StepKey[]).forEach(k => { now.leadAfter[k] = true; });
     // what the lead sends after those steps: documents and photos count (the file is not read here)
     const lead = plain(text);
     const hasFile = m.mediaType === "image" || m.mediaType === "document" || /\.(pdf|jpe?g|png)\b/.test(lead);
@@ -114,7 +136,7 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
     if (asked.has("doubts") && /\b(nao tenho (mais )?(nenhuma )?duvida|sem duvidas?|pode (prosseguir|continuar|seguir))\b/.test(plain(text))) out.doubtsOver = true;
   }
   if (leadCpf) out.cpfGiven = true;
-  return { slots: out, asked, got, proposalSent };
+  return { slots: out, asked, got, proposalSent, now };
 };
 
 const first = (name: string | null | undefined): string => String(name || "").trim().split(/\s+/)[0] || "";
@@ -144,7 +166,7 @@ const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text
       // "Enviar" sends this line and the grade of the course right after it; the tutoring comes in the next step, on its own
       return { text: "Vou te enviar a *grade do curso* para você visualizar melhor as disciplinas e a estrutura da formação.", action: "send_grade" };
     case "doubts": return { text: `${TUTORING_PITCH}\n\n${DOUBTS_QUESTION}`, action: null };
-    case "bolsa": return { text: `Caso não tenha, ${bolsaRequestFor({ name: !s.fullName, cpf: !s.cpfGiven }).replace(/^./, c => c.toLowerCase())}`, action: null };
+    case "bolsa": return { text: bolsaRequestFor({ name: !s.fullName, cpf: !s.cpfGiven }), action: null };
     case "proposal": {
       const name = first(s.fullName || leadName);
       return { text: `${name ? `${name}, c` : "C"}onforme combinamos, estou te encaminhando a proposta da sua bolsa${s.courseName ? ` para o curso de *${s.courseName}*` : ""}.`, action: "proposal" };
@@ -175,11 +197,37 @@ const courseRuleOf = async (s: Slots): Promise<Copilot["course"]> => {
   }
 };
 
+const clip = (t: string, n: number): string => (t.length > n ? `${t.slice(0, n - 1).trim()}…` : t);
+const hourOf = (d: Date): string => fmtTime(d);
+const looksLikeQuestion = (text: string): boolean => /\?/.test(text) || /^\s*(como|quando|quanto|qual|quais|onde|por ?que|tem|posso|da pra|da para|e se|sera que)\b/.test(plain(text));
+// how each step is named inside a sentence ("Você já pediu … às 16:09")
+const STEP_SHORT: Partial<Record<StepKey, string>> = {
+  entry: "a forma de ingresso", course: "o curso de interesse", city: "a cidade", format: "a confirmação de que o formato ficou claro", doubts: "as dúvidas",
+  bolsa: "o nome completo e o CPF", ficha: "a ficha de matrícula e os documentos", taxa: "o pagamento da taxa de matrícula"
+};
+// a reminder for a question already sent (short, different from the first message, one question)
+const reminderFor = (key: StepKey, s: Slots, name: string): string => {
+  const hi = name ? `${name}, ` : "";
+  switch (key) {
+    case "bolsa": return `${hi}conseguiu ver a minha mensagem? ${bolsaRequestFor({ name: !s.fullName, cpf: !s.cpfGiven })}`;
+    case "format": return `${hi}ficou alguma dúvida sobre o formato do curso? Posso explicar de novo o ponto que não ficou claro.`;
+    case "doubts": return `${hi}ficou alguma dúvida sobre o curso? Se estiver tudo certo, seguimos para a simulação da bolsa.`;
+    case "ficha": return `${hi}conseguiu separar os documentos e preencher a ficha de matrícula? Se precisar de ajuda em algum campo, me avisa.`;
+    case "taxa": return `${hi}conseguiu fazer o pagamento da taxa de matrícula? Quando puder, me envia o comprovante, por gentileza.`;
+    case "entry": return `${hi}só para eu te orientar certo: essa seria a sua primeira graduação ou você já tem alguma faculdade?`;
+    case "city": return `${hi}em qual cidade você mora? Assim vejo o polo mais perto de você.`;
+    default: return `${hi}conseguiu ver a minha última mensagem?`;
+  }
+};
+// the step taken up again after the lead said something else (never "caso não tenha" out of place)
+const retakeFor = (key: StepKey, s: Slots, standard: string): string =>
+  key === "bolsa" ? bolsaRequestFor({ name: !s.fullName, cpf: !s.cpfGiven }) : standard;
+
 export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise<Copilot> => {
   const settings = config || await configOf();
   const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name", "cpf", "enrolledAt", "courseId", "poloId", "city", "state", "email", "phone", "entryTerm", "admissionType"] }) : null;
   const state = lead ? await hydrate(await loadState(lead.id), lead) : { slots: {} as Slots };
-  const { slots, asked, got, proposalSent } = await readConversation(ticket, state.slots, lead?.cpf || null);
+  const { slots, asked, got, proposalSent, now } = await readConversation(ticket, state.slots, lead?.cpf || null);
   const progress = await CopilotProgress.findByPk(ticket.id);
   const overrides = progress?.overrides || {};
   const proposals = lead ? await Proposal.count({ where: { leadId: lead.id, sentAt: { [Op.ne]: null } } as any }) : 0;
@@ -207,7 +255,26 @@ export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise
   const current = (steps.find(x => !x.done && !x.optional) || steps.find(x => !x.done))?.key || null;
   const configured = settings.steps.find(s => s.key === current);
   const next = current ? (configured?.message ? { text: configured.message, action: null } : await textFor(current as StepKey, slots, lead?.name || "")) : null;
-  return { hasLead: !!lead, leadId: lead?.id || null, steps, current, processVersion: settings.version, course: await courseRuleOf(slots), suggestion: next ? { text: next.text, action: next.action, ...(next.action === "send_grade" ? { gradeId: await gradeIdOf(slots) } : {}) } : null };
+  const minutesSince = now.lastAt ? Math.max(0, Math.round((Date.now() - now.lastAt.getTime()) / 60000)) : null;
+  const leadAsked = now.lastFrom === "lead" && !!now.lastLeadText && looksLikeQuestion(now.lastLeadText);
+  const askedAt = current ? now.askedAt[current as StepKey] || null : null;
+  const context: Copilot["context"] = { lastFrom: now.lastFrom, lastLeadText: now.lastLeadText ? clip(now.lastLeadText, 180) : null, leadAsked, minutesSince, askedCurrentAt: askedAt ? askedAt.toISOString() : null };
+  let suggestion: Copilot["suggestion"] = next ? { text: next.text, action: next.action, kind: "next", note: null, ...(next.action === "send_grade" ? { gradeId: await gradeIdOf(slots) } : {}) } : null;
+  if (suggestion && current && askedAt) {
+    const label = STEP_SHORT[current as StepKey] || "esta etapa";
+    if (!now.leadAfter[current as StepKey]) {
+      // already said and nothing came back: never the same message again; a short reminder for when the lead takes long
+      suggestion = { text: reminderFor(current as StepKey, slots, first(slots.fullName || lead?.name || "")), action: null, kind: "waiting", note: `Você já pediu ${label} às ${hourOf(askedAt)}. Aguarde a resposta do lead; se ele demorar, use o lembrete abaixo.` };
+    } else if (now.lastFrom === "lead") {
+      // the lead answered, but not what the step needs: the consultant answers what was said and takes the step up again
+      suggestion = { ...suggestion, text: retakeFor(current as StepKey, slots, next!.text), kind: "reply", note: leadAsked ? `O lead respondeu com uma pergunta. Responda primeiro (use Sugerir resposta) e depois retome ${label}.` : `O lead respondeu, mas ainda falta ${label}. Reconheça o que ele disse e retome.` };
+    }
+  } else if (suggestion && leadAsked && current !== "doubts") {
+    suggestion = { ...suggestion, kind: "reply", note: "O lead fez uma pergunta. Responda primeiro (use Sugerir resposta) e depois siga com a mensagem abaixo." };
+  }
+  // the doubts were just asked and the lead said nothing against: the data for the scholarship follows "caso não tenha"
+  if (suggestion && suggestion.kind === "next" && current === "bolsa" && now.lastFrom === "team" && now.askedAt.doubts && !now.leadAfter.doubts) suggestion = { ...suggestion, text: `Caso não tenha dúvidas, ${suggestion.text.replace(/^./, c => c.toLowerCase())}` };
+  return { hasLead: !!lead, leadId: lead?.id || null, steps, current, processVersion: settings.version, course: await courseRuleOf(slots), suggestion, context };
 };
 
 // the grade the "Enviar" of the grade step sends (the same choice the agent makes), null when the course has none

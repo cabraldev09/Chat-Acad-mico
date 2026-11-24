@@ -39,6 +39,6 @@ export const bolsaDataFrom = (text: string): BolsaData => {
 // asked to give the data: how many times the system may ask before it goes on without them
 export const BOLSA_ASKS = 2;
 
-export const BOLSA_REQUEST = "Pode me informar o seu nome completo e CPF para eu simular as bolsas disponíveis, por gentileza?";
+export const BOLSA_REQUEST = "Para o consultor do seu polo simular as bolsas disponíveis para você, pode me informar o seu nome completo e CPF, por gentileza?";
 export const bolsaRequestFor = (missing: { name: boolean; cpf: boolean }, custom?: string): string =>
-  missing.name && missing.cpf ? (custom && custom.trim()) || BOLSA_REQUEST : missing.cpf ? "Falta só o seu CPF para eu simular as bolsas disponíveis. Pode me informar, por gentileza?" : "Falta só o seu nome completo para eu simular as bolsas disponíveis. Pode me informar, por gentileza?";
+  missing.name && missing.cpf ? (custom && custom.trim()) || BOLSA_REQUEST : missing.cpf ? "Falta só o seu CPF para o consultor simular as bolsas disponíveis. Pode me informar, por gentileza?" : "Falta só o seu nome completo para o consultor simular as bolsas disponíveis. Pode me informar, por gentileza?";

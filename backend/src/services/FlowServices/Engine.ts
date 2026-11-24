@@ -269,7 +269,8 @@ const stageStep = async (graph: Graph, node: FlowNode, state: RunState, fx: Effe
   }
   state.nodeId = null;
   if (exit === "done") return { status: "done", state, path: [node.id] };
-  // an exit that leads nowhere: the team takes the conversation (and knows why)
+  // an exit that leads nowhere: the team takes the conversation (and knows why). The person is always told (a limit of turns says nothing by itself).
+  if (!turn.text) await fx.say("Vou chamar um consultor para continuar com você. Um momento, por favor.");
   await fx.humanHandoff(node, exit, state.vars);
   return { status: "handoff", state, path: [node.id] };
 };

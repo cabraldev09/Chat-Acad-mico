@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { format, parseISO } from "date-fns";
-import { AlertTriangle, CalendarCheck2, Clock3, Lightbulb, MessageCircle, Phone, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 
-import { BlockTitle, PeriodPicker, fmt, minutesText, num, periodParams, useAnalytics, useKit } from "../../components/analytics/kit";
-import { ACCENT, CountStat, GlowFunnel, GlowPanel, GlowRing, GlowStat, PeakChart, PeakRow, SectionTitle, TodoList, dayLabel } from "../../components/peak";
-import PoloProgress from "../../components/analytics/PoloProgress";
+import { PeriodPicker, fmt, minutesText, num, periodParams, useAnalytics, useKit } from "../../components/analytics/kit";
+import { BoardHead, CompareStat, CountStat, EmptyNote, Funnel, GlowPanel, GlowStat, Person, PriorityList, SectionTitle } from "../../components/peak";
+import { PaceRing } from "../../components/analytics/PoloProgress";
 import "../../styles/dash.css";
 
 // Meu desempenho: the consultant's own place. Only their numbers (the server reads who is logged in, never a choice of the screen):
@@ -21,7 +21,12 @@ const change = (now, before, points) => {
   if (!before) return null;
   return Math.round(((now - before) / before) * 100);
 };
-const against = (d) => (d === null ? "Sem período anterior para comparar" : d === 0 ? "Igual ao período anterior" : `${d > 0 ? "+" : ""}${d}% contra o período anterior`);
+const SERIES = [
+  { key: "enrollments", title: "Matrículas", unit: "matrículas" },
+  { key: "attendances", title: "Conversas atendidas", unit: "conversas" },
+  { key: "peopleContacted", title: "Pessoas contatadas", unit: "pessoas" },
+  { key: "messagesSent", title: "Mensagens enviadas", unit: "mensagens" },
+];
 
 const RESULTS = [
   ["leadsWorked", "Leads trabalhados"],
@@ -37,7 +42,6 @@ const Section = ({ title, hint, children, action }) => (
   </section>
 );
 
-const ordinal = (n) => `${num(n)}º`;
 
 const MyPerformance = () => {
   const c = useKit();
@@ -47,22 +51,26 @@ const MyPerformance = () => {
   const ready = period.range !== "custom" || (period.from && period.to);
   const { data, loading, error, reload } = useAnalytics("/analytics/me/overview", params, !!ready);
   const go = (link) => history.push(link);
+  const head = (
+    <div style={{ marginBottom: 20 }}>
+      <BoardHead title="Meu desempenho" sub="Os seus resultados, a sua meta, o que fazer agora e os seus leads. Só você vê estes números.">
+        <PeriodPicker value={period} onChange={setPeriod} />
+      </BoardHead>
+    </div>
+  );
 
   if (!data) {
     return (
-      <div className={c.page}>
-        <div className={c.head}>
-          <h1 className={c.h1}>Meu desempenho</h1>
-          <PeriodPicker value={period} onChange={setPeriod} />
-        </div>
+      <div className={`${c.page} dash-scope gv-plain`}>
+        {head}
         {!ready ? (
-          <div className={c.panel}>Escolha as duas datas do período.</div>
+          <EmptyNote>Escolha as duas datas do período.</EmptyNote>
         ) : loading && !error ? (
-          <PeakRow label="Carregando os seus resultados">
-            {[0, 1, 2].map((i) => <div key={i} className="pk pk-skel" style={{ aspectRatio: "540 / 696", borderRadius: 30, width: "100%", maxWidth: 340, justifySelf: "center" }} aria-hidden="true" />)}
-          </PeakRow>
+          <div className="gv-board" aria-busy="true" aria-label="Carregando os seus resultados">
+            {SERIES.slice(0, 3).map((k) => <CompareStat key={k.key} id={k.key} title={k.title} loading now={0} before={null} />)}
+          </div>
         ) : (
-          <div className={c.panel} role="alert" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="gv-card" role="alert" style={{ flexDirection: "row", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <AlertTriangle size={16} color="#b45309" /><span style={{ flex: 1, minWidth: 0 }}>Não foi possível carregar o seu desempenho agora.</span>
             <button type="button" className={c.btn} onClick={reload}><RefreshCw size={13} style={{ verticalAlign: -2 }} /> Tentar de novo</button>
           </div>
@@ -72,131 +80,101 @@ const MyPerformance = () => {
   }
 
   const r = data.results || { now: {}, before: null };
-  const before = r.before || {};
+  const before = r.before || null;
   const targets = data.targets || {};
   const leads = data.leads || { stages: [], open: 0, waiting: 0, stale: 0 };
   const todo = data.insights || [];
   const coaching = data.coaching;
-  const team = data.team || {};
   const series = data.series || [];
-  const labels = series.map((d) => dayLabel(d.day));
   const badge = period.cycle ? "Ciclo" : PERIOD_LABEL[period.range] || "Período";
   // what was done today is the last day of the series, when the period reaches today
   const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
   const today = series.find((d) => d.day === todayKey);
   const goals = data.goals || [];
   const main = goals[0];
-  const peaks = [
-    { key: "enrollments", title: "Matrículas", accent: ACCENT.good },
-    { key: "attendances", title: "Conversas atendidas", accent: ACCENT.brand },
-    { key: "peopleContacted", title: "Pessoas contatadas", accent: ACCENT.violet },
-  ];
-  const compare = [
-    ["Conversão", r.now.conversion, team.conversion, "percent", false],
-    ["Tempo do 1º contato", r.now.firstContactMinutes, team.firstContact === null || team.firstContact === undefined ? null : Math.round(team.firstContact), "minutes", true],
-  ];
+  // the funnel by who is in a stage or beyond it; the number written is who is in the stage today
+  const stages = leads.stages || [];
+  const funnel = stages.map((s, i) => ({ key: s.id ?? s.name, name: s.name, value: Number(s.n) || 0, reach: stages.slice(i).reduce((a, x) => a + (Number(x.n) || 0), 0) }));
+  const dayGoal = (done, target) => (target > 0 ? `${num(done)} de ${num(target)} da meta do dia` : undefined);
+  const waitingReply = data.focus.conversations || [];
+  const dueToday = [...(data.focus.tasks || []).map((k) => ({ key: `t${k.id}`, title: k.title, sub: k.leadName, right: k.overdue ? "atrasada" : when(k.dueAt).slice(-5), bad: k.overdue, link: k.link })),
+    ...(data.focus.followUps || []).map((l) => ({ key: `f${l.leadId}`, title: l.name, sub: "Retorno marcado", right: when(l.at), link: l.link }))];
 
   return (
-    <div className={`${c.page} dash-scope`} style={{ opacity: loading ? 0.75 : 1, transition: "opacity .2s ease" }}>
-      <div className={c.head}>
-        <div style={{ minWidth: 0 }}>
-          <h1 className={c.h1}>Meu desempenho</h1>
-          <div className={c.lead}>Os seus resultados, a sua meta, o que fazer agora e os seus leads. Só você vê estes números.</div>
-        </div>
-        <PeriodPicker value={period} onChange={setPeriod} />
-      </div>
+    <div className={`${c.page} dash-scope gv-plain`} style={{ opacity: loading ? 0.75 : 1, transition: "opacity .2s ease" }}>
+      {head}
 
-      {/* 1. the results of the period, each with its line over the days */}
-      <PeakRow label="Meus resultados no período">
-        {peaks.map((p) => {
-          const d = change(r.now[p.key], before[p.key]);
-          return <PeakChart key={p.key} title={p.title} value={Number(r.now[p.key]) || 0} data={series.map((x) => x[p.key])} labels={labels} accent={p.accent} badge={badge}
-            trend={d === null || d === 0 ? "none" : d > 0 ? "up" : "down"} caption={against(d)} />;
-        })}
-      </PeakRow>
-
-      {/* 2. the goal and the place among the consultants */}
-      <div className="pk-grid-wide" style={{ marginTop: 6 }}>
-        <GlowPanel id="goal" tone="good" title={main ? main.title : "Minha meta"} sub={main ? (main.mine.reached ? "Meta batida." : `${num(main.daysLeft)} dias restantes`) : undefined} empty={!main} emptyText="Você ainda não está em nenhuma meta ativa.">
-          {main && (
-            <>
-              <GlowRing pct={main.mine.pct ?? (main.mine.target ? (main.mine.done / main.mine.target) * 100 : 0)} facts={[
-                { label: "Feitas", value: num(main.mine.done) },
-                { label: "Meta", value: num(main.mine.target) },
-                { label: "Faltam", value: num(main.mine.missing) },
-                { label: "Ritmo necessário", value: main.mine.reached || !main.mine.pace ? "—" : `${String(main.mine.pace).replace(".", ",")} por dia` },
-              ]} />
-              {goals.slice(1).map((g) => (
-                <div key={g.id} style={{ marginTop: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13.5 }}><span>{g.title}</span><b>{num(g.mine.done)} / {num(g.mine.target)}</b></div>
-                  <div className="pk-rank" style={{ marginTop: 6 }}><span className="track" style={{ display: "block", height: 6, borderRadius: 999, background: "var(--track)", overflow: "hidden" }}><span className="fill" style={{ display: "block", width: `${g.mine.target ? Math.min(100, (g.mine.done / g.mine.target) * 100) : 0}%` }} /></span></div>
+      {/* 1. the period beside the period before, and the goal (the goals of every polo and consultant are in Metas, in the menu) */}
+      <div className="gv-board">
+        {SERIES.slice(0, 3).map((k) => (
+          <CompareStat key={k.key} id={k.key} title={k.title} nowLabel={badge} now={Number(r.now[k.key]) || 0} before={before && before[k.key] !== undefined && before[k.key] !== null ? before[k.key] : null} />
+        ))}
+        <section className="gv-funnel-card" data-panel="goal" style={{ display: "grid", minWidth: 0, gridColumn: "1 / -1" }}>
+          {main ? (
+            <div className="pp-hero" style={{ alignContent: "center" }}>
+              <PaceRing pct={main.mine.pct ?? (main.mine.target ? (main.mine.done / main.mine.target) * 100 : 0)} color="#fff" size={104} stroke={10} />
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div className="pp-hero-sub" style={{ marginTop: 0 }}>{main.title || "Minha meta"}{main.mine.reached ? " · meta batida" : ` · ${num(main.daysLeft)} dias restantes`}</div>
+                <div className="pp-hero-num" style={{ marginTop: 4 }}>{num(main.mine.done)}<small> / {num(main.mine.target)}</small></div>
+                <div className="pp-hero-sub">
+                  {main.mine.reached ? "Você bateu a meta do período." : `Faltam ${num(main.mine.missing)}${main.mine.pace ? ` · ${String(main.mine.pace).replace(".", ",")} por dia para chegar lá` : ""}`}
                 </div>
-              ))}
-            </>
+                {goals.slice(1).map((g) => (
+                  <div key={g.id} className="pp-hero-sub" style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 12, borderTop: "1px solid rgba(255,255,255,.18)", paddingTop: 8 }}>
+                    <span>{g.title}</span><b style={{ color: "#fff" }}>{num(g.mine.done)} / {num(g.mine.target)}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="gv-card"><h3 className="gv-title">Minha meta</h3><EmptyNote>Você ainda não está em nenhuma meta ativa.</EmptyNote></div>
           )}
-        </GlowPanel>
-        <GlowPanel id="position" title="Minha posição na equipe" sub="Em matrículas no período. Você vê só o seu lugar, nunca o número dos colegas.">
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 46, fontWeight: 650, letterSpacing: "-0.03em", lineHeight: 1 }}>{team.position ? ordinal(team.position.rank) : "—"}</span>
-            <span className="pk-hint">{team.position ? `de ${num(team.position.of)} consultores` : "Sem posição no período"}</span>
-          </div>
-          <table className="pk-table" style={{ marginTop: 14 }}>
-            <thead><tr><th>Comparação</th><th className="r">Você</th><th className="r">Equipe</th></tr></thead>
-            <tbody>
-              {compare.map(([label, mine, avg, unit, lowerIsBetter]) => {
-                const known = mine !== null && mine !== undefined && avg !== null && avg !== undefined;
-                const better = known && (lowerIsBetter ? mine <= avg : mine >= avg);
-                return (
-                  <tr key={label}>
-                    <td>{label}</td>
-                    <td className="r" style={{ fontWeight: 700, color: known ? (better ? "var(--pk-good)" : "var(--pk-warn)") : undefined }}>{fmt(mine, unit)}</td>
-                    <td className="r">{fmt(avg, unit)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </GlowPanel>
+        </section>
       </div>
 
       {/* 3. today */}
       {today && (
         <Section title="Hoje" hint="O que você fez desde a meia-noite.">
           <div className="pk-grid-4">
-            <CountStat id="today-attendances" label="Conversas atendidas" value={today.attendances} hint={targets.dailyAttendances > 0 ? `Meta do dia: ${num(targets.dailyAttendances)}` : undefined} tone={targets.dailyAttendances > 0 && today.attendances >= targets.dailyAttendances ? "good" : undefined} />
-            <CountStat id="today-messages" label="Mensagens enviadas" value={today.messagesSent} hint={targets.dailyMessages > 0 ? `Meta do dia: ${num(targets.dailyMessages)}` : undefined} tone={targets.dailyMessages > 0 && today.messagesSent >= targets.dailyMessages ? "good" : undefined} />
-            <CountStat id="today-people" label="Pessoas contatadas" value={today.peopleContacted} tone="violet" />
-            <CountStat id="today-enrollments" label="Matrículas" value={today.enrollments} tone="good" />
+            <CountStat id="today-attendances" label="Conversas atendidas" value={today.attendances} hint={dayGoal(today.attendances, targets.dailyAttendances)} tone={targets.dailyAttendances > 0 && today.attendances >= targets.dailyAttendances ? "good" : undefined} />
+            <CountStat id="today-messages" label="Mensagens enviadas" value={today.messagesSent} hint={dayGoal(today.messagesSent, targets.dailyMessages)} tone={targets.dailyMessages > 0 && today.messagesSent >= targets.dailyMessages ? "good" : undefined} />
+            <CountStat id="today-people" label="Pessoas contatadas" value={today.peopleContacted} />
+            <CountStat id="today-enrollments" label="Matrículas" value={today.enrollments} />
           </div>
         </Section>
       )}
 
       {/* 4. what to do now */}
       <Section title="O que fazer agora" hint="Os pontos que dependem de você, do mais urgente ao menos.">
-        <div className={c.cols}>
-          <GlowPanel id="todo" title="Prioridades" empty={!todo.length} emptyText="Tudo em dia. Nenhum ponto pedindo atenção agora.">
-            <TodoList items={todo.map((it) => ({ key: it.key, tone: it.tone, title: it.title, detail: it.detail, onClick: it.link ? () => go(it.link) : undefined }))} />
+        <div className="pk-grid-wide">
+          <GlowPanel id="todo" title="Prioridades">
+            {todo.length ? <PriorityList items={todo.map((it) => ({ key: it.key, tone: it.tone, title: it.title, detail: it.detail, onClick: it.link ? () => go(it.link) : undefined }))} /> : <EmptyNote>Tudo em dia. Nenhum ponto pedindo atenção agora.</EmptyNote>}
           </GlowPanel>
-          <div className={c.panel}>
-            <BlockTitle icon={<Clock3 size={16} />} title={`Responder agora (${num(data.metrics.pendingReply)})`} help="Conversas suas em que o cliente falou por último. As mais antigas primeiro." />
-            {data.focus.conversations.length === 0 && <div className={c.sub} style={{ marginTop: 6 }}>Ninguém esperando resposta sua.</div>}
-            {data.focus.conversations.slice(0, 5).map((v) => (
-              <button key={v.ticketId} type="button" className={c.row} onClick={() => go(v.link)}>
-                <MessageCircle size={15} /><span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>{v.name}</b>{v.lastMessage ? ` · ${v.lastMessage}` : ""}</span><span className={c.sub}>{when(v.at)}</span>
-              </button>
-            ))}
-            <div style={{ marginTop: 14 }}><BlockTitle icon={<CalendarCheck2 size={16} />} title={`Tarefas e retornos de hoje (${num(data.focus.tasks.length + data.focus.followUps.length)})`} help="Tarefas que vencem hoje ou já venceram e leads com o próximo contato marcado para hoje." /></div>
-            {data.focus.tasks.length + data.focus.followUps.length === 0 && <div className={c.sub} style={{ marginTop: 6 }}>Nada vencendo hoje.</div>}
-            {data.focus.tasks.slice(0, 4).map((k) => (
-              <button key={`t${k.id}`} type="button" className={c.row} onClick={() => go(k.link)}>
-                <span style={{ flex: 1, minWidth: 0 }}>{k.title}{k.leadName ? <span style={{ opacity: 0.6 }}> · {k.leadName}</span> : null}</span>
-                <b style={{ color: k.overdue ? "#dc2626" : undefined }}>{k.overdue ? "atrasada" : when(k.dueAt).slice(-5)}</b>
-              </button>
-            ))}
-            {data.focus.followUps.slice(0, 4).map((l) => (
-              <button key={`f${l.leadId}`} type="button" className={c.row} onClick={() => go(l.link)}><Phone size={14} /><span style={{ flex: 1 }}>{l.name}</span><span className={c.sub}>{when(l.at)}</span></button>
-            ))}
-          </div>
+          <GlowPanel id="reply" title={`Responder agora (${num(data.metrics.pendingReply)})`} sub="Conversas suas em que o cliente falou por último. As mais antigas primeiro.">
+            {waitingReply.length === 0 ? <EmptyNote>Ninguém esperando resposta sua.</EmptyNote> : (
+              <div className="gv-rowlist">
+                {waitingReply.slice(0, 5).map((v) => (
+                  <button key={v.ticketId} type="button" className="gv-item gv-item-btn" onClick={() => go(v.link)}>
+                    <Person name={v.name} size={32} />
+                    <span className="gv-item-main"><b>{v.name}</b>{v.lastMessage ? <small className="gv-clip">{v.lastMessage}</small> : null}</span>
+                    <span className="gv-cap">{when(v.at)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </GlowPanel>
+          <GlowPanel id="due" title={`Tarefas e retornos de hoje (${num(dueToday.length)})`} sub="Tarefas que vencem hoje ou já venceram e leads com o próximo contato marcado para hoje.">
+            {dueToday.length === 0 ? <EmptyNote>Nada vencendo hoje.</EmptyNote> : (
+              <div className="gv-rowlist">
+                {dueToday.slice(0, 8).map((k) => (
+                  <button key={k.key} type="button" className="gv-item gv-item-btn" onClick={() => go(k.link)}>
+                    <span className="gv-item-main"><b>{k.title}</b>{k.sub ? <small>{k.sub}</small> : null}</span>
+                    {k.bad ? <span className="gv-tag" data-tone="bad">atrasada</span> : <span className="gv-cap">{k.right}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </GlowPanel>
         </div>
       </Section>
 
@@ -206,7 +184,7 @@ const MyPerformance = () => {
           {RESULTS.map(([key, label, unit, lowerIsBetter]) => {
             const now = r.now[key];
             // the grades of the period before are not counted, so there is nothing to compare them with
-            const d = key === "gradesSent" ? null : change(now, before[key], unit === "percent");
+            const d = key === "gradesSent" || !before ? null : change(now, before[key], unit === "percent");
             return <GlowStat key={key} id={key} label={label} value={unit === "minutes" && now !== null && now !== undefined ? minutesText(now) : fmt(now, unit)} delta={d} upIsGood={!lowerIsBetter} />;
           })}
         </div>
@@ -214,38 +192,39 @@ const MyPerformance = () => {
 
       {/* 6. the leads */}
       <Section title={`Meus leads agora (${num(leads.open)} em andamento)`} hint="Os seus leads em cada etapa do funil hoje."
-        action={<button type="button" className={c.btn} onClick={() => go("/crm")}>Abrir meu funil</button>}>
-        <GlowPanel empty={!leads.stages.some((s) => s.n > 0)} emptyText="Nenhum lead em andamento com você.">
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: leads.waiting > 0 || leads.stale > 0 ? 14 : 0 }}>
-            {leads.waiting > 0 && <button type="button" className="pk-btn" style={{ color: "var(--pk-bad)" }} onClick={() => go("/crm")}>{num(leads.waiting)} sem primeiro contato</button>}
-            {leads.stale > 0 && <button type="button" className="pk-btn" style={{ color: "var(--pk-warn)" }} onClick={() => go("/crm?followUp=overdue")}>{num(leads.stale)} esfriando</button>}
-          </div>
-          <GlowFunnel steps={leads.stages.filter((s) => s.n > 0).map((s) => ({ key: s.id, name: s.name, value: s.n, color: s.color || undefined }))} />
-        </GlowPanel>
+        action={<button type="button" className="pk-btn" onClick={() => go("/crm")}>Abrir meu funil</button>}>
+        <section className="gv-card" data-panel="funnel">
+          {(leads.waiting > 0 || leads.stale > 0) && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {leads.waiting > 0 && <button type="button" className="gv-tag" data-tone="bad" style={{ border: 0, cursor: "pointer", font: "inherit", fontSize: 12.5, fontWeight: 650, padding: "5px 12px" }} onClick={() => go("/crm")}>{num(leads.waiting)} sem primeiro contato</button>}
+              {leads.stale > 0 && <button type="button" className="gv-tag" data-tone="warn" style={{ border: 0, cursor: "pointer", font: "inherit", fontSize: 12.5, fontWeight: 650, padding: "5px 12px" }} onClick={() => go("/crm?followUp=overdue")}>{num(leads.stale)} esfriando</button>}
+            </div>
+          )}
+          {funnel.some((s) => s.value > 0)
+            ? <Funnel steps={funnel} onStep={() => go("/crm")} valueHint="Leads nesta etapa agora" footer="O número é quem está em cada etapa agora; a porcentagem, quem está nela ou adiante." />
+            : <EmptyNote>Nenhum lead em andamento com você.</EmptyNote>}
+        </section>
       </Section>
 
-      {/* the goals of every polo: how the consultant's polo is doing and the others (the same cards the management sees) */}
-      <div style={{ marginTop: 28 }}><PoloProgress title="Metas dos meus polos" onlyMine /></div>
+      {/* the goals of the consultant's polos (the same cards the management sees) */}
 
       {/* 7. orientation */}
       <Section title="Orientações para você" hint="Da revisão diária das suas conversas e da comparação com a média da equipe.">
-        <div className={c.cols}>
-          <div className={c.panel}>
-            <BlockTitle icon={<Lightbulb size={16} />} title="Pelos seus números" />
-            {(data.tips || []).length === 0 && <div className={c.sub} style={{ marginTop: 6 }}>Nada fora da média da equipe no período. Continue assim.</div>}
-            <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "grid", gap: 6, fontSize: 13.5 }}>{(data.tips || []).map((x) => <li key={x}>{x}</li>)}</ul>
-          </div>
-          <div className={c.panel}>
-            <BlockTitle icon={<Lightbulb size={16} />} title="Da revisão das suas conversas" help="A IA lê as conversas do dia, sem dados pessoais, e só mostra o que se repete." />
+        <div className="pk-grid-wide">
+          <GlowPanel id="tips" title="Pelos seus números">
+            {(data.tips || []).length === 0 ? <EmptyNote>Nada fora da média da equipe no período. Continue assim.</EmptyNote>
+              : <ul className="gv-notes">{(data.tips || []).map((x) => <li key={x}>{x}</li>)}</ul>}
+          </GlowPanel>
+          <GlowPanel id="coaching" title="Da revisão das suas conversas" sub="A IA lê as conversas do dia, sem dados pessoais, e só mostra o que se repete.">
             {!coaching || (!coaching.items.length && !(coaching.strengths || []).length) ? (
-              <div className={c.sub} style={{ marginTop: 6 }}>Ainda não há conversas suas revisadas no período.</div>
+              <EmptyNote>Ainda não há conversas suas revisadas no período.</EmptyNote>
             ) : (
               <>
-                <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "grid", gap: 6, fontSize: 13.5 }}>{coaching.items.map((it) => <li key={`${it.kind}-${it.key}`}>{it.text}</li>)}</ul>
-                {(coaching.strengths || []).length > 0 && <div className={c.sub} style={{ marginTop: 8 }}>Pontos fortes: {coaching.strengths.join(", ")}</div>}
+                <ul className="gv-notes">{coaching.items.map((it) => <li key={`${it.kind}-${it.key}`}>{it.text}</li>)}</ul>
+                {(coaching.strengths || []).length > 0 && <div className="gv-cap" style={{ marginTop: 10 }}>Pontos fortes: {coaching.strengths.join(", ")}</div>}
               </>
             )}
-          </div>
+          </GlowPanel>
         </div>
       </Section>
     </div>

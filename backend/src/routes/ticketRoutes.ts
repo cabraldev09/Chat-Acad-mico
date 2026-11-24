@@ -37,7 +37,6 @@ ticketRoutes.put("/tickets/:ticketId/copilot/progress", isAuth, canWriteTicket, 
 ticketRoutes.post("/tickets/:ticketId/suggest-reply", isAuth, canSendTicket, CopilotController.suggest);
 ticketRoutes.post("/tickets/:ticketId/handoff-team", isAuth, canSendTicket, TicketController.handoffTeam);
 ticketRoutes.get("/tickets/:ticketId/team-handoff", isAuth, canReadTicket, TicketController.teamHandoff);
-ticketRoutes.post("/tickets/:ticketId/opening-template", isAuth, canSendTicket, TicketController.openingTemplate);
 ticketRoutes.post("/tickets/:ticketId/copilot/brief", isAuth, canReadTicket, CopilotController.brief);
 ticketRoutes.get("/tickets/:ticketId/copilot/brief", isAuth, canReadTicket, CopilotController.lastBrief);
 ticketRoutes.put("/tickets/:ticketId/copilot/requests/:requestId/feedback", isAuth, canReadTicket, CopilotController.feedback);

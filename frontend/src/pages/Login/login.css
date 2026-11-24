@@ -1,0 +1,131 @@
+/* The sign-in screen: the brand side in deep navy with soft lights, a faint grid and the chrome star; the form side plain. */
+.lg-root {
+  --lg-navy: #061a33;
+  --lg-ink: #0b1a2e;
+  --lg-brand: #0b4279;
+  --lg-line: #d7dee8;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  background: #f3f5f9;
+  font-family: inherit;
+}
+
+/* ---- brand side ---- */
+.lg-brand {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 44px 56px;
+  color: #fff;
+  background: linear-gradient(160deg, #0b3a6e 0%, #08284d 48%, var(--lg-navy) 100%);
+}
+.lg-dots {
+  position: absolute; inset: 0; z-index: -3;
+  background-image: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 30% 35%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 60% at 30% 35%, #000 20%, transparent 75%);
+}
+.lg-glow { position: absolute; z-index: -2; border-radius: 50%; filter: blur(80px); pointer-events: none; animation: aurora 16s ease-in-out infinite; }
+.lg-glow-a { width: 460px; height: 460px; left: -140px; top: -120px; background: #1f8bff; opacity: .38; }
+.lg-glow-b { width: 380px; height: 380px; right: -120px; bottom: -80px; background: #38bdf8; opacity: .22; animation-delay: -7s; }
+.lg-art { position: absolute; z-index: -1; right: -7%; top: -5%; width: clamp(240px, 24vw, 400px); transform: rotate(-8deg); pointer-events: none; opacity: .95; animation: page-in .9s var(--ease-out, ease-out) both; }
+.lg-mark { display: none; }
+
+.lg-copy { max-width: min(470px, 62%); animation: page-in .6s var(--ease-out, ease-out) both; }
+.lg-kicker {
+  display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: #cfe5ff; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+}
+.lg-copy h1 { margin: 18px 0 0; font-size: clamp(32px, 3.4vw, 46px); line-height: 1.06; font-weight: 700; letter-spacing: -0.035em; }
+.lg-copy h1 span { display: block; background: linear-gradient(90deg, #9fd2ff, #ffffff 70%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lg-copy p { margin: 16px 0 0; font-size: 16px; line-height: 1.6; color: rgba(255,255,255,.74); max-width: 430px; }
+.lg-points { list-style: none; margin: 28px 0 0; padding: 0; display: grid; gap: 10px; }
+.lg-points li { display: flex; align-items: center; gap: 12px; font-size: 14.5px; color: rgba(255,255,255,.9); }
+.lg-points li > span {
+  flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  color: #9fd2ff; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
+}
+.lg-foot { font-size: 12.5px; color: rgba(255,255,255,.55); }
+
+/* ---- form side ---- */
+.lg-side { display: grid; place-items: center; padding: 32px 24px; }
+.lg-card {
+  width: 100%; max-width: 410px; display: grid; gap: 18px;
+  animation: page-in .5s var(--ease-out, ease-out) both;
+}
+.lg-card-head h2 { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.03em; color: var(--lg-ink); }
+.lg-card-head p { margin: 6px 0 4px; font-size: 15px; color: #5b6b80; }
+
+.lg-field { display: grid; gap: 7px; }
+.lg-field > span:first-child { font-size: 13.5px; font-weight: 600; color: #26364b; }
+.lg-field input {
+  width: 100%; height: 48px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--lg-line);
+  background: #fff; color: var(--lg-ink); font: inherit; font-size: 15.5px; outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.lg-field input::placeholder { color: #9aa7b8; }
+.lg-field input:hover { border-color: #b9c5d4; }
+.lg-field input:focus { border-color: var(--lg-brand); box-shadow: 0 0 0 4px rgba(11, 66, 121, .14); }
+.lg-pass { position: relative; display: block; }
+.lg-pass input { padding-right: 50px; }
+.lg-pass button {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 38px; height: 38px; border: 0; border-radius: 9px;
+  display: grid; place-items: center; background: transparent; color: #5b6b80; cursor: pointer;
+}
+.lg-pass button:hover { background: #eef2f7; color: var(--lg-ink); }
+.lg-pass button:focus-visible, .lg-submit:focus-visible, .lg-row a:focus-visible { outline: 2px solid #2f7de1; outline-offset: 2px; }
+
+.lg-row { display: flex; justify-content: flex-end; margin-top: -6px; }
+.lg-row a { font-size: 14px; font-weight: 600; color: var(--lg-brand); text-decoration: none; }
+.lg-row a:hover { text-decoration: underline; }
+
+.lg-submit {
+  height: 50px; border: 0; border-radius: 12px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font: inherit; font-size: 16px; font-weight: 650; color: #fff;
+  background: linear-gradient(180deg, #11528f 0%, var(--lg-brand) 100%);
+  box-shadow: 0 1px 0 rgba(255,255,255,.18) inset, 0 10px 24px -12px rgba(11, 66, 121, .8);
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.lg-submit:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 1px 0 rgba(255,255,255,.18) inset, 0 14px 28px -12px rgba(11, 66, 121, .9); }
+.lg-submit:active:not(:disabled) { transform: translateY(1px); }
+.lg-submit:disabled { opacity: .75; cursor: progress; }
+.lg-submit svg { transition: transform .15s ease; }
+.lg-submit:hover svg { transform: translateX(3px); }
+.lg-note { margin: 2px 0 0; text-align: center; font-size: 13px; color: #7a889b; }
+
+/* ---- dark theme ---- */
+:root[data-theme="dark"] .lg-root { background: #0d131c; }
+:root[data-theme="dark"] .lg-card-head h2 { color: #f1f5f9; }
+:root[data-theme="dark"] .lg-card-head p, :root[data-theme="dark"] .lg-note { color: #9aa7b8; }
+:root[data-theme="dark"] .lg-field > span:first-child { color: #cbd5e1; }
+:root[data-theme="dark"] .lg-field input { background: #141c27; border-color: #2a3646; color: #f1f5f9; }
+:root[data-theme="dark"] .lg-field input:focus { border-color: #60a5fa; box-shadow: 0 0 0 4px rgba(96, 165, 250, .18); }
+:root[data-theme="dark"] .lg-pass button { color: #9aa7b8; }
+:root[data-theme="dark"] .lg-pass button:hover { background: #1c2633; color: #f1f5f9; }
+:root[data-theme="dark"] .lg-row a { color: #93c5fd; }
+
+/* ---- tablet and phone: the brand becomes a band with the star, the form right under it ---- */
+@media (max-width: 959px) {
+  .lg-root { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .lg-brand { padding: 22px 20px 56px; gap: 18px; min-height: 0; }
+  .lg-art, .lg-points, .lg-foot, .lg-copy p, .lg-kicker { display: none; }
+  .lg-mark { display: block; position: absolute; right: 18px; top: 50%; transform: translateY(-38%); opacity: .95; }
+  .lg-copy h1 { margin: 0; font-size: 24px; max-width: 70%; }
+  .lg-side { display: block; padding: 0 16px 28px; }
+  .lg-card {
+    position: relative; z-index: 2; margin: -34px auto 0; padding: 24px 20px 22px; border-radius: 20px; background: #fff;
+    box-shadow: 0 22px 46px -18px rgba(11, 66, 121, .45), 0 2px 6px rgba(11, 66, 121, .1);
+  }
+  :root[data-theme="dark"] .lg-card { background: #141c27; box-shadow: 0 22px 46px -18px rgba(0, 0, 0, .6); }
+  .lg-card-head h2 { font-size: 24px; }
+  .lg-field input { font-size: 16px; }
+}
+@media (max-width: 380px) { .lg-copy h1 { font-size: 21px; max-width: 64%; } .lg-mark { right: 10px; } }
+@media (prefers-reduced-motion: reduce) { .lg-glow, .lg-art, .lg-copy, .lg-card { animation: none; } .lg-submit svg { transition: none; } }

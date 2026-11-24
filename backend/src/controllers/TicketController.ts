@@ -18,7 +18,7 @@ import Ticket from "../models/Ticket";
 import Whatsapp from "../models/Whatsapp";
 import TicketEvent from "../models/TicketEvent";
 import { handoffToTeam, lastHandoffIn } from "../services/TicketServices/TeamHandoff";
-import { sendOpeningTemplate, windowOf } from "../services/TicketServices/OpeningTemplate";
+import { windowOf } from "../services/TicketServices/OpeningTemplate";
 import { connectionOfTeam, sideOfSegment } from "../services/ChannelServices/ConnectionTeam";
 import User from "../models/User";
 import Queue from "../models/Queue";
@@ -540,10 +540,4 @@ export const teamHandoff = async (req: Request, res: Response): Promise<Response
   const other = side === "tutoria" ? "atendimento" : side === "atendimento" ? "tutoria" : null;
   const number = other ? await connectionOfTeam(other) : null;
   return res.json({ side, canCall: other && number && number.id !== ticket.whatsappId ? other : null, last: await lastHandoffIn(ticket.id), window: await windowOf(ticket as any) });
-};
-
-// the approved opening template of this side, on the official number, when the 24 hours are closed
-export const openingTemplate = async (req: Request, res: Response): Promise<Response> => {
-  await sendOpeningTemplate(Number(req.params.ticketId), Number(req.user.id));
-  return res.json({ ok: true });
 };

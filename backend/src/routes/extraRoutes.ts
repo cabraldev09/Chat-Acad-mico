@@ -513,7 +513,8 @@ r.get("/goals/calendar", isAuth, isManager, Goal.calendar);
 r.put("/goals/:id/polos", isAuth, isManager, Goal.updatePolos);
 r.put("/goals/:id/polos/:poloId", isAuth, isManager, Goal.updatePolo);
 r.post("/goals/:id/polos/import", isAuth, isManager, Goal.importPoloGoals);
-r.get("/goals", isAuth, isManager, Goal.index);
+// the goals of the consultants are read by the whole team (the menu Metas); only the management changes them
+r.get("/goals", isAuth, Goal.index);
 r.post("/goals", isAuth, isManager, Goal.store);
 r.put("/goals/:id", isAuth, isManager, Goal.update);
 r.delete("/goals/:id", isAuth, isManager, Goal.remove);

@@ -113,7 +113,7 @@ describe("a new conversation starts the progress over, the lead stays", () => {
   });
 });
 
-import { cityCandidateOf, isQualified, missingOf, entryAnswer, modalityQuestion, modalityTextOf, needsModalityExplanation, proceeds, readyForConsultantOf } from "../../../src/services/CommercialServices/Rules";
+import { cityCandidateOf, isQualified, missingOf, entryAnswer, modalityQuestion, modalityShortOf, modalityTextOf, needsModalityExplanation, proceeds, readyForConsultantOf } from "../../../src/services/CommercialServices/Rules";
 
 describe("semipresencial: format and the MEC rule before the consultant", () => {
   const base = { courseName: "Enfermagem", city: "Porto Velho", entryType: "first_degree", courseExplained: true };
@@ -182,6 +182,23 @@ describe("semipresencial: format and the MEC rule before the consultant", () => 
     expect(turma).not.toMatch(/ainda não foi definida/);
     expect(modalityTextOf("Pedagogia", { commercialApprovedText: "Texto da equipe para Pedagogia.", explicacao: { area: "educacao_ciencias" } })).toBe("Texto da equipe para Pedagogia.\n\nAté aqui você compreendeu?");
     expect(modalityTextOf("X", {})).toBeNull();
+  });
+
+  it("the same question right after the explanation gets the short answer, from the same rule", () => {
+    const ead = modalityShortOf("Empreendedorismo", { mecImpactado: false, explicacao: { area: "livre", turma: null } })!;
+    expect(ead).toMatch(/é EAD, sem aulas práticas presenciais/);
+    expect(ead).not.toMatch(/professores mestres e doutores|maio de 2027|%/);
+    expect(ead.trim().endsWith("Ficou claro como funciona?")).toBe(true);
+    const saude = modalityShortOf("Biomedicina", { mecImpactado: true, percentualPresencial: 30, explicacao: { area: "saude_eng_agro", turma: null } })!;
+    expect(saude).toMatch(/Hoje, o curso de \*Biomedicina\* funciona no formato EAD/);
+    expect(saude).toMatch(/até maio de 2027 ele passará a ter 30% de carga prática presencial, em laboratório/);
+    expect(saude).toMatch(/ainda não foi definida/);
+    expect(saude.length).toBeLessThan(modalityTextOf("Biomedicina", { mecImpactado: true, percentualPresencial: 30, explicacao: { area: "saude_eng_agro", turma: null } })!.length / 2);
+    // no percentage registered: none is said; what the class confirmed is left to the consultant; the text of the team has no short form
+    expect(modalityShortOf("Pedagogia", { mecImpactado: true, percentualPresencial: null, explicacao: { area: "educacao_ciencias", turma: null } })).not.toMatch(/\d+%/);
+    expect(modalityShortOf("Pedagogia", { mecImpactado: true, percentualPresencial: 30, explicacao: { area: "educacao_ciencias", turma: { presencialStart: "2027-03-01" } } })).toMatch(/consultor confirma/);
+    expect(modalityShortOf("Pedagogia", { commercialApprovedText: "Texto da equipe.", explicacao: { area: "educacao_ciencias" } })).toBeNull();
+    expect(modalityShortOf("X", {})).toBeNull();
   });
 
   it("the question about the format and the end of the doubts are read by the system", () => {

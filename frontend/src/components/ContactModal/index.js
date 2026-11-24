@@ -16,6 +16,8 @@ import Typography from "@material-ui/core/Typography";
 import IconButton from "@material-ui/core/IconButton";
 import DeleteOutlineIcon from "@material-ui/icons/DeleteOutline";
 import CircularProgress from "@material-ui/core/CircularProgress";
+import Checkbox from "@material-ui/core/Checkbox";
+import FormControlLabel from "@material-ui/core/FormControlLabel";
 
 import { i18n } from "../../translate/i18n";
 
@@ -54,11 +56,12 @@ const useStyles = makeStyles(theme => ({
 
 const ContactSchema = Yup.object().shape({
 	name: Yup.string()
-		.min(2, "Too Short!")
-		.max(50, "Too Long!")
-		.required("Required"),
-	number: Yup.string().min(8, "Too Short!").max(50, "Too Long!"),
-	email: Yup.string().email("Invalid email"),
+		.min(2, "Nome curto demais.")
+		.max(50, "Nome longo demais.")
+		.required("Informe o nome."),
+	// spaces, hyphens, brackets and "+" may stay: only the digits count
+	number: Yup.string().test("digits", "Informe o número com o DDD.", v => String(v || "").replace(/\D/g, "").length >= 8).max(50, "Número longo demais."),
+	email: Yup.string().email("E-mail inválido."),
 });
 
 const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
@@ -72,6 +75,9 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 	};
 
 	const [contact, setContact] = useState(initialState);
+	// a new contact is only a contact (Contatos and the portfolio of who talks to them): it goes to the CRM only when asked here,
+	// or later with "Criar lead" on the conversation, or when the person writes
+	const [toCrm, setToCrm] = useState(false);
 
 	useEffect(() => {
 		return () => {
@@ -105,15 +111,21 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 	const handleClose = () => {
 		onClose();
 		setContact(initialState);
+		setToCrm(false);
 	};
 
-	const handleSaveContact = async values => {
+	const handleSaveContact = async typed => {
+		// the number goes as digits only, however it was typed
+		const values = { ...typed, number: String(typed.number || "").replace(/\D/g, "") };
 		try {
 			if (contactId) {
 				await api.put(`/contacts/${contactId}`, values);
 				handleClose();
 			} else {
 				const { data } = await api.post("/contacts", values);
+				if (toCrm && data && data.id) {
+					try { await api.post(`/leads/from-contact/${data.id}`, {}); toast.success("Contato incluído no CRM como lead."); } catch (e) { toastError(e); }
+				}
 				if (onSave) {
 					onSave(data);
 				}
@@ -238,6 +250,17 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 										</>
 									)}
 								</FieldArray>
+								{!contactId && (
+									<div style={{ marginTop: 12 }}>
+										<FormControlLabel
+											control={<Checkbox color="primary" checked={toCrm} onChange={(e) => setToCrm(e.target.checked)} />}
+											label="Incluir no CRM como lead agora"
+										/>
+										<Typography variant="body2" color="textSecondary">
+											Sem marcar, o contato fica só em Contatos e na sua carteira. Ele entra no CRM quando escrever, ou quando você usar "Criar lead" na conversa.
+										</Typography>
+									</div>
+								)}
 							</DialogContent>
 							<DialogActions>
 								<Button

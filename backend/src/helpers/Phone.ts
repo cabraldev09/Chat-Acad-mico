@@ -20,3 +20,7 @@ export const normalizeEmail = (raw?: string | null): string | null => {
   const e = String(raw).trim().toLowerCase();
   return isEmail(e) ? e : null;
 };
+
+// The number of a contact as the system keeps it: only the digits, however it was typed ("55 69 99297-9581", "(69) 99297.9581",
+// "+55 69 992979581"). Every space, hyphen, dot and bracket goes, not only the first one.
+export const contactDigits = (raw?: string | number | null): string => String(raw ?? "").replace(/\D/g, "");

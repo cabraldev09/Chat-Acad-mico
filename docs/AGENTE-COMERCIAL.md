@@ -124,3 +124,49 @@ O tutor que inicia ou conclui um aluno sem tutor o assume (a conversa fica abert
 
 ## Medir (aba Resultados da Central)
 Além do funil: quantos leads **entraram** no sistema (evento `lead_created`, por qualquer porta) contra os atendidos pelo agente; funil **por polo** e **por origem** (pelo lead, cada lead uma vez por etapa); **motivo de perda** estruturado na coluna "Sem interesse" (preço, outra instituição, horário, desistência) a partir da objeção que apareceu (`Ports.lostReasonOf`); tempo e pendências de resposta da equipe só das conversas **deste** agente; e "conversas atendidas" por agente.
+
+## Ordem do processo (o que o sistema garante, sem depender do modelo)
+
+1. Curso, depois primeira graduação ou não, depois cidade. Nunca pergunta de novo o que já foi dito; cidade sem polo é aceita.
+2. Transferência e segunda graduação ouvem uma vez que as disciplinas podem ser aproveitadas pela análise curricular (`Rules.REUSE_TEXT`),
+   sem promessa. O curso que a pessoa já tem ou faz nunca vira o curso de interesse (`Rules.priorStudy`).
+3. Formato e mudanças do MEC, com o nome do curso (`Turn.explainModality`). Outro curso no meio da conversa recomeça este passo; entre dois
+   cursos com a mesma explicação, ela é dita em uma linha.
+4. Grade (quando cadastrada), tutoria e a pergunta das dúvidas.
+5. Só então nome completo e CPF, "para o consultor do seu polo simular as bolsas" (`Rules.needsBolsaData`). Nunca enquanto a pessoa escolhe o
+   curso (`courseChoosing`), em cima de uma dúvida, de "vou pensar" ou de "não tenho interesse". Quem manda só o nome ouve o pedido do CPF.
+6. Com os dados, o consultor do polo. Toda passagem à equipe é avisada ao lead, inclusive a do limite de respostas da etapa.
+
+**Via comercial** (`Turn.laneStep`, `Rules.lanePending`): quem pergunta valor ou bolsa, ou diz que quer se matricular ("quero me matricular
+hoje", "quero garantir minha vaga", "como faço para me inscrever?"), não passa pela apresentação acadêmica. O agente responde na hora que
+valores e bolsas são do consultor do polo (nunca um valor, nem estimativa), confirma só o que o consultor precisa e ainda não se sabe
+(curso, primeira graduação ou não, cidade), pede o nome completo e o CPF uma vez e encaminha. O CPF nunca bloqueia o encaminhamento.
+A segunda pergunta de preço chama o consultor na hora, com o que já se sabe. "Quero me matricular" não conta como insistir no preço, e fica
+marcado no resumo do consultor como intenção de matrícula (prioridade).
+
+"Vou pensar": uma pergunta gentil sobre o que ainda pode estar em dúvida; dito de novo, a decisão é respeitada com uma despedida curta.
+
+Curso não ofertado: poucas alternativas da mesma área, com a lista completa a uma pergunta de distância; a lista inteira vem quando a
+pessoa pede a área. Quem não sabe o curso é perguntado pela área e pelo objetivo de carreira.
+
+O nome do contato só é usado quando parece o nome de uma pessoa (`Rules.personName`).
+
+Os 4 cenários e os 16 testes da auditoria de 23/11 rodam em conversas inteiras com `node scripts/lead-sim/scenarios.js` (falha se houver
+valor informado, pergunta repetida em seguida ou passagem sem aviso).
+
+Cursos: a lista vem só do catálogo (cursos ofertados). Erro de digitação e apelido são reconhecidos (`Detect.ts`); dois cursos na mesma
+mensagem viram uma pergunta de qual começar; quem não sabe o curso recebe as áreas; área não é curso; com um curso já escolhido, perguntar
+por um não ofertado não reabre a escolha.
+
+## Simulador de leads (`backend/scripts/lead-sim`)
+
+Para testar o processo com conversas inteiras, sem WhatsApp e sem gastar com o provedor de IA:
+
+    npm run build && bash scripts/lead-sim/start.sh        # sobe um modelo substituto, um banco novo, a API em 8080 e um catálogo de exemplo
+    node scripts/lead-sim/chat.js ana "quanto custa fisioterapia?"
+    node scripts/lead-sim/chat.js ana "primeira graduação"   # a conversa de cada persona continua entre os comandos (--reset recomeça)
+
+Usa o simulador do roteiro (`POST /flows/:id/simulate`): nada é enviado nem gravado. O modelo substituto só responde "Entendi." e registra o
+tipo de ingresso e a intenção; a ordem das perguntas, a apresentação do curso, as listas, o pedido de dados e a passagem ao consultor são
+as regras reais. Serve para pessoas e para agentes fazerem o papel de leads e apontarem onde o processo falha.
+

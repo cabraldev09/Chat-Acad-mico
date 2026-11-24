@@ -7,14 +7,17 @@ const ASKED_COURSES = [
   "Publicidade e Propaganda", "Ciências Contábeis", "Administração", "Pedagogia", "Serviço Social", "Letras", "História", "Geografia", "Matemática"
 ];
 const plainName = (s: string): string => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-export const inventedCourse = (reply: string, list: Array<{ name: string }>): string | null => {
+// (a course named in what the tools or the approved texts returned is not an invention: the rule of the MEC names Medicina and Direito)
+export const inventedCourse = (reply: string, list: Array<{ name: string }>, evidence = ""): string | null => {
   if (!reply || !list.length) return null;
+  const backed = plainName(evidence);
   const offered = list.map(c => plainName(c.name));
   const sentences = String(reply).split(/(?<=[.!?:;])\s+|\n+/).map(plainName).filter(Boolean);
   for (const name of ASKED_COURSES) {
     const n = plainName(name);
-    if (offered.some(o => o.includes(n))) continue;
     const word = new RegExp(`\\b${n}\\b`);
+    if (offered.some(o => word.test(o))) continue;
+    if (backed && word.test(backed)) continue;
     if (sentences.some(t => word.test(t) && !/\b(nao|nem|nenhum|nenhuma|infelizmente|sem)\b/.test(t))) return name;
   }
   return null;
@@ -22,7 +25,7 @@ export const inventedCourse = (reply: string, list: Array<{ name: string }>): st
 const joinNames = (names: string[]): string => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`);
 export const notOfferedWords = (name: string, close: string[], more: boolean): string =>
   close.length
-    ? `Hoje a instituição não oferece o curso de ${name}. Os cursos que oferecemos incluem ${joinNames(close.map(courseLabel))}${more ? " e outros" : ""}. Algum deles te interessa?`
+    ? `Hoje a instituição não oferece o curso de ${name}. Entre os cursos que oferecemos estão ${joinNames(close.map(courseLabel))}${more ? ", entre outros" : ""}. Algum deles te interessa?`
     : `Hoje a instituição não oferece o curso de ${name}.`;
 
 // "Cst Em Sistemas Para Internet" (as registered) → "Sistemas para Internet (tecnólogo)": what the person reads
@@ -64,6 +67,10 @@ const AREA_WORD: Array<[AskedArea, RegExp]> = [
 export const areaInContext = (text: string, previous: string): AskedArea | null => {
   const t = plainName(text);
   if (!t || t.length > 120) return null;
+  // the answer to "Qual dessas áreas combina mais...?": the area is in the words of the person
+  if (/qual dessas areas|qual outra area|na area de (saude|tecnologia|gestao|educacao) temos, por exemplo/.test(plainName(previous))) { const own = AREA_WORDS.find(([, r]) => r.test(t)); if (own) return own[0]; }
+  // "sim", "quero ver", "mostra a lista" after the offer of the whole list of an area
+  if (/lista completa dessa area/.test(plainName(previous)) && /^(sim|s|quero|quero ver|pode|pode ser|mostra|manda|ok|claro)\b|\b(lista|todos|todas|completa)\b/.test(t)) { const hit0 = AREA_WORD.find(([, r]) => r.test(plainName(previous))); if (hit0) return hit0[0]; }
   const refers = /\b(nessa|dessa|essa|nesta|desta|esta|na mesma) area\b/.test(t) || /^(e )?(quais|que) (sao )?(os |as )?(outros |outras |demais )?(cursos|opcoes|graduacoes)( (voces )?(tem|ofertam|oferecem))?$/.test(t);
   if (!refers) return null;
   const p = plainName(previous);
@@ -78,6 +85,55 @@ const MODALITY_LABEL = (m: string | null | undefined): string => {
 export const areaText = (area: AskedArea, list: Array<{ name: string; modality?: string | null }>): string => {
   const found = coursesOfArea(list, area).slice(0, 25);
   if (!found.length) return `Hoje a instituição não tem cursos cadastrados na área de ${AREA_LABEL[area]}.\n\nQual outra área ou curso te interessa?`;
-  const lines = found.map(c => { const m = MODALITY_LABEL(c.modality); return `- ${courseLabel(c.name)}${m ? `: ${m}` : ""}`; });
-  return [`Na área de ${AREA_LABEL[area]}, ${found.length === 1 ? "o curso que oferecemos é" : `oferecemos ${found.length} cursos`}:`, lines.join("\n"), "Qual deles te interessa?"].join("\n\n");
+  if (found.length === 1) return `Na área de ${AREA_LABEL[area]}, o curso que oferecemos é *${courseLabel(found[0].name)}*.\n\nQuer que eu te explique como ele funciona?`;
+  return [`Na área de ${AREA_LABEL[area]}, oferecemos ${found.length} cursos:`, found.map(c => `- ${courseLabel(c.name)}`).join("\n"), "Qual deles te interessa?"].join("\n\n");
 };
+// the areas asked for in one message ("gestão ou educação?"), in the order of the list
+export const areasAsked = (text: string): AskedArea[] => {
+  const t = plainName(text);
+  if (!t || t.length > 200) return [];
+  if (!/\b(area|areas|cursos?|algo|opcoes|graduacao)\b/.test(t)) return [];
+  return AREA_WORDS.filter(([, r]) => r.test(t)).map(([a]) => a);
+};
+const AREA_WORDS: Array<[AskedArea, RegExp]> = [["saude", /\bsaude\b/], ["tecnologia", /\b(tecnologia|ti|informatica|computacao|programacao)\b/], ["gestao", /\b(gestao|negocios)\b/], ["educacao", /\b(educacao|licenciaturas?)\b/]];
+// the areas that have courses, offered to who does not know which course ("o que você indica?", "quais cursos tem?")
+export const areasHelp = (list: Array<{ name: string }>): string | null => {
+  const have = (Object.keys(AREA_LABEL) as AskedArea[]).filter(a => coursesOfArea(list, a).length);
+  if (have.length < 2) return null;
+  const names = have.map(a => AREA_LABEL[a]);
+  return `Posso te ajudar a escolher. Temos cursos nas áreas de ${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}.\n\nQual dessas áreas combina mais com o que você quer para a sua carreira?`;
+};
+export const asksForCourses = (text: string): boolean =>
+  /\b(quais (sao )?(os )?cursos|que cursos|lista de cursos|cursos (voces|vcs|vc|voce) tem|o que (voce|vc|voces|vcs) (indica|indicam|recomenda)|me indica|qualquer um|nao sei( ainda)?( qual)?|tanto faz|nao decidi|estou em duvida)\b/.test(plainName(text));
+
+// A known course that is not offered, named without "curso de" ("Quero saber sobre enfermagem", or just "Enfermagem"): said by the system,
+// never left to the model. A word that is also an ordinary word ("direito a bolsa") needs the wish around it.
+const WISH = "(quero|queria|gostaria|fazer|cursar|estudar|saber|tem|tenho interesse|interesse|sobre|curso|cursos|faculdade|graduacao|e)";
+export const unofferedMention = (text: string, list: Array<{ name: string }>): string | null => {
+  const t = plainName(text);
+  if (!t || t.length > 160 || !list.length) return null;
+  const offered = list.map(c => plainName(c.name));
+  for (const name of ASKED_COURSES) {
+    const n = plainName(name);
+    if (offered.some(o => new RegExp(`\\b${n}\\b`).test(o))) continue;
+    if (!new RegExp(`\\b${n}\\b`).test(t)) continue;
+    if (new RegExp(`\\b${n} (a|ao|de|do|da)\\b`).test(t) && n === "direito") continue;
+    if (t.split(" ").length <= 3 || new RegExp(`\\b${WISH}\\b.{0,30}\\b${n}\\b`).test(t)) return name;
+  }
+  return null;
+};
+const areaOfName = (name: string): AskedArea | null => {
+  const n = plainName(name);
+  const hit = (Object.keys(AREA_COURSES) as AskedArea[]).find(a => AREA_COURSES[a].test(n));
+  return hit || null;
+};
+// "we do not offer X": with the courses of the same area that are offered (the whole list), or else the closest ones
+export const notOfferedReply = (name: string, list: Array<{ name: string; modality?: string | null }>, closest: string[]): string => {
+  const area = areaOfName(name);
+  const same = area ? coursesOfArea(list, area) : [];
+  // a few of the same area, not the whole catalogue; the whole list is one question away
+  if (area && same.length > 4) return `Hoje a instituição não oferece o curso de ${name}.\n\nNa área de ${AREA_LABEL[area]} temos, por exemplo, ${joinNames(same.slice(0, 3).map(c => courseLabel(c.name)))}. Quer ver a lista completa dessa área ou prefere me contar o que você busca na carreira?`;
+  if (area && same.length) return `Hoje a instituição não oferece o curso de ${name}.\n\n${areaText(area, list)}`;
+  return notOfferedWords(name, closest, list.length > closest.length);
+};
+

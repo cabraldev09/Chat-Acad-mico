@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, makeStyles } from "@material-ui/core";
-import { Shuffle, MailOpen, X } from "lucide-react";
+import { Shuffle, X } from "lucide-react";
 import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -59,11 +59,6 @@ export default function TeamBar({ ticket }) {
     } catch (e) { toastError(e); }
     setBusy(false);
   };
-  const opening = async () => {
-    setBusy(true);
-    try { await api.post(`/tickets/${ticket.id}/opening-template`); toast.success("Mensagem de abertura enviada. Quando a pessoa responder, a conversa segue normal."); load(); } catch (e) { toastError(e); }
-    setBusy(false);
-  };
   const dismiss = () => {
     try { window.localStorage.setItem(seenKey(ticket.id), String(last.id)); } catch (e) { /* only on this screen */ }
     setHidden(String(last.id));
@@ -77,11 +72,11 @@ export default function TeamBar({ ticket }) {
     </div>}
     {mine && (info.canCall || closedWindow) && <div className={c.bar}>
       {closedWindow && <span className={c.muted} style={{ flex: "1 1 260px" }}>
-        Passaram 24 horas desde a última mensagem desta pessoa neste número oficial: só um modelo aprovado pode reabrir a conversa.
-        {!win.template && " Configure o modelo de abertura em Configurações → Tutoria."}
+        {win.never
+          ? "Esta pessoa ainda não escreveu para este número oficial. No WhatsApp oficial a conversa começa quando ela mandar a primeira mensagem; a partir daí você tem 24 horas para responder."
+          : "Passaram 24 horas desde a última mensagem desta pessoa neste número oficial. A conversa volta ao normal quando ela escrever de novo."}
       </span>}
       {!closedWindow && <span style={{ flex: 1 }} />}
-      {closedWindow && win.template && <Button size="small" variant="outlined" className={c.button} disabled={busy} startIcon={<MailOpen size={13} />} onClick={opening}>Enviar mensagem de abertura</Button>}
       {info.canCall && <Button size="small" className={c.button} disabled={busy} startIcon={<Shuffle size={13} />} onClick={() => setDialog(true)}>{LABEL[info.canCall]}</Button>}
     </div>}
     <Dialog open={dialog} onClose={() => setDialog(false)} fullWidth maxWidth="sm">

@@ -32,7 +32,7 @@ const fmtDay = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString("pt-BR",
 const pctText = (v) => `${String(Math.round(v || 0)).replace(".", ",")}%`;
 
 // the share of the goal as a ring, in the colour of the pace: read at a glance, where a thin bar with a mark was a ruler
-const PaceRing = ({ pct, color, size = 62, stroke = 7 }) => {
+export const PaceRing = ({ pct, color, size = 62, stroke = 7 }) => {
   const p = Math.max(0, Math.min(100, Number(pct) || 0));
   const r = (size - stroke) / 2;
   const len = 2 * Math.PI * r;

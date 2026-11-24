@@ -1,5 +1,5 @@
 import { AuditLine, CommercialPorts } from "./Ports";
-import { OBJECTION_LIMIT, canAutoMove, confirmsNoInterest, hashOf, intentLabel, interestOf, INTEREST_LABEL, holdsProposal, isQualified, missingOf, nextActionOf, noteOf, readyForConsultantOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
+import { priorStudy, OBJECTION_LIMIT, canAutoMove, confirmsNoInterest, hashOf, intentLabel, interestOf, INTEREST_LABEL, holdsProposal, isQualified, missingOf, nextActionOf, noteOf, readyForConsultantOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
 import { STAGE_SPECS, StageKey } from "./Pipeline";
 import { cleanPatch } from "./Slots";
 import { defaultFollowUp, parseFollowUp, ymdOf } from "./Hours";
@@ -36,6 +36,8 @@ export interface TurnInput {
   stepsPending?: boolean;
   // the system is presenting the course to someone who asked the price: the proposal waits this turn (holdValue false hands over at once)
   holdValue?: boolean;
+  // the system just asked the person something it needs (the CPF that is missing): nobody takes the conversation in this turn
+  stay?: boolean;
   // the block of the flow where it happened (for the gaps in the knowledge base)
   nodeId?: string | null;
   now?: Date;
@@ -76,11 +78,31 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   // 1) what was found out
   // the catalogue and the polos recognise the course and the city in the words of the person; what the model brings explicitly wins
   const auto = input.replied && ports.detect ? cleanPatch(await ports.detect(input.userText).catch(() => ({}))) : {};
+  // the course of a degree the person already has (or is taking) is not the course they want: it is kept as where they come from
+  if (auto.courseName && (s.slots.courseId || s.slots.courseName) && priorStudy(input.userText)) {
+    if (!s.slots.previousCourse) s.slots.previousCourse = auto.courseName;
+    delete (auto as any).courseName; delete (auto as any).courseId;
+  }
   Object.entries(auto).forEach(([k, v]) => {
     if (v && JSON.stringify(s.slots[k]) !== JSON.stringify(v) && (k === "courseName" || k === "city")) reasons.push(k === "courseName" ? `Curso reconhecido na mensagem: ${v}.` : `Cidade reconhecida na mensagem: ${v}.`);
   });
   const patch = { ...auto, ...cleanPatch(input.patch) };
+  // another course (named by the person or registered by the model): what was explained about the old one does not count for the new one,
+  // whoever noticed the change; a course named ends the "choosing a course" moment
+  const courseChanged = (patch.courseId && s.slots.courseId && Number(patch.courseId) !== Number(s.slots.courseId)) || (!patch.courseId && patch.courseName && s.slots.courseName && String(patch.courseName).toLowerCase() !== String(s.slots.courseName).toLowerCase());
   s.slots = { ...s.slots, ...patch };
+  if (courseChanged) {
+    ["courseExplained", "modalityExplained", "mecExplained", "internshipExplained", "gradeSent"].forEach(k => { if (patch[k] !== true) s.slots[k] = false; });
+    if (!patch.courseModality) { delete s.slots.courseModality; delete s.slots.mecImpacted; }
+    delete s.slots.formatTried;
+    // everything that was read from the old course goes with it (the tools look the course up by these)
+    if (patch.courseId) s.slots.offerId = patch.courseId; else delete s.slots.offerId;
+    if (!patch.courseId) delete s.slots.courseId;
+    ["gradeId", "gradeVersion", "courseDurationSemesters", "courseDurationText", "courseDegree", "internshipSummary", "hasInternship", "hasTcc"].forEach(k => { if (patch[k] === undefined) delete s.slots[k]; });
+    if (patch.bolsaDataAsked === undefined && !s.slots.fullName) s.slots.bolsaDataAsked = 0;
+    reasons.push("Outro curso: o formato, a grade e as dúvidas recomeçam para ele.");
+  }
+  if ((patch.courseId || patch.courseName) && patch.courseChoosing !== true) s.slots.courseChoosing = false;
   const used = new Set(input.tools);
   // what the person wants, read from their words and revised at each message (a person who said "quero me matricular" and later asks about the grade is still a prospect)
   if (input.replied) {
@@ -241,8 +263,8 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (supportExit) { exit = supportExit; exitWhy = supportExit === "secretaria" ? "Aluno que precisa da secretaria do polo." : "Aluno que precisa da tutoria do polo."; }
   else if (ask) exit = null;
   else if (noInterest) { exit = "sem_interesse"; exitWhy = "A pessoa confirmou que não tem interesse."; }
-  else if (s.readyForProposal && !input.stepsPending && !holdValue) { exit = "proposta"; exitWhy = intent === "price" ? "Pediu valores: quem apresenta as condições é o consultor." : intent === "enrollment" ? "Quer se matricular: o consultor conduz a matrícula." : intent === "proposal" ? "Pediu proposta ou link de inscrição." : "Lead quente: encaminhado ao consultor."; }
-  else if (followUp) { exit = "follow_up"; exitWhy = "Pediu um tempo: o retorno ficou agendado."; }
+  else if (s.readyForProposal && !input.stepsPending && !holdValue && !input.stay) { exit = "proposta"; exitWhy = intent === "price" ? "Pediu valores: quem apresenta as condições é o consultor." : intent === "enrollment" ? "Quer se matricular: o consultor conduz a matrícula." : intent === "proposal" ? "Pediu proposta ou link de inscrição." : "Lead quente: encaminhado ao consultor."; }
+  else if (followUp && !input.stay) { exit = "follow_up"; exitWhy = "Pediu um tempo: o retorno ficou agendado."; }
   // a question the base does not answer: the agent says it will confirm, the question is noted for the consultant and the conversation goes on
   // (the process continues); only after the "tentativas de esclarecimento" of the administrator in a row does a person take over
   else if (unknownAsked && !unknownHeld) {
@@ -253,7 +275,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection) { exit = "human"; exitWhy = "Objeções repetidas: um consultor assume a negociação."; }
   // a qualified lead is handed to the consultant when nothing is left hanging: not while a grade was asked and not sent, and not in the same
   // message that asks the person something (unless the conversation already went on for two more answers)
-  else if (s.slots.readyForConsultant && !input.stepsPending && input.replied && !(intent === "curriculum" && !s.slots.gradeSent) && (!input.endsWithQuestion || Number(s.slots.qualifiedReplies || 0) >= (ports.qualifyAfter || 2) + 2)) { exit = "human"; exitWhy = "Lead qualificado: todos os dados necessários estão no cadastro."; }
+  else if (s.slots.readyForConsultant && !input.stay && !input.stepsPending && input.replied && !(intent === "curriculum" && !s.slots.gradeSent) && (!input.endsWithQuestion || Number(s.slots.qualifiedReplies || 0) >= (ports.qualifyAfter || 2) + 2)) { exit = "human"; exitWhy = "Lead qualificado: todos os dados necessários estão no cadastro."; }
   if (exitWhy) reasons.push(`Transferência: ${exitWhy}`);
   const why =
     supportExit ? (supportExit === "secretaria" ? "secretary" : "tutoring") :
