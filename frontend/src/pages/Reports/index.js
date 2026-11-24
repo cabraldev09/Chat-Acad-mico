@@ -5,7 +5,8 @@ import { MenuItem, TextField } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { BarsChart, ChartLegend, ChartTooltip, useChartTheme } from "../../components/charts";
-import { BellOff, CalendarDays, CheckCircle2, Clock3, GraduationCap, MailOpen, MessageCircle, MessagesSquare, Reply, Timer, Users } from "lucide-react";
+import { BellOff, CalendarDays, CheckCircle2, Clock3, GraduationCap, Headphones, Hourglass, Inbox, MailOpen, MessageCircle, MessagesSquare, Reply, Timer, Users } from "lucide-react";
+import { colorOf, initialsOf } from "../../utils/avatar";
 
 import { CHANNELS } from "../../components/ChannelIcon";
 import { AuthContext } from "../../context/Auth/AuthContext";
@@ -113,10 +114,15 @@ export const duration = (sec) => {
 const iso = (d) => d.toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
 const clock = (v) => new Date(v).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 const STATUS = {
-  open: ["Em atendimento", "rgba(6,147,227,.14)", "#0b6bb5"],
-  pending: ["Aguardando", "rgba(245,158,11,.16)", "#b45309"],
-  closed: ["Finalizada", "rgba(100,116,139,.16)", "#475569"],
+  open: ["Em atendimento", "rgba(6,147,227,.14)", "#0b6bb5", "info"],
+  pending: ["Aguardando", "rgba(245,158,11,.16)", "#b45309", "warn"],
+  closed: ["Finalizada", "rgba(100,116,139,.16)", "#475569", ""],
 };
+// the first answer against the goal of 15 minutes: on time, late, very late
+const firstTone = (sec) => (sec === null || sec === undefined ? "" : sec <= 15 * 60 ? "good" : sec <= 60 * 60 ? "warn" : "bad");
+const Avatar = ({ name, size = 32 }) => (
+  <span className="mx-avatar" style={{ background: colorOf(name), width: size, height: size }} aria-hidden="true">{initialsOf(name)}</span>
+);
 const TABS = [["geral", "Visão geral", MessagesSquare], ["equipe", "Equipe", Users], ["canais", "Canais e filas", CalendarDays]];
 
 // a list of { name, total, color } as ranked bars (biggest first, the bar relative to the biggest)
@@ -240,9 +246,10 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
   // the row opens the conversation; "não precisa de resposta" is a button beside it (never a button inside another button)
   const list = (rows, color, withMute) => rows.map((t) => (
     <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-      <button type="button" className={classes.row} style={{ flex: 1, minWidth: 0 }} onClick={() => history.push(`/tickets/${t.id}`)}>
-        <span className={classes.rowName}>{t.name}</span>
-        <span className={classes.rowTime} style={{ color }}>há {minutes(t.seconds)}</span>
+      <button type="button" className="mx-item" style={{ flex: 1, minWidth: 0, marginTop: 8 }} onClick={() => history.push(`/tickets/${t.id}`)}>
+        <Avatar name={t.name} size={30} />
+        <span className="mx-text mx-name">{t.name}</span>
+        <span className="mx-pill" data-tone={color === "#dc2626" || t.seconds > 3600 ? "bad" : "warn"}>há {minutes(t.seconds)}</span>
       </button>
       {withMute && (
         <button type="button" className={classes.mute} title="Não precisa de resposta (avisos, listas)" aria-label={`${t.name}: não precisa de resposta`} onClick={() => silence(t)}>
@@ -331,8 +338,13 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
             )}
 
             <div className={classes.panel}>
-              <h2 className={classes.panelTitle}><MessageCircle size={16} /> Atendimentos do período</h2>
-              <div className={classes.panelSub}>Cada linha é um lead. Clique para abrir a conversa.</div>
+              <div className="mx-head">
+                <span className="mx-ico" aria-hidden="true"><MessageCircle size={17} /></span>
+                <div style={{ minWidth: 0 }}>
+                  <h2 className="mx-title">Atendimentos do período</h2>
+                  <div className="mx-sub">Cada linha é um lead. Clique para abrir a conversa.</div>
+                </div>
+              </div>
               {p && p.table.length > 0 ? (
                 <div className={classes.table}>
                   <div className={classes.thead}><span>Lead</span><span>Recebidas</span><span>Enviadas</span><span>1ª resposta</span><span>Situação</span><span>Último</span></div>
@@ -340,12 +352,12 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
                     const st = STATUS[r.status] || STATUS.closed;
                     return (
                       <button key={r.id} type="button" className={classes.tr} onClick={() => history.push(`/tickets/${r.id}`)}>
-                        <span className={classes.person}><span className={classes.avatar}>{String(r.name || "?").charAt(0).toUpperCase()}</span><span className={classes.rowName}>{r.name}</span></span>
+                        <span className={classes.person}><Avatar name={r.name} /><span className={classes.rowName}>{r.name}</span></span>
                         <span className="num hide">{r.received}</span>
                         <span className="num hide">{r.sent}</span>
-                        <span className="num hide">{r.firstResponse !== null ? minutes(r.firstResponse) : "—"}</span>
-                        <span className="hide"><span className={classes.chip} style={{ background: st[1], color: st[2] }}>{st[0]}</span></span>
-                        <span className="num" style={{ color: "inherit", opacity: 0.7, fontSize: 13 }}>{days === 1 ? clock(r.lastAt) : new Date(r.lastAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}</span>
+                        <span className="num hide">{r.firstResponse !== null ? <span className="mx-pill" data-plain="1" data-tone={firstTone(r.firstResponse)}>{minutes(r.firstResponse)}</span> : "—"}</span>
+                        <span><span className="mx-pill" data-tone={st[3]}>{st[0]}</span></span>
+                        <span className="num hide" style={{ color: "inherit", opacity: 0.7, fontSize: 13 }}>{days === 1 ? clock(r.lastAt) : new Date(r.lastAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}</span>
                       </button>
                     );
                   })}
@@ -386,29 +398,35 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
 
           <div className={classes.stack}>
             <div className={classes.panel}>
-              <h2 className={classes.panelTitle}><Clock3 size={16} /> {embedded ? "Fila agora" : "Agora"}</h2>
-              <div className={classes.panelSub}>O que está na mesa neste momento</div>
-              <div className={classes.nowGrid} style={{ marginTop: 12 }}>
-                {[["Em atendimento", now && now.open, "open"], ["Aguardando", now && now.pending, "pending"], ["Não lidas", now && now.unread, "unread"]].map(([label, value, key]) => (
-                  <button key={key} type="button" className={classes.nowBtn} onClick={() => history.push(`/tickets?filtro=${key}`)}>
+              <div className="mx-head">
+                <span className="mx-ico" aria-hidden="true"><Clock3 size={17} /></span>
+                <div style={{ minWidth: 0 }}>
+                  <h2 className="mx-title">{embedded ? "Fila agora" : "Agora"}</h2>
+                  <div className="mx-sub">O que está na mesa neste momento</div>
+                </div>
+              </div>
+              <div className="mx-tiles">
+                {[["Em atendimento", now && now.open, "open", Headphones, "info"], ["Aguardando", now && now.pending, "pending", Hourglass, "warn"], ["Não lidas", now && now.unread, "unread", Inbox, now && now.unread > 0 ? "bad" : ""]].map(([label, value, key, Icon, tone]) => (
+                  <button key={key} type="button" className="mx-tile" data-tone={tone || undefined} onClick={() => history.push(`/tickets?filtro=${key}`)} aria-label={`${label}: ${value === null || value === undefined ? "carregando" : value}`}>
+                    <span className="mx-ico" data-tone={tone || undefined} aria-hidden="true"><Icon size={15} /></span>
                     <b>{value === null || value === undefined ? "–" : value}</b><span>{label}</span>
                   </button>
                 ))}
               </div>
 
               {now && now.waiting.length === 0 && now.unanswered.length === 0 ? (
-                <div className={classes.ok} style={{ marginTop: 14 }}><CheckCircle2 size={20} color="#15803d" /> Tudo em dia: ninguém na fila e nenhuma conversa esperando resposta.</div>
+                <div className="mx-empty"><span className="mx-ico" data-tone="good" aria-hidden="true"><CheckCircle2 size={17} /></span><div><b>Tudo em dia</b><span>Ninguém na fila e nenhuma conversa esperando resposta.</span></div></div>
               ) : (
                 <>
                   {now && now.waiting.length > 0 && (
                     <>
-                      <div className={classes.group}><Clock3 size={13} /> Aguardando atendimento</div>
+                      <div className="mx-group"><Clock3 size={13} /> Aguardando atendimento</div>
                       {list(now.waiting, "#b45309", false)}
                     </>
                   )}
                   {now && now.unanswered.length > 0 && (
                     <>
-                      <div className={classes.group}><Reply size={13} /> Sem resposta há mais de 15 min</div>
+                      <div className="mx-group"><Reply size={13} /> Sem resposta há mais de 15 min</div>
                       {list(now.unanswered, "#dc2626", true)}
                       <div className={classes.panelSub} style={{ marginTop: 6 }}>Só conversas de pessoas, em horário de trabalho. <MailOpen size={11} style={{ verticalAlign: -1 }} /> Avisos e listas: use o sino cortado.</div>
                     </>

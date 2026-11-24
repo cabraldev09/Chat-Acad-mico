@@ -1,5 +1,7 @@
 import React from "react";
 import { makeStyles } from "@material-ui/core/styles";
+import { AlertTriangle, CheckCircle2, Info, Sparkles } from "lucide-react";
+import "../../styles/peak.css";
 
 // minutes -> "8 min", "1 h 20", "2 d"
 export const hm = (min) => {
@@ -34,20 +36,31 @@ export const useShared = makeStyles((theme) => {
 
 const TONE = { good: "#16a34a", warn: "#d97706", info: "#0693E3" };
 
-// the sentences the system wrote about the numbers
+// the sentences the system wrote about the numbers: one line each, with an icon of its tone in a soft circle
+const TONE_ICON = { good: CheckCircle2, warn: AlertTriangle, info: Info, bad: AlertTriangle };
 export const Insights = ({ items, title = "Leitura do período" }) => {
   const c = useShared();
   if (!items || !items.length) return null;
   return (
     <div className={c.panel}>
-      <h2 className={c.title}>{title}</h2>
-      <div style={{ marginTop: 8 }}>
-        {items.map((i, k) => (
-          <div className={c.insight} key={k}>
-            <span className={c.dot} style={{ background: TONE[i.tone] || TONE.info }} />
-            <span>{i.text}</span>
-          </div>
-        ))}
+      <div className="mx-head">
+        <span className="mx-ico" data-tone="info" aria-hidden="true"><Sparkles size={17} /></span>
+        <div style={{ minWidth: 0 }}>
+          <h2 className="mx-title">{title}</h2>
+          <div className="mx-sub">O que os números do período dizem</div>
+        </div>
+      </div>
+      <div className="mx-list">
+        {items.map((i, k) => {
+          const tone = TONE[i.tone] ? i.tone : "info";
+          const Icon = TONE_ICON[tone] || Info;
+          return (
+            <div className="mx-item" key={k}>
+              <span className="mx-ico" data-tone={tone} aria-hidden="true"><Icon size={15} /></span>
+              <span className="mx-text">{i.text}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
