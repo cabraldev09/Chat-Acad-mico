@@ -27,6 +27,7 @@ import QueueSelect from "../QueueSelect";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { dayDefault, standardDays } from "../../utils/workWeek";
 import { isManager } from "../../utils/access";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const WEBHOOK_OUTCOME = {
 	recebido: "chegou ao sistema",
@@ -132,9 +133,12 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 
 	// the universities of the group: with two or more, each number says which one it speaks for
 	const [institutions, setInstitutions] = useState([]);
+	// the people a QR Code number can be given to (it becomes their personal number)
+	const [staff, setStaff] = useState([]);
 
 	useEffect(() => {
 		if (!open) return;
+		if (isManager(user)) fetchAllUsersPage().then(({ data }) => setStaff((data.users || []).filter(u => u.profile !== "admin" && u.role !== "admin"))).catch(() => setStaff([]));
 		api.get("/channels").then(({ data }) => setChannels(data)).catch(() => {});
 		api.get("/institutions").then(({ data }) => setInstitutions((Array.isArray(data) ? data : []).filter(i => i.active !== false))).catch(() => setInstitutions([]));
 	}, [open]);
@@ -242,6 +246,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 			groupsMode: whatsApp.groupsMode || "off",
 			...(isManager(user) ? { aiFirst: !!whatsApp.aiFirst, team: whatsApp.team || null } : {}),
 			...(isManager(user) && institutions.length > 1 ? { institutionId: whatsApp.institutionId || null } : {}),
+			...(isManager(user) && (whatsApp.channel || "whatsapp") === "whatsapp" ? { ownerId: whatsApp.ownerId || null } : {}),
 			allowedGroups: allowed,
 			businessHours: JSON.stringify(hours),
 			queueIds: selectedQueueIds,
@@ -315,6 +320,26 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 						label={i18n.t("whatsappModal.form.default")}
 					/>
 				</div>
+
+				{isManager(user) && (whatsApp.channel || "whatsapp") === "whatsapp" && (
+					<div className={classes.section}>
+						<TextField
+							select
+							fullWidth
+							variant="outlined"
+							margin="dense"
+							label="Responsável pelo número (opcional)"
+							value={whatsApp.ownerId || ""}
+							onChange={e => setWhatsApp({ ...whatsApp, ownerId: e.target.value ? Number(e.target.value) : null, ...(e.target.value ? { isDefault: false } : {}) })}
+							helperText="Vazio: número da empresa. Com um responsável, o número é dele: as conversas chegam para ele e só ele vê este número em Conexões, para ler o QR Code com o próprio celular."
+						>
+							<MenuItem value="">Nenhum (número da empresa)</MenuItem>
+							{staff.map(u => (
+								<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>
+							))}
+						</TextField>
+					</div>
+				)}
 
 				{isManager(user) && !whatsApp.ownerId && (
 					<div className={classes.section}>

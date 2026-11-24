@@ -1,6 +1,6 @@
-# Rotas da API (549)
+# Rotas da API (560)
 
-Públicas: 33 · logado (qualquer perfil): 298 · gestão: 174 · admin: 36
+Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 
 ## Públicas (sem login)
 
@@ -24,6 +24,8 @@ Públicas: 33 · logado (qualquer perfil): 298 · gestão: 174 · admin: 36
 - POST /efi/:secret (efiWebhookRoutes.ts)
 - GET /_aluna.webp (leadFormRoutes.ts)
 - GET /:token (leadFormRoutes.ts)
+- GET /:token/u/:slug (leadFormRoutes.ts)
+- POST /:token/u/:slug/submit (leadFormRoutes.ts)
 - POST /:token/submit (leadFormRoutes.ts)
 - GET /meta (metaWebhookRoutes.ts)
 - POST /meta (metaWebhookRoutes.ts)
@@ -80,6 +82,8 @@ Públicas: 33 · logado (qualquer perfil): 298 · gestão: 174 · admin: 36
 - POST /leads (extraRoutes.ts)
 - POST /leads/import (extraRoutes.ts)
 - POST /leads/from-contact/:contactId (extraRoutes.ts)
+- PUT /notifications/read-all (extraRoutes.ts)
+- PUT /notifications/:id/read (extraRoutes.ts)
 - POST /tutoria/students/import (extraRoutes.ts)
 - POST /tutoria/students/:leadId/conversation (extraRoutes.ts)
 - POST /proposals/preview (extraRoutes.ts)
@@ -94,7 +98,6 @@ Públicas: 33 · logado (qualquer perfil): 298 · gestão: 174 · admin: 36
 - PUT /settings/:settingKey (settingRoutes.ts)
 - PUT /tickets/read-all (ticketRoutes.ts)
 - POST /tickets (ticketRoutes.ts)
-- POST /whatsapp/ (whatsappRoutes.ts)
 
 ## Alteram dados com checagem de escopo
 
@@ -158,6 +161,7 @@ Públicas: 33 · logado (qualquer perfil): 298 · gestão: 174 · admin: 36
 - PUT /leads/:id/onboarding → canAccessLead
 - PUT /leads/:id/tasks/:taskId → canAccessLead
 - POST /leads/:id/tasks/:taskId/toggle → canAccessLead
+- PUT /leads/:id/tasks/:taskId/done → canAccessLead
 - DELETE /leads/:id/tasks/:taskId → canAccessLead
 - PUT /proposals/:id → canAccessProposal
 - DELETE /proposals/:id → canAccessProposal
@@ -192,7 +196,6 @@ Públicas: 33 · logado (qualquer perfil): 298 · gestão: 174 · admin: 36
 - POST /tickets/:ticketId/typing → canWriteTicket
 - PUT /tickets/:ticketId → canWriteTicket
 - PUT /whatsapp/:whatsappId → canManageWhatsapp
-- DELETE /whatsapp/:whatsappId → canManageWhatsapp
 - POST /whatsapp/:whatsappId/import-history → canManageWhatsapp
 - POST /whatsappsession/:whatsappId → canManageWhatsapp
 - PUT /whatsappsession/:whatsappId → canManageWhatsapp
