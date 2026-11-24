@@ -3,6 +3,7 @@ import { QueryTypes } from "sequelize";
 
 import sequelize from "../database";
 import UserQueue from "../models/UserQueue";
+import User from "../models/User";
 import { dayBounds, fmtDate, getAppTz, shiftDays } from "../helpers/AppTime";
 import { businessMinutes, getBusinessConfig } from "../helpers/BusinessTime";
 import { isManagerRole, roleOf } from "../helpers/Roles";
@@ -93,13 +94,13 @@ const candidatesP = q(
     rep
   );
 const rowsP = q(
-    `SELECT t.id, c.name, t.status, t.userId, t.firstResponseAt, t.createdAt AS ticketCreatedAt,
+    `SELECT t.id, t.contactId, c.name, t.status, t.userId, t.firstResponseAt, t.createdAt AS ticketCreatedAt,
             SUM(CASE WHEN m.fromMe = false THEN 1 ELSE 0 END) AS received,
             SUM(CASE WHEN m.fromMe = true THEN 1 ELSE 0 END) AS sent,
             MAX(m.createdAt) AS lastAt
      FROM Messages m JOIN Tickets t ON t.id = m.ticketId JOIN Contacts c ON c.id = t.contactId
      WHERE m.createdAt BETWEEN :from AND :to AND m.isDeleted = false AND ${base} ${scope}
-     GROUP BY t.id, c.name, t.status, t.userId, t.firstResponseAt, t.createdAt
+     GROUP BY t.id, t.contactId, c.name, t.status, t.userId, t.firstResponseAt, t.createdAt
      HAVING SUM(CASE WHEN m.fromMe = false THEN 1 ELSE 0 END) > 0
          OR (SUM(CASE WHEN m.fromMe = true THEN 1 ELSE 0 END) > 0 AND t.userId IS NOT NULL)
      ORDER BY MAX(m.createdAt) DESC LIMIT 3000`,
@@ -215,18 +216,35 @@ const weekP = q(
     : null;
   const insights = buildInsights({ reply, previous: previousReply, slaMinutes, byHour: replyByHour, unanswered: unanswered.length, waiting: waiting.length, rangeDays });
 
-  const table = rows.slice(0, 100).map(r => ({
-    id: r.id,
-    name: r.name,
-    status: r.status,
-    received: num(r.received),
-    sent: num(r.sent),
-    lastAt: r.lastAt,
-    firstResponse:
-      r.firstResponseAt && new Date(r.firstResponseAt) >= new Date(r.ticketCreatedAt)
-        ? Math.round(businessMinutes(business, new Date(r.ticketCreatedAt), new Date(r.firstResponseAt)) * 60)
-        : null
-  }));
+  // one line per lead (the most recent conversation of the person, with the messages of all of them in the period), with who attends
+  const byContact = new Map<number, any>();
+  rows.forEach(r => {
+    const key = Number(r.contactId) || -Number(r.id);
+    const seen = byContact.get(key);
+    if (seen) {
+      seen.received += num(r.received);
+      seen.sent += num(r.sent);
+      seen.attendances += 1;
+      return;
+    }
+    byContact.set(key, {
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      userId: r.userId ? Number(r.userId) : null,
+      received: num(r.received),
+      sent: num(r.sent),
+      attendances: 1,
+      lastAt: r.lastAt,
+      firstResponse:
+        r.firstResponseAt && new Date(r.firstResponseAt) >= new Date(r.ticketCreatedAt)
+          ? Math.round(businessMinutes(business, new Date(r.ticketCreatedAt), new Date(r.firstResponseAt)) * 60)
+          : null
+    });
+  });
+  const lines = Array.from(byContact.values()).slice(0, 500);
+  const people = await User.findAll({ where: { id: [...new Set(lines.map(l => l.userId).filter(Boolean))] as number[] }, attributes: ["id", "name"] });
+  const table = lines.map(l => ({ ...l, responsible: l.userId ? people.find(u => u.id === l.userId)?.name || null : null }));
 
   return {
     date: fmtIso(endBounds.start),

@@ -5,7 +5,7 @@ import { MenuItem, TextField } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { BarsChart, ChartLegend, ChartTooltip, useChartTheme } from "../../components/charts";
-import { BellOff, CalendarDays, CheckCircle2, Clock3, GraduationCap, Headphones, Hourglass, Inbox, MailOpen, MessageCircle, MessagesSquare, Reply, Timer, Users } from "lucide-react";
+import { BellOff, CalendarDays, CheckCircle2, ChevronRight, Clock3, GraduationCap, Headphones, Hourglass, Inbox, MailOpen, MessageCircle, MessagesSquare, Reply, Timer, Users } from "lucide-react";
 import { colorOf, initialsOf } from "../../utils/avatar";
 
 import { CHANNELS } from "../../components/ChannelIcon";
@@ -75,14 +75,18 @@ const useStyles = makeStyles((theme) => {
     mute: { border: 0, background: "transparent", cursor: "pointer", color: theme.palette.text.secondary, padding: 4, borderRadius: 6, display: "inline-flex", "&:hover": { color: theme.palette.text.primary, background: soft } },
     ok: { display: "flex", gap: 10, alignItems: "center", color: theme.palette.text.secondary, fontSize: 14, padding: theme.spacing(1, 0) },
     table: { width: "100%", marginTop: theme.spacing(1.5) },
-    thead: { display: "grid", gridTemplateColumns: "minmax(0, 2fr) 72px 72px 96px 120px 90px", gap: 8, padding: "0 10px 8px", fontSize: 12, color: theme.palette.text.secondary, fontWeight: 600, borderBottom: `1px solid ${line}`, [theme.breakpoints.down("sm")]: { display: "none" } },
+    thead: { display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1.2fr) 120px 96px 96px 80px", gap: 8, padding: "0 10px 8px", fontSize: 12, color: theme.palette.text.secondary, fontWeight: 600, borderBottom: `1px solid ${line}`, [theme.breakpoints.down("sm")]: { display: "none" } },
     tr: {
-      display: "grid", gridTemplateColumns: "minmax(0, 2fr) 72px 72px 96px 120px 90px", gap: 8, alignItems: "center", padding: "10px", border: 0, borderBottom: `1px solid ${line}`, width: "100%",
+      display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1.2fr) 120px 96px 96px 80px", gap: 8, alignItems: "center", padding: "10px", border: 0, borderBottom: `1px solid ${line}`, width: "100%",
       background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "inherit", textAlign: "left", fontSize: 14, "&:hover": { background: soft },
       "& .num": { fontVariantNumeric: "tabular-nums" },
       [theme.breakpoints.down("sm")]: { gridTemplateColumns: "minmax(0, 1fr) auto", "& .hide": { display: "none" } },
     },
     person: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
+    tools: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: theme.spacing(1.5) },
+    search: { flex: "1 1 180px", minWidth: 0, maxWidth: 280, height: 34, boxSizing: "border-box", border: `1px solid ${line}`, borderRadius: 10, padding: "0 10px", fontFamily: "inherit", fontSize: 13, background: "transparent", color: "inherit" },
+    select: { height: 34, boxSizing: "border-box", border: `1px solid ${line}`, borderRadius: 10, padding: "0 8px", fontFamily: "inherit", fontSize: 13, background: "transparent", color: "inherit", maxWidth: "100%" },
+    more: { display: "block", margin: "10px auto 0", border: `1px solid ${line}`, background: "transparent", color: "inherit", borderRadius: 10, padding: "7px 16px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" },
     avatar: { width: 30, height: 30, borderRadius: "50%", flex: "none", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg, #0B4279, #0693E3)" },
     chip: { display: "inline-block", fontSize: 12, fontWeight: 600, padding: "2px 9px", borderRadius: 999 },
     empty: { textAlign: "center", color: theme.palette.text.secondary, padding: theme.spacing(4, 1), fontSize: 14 },
@@ -146,6 +150,11 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
   // the period of the screen: today, the last 7 days, the month, two dates or the cycle of goals. The server reads it as "so many
   // days ending on a day" (up to a semester)
   const [period, setPeriod] = useState({ range: "today" });
+  // the list of the attendances: search, situation, who attends and how many lines (it grows with the number of leads)
+  const [find, setFind] = useState("");
+  const [situation, setSituation] = useState("");
+  const [owner, setOwner] = useState("");
+  const [lines, setLines] = useState(20);
   const cycle = useCycle();
   const picked = useMemo(() => {
     const r = rangeDates(period, cycle);
@@ -323,7 +332,8 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
       {tab === "geral" && (
         <div className={classes.layout}>
           <div className={classes.stack}>
-            {data && data.insights && data.insights.length > 0 && <Insights items={data.insights} />}
+            {/* inside the overview the queue has its own card: what the queue already says is not repeated here */}
+            {data && data.insights && data.insights.filter((i) => !embedded || !i.key).length > 0 && <Insights items={data.insights.filter((i) => !embedded || !i.key)} />}
             {/* inside the overview of the statistics these numbers are already on top of the page: here they would only repeat */}
             {!embedded && (
               <div className="pk-grid">
@@ -342,27 +352,63 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
                 <span className="mx-ico" aria-hidden="true"><MessageCircle size={17} /></span>
                 <div style={{ minWidth: 0 }}>
                   <h2 className="mx-title">Atendimentos do período</h2>
-                  <div className="mx-sub">Cada linha é um lead. Clique para abrir a conversa.</div>
+                  <div className="mx-sub">Cada linha é um lead, com a conversa mais recente. Clique para abrir.</div>
                 </div>
               </div>
-              {p && p.table.length > 0 ? (
-                <div className={classes.table}>
-                  <div className={classes.thead}><span>Lead</span><span>Recebidas</span><span>Enviadas</span><span>1ª resposta</span><span>Situação</span><span>Último</span></div>
-                  {p.table.map((r) => {
-                    const st = STATUS[r.status] || STATUS.closed;
-                    return (
-                      <button key={r.id} type="button" className={classes.tr} onClick={() => history.push(`/tickets/${r.id}`)}>
-                        <span className={classes.person}><Avatar name={r.name} /><span className={classes.rowName}>{r.name}</span></span>
-                        <span className="num hide">{r.received}</span>
-                        <span className="num hide">{r.sent}</span>
-                        <span className="num hide">{r.firstResponse !== null ? <span className="mx-pill" data-plain="1" data-tone={firstTone(r.firstResponse)}>{minutes(r.firstResponse)}</span> : "—"}</span>
-                        <span><span className="mx-pill" data-tone={st[3]}>{st[0]}</span></span>
-                        <span className="num hide" style={{ color: "inherit", opacity: 0.7, fontSize: 13 }}>{days === 1 ? clock(r.lastAt) : new Date(r.lastAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
+              {p && p.table.length > 0 ? (() => {
+                const norm = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+                const owners = [...new Set(p.table.map((r) => r.responsible).filter(Boolean))].sort((x, y) => x.localeCompare(y, "pt-BR"));
+                const rows = p.table
+                  .filter((r) => !find.trim() || norm(r.name).includes(norm(find.trim())))
+                  .filter((r) => !situation || r.status === situation)
+                  .filter((r) => !owner || (owner === "-" ? !r.responsible : r.responsible === owner));
+                return (
+                  <>
+                    <div className={classes.tools}>
+                      <input className={classes.search} value={find} onChange={(e) => { setFind(e.target.value); setLines(20); }} placeholder="Buscar lead" aria-label="Buscar lead" />
+                      <select className={classes.select} value={situation} onChange={(e) => { setSituation(e.target.value); setLines(20); }} aria-label="Situação">
+                        <option value="">Todas as situações</option>
+                        <option value="pending">Aguardando</option>
+                        <option value="open">Em atendimento</option>
+                        <option value="closed">Finalizada</option>
+                      </select>
+                      <select className={classes.select} value={owner} onChange={(e) => { setOwner(e.target.value); setLines(20); }} aria-label="Responsável">
+                        <option value="">Todos os responsáveis</option>
+                        <option value="-">Sem responsável</option>
+                        {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                      <span className={classes.panelSub} style={{ marginLeft: "auto", marginTop: 0 }}>{rows.length.toLocaleString("pt-BR")} {rows.length === 1 ? "lead" : "leads"}</span>
+                    </div>
+                    {rows.length === 0 ? <div className={classes.empty}>Nenhum lead com esses filtros.</div> : (
+                      <div className={classes.table}>
+                        <div className={classes.thead}><span>Lead</span><span>Responsável</span><span>Situação</span><span>1ª resposta</span><span>Mensagens</span><span>Último</span></div>
+                        {rows.slice(0, lines).map((r) => {
+                          const st = STATUS[r.status] || STATUS.closed;
+                          return (
+                            <button key={r.id} type="button" className={classes.tr} onClick={() => history.push(`/tickets/${r.id}`)}>
+                              <span className={classes.person}>
+                                <Avatar name={r.name} />
+                                <span style={{ minWidth: 0, display: "grid" }}>
+                                  <span className={classes.rowName}>{r.name}</span>
+                                  {r.attendances > 1 && <span style={{ fontSize: 11.5, opacity: 0.65 }}>{r.attendances} atendimentos no período</span>}
+                                </span>
+                              </span>
+                              <span className="hide" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13, color: r.responsible ? "inherit" : "#b45309" }}>{r.responsible || "Sem responsável"}</span>
+                              <span><span className="mx-pill" data-tone={st[3]}>{st[0]}</span></span>
+                              <span className="num hide">{r.firstResponse !== null ? <span className="mx-pill" data-plain="1" data-tone={firstTone(r.firstResponse)}>{minutes(r.firstResponse)}</span> : "—"}</span>
+                              <span className="num hide" style={{ fontSize: 13 }} title={`${r.received} recebidas e ${r.sent} enviadas`}>{r.received} <span style={{ opacity: 0.5 }}>/</span> {r.sent}</span>
+                              <span className="num hide" style={{ color: "inherit", opacity: 0.7, fontSize: 13 }}>{days === 1 ? clock(r.lastAt) : new Date(r.lastAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {rows.length > lines && (
+                      <button type="button" className={classes.more} onClick={() => setLines((n) => n + 20)}>Ver mais {Math.min(20, rows.length - lines)} de {rows.length - lines}</button>
+                    )}
+                  </>
+                );
+              })() : (
                 <div className={classes.empty}>{p ? "Nenhum atendimento neste período." : failed.data ? <ErrorState title="Não foi possível carregar os atendimentos." onRetry={retry} compact /> : "Carregando..."}</div>
               )}
             </div>
@@ -398,13 +444,16 @@ const ReportsClassic = ({ embedded = false, days: daysProp, date: dateProp }) =>
 
           <div className={classes.stack}>
             <div className={classes.panel}>
-              <div className="mx-head">
+              {/* the head of the card opens the queue itself (Conversas → Aguardando) */}
+              <button type="button" className="mx-head" onClick={() => history.push("/tickets?filtro=pending")} title="Abrir a fila em Conversas"
+                style={{ border: 0, background: "transparent", padding: 0, width: "100%", textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit" }}>
                 <span className="mx-ico" aria-hidden="true"><Clock3 size={17} /></span>
-                <div style={{ minWidth: 0 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <h2 className="mx-title">{embedded ? "Fila agora" : "Agora"}</h2>
-                  <div className="mx-sub">O que está na mesa neste momento</div>
+                  <div className="mx-sub">O que está na mesa neste momento. Clique para abrir a fila.</div>
                 </div>
-              </div>
+                <ChevronRight size={16} aria-hidden="true" style={{ opacity: 0.6, flex: "none" }} />
+              </button>
               <div className="mx-tiles">
                 {[["Em atendimento", now && now.open, "open", Headphones, "info"], ["Aguardando", now && now.pending, "pending", Hourglass, "warn"], ["Não lidas", now && now.unread, "unread", Inbox, now && now.unread > 0 ? "bad" : ""]].map(([label, value, key, Icon, tone]) => (
                   <button key={key} type="button" className="mx-tile" data-tone={tone || undefined} onClick={() => history.push(`/tickets?filtro=${key}`)} aria-label={`${label}: ${value === null || value === undefined ? "carregando" : value}`}>

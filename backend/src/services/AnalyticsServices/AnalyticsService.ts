@@ -1,5 +1,6 @@
 import { QueryTypes } from "sequelize";
 
+import { isOnline } from "./LivePresence";
 import sequelize from "../../database";
 import { dayBounds, getAppTz, shiftDays, todayInAppTz } from "../../helpers/AppTime";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
@@ -139,6 +140,47 @@ export const visibleConsultantIds = async (user: any): Promise<number[]> => {
   const inPolos = (await PoloMember.findAll({ where: { poloId: mine }, attributes: ["userId"] })).map(m => m.userId);
   const allowed = new Set(inPolos);
   return all.filter(id => allowed.has(id));
+};
+
+// Everybody who works with the clients and the students, for "Equipe agora": consultants, tutors, the academic team, the relationship team,
+// the coordination; administrators only when they attend too (a number of their own, leads of their own or conversations in hand)
+export const teamWhere = `(u.profile <> 'admin' OR EXISTS (SELECT 1 FROM Whatsapps ow WHERE ow.ownerId = u.id) OR EXISTS (SELECT 1 FROM Leads ol WHERE ol.ownerId = u.id AND ol.isHistorical = false) OR EXISTS (SELECT 1 FROM Tickets ot WHERE ot.userId = u.id AND ot.status = 'open'))`;
+
+export type TeamArea = "comercial" | "tutoria" | "relacionamento" | "gestao";
+export const areaOf = (role: string | null | undefined, profile?: string | null): TeamArea => {
+  if (profile === "admin" || role === "admin" || role === "coordenacao") return "gestao";
+  if (role === "tutor" || role === "academico") return "tutoria";
+  if (role === "relacionamento") return "relacionamento";
+  return "comercial";
+};
+
+export interface TeamMember {
+  user: { id: number; name: string; role: string; area: TeamArea };
+  presence: Presence;
+  // a QR Code number of their own: only then the state of "their WhatsApp" says something (the official number serves everybody)
+  ownNumber: boolean;
+}
+
+// "Equipe agora": who of the whole team is here, with the same reading of presence the consultants have
+export const teamPresence = async (viewer: any): Promise<TeamMember[]> => {
+  if (!isManagerRole(roleOf(viewer))) return [];
+  let people: any[] = await rows(`SELECT u.id, u.name, u.role, u.profile FROM Users u WHERE ${teamWhere} ORDER BY u.name`, {});
+  if (!(viewer.profile === "admin" || roleOf(viewer) === "admin")) {
+    const mine = (await PoloMember.findAll({ where: { userId: Number(viewer.id) }, attributes: ["poloId"] })).map(m => m.poloId);
+    if (mine.length) {
+      const allowed = new Set((await PoloMember.findAll({ where: { poloId: mine }, attributes: ["userId"] })).map(m => m.userId));
+      people = people.filter(p => allowed.has(Number(p.id)) || Number(p.id) === Number(viewer.id));
+    }
+  }
+  const ids = people.map(p => Number(p.id));
+  if (!ids.length) return [];
+  const presence = await computePresence(ids, await getConfig());
+  const own = new Set((await rows(`SELECT DISTINCT ownerId FROM Whatsapps WHERE channel = 'whatsapp' AND ownerId IN (:ids)`, { ids })).map(r => Number(r.ownerId)));
+  return people.map(p => {
+    const id = Number(p.id);
+    const role = p.profile === "admin" ? "admin" : String(p.role || "consultor");
+    return { user: { id, name: String(p.name), role, area: areaOf(p.role, p.profile) }, presence: presence.get(id) as Presence, ownNumber: own.has(id) };
+  });
 };
 
 export const canSeeConsultant = async (user: any, targetId: number): Promise<boolean> =>
@@ -326,7 +368,7 @@ export const computePresence = async (userIds: number[], config: AnalyticsConfig
     const at = last.find(r => Number(r.userId) === id)?.at;
     const lastAt = at ? new Date(at) : null;
     const recent = !!lastAt && now.getTime() - lastAt.getTime() <= config.activeWindowMinutes * 60000;
-    out.set(id, { state: recent ? "active" : onSchedule ? "idle" : "off", onSchedule, lastActivityAt: lastAt ? lastAt.toISOString() : null, scheduleToday: slots, whatsapp: whatsappOf(id), online: !!seenAt && now.getTime() - seenAt.getTime() <= 5 * 60000, lastSeenAt: seenAt ? seenAt.toISOString() : null });
+    out.set(id, { state: recent ? "active" : onSchedule ? "idle" : "off", onSchedule, lastActivityAt: lastAt ? lastAt.toISOString() : null, scheduleToday: slots, whatsapp: whatsappOf(id), online: isOnline(id, seenAt, now.getTime()), lastSeenAt: seenAt ? seenAt.toISOString() : null });
   }
   return out;
 };
