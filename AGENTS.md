@@ -66,8 +66,9 @@ Para um erro: reproduza antes de corrigir e mostre o mesmo teste passando depois
 3. O CI precisa ficar verde: `verificar`, `telas` e os três `api-ponta-a-ponta`. Nunca pule, desligue ou apague um teste para
    passar. Um teste que falha de vez em quando tem uma causa: ache-a.
 4. Mescle por **squash**, passando o `expectedHeadSha` completo (`git rev-parse HEAD`).
-5. Depois do merge, o workflow "Atualizar a VPS" roda sozinho quando as Verificações do `main` passam. Confira que terminou
-   com sucesso e avise o usuário.
+5. Depois do merge, o workflow "Atualizar a VPS" roda sozinho. Se o commit do `main` é o squash de um PR verde com exatamente
+   o mesmo código (branch em dia com o `main`), ele publica logo após o merge; senão, quando as Verificações do `main` passam
+   (`deploy/vps/check-ci.js`). Confira que terminou com sucesso e avise o usuário.
 6. Nunca abra PR sem o usuário ter pedido.
 
 ## Segurança e privacidade
