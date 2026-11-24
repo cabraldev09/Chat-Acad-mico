@@ -12,8 +12,8 @@ fs.readdirSync(dir).filter(f => f.endsWith(".ts")).forEach(file => {
   while ((m = re.exec(text))) {
     const args = m[4].split(",").map(s => s.trim()).filter(Boolean);
     const guards = args.slice(0, -1).filter(a => /^[a-zA-Z]+$/.test(a));
-    const who = guards.includes("isAuthApi") ? "token da API" : guards.includes("isAdmin") ? "admin" : guards.includes("isManager") ? "gestão" : guards.includes("isAuth") ? "logado" : "público";
-    const scoped = guards.filter(g => !["isAuth", "isAdmin", "isManager", "cached"].includes(g) && !g.startsWith("upload") && !g.startsWith("rateLimit"));
+    const who = guards.includes("isAuthApi") ? "token da API" : guards.includes("isSystemAdmin") ? "admin" : guards.includes("isAdmin") ? "admin" : guards.includes("isManager") ? "gestão" : guards.includes("isAuth") ? "logado" : "público";
+    const scoped = guards.filter(g => !["isAuth", "isAdmin", "isSystemAdmin", "isManager", "cached"].includes(g) && !g.startsWith("upload") && !g.startsWith("rateLimit"));
     rows.push({ file, method: m[1].toUpperCase(), path: m[3], who, scoped: scoped.join(", ") });
   }
 });

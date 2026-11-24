@@ -41,13 +41,14 @@ const CreateUserService = async ({
   phone
 }: Request): Promise<Response> => {
   const schema = Yup.object().shape({
-    name: Yup.string().required().min(2),
+    name: Yup.string().trim().required("ERR_NAME_REQUIRED").min(2, "ERR_USER_NAME_SHORT"),
     email: Yup.string()
-      .email()
-      .required()
+      .trim()
+      .required("ERR_INVALID_EMAIL")
+      .email("ERR_INVALID_EMAIL")
       .test(
         "Check-email",
-        "An user with this email already exists.",
+        "ERR_USER_EMAIL_EXISTS",
         async value => {
           if (!value) return false;
           const emailExists = await User.findOne({
@@ -56,7 +57,7 @@ const CreateUserService = async ({
           return !emailExists;
         }
       ),
-    password: Yup.string().required().min(MIN_PASSWORD, "ERR_PASSWORD_SHORT")
+    password: Yup.string().required("ERR_PASSWORD_REQUIRED").min(MIN_PASSWORD, "ERR_PASSWORD_SHORT")
   });
 
   try {

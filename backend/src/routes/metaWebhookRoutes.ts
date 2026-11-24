@@ -6,6 +6,7 @@ import { getConfig } from "../channels/types";
 import { kickWebhook, storeWebhook } from "../services/ChannelServices/MetaWebhookQueue";
 import { logger } from "../utils/logger";
 import { getMetaApp } from "../helpers/MetaApp";
+import { safeEqual } from "../helpers/SafeEqual";
 import { describeCloudBody, noteWebhook } from "../channels/WebhookLog";
 
 const router = express.Router();
@@ -14,7 +15,8 @@ const router = express.Router();
 // of each entry. The verify token and the signature are the app's own (set once in Conexões > App da Meta).
 router.get("/meta", async (req: Request, res: Response) => {
   const app = await getMetaApp();
-  if (req.query["hub.mode"] === "subscribe" && app.verifyToken && req.query["hub.verify_token"] === app.verifyToken) {
+  // the verify token is a secret: compared in constant time (safeEqual), like the signatures below
+  if (req.query["hub.mode"] === "subscribe" && app.verifyToken && safeEqual(req.query["hub.verify_token"], app.verifyToken)) {
     return res.status(200).send(String(req.query["hub.challenge"]));
   }
   return res.sendStatus(403);
@@ -50,7 +52,7 @@ router.get("/meta/:whatsappId", async (req: Request, res: Response) => {
   if (
     req.query["hub.mode"] === "subscribe" &&
     verifyToken &&
-    req.query["hub.verify_token"] === verifyToken
+    safeEqual(req.query["hub.verify_token"], verifyToken)
   ) {
     noteWebhook(whatsapp.id, "verificacao_ok");
     return res.status(200).send(String(req.query["hub.challenge"]));
