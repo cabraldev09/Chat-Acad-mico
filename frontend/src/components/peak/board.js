@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useChartTheme } from "../charts";
 import { Check, ChevronRight, Inbox } from "lucide-react";
 
 import api from "../../services/api";
@@ -378,52 +380,104 @@ export const Person = ({ name, size = 34 }) => {
   );
 };
 
-// ---------------------------------------------------------------- several numbers over the same days, one under the other
-/**
- * Every series in its own line, on its own scale (they are too different in size to share one), over the same days.
- * rows: [{ key, title, unit, total, note, days: [{ day, value }] }]. A click on a line asks for that series alone.
- */
-export const MultiBars = ({ rows, onPick, emptyText = "Nenhum registro no período." }) => {
-  const [mode, setMode] = useState("day");
-  const byWeek = mode === "week";
-  const lines = (rows || []).map((r) => {
-    const all = (r.days || []).map((d) => ({ day: String(d.day).slice(0, 10), value: Number(d.value) || 0 }));
-    const points = byWeek ? weeksOf(all) : all;
-    return { ...r, points, max: Math.max(1, ...points.map((d) => d.value)) };
-  });
-  const any = lines.some((r) => r.points.some((d) => d.value > 0));
-  const axis = lines[0] ? lines[0].points : [];
-  const step = Math.max(1, Math.ceil(axis.length / 12));
+
+// ---------------------------------------------------------------- one metric at a time over the days (the interactive area chart
+// of shadcn, after "Area Charts 2" and "Chart Area" on 21st.dev): the tabs on top carry the total of each metric, the chart shows
+// the chosen one on its own scale, with every day of the period (a day with nothing is 0, never a gap)
+const ddmm = (k) => `${String(k).slice(8, 10)}/${String(k).slice(5, 7)}`;
+const fillGaps = (points) => {
+  if (points.length < 2) return points;
+  const by = new Map(points.map((p) => [p.day, p.value]));
+  const out = [];
+  const d = new Date(`${points[0].day}T12:00:00`);
+  const end = new Date(`${points[points.length - 1].day}T12:00:00`);
+  while (d <= end) {
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    out.push({ day: k, value: by.get(k) || 0 });
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+};
+const MetricTip = ({ active, payload, unit, unitOne, week }) => {
+  if (!active || !payload || !payload.length) return null;
+  const p = payload[0].payload;
   return (
-    <div className="gv-multi">
-      <div className="gv-bars-top">
-        <span className="gv-note">{byWeek ? "Cada barra é uma semana." : "Cada barra é um dia."} Cada linha tem a sua própria escala. Clique em uma linha para ver só ela.</span>
+    <div className="mx-tip">
+      <span>{week ? `Semana de ${ddmm(p.day)}` : ddmm(p.day)}</span>
+      <b>{nf(p.value)} {p.value === 1 && unitOne ? unitOne : unit}</b>
+    </div>
+  );
+};
+/**
+ * metrics: [{ key, title, unit, unitOne, total, note, days: [{ day, value }] }]. loading, error and onRetry as in GlowPanel.
+ */
+export const MetricAreaCard = ({ title, badge, metrics, loading, error, onRetry }) => {
+  const t = useChartTheme();
+  const [shown, setShown] = useState(metrics && metrics[0] ? metrics[0].key : null);
+  const [mode, setMode] = useState("day");
+  const current = (metrics || []).find((m) => m.key === shown) || (metrics || [])[0];
+  const week = mode === "week";
+  const points = useMemo(() => {
+    if (!current) return [];
+    const all = fillGaps((current.days || []).map((d) => ({ day: String(d.day).slice(0, 10), value: Number(d.value) || 0 })).sort((a, b) => (a.day < b.day ? -1 : 1)));
+    return week ? weeksOf(all) : all;
+  }, [current, week]);
+  const best = points.reduce((b, p) => (p.value > (b ? b.value : 0) ? p : b), null);
+  const any = points.some((p) => p.value > 0);
+  const color = t.c.brand;
+  const unitOf = (v) => (v === 1 && current && current.unitOne ? current.unitOne : current ? current.unit : "");
+  return (
+    <section className="mx-chart" aria-busy={loading ? "true" : undefined}>
+      <div className="mx-chart-top">
+        <div style={{ minWidth: 0 }}>
+          <h3 className="mx-title">{title}</h3>
+          {badge ? <div className="mx-sub">{badge}</div> : null}
+        </div>
         <Switch label="Agrupar por" value={mode} onChange={setMode} options={[["day", "Dia"], ["week", "Semana"]]} />
       </div>
-      {!any ? <EmptyNote>{emptyText}</EmptyNote> : (
+      <div className="mx-tabs" role="group" aria-label="O que mostrar no gráfico">
+        {(metrics || []).map((m) => (
+          <button key={m.key} type="button" className="mx-tab" aria-pressed={current && current.key === m.key} onClick={() => setShown(m.key)}>
+            <span className="mx-tab-title">{m.title}</span>
+            {loading ? <span className="pk-skel" style={{ height: 26, width: 56, borderRadius: 6 }} aria-hidden="true" /> : <b>{nf(m.total)}</b>}
+            {m.note ? <small>{m.note}</small> : null}
+          </button>
+        ))}
+      </div>
+      {error ? (
+        <div className="pk-state" role="alert">
+          <span>Não foi possível carregar estes números agora.</span>
+          {onRetry ? <button type="button" className="pk-btn" onClick={onRetry}>Tentar de novo</button> : null}
+        </div>
+      ) : loading ? (
+        <div className="pk-skel mx-chart-plot" aria-hidden="true" />
+      ) : !any ? (
+        <div className="mx-chart-plot mx-chart-empty"><EmptyNote>Nada registrado no período.</EmptyNote></div>
+      ) : (
         <>
-          {lines.map((r) => (
-            <button key={r.key} type="button" className="gv-multi-row" onClick={() => onPick && onPick(r.key)} aria-label={`${r.title}: ${nf(r.total)} ${r.unit || ""}. ${r.note || ""} Ver só esta série`}>
-              <span className="gv-multi-head">
-                <span className="gv-multi-title">{r.title}</span>
-                <b>{nf(r.total)}</b>
-                {r.note ? <span className="gv-multi-note">{r.note}</span> : null}
-              </span>
-              <span className="gv-multi-plot" aria-hidden="true">
-                {r.points.map((d) => (
-                  <span key={d.day} className="gv-multi-col" title={`${d.day.slice(8, 10)}/${d.day.slice(5, 7)}: ${nf(d.value)} ${r.unit || ""}`}>
-                    <i style={{ height: `${Math.max(d.value ? 4 : 0, (d.value / r.max) * 100)}%` }} />
-                  </span>
-                ))}
-              </span>
-            </button>
-          ))}
-          <div className="gv-multi-row gv-multi-axis" aria-hidden="true">
-            <span className="gv-multi-head" />
-            <span className="gv-multi-plot">{axis.map((d, i) => <span key={d.day} className="gv-multi-col">{i % step === 0 ? `${d.day.slice(8, 10)}/${d.day.slice(5, 7)}` : ""}</span>)}</span>
+          <div className="mx-chart-plot" role="img" aria-label={`${current.title} ${week ? "por semana" : "por dia"}: total ${nf(current.total)}${best ? `, melhor ${week ? "semana" : "dia"} ${ddmm(best.day)} com ${nf(best.value)}` : ""}`}>
+            <ResponsiveContainer>
+              <AreaChart data={points} margin={{ top: 10, right: 6, left: -22, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="mx-area-fill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={color} stopOpacity={0.32} />
+                    <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} stroke={t.grid} strokeDasharray="3 4" />
+                <XAxis dataKey="day" tickFormatter={ddmm} tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: t.axis }} tickMargin={8} minTickGap={18} />
+                <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: t.axis }} width={48} />
+                <Tooltip cursor={{ stroke: t.axis, strokeDasharray: "3 3" }} content={<MetricTip unit={current.unit} unitOne={current.unitOne} week={week} />} />
+                <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2.25} fill="url(#mx-area-fill)" activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff", fill: color }} dot={points.length <= 14 ? { r: 3, fill: color, strokeWidth: 0 } : false} isAnimationActive={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mx-chart-foot">
+            <span>Total no período: <b>{nf(current.total)} {unitOf(current.total)}</b></span>
+            {best ? <span>{week ? "Melhor semana" : "Melhor dia"}: <b>{ddmm(best.day)} ({nf(best.value)})</b></span> : null}
           </div>
         </>
       )}
-    </div>
+    </section>
   );
 };

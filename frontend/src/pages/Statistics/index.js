@@ -9,7 +9,7 @@ import toastError from "../../errors/toastError";
 import StatsHubBar from "../../components/StatsHub";
 import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num, fmt, minutesText } from "../../components/analytics/kit";
 import Drawer from "@material-ui/core/Drawer";
-import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, rankRows, CountStat, BoardHead, Person, EmptyNote } from "../../components/peak";
+import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, rankRows, CountStat, BoardHead, MetricAreaCard, Person, EmptyNote } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
@@ -36,17 +36,28 @@ const MiniRing = ({ pct: value, tone }) => {
 
 const PERIOD_LABEL = { today: "Hoje", week: "Últimos 7 dias", month: "Este mês", custom: "Período" };
 
-// Resultado do período: the four numbers the management looks for first, and what explains them
+// the production of the whole team, day by day: the days of every consultant added up
+const teamSeries = (consultants) => {
+  const days = new Map();
+  (consultants || []).forEach((p) => (p.series || []).forEach((d) => {
+    const t = days.get(d.day) || { day: d.day, attendances: 0, messagesSent: 0, peopleContacted: 0, enrollments: 0 };
+    ["attendances", "messagesSent", "peopleContacted", "enrollments"].forEach((k) => { t[k] += Number(d[k]) || 0; });
+    days.set(d.day, t);
+  }));
+  return [...days.values()].sort((x, y) => (x.day < y.day ? -1 : 1));
+};
+// Resultado do período: the four numbers the management looks for first, one at a time over the days, and what explains them
 const RESULT_KEYS = [
-  { key: "enrollments", title: "Matrículas", unit: "matrículas" },
-  { key: "attendances", title: "Conversas atendidas", unit: "conversas" },
-  { key: "peopleContacted", title: "Pessoas contatadas", unit: "pessoas" },
-  { key: "messagesSent", title: "Mensagens enviadas", unit: "mensagens" },
+  { key: "enrollments", title: "Matrículas", unit: "matrículas", unitOne: "matrícula" },
+  { key: "attendances", title: "Conversas atendidas", unit: "conversas", unitOne: "conversa" },
+  { key: "peopleContacted", title: "Pessoas contatadas", unit: "pessoas", unitOne: "pessoa" },
+  { key: "messagesSent", title: "Mensagens enviadas", unit: "mensagens", unitOne: "mensagem" },
 ];
 // how many of something it took for one enrollment, said the way each number is read
 const share = (a, b) => (b > 0 ? `${(Math.round((a / b) * 1000) / 10).toLocaleString("pt-BR")}%` : null);
 const Results = ({ params, period }) => {
   const { data, loading, error, reload } = useAnalytics("/analytics/team", params);
+  const series = useMemo(() => teamSeries(data && data.consultants), [data]);
   if (error && !data) return <Failed onRetry={reload} />;
   const wait = loading && !data;
   const t = (data && data.totals) || {};
@@ -62,11 +73,8 @@ const Results = ({ params, period }) => {
   const first = t.firstContactMinutes;
   return (
     <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
-      <div className="pk-grid-4" role="group" aria-label="Resultado do período">
-        {RESULT_KEYS.map((k) => (
-          <CountStat key={k.key} id={k.key} label={k.title} value={Number(t[k.key]) || 0} loading={wait} hint={rates[k.key] || badge} />
-        ))}
-      </div>
+      <MetricAreaCard title="Resultado do período" badge={`${badge} · escolha o que ver no gráfico`} loading={wait} error={!!error && !data} onRetry={reload}
+        metrics={RESULT_KEYS.map((k) => ({ ...k, total: Number(t[k.key]) || 0, note: rates[k.key], days: series.map((d) => ({ day: d.day, value: d[k.key] })) }))} />
       <div className="pk-grid">
         <GlowStat id="conversion" label="Conversão" icon={TrendingUp} tone="violet" loading={wait} value={fmt(t.conversion, "percent")} hint="Matrículas divididas pelos leads trabalhados" />
         <GlowStat id="firstContact" label="Primeiro contato" icon={Clock} tone={first > 15 ? "warn" : "good"} loading={wait} value={first === null || first === undefined ? "—" : minutesText(first)} hint="Média em horário comercial. Ideal: até 15 min" />
