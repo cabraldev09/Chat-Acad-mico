@@ -129,14 +129,12 @@ const EnrollmentFormCard = ({ lead, onChanged }) => {
         {status}
         {form && !form.submittedAt && form.missing && form.missing.length > 0 && ` Falta: ${form.missing.slice(0, 4).join(", ")}${form.missing.length > 4 ? ` e mais ${form.missing.length - 4}` : ""}.`}
       </div>
-      {!lead.enrolledAt && (
-        <div className={classes.actions}>
-          <Button size="small" variant="contained" color="primary" className={classes.btn} startIcon={<Send size={15} />} disabled={!!busy} onClick={send}>
-            {form && form.sentAt ? "Enviar de novo pelo WhatsApp" : "Enviar pelo WhatsApp"}
-          </Button>
-          <Button size="small" variant="outlined" className={classes.btn} startIcon={<ClipboardCopy size={15} />} disabled={!!busy} onClick={copy}>Copiar link</Button>
-        </div>
-      )}
+      <div className={classes.actions}>
+        <Button size="small" variant="contained" color="primary" className={classes.btn} startIcon={<Send size={15} />} disabled={!!busy} onClick={send}>
+          {form && form.sentAt ? "Enviar de novo pelo WhatsApp" : "Enviar pelo WhatsApp"}
+        </Button>
+        <Button size="small" variant="outlined" className={classes.btn} startIcon={<ClipboardCopy size={15} />} disabled={!!busy} onClick={copy}>Copiar link</Button>
+      </div>
       {filled && (
         <div className={classes.data}>
           {(form.fields || []).filter((f) => form.data[f.key]).map((f) => (

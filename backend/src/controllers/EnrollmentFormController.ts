@@ -41,7 +41,6 @@ const sendLink = async (lead: Lead, form: EnrollmentForm, userId: number, target
 
 export const send = async (req: Request, res: Response): Promise<Response> => {
   const lead = await leadOf(req);
-  if (lead.enrolledAt) throw new AppError("ERR_FORM_LOCKED", 409);
   const form = await Form.formForLead(lead, uid(req));
   await sendLink(lead, form, uid(req));
   return res.json(Form.staffView(form));
@@ -55,7 +54,6 @@ export const sendFromTicket = async (req: Request, res: Response): Promise<Respo
   const contact: Contact = (ticket as any).contact;
   const lead = (await Lead.findOne({ where: { contactId: contact.id }, order: [["updatedAt", "DESC"]] })) || (await ensureLead(contact, (ticket as any).whatsapp.channel || "whatsapp"));
   if (!lead) throw new AppError("ERR_FORM_NOT_A_LEAD", 400);
-  if (lead.enrolledAt) throw new AppError("ERR_FORM_LOCKED", 409);
   const form = await Form.formForLead(lead, uid(req));
   await sendLink(lead, form, uid(req), { contact, whatsapp: (ticket as any).whatsapp, ticketId: ticket.id });
   return res.json({ ...Form.staffView(form), leadId: lead.id });

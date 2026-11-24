@@ -1116,6 +1116,17 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT status FROM LeadDocuments WHERE leadId=${leadId} AND name='RG ou CNH'`) === "received", "the ID did not count as delivered");
       const staff = (await http.get(`/leads/${leadId}/enrollment-form`, auth())).data;
       assert(staff.progress === 100 && staff.data.cpf === "74682489070" && staff.consentAt && staff.submittedAt, `staff view ${JSON.stringify(staff).slice(0, 200)}`);
+      // an enrolled student also gets the form, fills it and sends it; the tutor is told along with the consultant
+      const tutorF = (await http.post("/users", { name: "Tutora Ficha", email: "ficha-tutora@x.com", password: "senha123", role: "tutor" }, auth())).data;
+      sql(`UPDATE Leads SET enrolledAt=NOW(), onboardingTutorId=${tutorF.id} WHERE id=${leadId}`);
+      const again = await http.post(`/leads/${leadId}/enrollment-form/send`, {}, auth());
+      assert(again.status === 200, `an enrolled lead did not get the form ${again.status} ${JSON.stringify(again.data).slice(0, 160)}`);
+      const view = await http.get(`/ficha-publica/${token}`);
+      assert(view.status === 200 && view.data.locked === false, `the enrolled student's form is locked ${JSON.stringify(view.data).slice(0, 160)}`);
+      assert((await http.put(`/ficha-publica/${token}`, { data: { cidade: "Campinas" } })).status === 200, "an enrolled student could not change the form");
+      const resent = await http.post(`/ficha-publica/${token}/submit`);
+      assert(resent.status === 200 && sql(`SELECT city FROM Leads WHERE id=${leadId}`) === "Campinas", `an enrolled student could not send the form ${resent.status}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${tutorF.id} AND kind='enrollment_form'`)) === 1, "the tutor was not told about the form");
       // erasing on request of the person (LGPD): only the management, and the pictures go
       assert((await http.delete(`/leads/${leadId}/enrollment-form`, asUser(other))).status === 403, "a consultant erased the form");
       assert((await http.delete(`/leads/${leadId}/enrollment-form`, auth())).status === 200, "erase");

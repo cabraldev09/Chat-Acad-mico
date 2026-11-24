@@ -168,7 +168,7 @@ export const formForLead = async (lead: Lead, userId: number | null): Promise<En
   const current = await EnrollmentForm.findOne({ where: { leadId: lead.id }, order: [["id", "DESC"]] });
   if (current) {
     // an expired link is born again with the same data (the person never loses what was typed)
-    if (current.expiresAt && current.expiresAt.getTime() < Date.now() && !lead.enrolledAt) {
+    if (current.expiresAt && current.expiresAt.getTime() < Date.now()) {
       current.set({ token: randomBytes(24).toString("hex"), expiresAt: new Date(Date.now() + VALID_DAYS * 864e5) } as any);
       await current.save();
     }
@@ -263,18 +263,13 @@ export const publicView = async (form: EnrollmentForm, lead: Lead) => {
     consentText: CONSENT_TEXT,
     ...state,
     submittedAt: form.submittedAt,
-    // after the enrollment the form only shows what was sent
-    locked: !!lead.enrolledAt
+    // an enrolled student may also fill or correct the form (the team sends it after the enrollment too)
+    locked: false
   };
-};
-
-const assertOpen = (lead: Lead): void => {
-  if (lead.enrolledAt) throw new AppError("ERR_FORM_LOCKED", 409);
 };
 
 // a change kept at once (only the known fields; a field sent empty is cleared)
 export const saveDraft = async (form: EnrollmentForm, lead: Lead, patch: Record<string, unknown>, consent?: boolean) => {
-  assertOpen(lead);
   const data = dataOf(form);
   for (const f of FIELDS) {
     if (patch && Object.prototype.hasOwnProperty.call(patch, f.key)) {
@@ -313,7 +308,6 @@ const removeStored = (file: string): void => {
 };
 
 export const saveFile = async (form: EnrollmentForm, lead: Lead, kind: string, bytes: Buffer, originalName: string) => {
-  assertOpen(lead);
   if (!FILE_KINDS[kind]) throw new AppError("ERR_FORM_FILE_KIND", 400);
   if (!bytes || !bytes.length) throw new AppError("ERR_FORM_FILE_EMPTY", 400);
   if (bytes.length > MAX_FILE) throw new AppError("ERR_FORM_FILE_TOO_BIG", 413);
@@ -334,7 +328,6 @@ export const saveFile = async (form: EnrollmentForm, lead: Lead, kind: string, b
 };
 
 export const removeFile = async (form: EnrollmentForm, lead: Lead, kind: string) => {
-  assertOpen(lead);
   const files = filesOf(form);
   const old = files.find(f => f.kind === kind);
   if (old) removeStored(old.file);
@@ -367,7 +360,6 @@ const markDelivered = async (lead: Lead, names: string[]): Promise<void> => {
 
 // sent: the lead's record takes what was typed, the documents count as delivered and the consultant is told
 export const submitForm = async (form: EnrollmentForm, lead: Lead) => {
-  assertOpen(lead);
   const data = dataOf(form);
   const files = filesOf(form);
   const state = stateOf(data, files, !!form.consentAt);
@@ -394,7 +386,8 @@ export const submitForm = async (form: EnrollmentForm, lead: Lead) => {
   }
   await markDelivered(lead, ["RG ou CNH", "CPF", ...(files.some(f => f.kind === "historico") ? ["Histórico escolar"] : [])]);
   await addActivity(lead.id, null, "system", first ? "O lead enviou a ficha de matrícula (dados e documento)." : "O lead atualizou a ficha de matrícula.");
-  await notify([lead.ownerId], {
+  // an enrolled student's form also goes to the tutor
+  await notify([...new Set([lead.ownerId, lead.enrolledAt ? (lead as any).onboardingTutorId : null].filter(Boolean))] as number[], {
     kind: "enrollment_form",
     title: `${String(lead.name || "Um lead").split(" ")[0]} enviou a ficha de matrícula`,
     body: "Os dados e o documento estão na ficha do lead.",
