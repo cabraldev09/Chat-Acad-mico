@@ -178,15 +178,9 @@ const Geral = ({ values, save, admin }) => {
         <TimezoneSelect value={values.appTimezone || "America/Porto_Velho"} onChange={(v) => save("appTimezone", v)} />
         <div className={classes.hint}>Os dados são guardados em UTC; só a exibição e a contagem do dia mudam.</div>
       </Card>
-      {/* numbers per person (WhatsApp by QR Code) and the old single API token: rarely used while the team works on the official number */}
-      <Advanced>
-      <Card title="Números de WhatsApp por pessoa (QR Code)" sub="Só vale para números conectados por QR Code. Hoje a equipe usa o número oficial (API da Meta).">
-        <TextField select variant="outlined" size="small" label="Limite por pessoa" value={Number(values.max_connections_per_user || 1)} onChange={(e) => save("max_connections_per_user", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }}>
-          {[1, 2, 3].map((n) => (<MenuItem key={n} value={n}>{n} {n === 1 ? "número" : "números"}</MenuItem>))}
-        </TextField>
-      </Card>
+      {/* the old single API token: rarely used (a QR Code number is given to a person in Conexões, by the management) */}
       {admin && (
-        <>
+        <Advanced>
           <Card title="Integração" sub="Token usado pelas integrações externas (API). Trate como uma senha.">
             <div className={classes.row}>
               <TextField style={{ flex: "1 1 260px" }} variant="outlined" size="small" label="Token da API" value={token} type={show ? "text" : "password"} InputProps={{ readOnly: true }} />
@@ -195,9 +189,8 @@ const Geral = ({ values, save, admin }) => {
             </div>
             <div className={classes.hint}>Para criar tokens por integração e cadastrar webhooks, use <Link to="/integrations">API e webhooks</Link>.</div>
           </Card>
-        </>
+        </Advanced>
       )}
-      </Advanced>
     </>
   );
 };

@@ -402,8 +402,12 @@ const processCloud = async (received: Whatsapp, entry: any) => {
     const value = change.value || {};
     // the Meta approved, refused or paused a template: the screen of the templates updates by itself
     if (change.field === "message_template_status_update" || change.field === "message_template_quality_update" || change.field === "template_category_update") {
-      // eslint-disable-next-line no-await-in-loop
-      (await import("../services/CampaignServices/Templates")).notifyTemplates();
+      const templates = await import("../services/CampaignServices/Templates"); // eslint-disable-line no-await-in-loop
+      // the new category of a template (the cost of each send follows it)
+      if (change.field === "template_category_update" && value?.message_template_name && value?.new_category) {
+        await templates.rememberCategories([{ name: String(value.message_template_name), category: String(value.new_category) }]).catch(() => undefined); // eslint-disable-line no-await-in-loop
+      }
+      templates.notifyTemplates();
       continue;
     }
     const phoneNumberId = String(value.metadata?.phone_number_id || "");
