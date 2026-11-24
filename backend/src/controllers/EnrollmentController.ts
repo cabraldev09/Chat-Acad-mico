@@ -4,6 +4,7 @@ import { Op } from "sequelize";
 
 import AppError from "../errors/AppError";
 import { dayBounds, getAppTz } from "../helpers/AppTime";
+import { countsInGoal, goalTerm } from "../helpers/EntryTerm";
 import Course from "../models/Course";
 import EnrollmentProof from "../models/EnrollmentProof";
 import Goal from "../models/Goal";
@@ -37,21 +38,25 @@ export const proofFile = async (req: Request, res: Response): Promise<void> => {
   fs.createReadStream(full).pipe(res);
 };
 
-// the polo goals and their periods: an enrollment is "inside the goal" when its day falls in the period of a goal of its polo
-const goalPeriods = async (): Promise<Map<number, Array<{ title: string; start: string; end: string }>>> => {
+type GoalSpan = { title: string; start: string; end: string; term?: string | null };
+
+// the polo goals and their periods: an enrollment is "inside the goal" of its polo by the entry term of the student (the same rule of
+// the board of goals, helpers/EntryTerm), else by its day inside the period
+const goalPeriods = async (): Promise<{ byPolo: Map<number, GoalSpan[]>; knownTerms: Set<string> }> => {
   const goals = await Goal.findAll({ where: { kind: "polo", status: { [Op.notIn]: ["deleted", "archived"] } } as any });
+  const all = await Goal.findAll({ where: { kind: "polo" }, attributes: ["entryTerm", "title"] });
   const lines = goals.length ? await GoalPolo.findAll({ where: { goalId: goals.map(g => g.id) } as any, attributes: ["goalId", "poloId"] }) : [];
-  const out = new Map<number, Array<{ title: string; start: string; end: string }>>();
+  const out = new Map<number, GoalSpan[]>();
   lines.forEach(l => {
     const g = goals.find(x => x.id === l.goalId);
     if (!g) return;
-    out.set(l.poloId, [...(out.get(l.poloId) || []), { title: g.title, start: String(g.startsOn).slice(0, 10), end: String(g.endsOn).slice(0, 10) }]);
+    out.set(l.poloId, [...(out.get(l.poloId) || []), { title: g.title, start: String(g.startsOn).slice(0, 10), end: String(g.endsOn).slice(0, 10), term: goalTerm(g) }]);
   });
-  return out;
+  return { byPolo: out, knownTerms: new Set(all.map(g => goalTerm(g)).filter(Boolean) as string[]) };
 };
 
-export const goalStatusOf = (day: string, periods: Array<{ title: string; start: string; end: string }> | undefined): { inGoal: boolean; goal: string | null } => {
-  const hit = (periods || []).find(p => day >= p.start && day <= p.end);
+export const goalStatusOf = (day: string, periods: GoalSpan[] | undefined, entryTerm?: string | null, knownTerms?: Set<string>): { inGoal: boolean; goal: string | null } => {
+  const hit = (periods || []).find(p => countsInGoal({ entryTerm, day }, { term: p.term || null, start: p.start, end: p.end }, knownTerms || new Set()));
   return { inGoal: !!hit, goal: hit ? hit.title : null };
 };
 
@@ -69,7 +74,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
   const firsts = await Lead.findAll({
     where: { isHistorical: false, wonAt: range, ...(poloId ? { poloId } : {}), ...(ownerId ? { ownerId } : {}) } as any,
-    attributes: ["id", "name", "rgm", "wonAt", "poloId", "ownerId", "courseId"], limit: 3000, order: [["wonAt", "DESC"]]
+    attributes: ["id", "name", "rgm", "wonAt", "poloId", "ownerId", "courseId", "entryTerm"], limit: 3000, order: [["wonAt", "DESC"]]
   });
   const extras = await LeadEnrollment.findAll({
     where: { enrolledAt: range, ...(poloId ? { poloId } : {}), ...(ownerId ? { ownerId } : {}) } as any, limit: 3000, order: [["enrolledAt", "DESC"]]
@@ -87,11 +92,11 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const proofOf = (leadId: number, enrollmentId: number | null) => proofs.find(p => p.leadId === leadId && (p.enrollmentId || null) === enrollmentId)?.id || null;
   const dayOf = (d: Date) => new Date(d).toLocaleDateString("en-CA", { timeZone: tz });
   const rows = [
-    ...firsts.map(l => ({ leadId: l.id, enrollmentId: null as number | null, name: l.name, rgm: l.rgm || null, at: l.wonAt, poloId: l.poloId, ownerId: l.ownerId, course: nameOf(courses, l.courseId) })),
-    ...extras.map(e => ({ leadId: e.leadId, enrollmentId: e.id, name: extraLeads.find(l => l.id === e.leadId)?.name || "—", rgm: e.rgm || null, at: e.enrolledAt, poloId: e.poloId, ownerId: e.ownerId, course: e.courseName || nameOf(courses, e.courseId) }))
+    ...firsts.map(l => ({ leadId: l.id, enrollmentId: null as number | null, name: l.name, rgm: l.rgm || null, at: l.wonAt, poloId: l.poloId, ownerId: l.ownerId, course: nameOf(courses, l.courseId), entryTerm: (l as any).entryTerm || null })),
+    ...extras.map(e => ({ leadId: e.leadId, enrollmentId: e.id, name: extraLeads.find(l => l.id === e.leadId)?.name || "—", rgm: e.rgm || null, at: e.enrolledAt, poloId: e.poloId, ownerId: e.ownerId, course: e.courseName || nameOf(courses, e.courseId), entryTerm: null }))
   ].map(r => ({
     ...r, polo: nameOf(polos, r.poloId), owner: nameOf(users, r.ownerId), proofId: proofOf(r.leadId, r.enrollmentId),
-    ...goalStatusOf(dayOf(r.at), r.poloId ? periods.get(r.poloId) : undefined)
+    ...goalStatusOf(dayOf(r.at), r.poloId ? periods.byPolo.get(r.poloId) : undefined, r.entryTerm, periods.knownTerms)
   })).sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   const byPolo = new Map<string, { polo: string; total: number; inGoal: number }>();
   rows.forEach(r => { const k = r.polo || "Sem polo"; const cur = byPolo.get(k) || { polo: k, total: 0, inGoal: 0 }; cur.total += 1; if (r.inGoal) cur.inGoal += 1; byPolo.set(k, cur); });

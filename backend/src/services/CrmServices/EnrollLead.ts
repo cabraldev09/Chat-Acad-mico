@@ -18,6 +18,7 @@ import Polo from "../../models/Polo";
 import PoloMember from "../../models/PoloMember";
 import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
+import { normTerm } from "../../helpers/EntryTerm";
 import { createLiveTicket, liveTicketOf } from "../TicketServices/LiveTicket";
 import TicketEvent from "../../models/TicketEvent";
 import User from "../../models/User";
@@ -69,6 +70,8 @@ export interface EnrollInput {
   courseName?: string | null;
   // the registration number the institution gave the student: required to confirm the enrollment (the student of the portal is created with it)
   rgm?: string | null;
+  // the entry term of the student ("2026/2"): the semester whose polo goal counts this enrollment (helpers/EntryTerm)
+  entryTerm?: string | null;
 }
 
 // Confirms the enrollment and hands the student to the polo's tutoring team:
@@ -167,10 +170,12 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   }
 
   // 2) the lead
+  const entryTerm = normTerm(input.entryTerm);
   await lead.update({
     poloId: polo.id,
     poloSource: "enrollment",
     rgm,
+    ...(entryTerm ? { entryTerm } : {}),
     ...(course && course.id !== lead.courseId ? { courseId: course.id } : {}),
     onboardingStatus: "pending",
     onboardingTutorId: tutor?.id || null,

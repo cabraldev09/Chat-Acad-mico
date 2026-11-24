@@ -210,17 +210,17 @@ const textFor = (goal, rows, totals, heading, rangeLabel) => {
 
 // the dates, the title and the working-day rule of a period (a semester)
 const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
-  const [f, setF] = useState({ title: "", startsOn: "", endsOn: "", workDays: 5, extra: "" });
+  const [f, setF] = useState({ title: "", startsOn: "", endsOn: "", workDays: 5, extra: "", entryTerm: "" });
   const [saving, setSaving] = useState(false);
   // what the calendar of the period looks like: the working days and the days taken out (holidays, and the days the company adds)
   const [cal, setCal] = useState(null);
   useEffect(() => {
     if (!open) return;
-    if (goal) setF({ title: goal.title || "", startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: goal.workDays, extra: (goal.extraHolidays || []).map((d) => d.split("-").reverse().join("/")).join("\n") });
+    if (goal) setF({ title: goal.title || "", startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: goal.workDays, extra: (goal.extraHolidays || []).map((d) => d.split("-").reverse().join("/")).join("\n"), entryTerm: goal.entryTerm || "" });
     else {
       const y = new Date().getFullYear();
       const second = new Date().getMonth() >= 6;
-      setF({ title: `Graduação ${second ? 2 : 1}º semestre de ${y}`, startsOn: `${y}-${second ? "07" : "01"}-01`, endsOn: `${y}-${second ? "12-31" : "06-30"}`, workDays: 5, extra: "" });
+      setF({ title: `Graduação ${second ? 2 : 1}º semestre de ${y}`, startsOn: `${y}-${second ? "07" : "01"}-01`, endsOn: `${y}-${second ? "12-31" : "06-30"}`, workDays: 5, extra: "", entryTerm: `${y}/${second ? 2 : 1}` });
     }
   }, [open, goal]);
   useEffect(() => {
@@ -236,11 +236,11 @@ const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
     try {
       let id;
       if (goal) {
-        await api.put(`/goals/${goal.id}`, { title: f.title, startsOn: f.startsOn, endsOn: f.endsOn });
+        await api.put(`/goals/${goal.id}`, { title: f.title, startsOn: f.startsOn, endsOn: f.endsOn, entryTerm: f.entryTerm });
         await api.put(`/goals/${goal.id}/polos`, { workDays: f.workDays, extraHolidays: f.extra });
         id = goal.id;
       } else {
-        const { data } = await api.post("/goals", { kind: "polo", title: f.title, startsOn: f.startsOn, endsOn: f.endsOn, members: [] });
+        const { data } = await api.post("/goals", { kind: "polo", title: f.title, startsOn: f.startsOn, endsOn: f.endsOn, entryTerm: f.entryTerm, members: [] });
         await api.put(`/goals/${data.id}/polos`, { workDays: f.workDays, extraHolidays: f.extra });
         id = data.id;
       }
@@ -254,6 +254,9 @@ const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
       <DialogTitle>{goal ? "Período das metas" : "Novo semestre de metas"}</DialogTitle>
       <DialogContent>
         <TextField fullWidth variant="outlined" margin="dense" label="Nome" value={f.title} onChange={set("title")} />
+        <TextField fullWidth variant="outlined" margin="dense" label="Período de entrada" value={f.entryTerm} onChange={set("entryTerm")} placeholder="2027/1" InputLabelProps={{ shrink: true }}
+          error={!!f.entryTerm && !/^20\d{2}\/[12]$/.test(f.entryTerm)}
+          helperText="As matrículas de alunos com este período de entrada contam neste semestre, mesmo feitas depois do fim. Sem período no aluno, vale a data." />
         <TextField fullWidth variant="outlined" margin="dense" type="date" label="Início" value={f.startsOn} onChange={set("startsOn")} InputLabelProps={{ shrink: true }} />
         <TextField fullWidth variant="outlined" margin="dense" type="date" label="Fim" value={f.endsOn} onChange={set("endsOn")} InputLabelProps={{ shrink: true }} />
         <TextField select fullWidth variant="outlined" margin="dense" label="Dias úteis" value={f.workDays} onChange={(e) => setF({ ...f, workDays: Number(e.target.value) })}>
@@ -275,7 +278,7 @@ const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
       </DialogContent>
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose}>Cancelar</Button>
-        <Button variant="contained" color="primary" onClick={save} disabled={saving || !f.startsOn || !f.endsOn || f.startsOn > f.endsOn}>Salvar</Button>
+        <Button variant="contained" color="primary" onClick={save} disabled={saving || !f.startsOn || !f.endsOn || f.startsOn > f.endsOn || (!!f.entryTerm && !/^20\d{2}\/[12]$/.test(f.entryTerm))}>Salvar</Button>
       </DialogActions>
     </Dialog>
   );

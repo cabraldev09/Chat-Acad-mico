@@ -15,4 +15,14 @@ describe("o semestre em vigor", () => {
     expect(currentSemester(list, "2026-10-01")?.id).toBe(3);
     expect(currentSemester(list, "2028-01-01")).toBeUndefined();
   });
+  it("dois semestres ao mesmo tempo: vale o que começou por último (o novo, em captação), não o mais longo", () => {
+    const list = [
+      { id: 1, startsOn: "2026-07-01", endsOn: "2026-12-31" },
+      { id: 2, startsOn: "2026-11-17", endsOn: "2027-05-03" }
+    ];
+    expect(currentSemester(list, "2026-11-24")?.id).toBe(2);
+    expect(currentSemester(list, "2026-10-01")?.id).toBe(1);
+    // a goal of one month inside the new semester does not take its place
+    expect(currentSemester([...list, { id: 3, startsOn: "2026-11-20", endsOn: "2026-12-20" }], "2026-11-24")?.id).toBe(2);
+  });
 });

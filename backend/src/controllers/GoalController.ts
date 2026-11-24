@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { normTerm, termOfTitle, goalTerm, countsInGoal } from "../helpers/EntryTerm";
 import { countWorkDays as countDays, holidaysBetween, parseExtraDays } from "../helpers/WorkCalendar";
 import { Op } from "sequelize";
 
@@ -144,7 +145,11 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const b = req.body || {};
   if (!isDate(b.startsOn) || !isDate(b.endsOn) || b.startsOn > b.endsOn) throw new AppError("ERR_GOAL_PERIOD", 400);
-  const goal = await Goal.create({ title: b.title ? String(b.title).slice(0, 80) : null, startsOn: b.startsOn, endsOn: b.endsOn, kind: b.kind === "polo" ? "polo" : "team", createdBy: Number(req.user.id) } as any);
+  const kind = b.kind === "polo" ? "polo" : "team";
+  const title = b.title ? String(b.title).slice(0, 80) : null;
+  // a polo goal counts the enrollments of its entry term: the one chosen, else the one in its name ("2º semestre de 2026" -> "2026/2")
+  const entryTerm = kind === "polo" ? normTerm(b.entryTerm) || termOfTitle(title) : null;
+  const goal = await Goal.create({ title, startsOn: b.startsOn, endsOn: b.endsOn, kind, entryTerm, createdBy: Number(req.user.id) } as any);
   await writeMembers(goal.id, b.members || []);
   return res.status(201).json(await present(await load(goal.id)));
 };
@@ -157,6 +162,9 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (b.startsOn !== undefined) data.startsOn = b.startsOn;
   if (b.endsOn !== undefined) data.endsOn = b.endsOn;
   if (b.status !== undefined) data.status = b.status === "archived" ? "archived" : "active";
+  if (goal.kind === "polo" && (b.entryTerm !== undefined || b.title !== undefined)) {
+    data.entryTerm = normTerm(b.entryTerm) || (b.entryTerm === undefined ? normTerm(goal.entryTerm) : null) || termOfTitle(data.title ?? goal.title);
+  }
   const startsOn = data.startsOn || goal.startsOn;
   const endsOn = data.endsOn || goal.endsOn;
   if (!isDate(startsOn) || !isDate(endsOn) || startsOn > endsOn) throw new AppError("ERR_GOAL_PERIOD", 400);
@@ -272,8 +280,15 @@ const perDayOf = (missing: number | null, daysLeft: number): number | null =>
 // The semester in force: among the polo goals that contain today, the longest one (a short goal of one month that also contains
 // today does not take the place of the semester)
 const spanOf = (g: { startsOn: any; endsOn: any }) => new Date(String(g.endsOn)).getTime() - new Date(String(g.startsOn)).getTime();
-export const currentSemester = <T extends { startsOn: any; endsOn: any }>(periods: T[], today: string): T | undefined =>
-  periods.filter(g => String(g.startsOn) <= today && String(g.endsOn) >= today).sort((a, b) => spanOf(b) - spanOf(a))[0];
+const SHORT_GOAL_MS = 60 * 86400000;
+// The semester in force: among the goals that contain today, the one that started last (when a new semester opens while the previous one
+// is still running, the new one is the one being worked on). Short goals (up to 60 days, a goal of one month) only count when no longer
+// one contains today; on the same start, the longer wins.
+export const currentSemester = <T extends { startsOn: any; endsOn: any }>(periods: T[], today: string): T | undefined => {
+  const live = periods.filter(g => String(g.startsOn) <= today && String(g.endsOn) >= today);
+  const long = live.filter(g => spanOf(g) > SHORT_GOAL_MS);
+  return (long.length ? long : live).sort((a, b) => String(b.startsOn).localeCompare(String(a.startsOn)) || spanOf(b) - spanOf(a))[0];
+};
 
 // The semesters (the polo goals, in force and archived), the newest first, for the "Semestre" of the period filters: any person signed
 // in may read them (only titles and dates)
@@ -303,22 +318,38 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
 
   const start = dayBounds(goal.startsOn).start;
   const end = dayBounds(goal.endsOn).end;
+  const term = goalTerm(goal);
+  // the entry terms that have a polo goal: a lead of one of them counts in that goal, whatever the day (helpers/EntryTerm)
+  const allGoals = await Goal.findAll({ where: { kind: "polo" }, attributes: ["entryTerm", "title"] });
+  const knownTerms = new Set(allGoals.map(g => goalTerm(g)).filter(Boolean) as string[]);
+  // the leads of this term may have enrolled before or after the period: a year around it is read, then filtered by the rule
+  const wide = { [Op.gte]: new Date(start.getTime() - 365 * 86400000), [Op.lte]: new Date(end.getTime() + 365 * 86400000) };
   const [polos, saved, wonLeads, wonExtra] = await Promise.all([
     Polo.findAll({ where: { active: true }, order: [["name", "ASC"]] }),
     GoalPolo.findAll({ where: { goalId: goal.id } }),
     Lead.findAll({
-      where: { isHistorical: false, poloId: { [Op.ne]: null } as any, wonAt: { [Op.gte]: start, [Op.lte]: end } as any },
-      attributes: ["poloId", "wonAt"],
+      where: {
+        isHistorical: false,
+        poloId: { [Op.ne]: null } as any,
+        [Op.or]: [{ wonAt: { [Op.gte]: start, [Op.lte]: end } }, ...(term ? [{ wonAt: wide, entryTerm: { [Op.ne]: null } }] : [])]
+      } as any,
+      attributes: ["poloId", "wonAt", "entryTerm"],
       raw: true
     }) as unknown as Promise<any[]>,
     LeadEnrollment.findAll({ where: { poloId: { [Op.ne]: null } as any, enrolledAt: { [Op.gte]: start, [Op.lte]: end } as any }, attributes: ["poloId", "enrolledAt"], raw: true }) as unknown as Promise<any[]>
   ]);
-  const wonRows = wonLeads.concat(wonExtra.map(r => ({ poloId: r.poloId, wonAt: r.enrolledAt })));
-  // enrollments of each polo by month (in the company timezone)
-  const wonBy = new Map<number, Record<string, number>>();
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz });
+  const span = { term, start: String(goal.startsOn).slice(0, 10), end: String(goal.endsOn).slice(0, 10) };
+  const wonRows = wonLeads
+    .filter(r => countsInGoal({ entryTerm: r.entryTerm, day: fmt.format(new Date(r.wonAt)) }, span, knownTerms))
+    // the extra courses have no entry term: the day decides
+    .concat(wonExtra.map(r => ({ poloId: r.poloId, wonAt: r.enrolledAt })));
+  // enrollments of each polo by month (in the company timezone); one made before or after the period (its entry term is this one)
+  // goes to the first or the last month, so the months add up to the total
+  const wonBy = new Map<number, Record<string, number>>();
   wonRows.forEach(r => {
-    const key = fmt.format(new Date(r.wonAt)).slice(0, 7);
+    const raw = fmt.format(new Date(r.wonAt)).slice(0, 7);
+    const key = months.length ? (raw < months[0] ? months[0] : raw > months[months.length - 1] ? months[months.length - 1] : raw) : raw;
     const bucket = wonBy.get(r.poloId) || {};
     bucket[key] = (bucket[key] || 0) + 1;
     wonBy.set(r.poloId, bucket);
@@ -427,7 +458,7 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
   });
   return {
     periods: periods.map(g => ({ id: g.id, title: g.title, startsOn: g.startsOn, endsOn: g.endsOn })),
-    goal: { id: goal.id, title: goal.title, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft, daysTotal, elapsed, extraHolidays: extra, holidays: wd >= 7 ? [] : holidaysBetween(goal.startsOn, goal.endsOn, extra) },
+    goal: { id: goal.id, title: goal.title, entryTerm: term, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft, daysTotal, elapsed, extraHolidays: extra, holidays: wd >= 7 ? [] : holidaysBetween(goal.startsOn, goal.endsOn, extra) },
     months,
     month: monthKey,
     rows,
