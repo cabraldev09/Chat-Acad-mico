@@ -246,7 +246,7 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
     actorId,
     "system",
     `Matrícula confirmada com o RGM ${rgm}${course ? `, curso ${course.name}` : ""}. Polo ${polo.name}; tutor: ${tutor ? tutor.name : "aguardando na fila"}. Aluno do portal criado.${input.note ? ` Obs.: ${input.note}` : ""}`,
-    { kind: "enrollment", rgm, courseId: course ? course.id : null, courseName: course ? course.name : null, poloId: polo.id, tutorId: tutor?.id || null, studentId: student.id, actorId }
+    { kind: "enrollment", rgm, courseId: course ? course.id : null, courseName: course ? course.name : null, poloId: polo.id, tutorId: tutor?.id || null, studentId: student.id, actorId, note: input.note ? String(input.note).slice(0, 1000) : null }
   );
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
