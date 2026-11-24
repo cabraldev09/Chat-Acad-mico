@@ -91,6 +91,8 @@ export const human = (min: number | null): string => {
 
 export interface Insight {
   tone: "good" | "warn" | "info";
+  // what the insight is about, when another card of the screen already shows it (the queue): that card may leave it out
+  key?: "waiting" | "unanswered";
   text: string;
 }
 
@@ -131,8 +133,8 @@ export const buildInsights = (input: {
   if (worst && reply.median !== null && (worst.median as number) > Math.max(reply.median * 1.6, slaMinutes)) {
     out.push({ tone: "info", text: `Quem escreve por volta das ${String(worst.hour).padStart(2, "0")}h espera mais: mediana de ${human(worst.median)}. Vale reforçar a equipe nesse horário.` });
   }
-  if (unanswered > 0) out.push({ tone: "warn", text: `${unanswered} conversa${unanswered === 1 ? "" : "s"} com o cliente esperando resposta há mais de ${slaMinutes} min agora.` });
-  if (waiting > 0) out.push({ tone: "info", text: `${waiting} pessoa${waiting === 1 ? "" : "s"} na fila de espera, ainda sem atendente.` });
+  if (unanswered > 0) out.push({ key: "unanswered", tone: "warn", text: `${unanswered} conversa${unanswered === 1 ? "" : "s"} com o cliente esperando resposta há mais de ${slaMinutes} min agora.` });
+  if (waiting > 0) out.push({ key: "waiting", tone: "info", text: `${waiting} pessoa${waiting === 1 ? "" : "s"} na fila de espera, ainda sem atendente.` });
   if (!out.length) out.push({ tone: "info", text: "Ainda não há dados suficientes neste período para uma leitura. Os destaques aparecem conforme as conversas acontecem." });
   return out;
 };

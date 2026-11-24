@@ -182,6 +182,11 @@ export const initIO = (server: Server): SocketIO => {
   });
   io.on("connection", socket => {
     const claims = decode(socket.data.token) as any;
+    // presence in real time: "Equipe agora" sees the person arrive and leave at once (see AnalyticsServices/LivePresence)
+    const presenceId = Number(socket.data.user?.id);
+    if (presenceId) {
+      import("../services/AnalyticsServices/LivePresence").then(m => m.socketArrived(presenceId)).catch(() => undefined);
+    }
     const expire = () => { socket.emit("authError", { reason: "expired" }); socket.disconnect(true); };
     const timer = setTimeout(expire, Math.max(1, (claims.exp * 1000) - Date.now()));
     const revalidate = setInterval(() => sessionUser(socket.data.token).catch(expire), 60000);
@@ -201,7 +206,11 @@ export const initIO = (server: Server): SocketIO => {
     socket.on("joinTickets", (status: string) => {
       if (["open", "pending", "closed"].includes(status)) socket.join(status);
     });
-    socket.on("disconnect", () => { clearTimeout(timer); clearInterval(revalidate); });
+    socket.on("disconnect", () => {
+      clearTimeout(timer);
+      clearInterval(revalidate);
+      if (presenceId) import("../services/AnalyticsServices/LivePresence").then(m => m.socketLeft(presenceId)).catch(() => undefined);
+    });
   });
   return io;
 };
