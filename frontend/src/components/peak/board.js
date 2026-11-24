@@ -266,30 +266,45 @@ export const RangePicker = ({ value, onChange, cycle }) => {
  * Each stage is a slice of the funnel: as wide as the leads that are in it or beyond it (`reach`), narrowing into the next one.
  * steps: [{ key, name, value, reach }]. `value` is the number written (the leads of the stage); without `reach` the value is used.
  */
+// The funnel in layers (after the "Funnel Chart" of bklit on 21st.dev, made vertical so every stage of the CRM fits, also on the phone):
+// each stage is a slice that narrows smoothly into the next one, with two soft rings around it; the share of who reached the stage
+// sits in a pill in the middle, the name on the left and the number of leads in the stage now on the right.
+const FUN_LAYERS = [{ scale: 1, opacity: 0.16 }, { scale: 0.9, opacity: 0.32 }, { scale: 0.8, opacity: 1 }];
+const funPath = (w0, w1, h) => {
+  // a curved slice from the width w0 (top) to w1 (bottom), centred in a box 100 wide
+  const m = 50;
+  const c = h * 0.55;
+  return `M ${m - w0} 0 C ${m - w0} ${c}, ${m - w1} ${h - c}, ${m - w1} ${h} L ${m + w1} ${h} C ${m + w1} ${h - c}, ${m + w0} ${c}, ${m + w0} 0 Z`;
+};
 export const Funnel = ({ steps, onStep, footer, valueHint }) => {
+  const [hover, setHover] = useState(null);
   const rows = (steps || []).map((s) => ({ ...s, value: Number(s.value) || 0, reach: Number(s.reach === undefined ? s.value : s.reach) || 0 }));
   const top = Math.max(1, ...rows.map((s) => s.reach));
-  // the width follows the square root of the share: the order and the narrowing are kept, and a stage with few leads is still a slice
-  // that can be seen and clicked (the exact number and the share are written beside every slice)
-  const MIN = 12;
-  const width = (s) => MIN + (100 - MIN) * Math.sqrt(s.reach / top);
+  // half-width of a slice, in a box 100 wide: never thinner than a line that can still be seen and clicked
+  const half = (s) => 3 + 47 * (s.reach / top);
+  const H = 38;
   return (
-    <div className="gv-fun" role="list">
+    <div className="gv-fun" role="list" data-hover={hover === null ? undefined : "1"} onMouseLeave={() => setHover(null)}>
       {rows.map((s, i) => {
-        const w = width(s);
-        const next = i + 1 < rows.length ? Math.min(w, width(rows[i + 1])) : Math.max(MIN * 0.7, w * 0.78);
-        const a = (100 - w) / 2;
-        const b = (100 - next) / 2;
-        const share = i > 0 && rows[0].reach > 0 ? Math.round((s.reach / rows[0].reach) * 100) : null;
+        const w0 = half(s);
+        const w1 = i + 1 < rows.length ? half(rows[i + 1]) : Math.max(3, w0 * 0.82);
+        const share = rows[0].reach > 0 ? Math.round((s.reach / rows[0].reach) * 100) : 0;
         const Tag = onStep ? "button" : "div";
         return (
-          <Tag key={s.key} type={onStep ? "button" : undefined} className="gv-fun-row" role="listitem" data-empty={s.value ? undefined : "1"} onClick={onStep ? () => onStep(s) : undefined}
-            aria-label={`${s.name}: ${nf(s.value)}${share === null ? "" : `. ${share}% chegaram até aqui`}`}>
+          <Tag key={s.key} type={onStep ? "button" : undefined} className="gv-fun-row" role="listitem" data-empty={s.value ? undefined : "1"}
+            data-on={hover === i ? "1" : undefined} onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}
+            onClick={onStep ? () => onStep(s) : undefined} style={{ "--i": i }}
+            aria-label={`${s.name}: ${nf(s.value)} agora. ${share}% chegaram até aqui`}>
             <span className="gv-fun-name" title={s.name}>{s.name}</span>
             <span className="gv-fun-shape" aria-hidden="true">
-              <span className="gv-fun-slice" style={{ clipPath: `polygon(${a}% 0, ${100 - a}% 0, ${100 - b}% 100%, ${b}% 100%)`, "--k": rows.length > 1 ? i / (rows.length - 1) : 0 }} />
+              <svg viewBox={`0 0 100 ${H}`} preserveAspectRatio="none" className="gv-fun-svg">
+                {FUN_LAYERS.map((l) => (
+                  <path key={l.scale} d={funPath(w0 * l.scale, w1 * l.scale, H)} className="gv-fun-layer" opacity={l.opacity} />
+                ))}
+              </svg>
+              <span className="gv-fun-pill">{share}%</span>
             </span>
-            <span className="gv-fun-val" title={valueHint}><b>{nf(s.value)}</b><span>{share === null ? "100%" : `${share}%`}</span></span>
+            <span className="gv-fun-val" title={valueHint}><b>{nf(s.value)}</b></span>
           </Tag>
         );
       })}
