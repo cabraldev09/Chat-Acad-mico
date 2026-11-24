@@ -12,8 +12,8 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 
 // What each job role may see of the CRM (leads and what hangs from them):
 //   admin, coordenacao  everything (the coordinator manages all polos)
-//   consultor    their own leads, plus unassigned ones of their polos (the intake queue)
-//   tutor/acad.  students of their polos, plus their own leads (the commercial screens, like a consultant)
+//   consultor    only their own leads (the ones nobody owns are distributed by the management)
+//   tutor/acad.  their own leads and the students given to them
 export const poloIdsOf = async (userId: number): Promise<number[]> =>
   (await PoloMember.findAll({ where: { userId }, attributes: ["poloId"] })).map(m => m.poloId);
 
@@ -36,23 +36,11 @@ export const leadScopeWhere = async (req: Request): Promise<any | null> => {
   if (isManagerRole(role)) return null;
   const me = Number(req.user.id);
   const polos = await poloIdsOf(me);
-  if (role === "consultor") {
-    return {
-      [Op.or]: [
-        { ownerId: me },
-        {
-          ownerId: { [Op.is]: null },
-          [Op.or]: [{ poloId: { [Op.in]: polos } }, { poloId: { [Op.is]: null } }]
-        }
-      ]
-    };
-  }
-  // the tutor works the students given to them and the ones still waiting for a tutor in their polos
-  if (role === "tutor") {
-    const mine = await tutorPoloIdsOf(me);
-    // ...and, like a consultant, the leads that are their own (a tutor may also bring and follow a sale: the same commercial screens)
-    return { [Op.or]: [{ ownerId: me }, { onboardingTutorId: me }, { onboardingTutorId: { [Op.is]: null }, onboardingStatus: { [Op.ne]: "none" }, poloId: { [Op.in]: mine.length ? mine : [0] } }] };
-  }
+  // in the CRM each one sees only what is theirs: the consultant the leads they own; the leads nobody owns yet are distributed by
+  // the management (the intake queue is not shown to every consultant of the polo)
+  if (role === "consultor") return { ownerId: me };
+  // the tutor: the leads they own and the students given to them (the students still without a tutor are in Alunos da tutoria)
+  if (role === "tutor") return { [Op.or]: [{ ownerId: me }, { onboardingTutorId: me }] };
   // the relationship team follows the students (the ones already enrolled) of every polo, never the sales funnel
   if (role === "relacionamento") return { enrolledAt: { [Op.ne]: null } };
   return { poloId: { [Op.in]: polos } };
@@ -63,8 +51,21 @@ export const withLeadScope = async (req: Request, where: any): Promise<any> => {
   return scope ? { [Op.and]: [where, scope] } : where;
 };
 
-export const assertLead = async (req: Request, leadId: number | string): Promise<void> => {
-  const scope = await leadScopeWhere(req);
+// The tutoring screens (Ambientação, Alunos da tutoria) are where a tutor takes the students still waiting for one: there the tutor
+// also sees the students of their polos that nobody took yet. Everywhere else (the CRM) the rule above holds.
+export const onboardingScopeWhere = async (req: Request): Promise<any | null> => {
+  if (reqRole(req) !== "tutor") return leadScopeWhere(req);
+  const me = Number(req.user.id);
+  const mine = await tutorPoloIdsOf(me);
+  return { [Op.or]: [{ ownerId: me }, { onboardingTutorId: me }, { onboardingTutorId: { [Op.is]: null }, onboardingStatus: { [Op.ne]: "none" }, poloId: { [Op.in]: mine.length ? mine : [0] } }] };
+};
+export const withOnboardingScope = async (req: Request, where: any): Promise<any> => {
+  const scope = await onboardingScopeWhere(req);
+  return scope ? { [Op.and]: [where, scope] } : where;
+};
+
+export const assertLead = async (req: Request, leadId: number | string, scopeOf = leadScopeWhere): Promise<void> => {
+  const scope = await scopeOf(req);
   if (!scope) return;
   const lead = await Lead.findOne({ where: { [Op.and]: [{ id: leadId }, scope] }, attributes: ["id"] });
   if (!lead) {
@@ -75,6 +76,11 @@ export const assertLead = async (req: Request, leadId: number | string): Promise
 
 export const canAccessLead = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   await assertLead(req, req.params.id);
+  next();
+};
+// the actions of the onboarding (start, checklist, access data): the tutor may act on a student of their polo still waiting
+export const canAccessOnboarding = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  await assertLead(req, req.params.id, onboardingScopeWhere);
   next();
 };
 
