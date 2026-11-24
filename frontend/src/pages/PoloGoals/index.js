@@ -25,17 +25,15 @@ const monthName = (key) => MONTH_NAMES[Number(key.slice(5, 7)) - 1];
 const monthShort = (key) => monthName(key).slice(0, 3);
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
-// The number shown in each month of a polo's strip. The target of every month comes from the server (GoalController.rollMonthly), the
-// same number the month view, the table and the image show:
-//  - a month that already passed shows what was done in it, and stays EMPTY when nothing was recorded;
-//  - the current month shows "done/target" and the next ones their target (what is missing of the semester, spread over them).
-// `now` is the month of today ("YYYY-MM").
-const planOfMonths = (row, now) => {
-  const months = row.months || [];
-  if (row.target === null || row.target === undefined) return months.map(() => ({ value: null, kind: "none" }));
-  return months.map((m) => (m.month < now
-    ? { value: m.done > 0 ? m.done : null, kind: "past" }
-    : { value: m.target, kind: m.month === now ? "current" : "future", done: m.done }));
+// What each month of a polo's strip shows: how many were done in that month and how many that month needed, "done/target", in every
+// month (past, current and next ones). The target of every month comes from the server (GoalController.rollMonthly), the same number
+// the month view and the table show: a month that passed keeps the target it had, the next ones share what is missing of the semester.
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const monthTip = (m, now) => {
+  const name = cap(monthName(m.month));
+  if (m.target === null || m.target === undefined) return `${name}: ${plural(m.done || 0, "matrícula feita", "matrículas feitas")}`;
+  const done = plural(m.done || 0, "feita", "feitas");
+  return m.month < now ? `${name}: ${done} de ${m.target} da meta do mês` : `${name}: ${done} de ${m.target} previstas`;
 };
 const thisMonth = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho" }).format(new Date()).slice(0, 7);
 // the colour of a polo says how far it is from the target
@@ -92,6 +90,7 @@ const useStyles = makeStyles((theme) => ({
   stripOn: { "& $stripBar": { boxShadow: "0 0 0 2px var(--c-brand)" }, color: "var(--c-brand)", fontWeight: 700 },
   monthBtn: { border: theme.border.divider, background: theme.palette.cards.background, color: "inherit", borderRadius: 12, padding: "6px 12px 7px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, textAlign: "left", minWidth: 76, "&:hover": { background: theme.palette.action.hover } },
   monthOn: { background: theme.palette.primary.main, color: "#fff", borderColor: theme.palette.primary.main, "&:hover": { background: theme.palette.primary.main } },
+  monthCount: { display: "block", fontSize: 11.5, fontWeight: 600, opacity: 0.75, marginTop: 1, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   monthBar: { height: 4, borderRadius: 4, marginTop: 6, background: "rgba(127,140,160,.3)", overflow: "hidden" },
   hero: {
     // the summary of the semester in the look of the cards of numbers (blue melting into navy, white text); the ring reads these colours
@@ -125,6 +124,7 @@ const useStyles = makeStyles((theme) => ({
   foot: { display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: 12, color: theme.palette.text.secondary, marginTop: 12, paddingTop: 10, borderTop: theme.border.divider },
   strip: { display: "flex", gap: 5, marginTop: 12, alignItems: "flex-end" },
   stripCol: { flex: 1, textAlign: "center", fontSize: 10.5, color: theme.palette.text.secondary, cursor: "pointer", border: 0, background: "transparent", padding: 0, fontFamily: "inherit" },
+  stripOf: { fontWeight: 600, color: theme.palette.text.secondary },
   stripNum: { fontSize: 12.5, fontWeight: 700, lineHeight: "16px", marginBottom: 2, color: theme.palette.text.primary, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   stripBar: { height: 26, borderRadius: 5, background: "color-mix(in srgb, var(--c-brand) 9%, transparent)", position: "relative", overflow: "hidden", marginBottom: 3 },
   tableWrap: { overflowX: "auto", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)" },
@@ -605,13 +605,15 @@ const PoloGoals = () => {
             )}
 
             <div className={classes.months}>
-              <button type="button" className={`${classes.monthBtn} ${!month ? classes.monthOn : ""}`} onClick={() => setMonth(null)}>
+              <button type="button" className={`${classes.monthBtn} ${!month ? classes.monthOn : ""}`} onClick={() => setMonth(null)} title={`Semestre: ${plural(data.totals.done || 0, "feita", "feitas")} de ${data.totals.target ?? 0}`}>
                 Semestre
+                <span className={classes.monthCount}>{data.totals.done || 0}/{data.totals.target ?? 0}</span>
                 <div className={classes.monthBar}><div style={{ width: `${Math.min(100, data.totals.pct || 0)}%`, height: "100%", background: !month ? "#FEF84C" : TONE.good.bg }} /></div>
               </button>
               {data.monthTotals.map((m) => (
-                <button key={m.month} type="button" className={`${classes.monthBtn} ${month === m.month ? classes.monthOn : ""}`} onClick={() => setMonth(m.month)} title={`Meta ${m.target} · feitas ${m.done}`}>
+                <button key={m.month} type="button" className={`${classes.monthBtn} ${month === m.month ? classes.monthOn : ""}`} onClick={() => setMonth(m.month)} title={monthTip(m, thisMonth())}>
                   {cap(monthShort(m.month))}
+                  <span className={classes.monthCount}>{m.done || 0}/{m.target ?? 0}</span>
                   <div className={classes.monthBar}><div style={{ width: `${Math.min(100, m.pct || 0)}%`, height: "100%", background: month === m.month ? "#FEF84C" : TONE[m.status].bg }} /></div>
                 </button>
               ))}
@@ -685,16 +687,16 @@ const PoloGoals = () => {
                       </div>
                       {r.target !== null && (
                         <div className={classes.strip} aria-label="Meta e feitas por mês">
-                          {r.months.map((m, k) => {
-                            const plan = planOfMonths(r, thisMonth())[k];
-                            const shown = plan.kind === "current" ? `${plan.done || 0}/${plan.value}` : plan.value === null ? "" : String(plan.value);
-                            const title = plan.kind === "past"
-                              ? `${cap(monthName(m.month))}: ${m.done > 0 ? `${m.done} matrículas feitas` : "sem registro"}`
-                              : `${cap(monthName(m.month))}: ${plan.done || 0} feitas de ${plan.value} previstas`;
+                          {r.months.map((m) => {
+                            const hasTarget = m.target !== null && m.target !== undefined;
+                            const long = `${m.done || 0}/${hasTarget ? m.target : ""}`.length > 4;
+                            const title = monthTip(m, thisMonth());
                             return (
-                              <button key={m.month} type="button" aria-pressed={month === m.month} className={`${classes.stripCol} ${month === m.month ? classes.stripOn : ""}`}
+                              <button key={m.month} type="button" aria-pressed={month === m.month} aria-label={title} className={`${classes.stripCol} ${month === m.month ? classes.stripOn : ""}`}
                                 onClick={() => setMonth(month === m.month ? null : m.month)} title={`${title}. ${month === m.month ? "Clique para voltar ao semestre" : "Clique para ver só este mês"}`}>
-                                <div className={classes.stripNum} style={{ opacity: plan.kind === "future" ? 0.8 : 1 }}>{shown || "\u00a0"}</div>
+                                <div className={classes.stripNum} style={long ? { fontSize: 11 } : undefined}>
+                                  {hasTarget ? <>{m.done || 0}<span className={classes.stripOf}>/{m.target}</span></> : "\u00a0"}
+                                </div>
                                 <div className={classes.stripBar}><div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: `${Math.min(100, m.pct || 0)}%`, background: TONE[m.status].bg }} /></div>
                                 {monthShort(m.month)}
                               </button>
@@ -743,7 +745,7 @@ const PoloGoals = () => {
             )}
 
             <div className={classes.hint} style={{ marginTop: 12 }}>
-              O traço em cada barra marca onde o polo deveria estar hoje, pelo tempo {month ? "do mês" : "do período"}. A meta do semestre é dividida pelos meses, e o que fica sem fazer num mês passa para os seguintes. Clicar em um mês mostra só os números dele, os mesmos do cartão; clicar de novo volta ao semestre.
+              Em cada mês aparece quantas foram feitas e a meta daquele mês (feitas/meta). O traço em cada barra marca onde o polo deveria estar hoje, pelo tempo {month ? "do mês" : "do período"}. A meta do semestre é dividida pelos meses, e o que fica sem fazer num mês passa para os seguintes. Clicar em um mês mostra só os números dele, os mesmos do cartão; clicar de novo volta ao semestre.
             </div>
 
             {shown.rows.length > 0 && (
