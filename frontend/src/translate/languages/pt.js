@@ -533,6 +533,8 @@ const messages = {
         ERR_RETENTION_DAILY_LIMIT: "Limite diário de envios desta conexão por QR Code atingido. Continue amanhã.",
         ERR_RETENTION_TOO_MANY: "Escolha até 50 alunos por envio.",
         ERR_PASSWORD_SHORT: "A senha precisa ter pelo menos 8 caracteres.",
+        ERR_PASSWORD_REQUIRED: "Crie uma senha com pelo menos 8 caracteres.",
+        ERR_USER_NAME_SHORT: "O nome precisa ter pelo menos 2 letras.",
         ERR_LEAD_DELETE_ENROLLED: "Este lead já é um aluno matriculado: não pode ser excluído. Use “Não é um lead” se ele não deve aparecer no funil.",
         ERR_LEAD_DELETE_PAID: "Este lead tem cobrança paga: não pode ser excluído.",
         ERR_INVALID_OUTCOME: "Escolha o que aconteceu no contato.",

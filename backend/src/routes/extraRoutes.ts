@@ -17,6 +17,7 @@ import * as Preferences from "../controllers/PreferencesController";
 import canManageWhatsapp from "../middleware/canManageWhatsapp";
 import isAdmin from "../middleware/isAdmin";
 import isManager from "../middleware/isManager";
+import isSystemAdmin from "../middleware/isSystemAdmin";
 import { canReadTicket, canWriteTicket } from "../middleware/canAccessTicket";
 import { canAccessLead, canAccessOnboarding, canAccessProposal, canAccessPayment } from "../middleware/scope";
 import * as EnrollmentForm from "../controllers/EnrollmentFormController";
@@ -149,12 +150,12 @@ r.get("/dashboard", isAuth, Dashboard.index);
 // tags
 r.get("/tags", isAuth, cached(), Tag.index);
 r.get("/communities", isAuth, Community.index);
-r.get("/mail/settings", isAuth, isAdmin, MailSettings.show);
-r.put("/mail/settings", isAuth, isAdmin, MailSettings.update);
-r.post("/mail/test", isAuth, isAdmin, MailSettings.test);
-r.get("/mail/templates", isAuth, isAdmin, MailSettings.templates);
-r.get("/mail/templates/:key/preview", isAuth, isAdmin, MailSettings.preview);
-r.post("/mail/templates/:key/test", isAuth, isAdmin, MailSettings.testTemplate);
+r.get("/mail/settings", isAuth, isSystemAdmin, MailSettings.show);
+r.put("/mail/settings", isAuth, isSystemAdmin, MailSettings.update);
+r.post("/mail/test", isAuth, isSystemAdmin, MailSettings.test);
+r.get("/mail/templates", isAuth, isSystemAdmin, MailSettings.templates);
+r.get("/mail/templates/:key/preview", isAuth, isSystemAdmin, MailSettings.preview);
+r.post("/mail/templates/:key/test", isAuth, isSystemAdmin, MailSettings.testTemplate);
 r.post("/tags", isAuth, isManager, Tag.store);
 r.put("/tags/:id", isAuth, isManager, Tag.update);
 r.delete("/tags/:id", isAuth, isManager, Tag.remove);
@@ -163,15 +164,15 @@ r.get("/contacts/:contactId/tags", isAuth, canAccessContact, Tag.contactTags);
 r.put("/contacts/:contactId/tags", isAuth, canAccessContact, Tag.setContactTags);
 
 // webhooks / api tokens (admin)
-r.get("/webhooks-config/events", isAuth, isAdmin, Webhook.events);
-r.get("/webhooks-config", isAuth, isAdmin, Webhook.index);
-r.post("/webhooks-config", isAuth, isAdmin, Webhook.store);
-r.put("/webhooks-config/:id", isAuth, isAdmin, Webhook.update);
-r.delete("/webhooks-config/:id", isAuth, isAdmin, Webhook.remove);
-r.post("/webhooks-config/:id/test", isAuth, isAdmin, Webhook.test);
-r.get("/api-tokens", isAuth, isAdmin, ApiToken.index);
-r.post("/api-tokens", isAuth, isAdmin, ApiToken.store);
-r.delete("/api-tokens/:id", isAuth, isAdmin, ApiToken.remove);
+r.get("/webhooks-config/events", isAuth, isSystemAdmin, Webhook.events);
+r.get("/webhooks-config", isAuth, isSystemAdmin, Webhook.index);
+r.post("/webhooks-config", isAuth, isSystemAdmin, Webhook.store);
+r.put("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.update);
+r.delete("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.remove);
+r.post("/webhooks-config/:id/test", isAuth, isSystemAdmin, Webhook.test);
+r.get("/api-tokens", isAuth, isSystemAdmin, ApiToken.index);
+r.post("/api-tokens", isAuth, isSystemAdmin, ApiToken.store);
+r.delete("/api-tokens/:id", isAuth, isSystemAdmin, ApiToken.remove);
 
 // AI agents
 r.get("/ai-agents", isAuth, isManager, Ai.index);
@@ -247,8 +248,8 @@ r.post("/ai-agents/:id/train/analyze", isAuth, isManager, Ai.trainAnalyze);
 r.post("/ai-agents/:id/train/apply", isAuth, isManager, Ai.trainApply);
 r.post("/ai-agents/:id/train/from-conversation", isAuth, isManager, Ai.trainFromConversation);
 r.get("/ai-agents/:id/usage", isAuth, isManager, Ai.usage);
-r.get("/ai-settings", isAuth, isAdmin, Ai.getKeys);
-r.put("/ai-settings", isAuth, isAdmin, Ai.setKeys);
+r.get("/ai-settings", isAuth, isSystemAdmin, Ai.getKeys);
+r.put("/ai-settings", isAuth, isSystemAdmin, Ai.setKeys);
 
 // visual flows (the chatbot builder)
 r.get("/flows", isAuth, isManager, Flow.index);
@@ -329,7 +330,7 @@ r.get("/channels/instagram/authorize", isAuth, isManager, ChannelOAuth.authorize
 r.get("/channels/instagram/app", isAuth, isManager, ChannelOAuth.getApp);
 r.put("/channels/instagram/app", isAuth, isManager, ChannelOAuth.putApp);
 r.get("/channels/:whatsappId/info", isAuth, isManager, Channel.info);
-r.get("/channels/:whatsappId/safety", isAuth, Channel.safety);
+r.get("/channels/:whatsappId/safety", isAuth, canManageWhatsapp, Channel.safety);
 r.get("/channels/:whatsappId/groups", isAuth, canManageWhatsapp, Channel.groups);
 
 // polos (branches) and the team of each one
@@ -527,14 +528,14 @@ r.post("/courses/import", isAuth, isManager, Lead.importCourses);
 r.post("/courses/load-default", isAuth, isManager, Lead.loadDefaultCourses);
 
 // ----------------------------------------------------- enrollment payments (Efí)
-r.get("/payments/efi/settings", isAuth, isAdmin, Payment.getSettings);
-r.put("/payments/efi/settings", isAuth, isAdmin, Payment.putSettings);
-r.post("/payments/efi/certificate", isAuth, isAdmin, certUpload.single("certificate"), Payment.uploadCertificate);
-r.post("/payments/efi/test", isAuth, isAdmin, Payment.testConnection);
-r.post("/payments/efi/webhook", isAuth, isAdmin, Payment.registerWebhook);
-r.get("/payments/efi/wallets", isAuth, isAdmin, Payment.listWallets);
-r.put("/payments/efi/wallets/:userId", isAuth, isAdmin, Payment.saveUserWallet);
-r.delete("/payments/efi/wallets/:userId", isAuth, isAdmin, Payment.clearUserWallet);
+r.get("/payments/efi/settings", isAuth, isSystemAdmin, Payment.getSettings);
+r.put("/payments/efi/settings", isAuth, isSystemAdmin, Payment.putSettings);
+r.post("/payments/efi/certificate", isAuth, isSystemAdmin, certUpload.single("certificate"), Payment.uploadCertificate);
+r.post("/payments/efi/test", isAuth, isSystemAdmin, Payment.testConnection);
+r.post("/payments/efi/webhook", isAuth, isSystemAdmin, Payment.registerWebhook);
+r.get("/payments/efi/wallets", isAuth, isSystemAdmin, Payment.listWallets);
+r.put("/payments/efi/wallets/:userId", isAuth, isSystemAdmin, Payment.saveUserWallet);
+r.delete("/payments/efi/wallets/:userId", isAuth, isSystemAdmin, Payment.clearUserWallet);
 r.get("/me/efi", isAuth, Payment.myEfi);
 r.put("/me/efi", isAuth, Payment.saveMyEfi);
 r.delete("/me/efi", isAuth, Payment.clearMyEfi);

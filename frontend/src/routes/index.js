@@ -163,7 +163,7 @@ const Routes = () => {
                 <Route exact path="/ai-agents/:id/melhorar" component={({ match }) => <Redirect to={`/ai-agents/${match.params.id}/central?secao=ensinar`} />} isPrivate managerOnly />
                 <Route exact path="/chatbot-antigo" component={LegacyChatbot} isPrivate managerOnly />
                 <Route exact path="/ai-agents" component={AiAgents} isPrivate managerOnly />
-                <Route exact path="/integrations" component={Webhooks} isPrivate adminOnly />
+                <Route exact path="/integrations" component={Webhooks} isPrivate systemAdminOnly />
                 <Route exact path="/reports" component={Reports} isPrivate />
                 {/* "Equipe agora" is now part of Estatísticas (Visão geral, Consultores, Polos e metas): old links still arrive */}
                 <Route exact path="/gestao-comercial" component={() => <Redirect to="/estatisticas" />} isPrivate />

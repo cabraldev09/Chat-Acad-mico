@@ -167,6 +167,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const allowed: Record<string, any> = {};
   [...FIELDS, "shift", "channel", "tagIds", "stageId"].forEach(f => { if (b[f] !== undefined) allowed[f] = b[f]; });
   if (isAdminReq(req) && b.affiliateId) allowed.affiliateId = b.affiliateId;
+  // a non-manager puts a lead only in their own name: they cannot create it for (or hand it to) another person
+  if (!isManagerRole(reqRole(req)) && b.ownerId !== undefined && b.ownerId !== null && Number(b.ownerId) !== uid(req)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
   const { lead, created } = await upsertLead(
     {
       ...allowed,
@@ -200,6 +204,10 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (patch.email !== undefined) patch.email = normalizeEmail(patch.email);
   if (patch.name === null) throw new AppError("ERR_FIELD_REQUIRED_name");
 
+  // only the management reassigns a lead to someone else; a non-manager may keep it with themselves, not hand it off
+  if (patch.ownerId !== undefined && !isManagerRole(reqRole(req)) && Number(patch.ownerId) !== uid(req)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
   const ownerChanged = patch.ownerId !== undefined && patch.ownerId !== lead.ownerId;
   const previousOwner = lead.ownerId;
   const same = (a: any, b: any): boolean => String(a ?? "").trim() === String(b ?? "").trim();
@@ -515,6 +523,10 @@ export const openTicket = async (req: Request, res: Response): Promise<Response>
 
 // ------------------------------------------------------------------ import
 export const importLeads = async (req: Request, res: Response): Promise<Response> => {
+  // a non-manager imports leads only in their own name, never assigning the batch to someone else
+  if (!isManagerRole(reqRole(req)) && req.body.ownerId && Number(req.body.ownerId) !== uid(req)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
   const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 5000) : [];
   const courses = await Course.findAll();
   const byName = new Map(courses.map(c => [c.name.toLowerCase(), c.id]));
