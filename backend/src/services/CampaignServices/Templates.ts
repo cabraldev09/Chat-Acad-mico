@@ -46,8 +46,29 @@ export const approvedTemplates = async (whatsappId: number): Promise<TemplateVie
       out.push({ name: t.name, language: t.language, category: t.category, body, params: paramsIn(body), header: comp("HEADER")?.text || null, footer: comp("FOOTER")?.text || null });
     });
   }
+  await rememberCategories(out);
   return out.sort((a, b) => a.name.localeCompare(b.name));
 };
+
+// The last category the Meta gave each template (it can move a Utility one to Marketing by itself): the cost of each send and the
+// monthly cap use it. Refreshed whenever the templates are read on the Meta and when the Meta says a category changed.
+const CATEGORY_KEY = "meta_template_categories";
+export const templateCategories = async (): Promise<Record<string, string>> => {
+  const { getSetting } = await import("../../helpers/AppSettings");
+  try { const v = JSON.parse(String(await getSetting(CATEGORY_KEY, "{}")) || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; }
+};
+export const rememberCategories = async (list: Array<{ name: string; category: string }>): Promise<void> => {
+  const valid = list.filter(t => t && t.name && ["MARKETING", "UTILITY", "AUTHENTICATION"].includes(String(t.category || "").toUpperCase()));
+  if (!valid.length) return;
+  const { setSetting } = await import("../../helpers/AppSettings");
+  const all = await templateCategories();
+  let changed = false;
+  valid.forEach(t => { const c = String(t.category).toUpperCase(); if (all[t.name] !== c) { all[t.name] = c; changed = true; } });
+  if (changed) await setSetting(CATEGORY_KEY, JSON.stringify(all));
+};
+// unknown counts as Marketing (the most expensive), so an estimate never comes out lower than the real one
+export const categoryOf = async (name: string): Promise<"MARKETING" | "UTILITY" | "AUTHENTICATION"> =>
+  ((await templateCategories())[name] as any) || "MARKETING";
 
 // the values the {{n}} of a template can take, for one person of the list
 export const TEMPLATE_VARIABLES = ["primeiro_nome", "nome", "curso", "polo", "consultor", "numero", "vencimento", "valor", "prazo", "situacao", "tutoria"] as const;
@@ -73,11 +94,16 @@ export const templateValues = async (contactId: number | null, name: string, num
   return { ...base, curso: course?.name || "", polo: polo?.name || "", consultor: (owner?.name || "").split(" ")[0], situacao: (lead as any).lostAt ? "cancelada" : (lead as any).enrolledAt ? "ativa" : "em aberto" };
 };
 
+export const cleanParam = (text: string): string => String(text || "").replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").trim().slice(0, 200);
+
 // the parameters of the template for one person (the first name when nothing was chosen, as before) and the text as received
 export const fillTemplate = (keys: string[], values: Record<string, string>, body: string | null): { params: string[]; text: string } => {
   const list = keys.length ? keys : ["primeiro_nome"];
   // the Meta refuses an empty parameter: a missing value becomes a neutral word
-  const params = list.map(k => (values[k] || "").trim() || (k === "primeiro_nome" || k === "nome" ? "aluno(a)" : "-"));
+  // a key that starts with "=" is a fixed text typed for the whole send (the date of a test, the name of a subject); the Meta refuses
+  // line breaks, tabs and more than four spaces in a row inside a parameter
+  const valueOf = (k: string) => (k.startsWith("=") ? cleanParam(k.slice(1)) : (values[k] || "").trim());
+  const params = list.map(k => valueOf(k) || (k === "primeiro_nome" || k === "nome" ? "aluno(a)" : "-"));
   const text = body ? body.replace(/\{\{(\d+)\}\}/g, (_m, n) => params[Number(n) - 1] ?? "") : "";
   return { params, text };
 };
@@ -154,7 +180,15 @@ export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
     body: "Acesso ao portal, {{1}}: o seu acesso ao portal do aluno do curso {{2}} foi liberado. As orientações do primeiro acesso seguem nesta conversa.", examples: ["Maria", "Pedagogia"] },
   { name: "inicio_das_aulas", department: "tutoria", use: "aviso",
     purpose: "Data de início das aulas do curso do aluno",
-    body: "Início das aulas, {{1}}: as aulas do curso {{2}} começam em {{3}}. O acesso às disciplinas é pelo portal do aluno.", examples: ["Maria", "Pedagogia", "02/02/2027"] }
+    body: "Início das aulas, {{1}}: as aulas do curso {{2}} começam em {{3}}. O acesso às disciplinas é pelo portal do aluno.", examples: ["Maria", "Pedagogia", "02/02/2027"] },
+  // the two notices of the month of the tutoring (Avisos da tutoria): one summary of the activities and one reminder in the week of
+  // the test, instead of one message per activity, so each student costs two Utility messages a month
+  { name: "aviso_atividades_mes", department: "tutoria", use: "aviso",
+    purpose: "Resumo do mês: as atividades do curso e o prazo de entrega",
+    body: "Atividades do mês, {{1}}: as atividades do curso {{2}} estão disponíveis no portal do aluno, com entrega até {{3}}. Orientação da tutoria: {{4}}. Os detalhes de cada atividade estão no portal.", examples: ["Maria", "Pedagogia", "20/12/2026", "faça primeiro o fórum da disciplina"] },
+  { name: "lembrete_prova", department: "tutoria", use: "aviso",
+    purpose: "Lembrete na semana da prova",
+    body: "Lembrete de prova, {{1}}: a prova de {{2}} do curso {{3}} está marcada para {{4}}. As orientações estão no portal do aluno.", examples: ["Maria", "Didática", "Pedagogia", "12/12/2026"] }
 ];
 
 // department and use of the templates created on the screen (the pack ones carry their own)
@@ -195,6 +229,7 @@ export const allTemplates = async (whatsappId?: number | null): Promise<Template
     const status = err?.response?.status;
     throw new AppError(status === 400 || status === 401 || status === 403 ? "ERR_META_TEMPLATES_REFUSED" : "ERR_META_TEMPLATES_UNAVAILABLE", 502);
   }
+  await rememberCategories(data?.data || []);
   return (data?.data || []).map((t: any) => ({
     name: t.name, language: t.language, category: t.category, status: t.status,
     reason: t.rejected_reason && t.rejected_reason !== "NONE" ? t.rejected_reason : null,

@@ -61,3 +61,22 @@ export const importStudents = async (req: Request, res: Response): Promise<Respo
     dryRun: Boolean(req.body?.dryRun)
   }));
 };
+
+// Avisos da tutoria (TutoriaServices/Notices): the preview (how many students, the cost, what blocks it) and the send after the
+// confirmation. The tutor reaches only their own students; the management any polo, course or tutor.
+const noticeScope = (req: Request): number | null => {
+  const manager = isManagerRole(roleOf(req.user));
+  if (!manager && !isTutor(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+  return manager ? null : Number(req.user.id);
+};
+export const noticePreview = async (req: Request, res: Response): Promise<Response> => {
+  const tutorOnly = noticeScope(req);
+  const { cleanNotice, previewNotice, publicPreview } = await import("../services/TutoriaServices/Notices");
+  return res.json(publicPreview(await previewNotice(cleanNotice(req.body), tutorOnly)));
+};
+export const noticeSend = async (req: Request, res: Response): Promise<Response> => {
+  const tutorOnly = noticeScope(req);
+  if (req.body?.confirm !== true) throw new AppError("ERR_NOTICE_CONFIRM", 400);
+  const { cleanNotice, sendNotice } = await import("../services/TutoriaServices/Notices");
+  return res.json(await sendNotice(cleanNotice(req.body), Number(req.user.id), tutorOnly));
+};

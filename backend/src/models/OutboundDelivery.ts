@@ -9,6 +9,8 @@ export default class OutboundDelivery extends Model<OutboundDelivery> {
   @Column whatsappId: number;
   @Column channel: string;
   @Column status: string;
+  // MARKETING, UTILITY, AUTHENTICATION (a template) or SERVICE (an answer inside the 24 h); empty outside the Meta channels
+  @Column category: string;
   @Column externalId: string;
   @Column(DataType.TEXT) error: string;
   @Column(DataType.DECIMAL(14, 8)) estimatedUsd: number;
