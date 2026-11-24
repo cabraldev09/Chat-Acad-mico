@@ -160,7 +160,7 @@ const AliasesCard = ({ course, onSaved }) => {
       <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Outros nomes e siglas</div>
       <p className="mt-1 text-sm text-muted-foreground">Como as pessoas chamam este curso, separados por vírgula. Ex.: RH, gestão de pessoas. A IA reconhece o curso por estes nomes.</p>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-        <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Ex.: RH, gestão de pessoas" aria-label="Outros nomes e siglas" maxLength={400} className="h-10 min-w-0 flex-1 bg-white" />
+        <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Ex.: RH, gestão de pessoas" aria-label="Outros nomes e siglas" maxLength={400} className="h-10 w-full shrink-0 bg-white sm:min-w-0 sm:flex-1 sm:shrink" />
         <Button className="h-10" disabled={busy || value.trim() === (course.aliases || "").trim()} onClick={save}>{busy ? "Salvando..." : "Salvar"}</Button>
       </div>
     </div>
