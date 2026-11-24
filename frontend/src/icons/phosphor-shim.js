@@ -204,9 +204,18 @@ import {
   XCircle as PhXCircle,
 } from "@phosphor-icons/react";
 
+// Big icons (40 px and up) use the clean line ("regular"): at that size the 20% fill of the duotone becomes a heavy flat patch.
+// strokeWidth (a Lucide prop the screens already pass) picks the weight of the line: thin for 1.5 or less, bold for 2.5 or more.
+const weightOf = (weight, size, strokeWidth) => {
+  const px = typeof size === "number" ? size : parseFloat(size) || 24;
+  const sw = Number(strokeWidth);
+  if (sw && sw <= 1.5) return "light";
+  if (sw && sw >= 2.5) return "bold";
+  return weight === "duotone" && px >= 40 ? "regular" : weight;
+};
 const make = (Icon, name, weight) => {
   const C = React.forwardRef(({ size = 24, color = "currentColor", strokeWidth, absoluteStrokeWidth, ...rest }, ref) => (
-    React.createElement(Icon, { ref, size, color, weight, ...rest })
+    React.createElement(Icon, { ref, size, color, weight: weightOf(weight, size, strokeWidth), ...rest })
   ));
   C.displayName = name;
   return C;
@@ -259,6 +268,7 @@ export const CircleDashed = /*#__PURE__*/ make(PhCircleDashed, "CircleDashed", "
 export const CircleDollarSign = /*#__PURE__*/ make(PhCurrencyCircleDollar, "CircleDollarSign", "duotone");
 export const CircleSlash = /*#__PURE__*/ make(PhProhibitInset, "CircleSlash", "duotone");
 export const ClipboardCopy = /*#__PURE__*/ make(PhClipboard, "ClipboardCopy", "duotone");
+export const ClipboardList = /*#__PURE__*/ make(PhClipboardText, "ClipboardList", "duotone");
 export const ClipboardPaste = /*#__PURE__*/ make(PhClipboardText, "ClipboardPaste", "duotone");
 export const Clock = /*#__PURE__*/ make(PhClock, "Clock", "duotone");
 export const Clock3 = /*#__PURE__*/ make(PhClock, "Clock3", "duotone");

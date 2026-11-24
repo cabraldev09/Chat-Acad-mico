@@ -1,8 +1,8 @@
 import React from "react";
 import { toast } from "react-toastify";
 
-// Every toast in the app (toast.success(...), toastError(...)) gets the same
-// modern card: colored icon bubble, a short title and the message.
+// Every toast in the app (toast.success(...), toastError(...)) is a notification in the style of the Mac: a frosted card with the
+// icon in a rounded square, the title in bold with "agora" on the right, and the message under it (styles/app.css, .mtoast).
 const TYPES = {
   success: { title: "Tudo certo", color: "#16a34a", icon: <path d="M20 6 9 17l-5-5" /> },
   error: { title: "Algo deu errado", color: "#dc2626", icon: <path d="M18 6 6 18M6 6l12 12" /> },
@@ -14,16 +14,16 @@ const Body = ({ type, content, title, action }) => {
   const t = TYPES[type];
   return (
     <div className="mtoast">
-      <span className="mtoast-icon" style={{ color: t.color, background: `${t.color}1f` }}>
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+      <span className="mtoast-icon" style={{ background: `linear-gradient(160deg, ${t.color}, ${t.color}cc)` }} aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
           {t.icon}
         </svg>
       </span>
       <div className="mtoast-text">
-        <div className="mtoast-title">{title || t.title}</div>
+        <div className="mtoast-head"><span className="mtoast-title">{title || t.title}</span><span className="mtoast-time">agora</span></div>
         {content ? <div className="mtoast-msg">{content}</div> : null}
         {action ? (
-          <button type="button" className="mtoast-action" onClick={(e) => { e.stopPropagation(); action.onClick(); }}>{action.label}</button>
+          <button type="button" className="mtoast-action" style={{ background: t.color }} onClick={(e) => { e.stopPropagation(); action.onClick(); }}>{action.label}</button>
         ) : null}
       </div>
     </div>
@@ -42,11 +42,18 @@ export const installModernToast = () => {
     ["info", "info"],
   ].forEach(([fn, type]) => {
     const original = toast[fn];
-    toast[fn] = (content, options) =>
+    toast[fn] = (content, options) => {
       // a card already drawn (noticeToast) goes as it is
-      (typeof content === "string" || typeof content === "number" || React.isValidElement(content)) && !(React.isValidElement(content) && content.type === Body)
-        ? original(<Body type={type} content={content} />, options)
-        : original(content, options);
+      if (React.isValidElement(content) && content.type === Body) return original(content, options);
+      if (!(typeof content === "string" || typeof content === "number" || React.isValidElement(content))) return original(content, options);
+      // the same message again (a wrong password typed three times) does not stack: the one on the screen just starts its time over
+      const id = (options && options.toastId) || (typeof content === "string" || typeof content === "number" ? `${type}:${content}` : undefined);
+      if (id && toast.isActive(id)) {
+        toast.update(id, { render: <Body type={type} content={content} />, autoClose: (options && options.autoClose) ?? 4500 });
+        return id;
+      }
+      return original(<Body type={type} content={content} />, id ? { ...options, toastId: id } : options);
+    };
   });
 };
 

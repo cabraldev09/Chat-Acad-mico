@@ -1,6 +1,6 @@
-# Rotas da API (560)
+# Rotas da API (586)
 
-Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
+Públicas: 40 · logado (qualquer perfil): 323 · gestão: 178 · admin: 37
 
 ## Públicas (sem login)
 
@@ -22,6 +22,11 @@ Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 - POST /efi/:secret/pix (efiWebhookRoutes.ts)
 - POST /efi/:secret/billet (efiWebhookRoutes.ts)
 - POST /efi/:secret (efiWebhookRoutes.ts)
+- GET /:token (enrollmentFormPublicRoutes.ts)
+- PUT /:token (enrollmentFormPublicRoutes.ts)
+- POST /:token/files/:kind (enrollmentFormPublicRoutes.ts)
+- DELETE /:token/files/:kind (enrollmentFormPublicRoutes.ts)
+- POST /:token/submit (enrollmentFormPublicRoutes.ts)
 - GET /_aluna.webp (leadFormRoutes.ts)
 - GET /:token (leadFormRoutes.ts)
 - GET /:token/u/:slug (leadFormRoutes.ts)
@@ -67,6 +72,7 @@ Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 - POST /contact (contactRoutes.ts)
 - POST /uploads (extraRoutes.ts)
 - PUT /me/phone (extraRoutes.ts)
+- POST /analytics/insights/dismiss (extraRoutes.ts)
 - POST /schedules (extraRoutes.ts)
 - PUT /schedules/:id (extraRoutes.ts)
 - POST /schedules/:id/cancel (extraRoutes.ts)
@@ -84,6 +90,12 @@ Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 - POST /leads/from-contact/:contactId (extraRoutes.ts)
 - PUT /notifications/read-all (extraRoutes.ts)
 - PUT /notifications/:id/read (extraRoutes.ts)
+- POST /tutoria/issues (extraRoutes.ts)
+- PUT /tutoria/issues/:id (extraRoutes.ts)
+- PUT /tutoria/audit/settings (extraRoutes.ts)
+- POST /tutoria/audit/run (extraRoutes.ts)
+- POST /tutoria/protocols (extraRoutes.ts)
+- POST /tutoria/protocols/:id/resolve (extraRoutes.ts)
 - POST /tutoria/students/import (extraRoutes.ts)
 - POST /tutoria/students/:leadId/conversation (extraRoutes.ts)
 - POST /proposals/preview (extraRoutes.ts)
@@ -146,19 +158,24 @@ Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 - POST /retention/run → isRetentionOperator
 - PUT /leads/:id/documents/:docId → canAccessLead
 - POST /leads/:id/documents/remind → canAccessLead
+- POST /leads/:id/enrollment-form → canAccessLead
+- POST /leads/:id/enrollment-form/send → canAccessLead
+- POST /tickets/:ticketId/enrollment-form → canWriteTicket
 - PUT /leads/:id → canAccessLead
 - PUT /leads/:id/stage → canAccessLead
 - POST /leads/:id/relation → canAccessLead
 - POST /leads/:id/activities → canAccessLead
 - POST /leads/:id/tasks → canAccessLead
 - POST /leads/:id/open-ticket → canAccessLead
-- PUT /leads/:id/onboarding/access → canAccessLead
-- POST /leads/:id/onboarding/access/send → canAccessLead
-- PUT /leads/:id/onboarding/checklist → canAccessLead
+- POST /tutoria/notices/preview → tutoriaStaff
+- POST /tutoria/notices → tutoriaStaff
+- PUT /leads/:id/onboarding/access → canAccessOnboarding
+- POST /leads/:id/onboarding/access/send → canAccessOnboarding
+- PUT /leads/:id/onboarding/checklist → canAccessOnboarding
 - POST /leads/:id/enrollment-proof → canAccessLead
 - POST /leads/:id/enroll → canAccessLead
-- POST /leads/:id/onboarding → canAccessLead
-- PUT /leads/:id/onboarding → canAccessLead
+- POST /leads/:id/onboarding → canAccessOnboarding
+- PUT /leads/:id/onboarding → canAccessOnboarding
 - PUT /leads/:id/tasks/:taskId → canAccessLead
 - POST /leads/:id/tasks/:taskId/toggle → canAccessLead
 - PUT /leads/:id/tasks/:taskId/done → canAccessLead
@@ -191,6 +208,7 @@ Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 - POST /tickets/:ticketId/claim → canWriteTicket
 - POST /tickets/:ticketId/take → canReadTicket
 - POST /tickets/:ticketId/ai → canWriteTicket
+- POST /tickets/:ticketId/reply-dismiss → canWriteTicket
 - PUT /tickets/:ticketId/archive → canWriteTicket
 - PUT /tickets/:ticketId/unread → canWriteTicket
 - POST /tickets/:ticketId/typing → canWriteTicket

@@ -8,6 +8,7 @@ import { ptBR } from "date-fns/locale";
 import api from "../../services/api";
 import { initialsOf, colorOf } from "../../utils/avatar";
 import { GlowPanel, PriorityList, EmptyNote } from "../peak";
+import { dismissInsight } from "../../utils/quickActions";
 
 // Two blocks shared by the Painel do CRM and Estatísticas: the priorities of now (each one a line that opens where to act) and who is
 // using the system, in the boxes of the panels (components/peak).
@@ -74,14 +75,17 @@ const Failed = ({ onRetry, text }) => {
 export const InsightsCard = ({ limit = 6, style, title = "Prioridades de agora" }) => {
   const history = useHistory();
   const { data, failed, loading, reload } = useLoad("/analytics/insights", true, 120000);
+  // what was dismissed here leaves the list at once ("Dispensar até amanhã")
+  const [gone, setGone] = useState(() => new Set());
   // the most urgent first: what is late, then what asks for attention, then the good news and the notes
   const order = { danger: 0, warn: 1, info: 2, good: 3 };
   const items = [...((data && data.items) || [])].sort((x, y) => (order[x.tone] ?? 2) - (order[y.tone] ?? 2)).slice(0, limit);
   return (
     <GlowPanel id="priorities" style={style} title={title} sub="O que pede ação, do mais urgente ao menos. Cada linha abre a tela onde se resolve."
       loading={loading && !data} error={failed && !data} onRetry={reload}>
-      {!!data && !items.length && <EmptyNote>Tudo em dia. Nenhum ponto pedindo atenção agora.</EmptyNote>}
-      <PriorityList items={items.map((it) => ({ key: it.key, tone: it.tone, title: it.title, detail: it.detail, onClick: it.link ? () => history.push(it.link) : undefined }))} />
+      {!!data && !items.filter((it) => !gone.has(it.key)).length && <EmptyNote>Tudo em dia. Nenhum ponto pedindo atenção agora.</EmptyNote>}
+      <PriorityList items={items.filter((it) => !gone.has(it.key)).map((it) => ({ key: it.key, tone: it.tone, title: it.title, detail: it.detail, onClick: it.link ? () => history.push(it.link) : undefined,
+        onDismiss: async () => { setGone((g) => new Set(g).add(it.key)); const ok = await dismissInsight(it.key, () => { setGone((g) => { const n = new Set(g); n.delete(it.key); return n; }); reload(); }); if (!ok) setGone((g) => { const n = new Set(g); n.delete(it.key); return n; }); } }))} />
     </GlowPanel>
   );
 };

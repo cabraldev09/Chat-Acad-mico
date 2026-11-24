@@ -18,7 +18,9 @@ import canManageWhatsapp from "../middleware/canManageWhatsapp";
 import isAdmin from "../middleware/isAdmin";
 import isManager from "../middleware/isManager";
 import { canReadTicket, canWriteTicket } from "../middleware/canAccessTicket";
-import { canAccessLead, canAccessProposal, canAccessPayment } from "../middleware/scope";
+import { canAccessLead, canAccessOnboarding, canAccessProposal, canAccessPayment } from "../middleware/scope";
+import * as EnrollmentForm from "../controllers/EnrollmentFormController";
+import * as TutoringIssue from "../controllers/TutoringIssueController";
 import uploadConfig from "../config/upload";
 
 import * as Tag from "../controllers/TagController";
@@ -132,6 +134,8 @@ r.post("/analytics/coaching/run", isAuth, isAdmin, Analytics.coachingRun);
 // the tutoring: the management sees every tutor, a tutor only their own students (decided in the controller)
 r.get("/analytics/tutoria", isAuth, analyticsInstitution, Analytics.tutoria);
 r.get("/analytics/insights", isAuth, analyticsInstitution, Analytics.insights);
+// "Dispensar até amanhã": one priority leaves the person's own list for the rest of the day (kept in the person's preferences)
+r.post("/analytics/insights/dismiss", isAuth, Analytics.dismissInsight);
 r.get("/analytics/online", isAuth, isManager, Analytics.online);
 
 r.get("/dashboard/management", isAuth, isManager, DashboardMgmt.management);
@@ -379,6 +383,13 @@ r.post("/retention/rematricula/:leadId", isAuth, Retention.setRematricula);
 r.get("/leads/:id/documents", isAuth, canAccessLead, Lead.documents);
 r.put("/leads/:id/documents/:docId", isAuth, canAccessLead, Lead.setDocument);
 r.post("/leads/:id/documents/remind", isAuth, canAccessLead, Lead.remindDocs);
+// the enrollment form the lead fills in by a personal link (data and picture of the ID); erasing it (LGPD) is for the administration
+r.get("/leads/:id/enrollment-form", isAuth, canAccessLead, EnrollmentForm.show);
+r.post("/leads/:id/enrollment-form", isAuth, canAccessLead, EnrollmentForm.create);
+r.post("/leads/:id/enrollment-form/send", isAuth, canAccessLead, EnrollmentForm.send);
+r.get("/leads/:id/enrollment-form/files/:kind", isAuth, canAccessLead, EnrollmentForm.file);
+r.delete("/leads/:id/enrollment-form", isAuth, isAdmin, canAccessLead, EnrollmentForm.erase);
+r.post("/tickets/:ticketId/enrollment-form", isAuth, canWriteTicket, EnrollmentForm.sendFromTicket);
 r.get("/lead-stages", isAuth, cached(), Lead.stages.index);
 r.post("/lead-stages", isAuth, isManager, Lead.stages.store);
 r.put("/lead-stages/:id", isAuth, isManager, Lead.stages.update);
@@ -422,6 +433,19 @@ r.get("/lead-tasks/counts", isAuth, Lead.tasksCounts);
 r.post("/lead-tasks/release-unreachable", isAuth, isManager, Lead.releaseUnreachable);
 r.get("/onboarding", isAuth, Lead.onboardingList);
 r.get("/onboarding/rules", isAuth, Lead.onboardingRules);
+// the audit of the tutoring (pending cases, protocols): only the administration and the academic coordination, never the tutor
+r.get("/tutoria/issues", isAuth, TutoringIssue.academicManagement, TutoringIssue.index);
+r.get("/tutoria/issues/count", isAuth, TutoringIssue.academicManagement, TutoringIssue.count);
+r.post("/tutoria/issues", isAuth, TutoringIssue.academicManagement, TutoringIssue.store);
+r.put("/tutoria/issues/:id", isAuth, TutoringIssue.academicManagement, TutoringIssue.update);
+r.get("/tutoria/audit/settings", isAuth, TutoringIssue.academicManagement, TutoringIssue.settings);
+r.put("/tutoria/audit/settings", isAuth, TutoringIssue.academicManagement, TutoringIssue.saveSettings);
+r.post("/tutoria/audit/run", isAuth, TutoringIssue.academicManagement, TutoringIssue.runNow);
+// the tutor's protocols: number and subject of a case opened in the institution's system, told to the student and kept in the history
+r.get("/tutoria/protocols", isAuth, TutoringIssue.tutorSide, TutoringIssue.myProtocols);
+r.post("/tutoria/protocols", isAuth, TutoringIssue.tutorSide, TutoringIssue.registerProtocol);
+r.post("/tutoria/protocols/:id/resolve", isAuth, TutoringIssue.tutorSide, TutoringIssue.resolveProtocol);
+r.get("/tickets/:ticketId/protocols", isAuth, canReadTicket, TutoringIssue.tutorSide, TutoringIssue.ticketProtocols);
 r.get("/tutoria/students", isAuth, Tutoria.students);
 r.get("/tutoria/panel", isAuth, Tutoria.panel);
 r.post("/tutoria/students/import", isAuth, Tutoria.importStudents);
@@ -461,18 +485,18 @@ r.post("/meta/templates", isAuth, isManager, MetaTemplates.store);
 r.post("/meta/templates/pack", isAuth, isManager, MetaTemplates.pack);
 r.delete("/meta/templates/:name", isAuth, isManager, MetaTemplates.remove);
 r.post("/tutoria/students/:leadId/conversation", isAuth, Tutoria.openConversation);
-r.put("/leads/:id/onboarding/access", isAuth, canAccessLead, Lead.onboardingAccessSave);
-r.post("/leads/:id/onboarding/access/send", isAuth, canAccessLead, Lead.onboardingAccessSend);
+r.put("/leads/:id/onboarding/access", isAuth, canAccessOnboarding, Lead.onboardingAccessSave);
+r.post("/leads/:id/onboarding/access/send", isAuth, canAccessOnboarding, Lead.onboardingAccessSend);
 r.get("/onboarding/pending", isAuth, Lead.onboardingPending);
 r.get("/onboarding/stats", isAuth, Lead.onboardingStats);
-r.put("/leads/:id/onboarding/checklist", isAuth, canAccessLead, Lead.onboardingChecklist);
+r.put("/leads/:id/onboarding/checklist", isAuth, canAccessOnboarding, Lead.onboardingChecklist);
 // the print of the enrollment: read (the RGM fills the field) before confirming, and seen later
 r.post("/leads/:id/enrollment-proof", isAuth, canAccessLead, materialUpload.single("file"), Enrollment.uploadProof);
 r.get("/leads/:id/enrollment-proof/:proofId/file", isAuth, canAccessLead, Enrollment.proofFile);
 r.post("/leads/:id/enroll", isAuth, canAccessLead, Lead.enroll);
 r.get("/leads/:id/enrollments", isAuth, canAccessLead, Lead.enrollments);
-r.post("/leads/:id/onboarding", isAuth, canAccessLead, Lead.onboarding);
-r.put("/leads/:id/onboarding", isAuth, canAccessLead, Lead.editOnboarding);
+r.post("/leads/:id/onboarding", isAuth, canAccessOnboarding, Lead.onboarding);
+r.put("/leads/:id/onboarding", isAuth, canAccessOnboarding, Lead.editOnboarding);
 r.put("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.updateTask);
 r.post("/leads/:id/tasks/:taskId/toggle", isAuth, canAccessLead, Lead.completeTask);
 // conclude or reopen with the choice said (done: true | false): never flips a task the system closed a moment ago

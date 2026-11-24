@@ -352,6 +352,33 @@ button.gv-frow:hover .gv-fbar { background: color-mix(in srgb, var(--c-brand) 86
 .gv-head .gv-seg button[aria-pressed="true"] { background: #fff; color: #0b4279; }
 .gv-head .gv-dates { color: rgba(255, 255, 255, 0.86); }
 .gv-head .gv-dates input { border-color: rgba(255, 255, 255, 0.3); }
+/* which week, month or cycle: beside the buttons, the same height; on the phone it takes the line below, full width */
+.gv-which { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 3px; border-radius: 10px; background: var(--surface-3); border: 1px solid var(--line); max-width: 100%; min-width: 0; }
+.gv-which.gv-dates { gap: 6px; padding: 3px 6px; }
+.gv-which-text { padding: 0 8px; font-size: 13px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gv-which-select { min-height: 34px; max-width: 100%; min-width: 0; padding: 0 28px 0 10px; border: 0; border-radius: 7px; background: var(--surface); color: var(--text-1); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  appearance: none; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+.gv-which .gv-dates input, .gv-which.gv-dates input { min-height: 34px; border: 0; }
+.gv-step { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--text-1); cursor: pointer; }
+.gv-step:hover:not(:disabled) { background: var(--surface); }
+.gv-step:disabled { opacity: 0.35; cursor: default; }
+.gv-step:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
+/* a list shows its focus on itself (a soft ring of shadow), never a second frame around it (the screen sweep checks it) */
+.gv-which-select:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--c-leads); }
+.gv-head .gv-which { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.18); }
+.gv-head .gv-which-text, .gv-head .gv-step { color: #fff; }
+.gv-head .gv-step:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+.gv-head .gv-which-select { background-color: #fff; color: #0b4279; }
+.gv-head .gv-which.gv-dates input { background: #fff; color: #0b4279; }
+@media (max-width: 640px) {
+  .gv-head-side, .gv-head-side > .gv-range, .gv-range > .gv-range { width: 100%; }
+  .gv-range { display: flex; }
+  .gv-seg { width: 100%; }
+  .gv-seg button { flex: 1 1 0; padding: 0 6px; }
+  .gv-which { width: 100%; }
+  .gv-which-select, .gv-which-text { flex: 1 1 auto; }
+  .gv-which.gv-dates input { flex: 1 1 0; min-width: 0; }
+}
 
 /* ---- the funnel drawn as a funnel: every stage a slice that narrows into the next one ---- */
 .gv-fun { display: grid; gap: 2px; flex: 1; align-content: start; padding: 4px 0; }
@@ -401,6 +428,25 @@ button.gv-fun-row { cursor: pointer; }
 .gv-prio li[data-tone="good"] { --tone: #16a34a; --tone-ink: #15803d; }
 .gv-prio-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; font: inherit; text-align: left; transition: border-color .15s ease, background-color .15s ease; }
 button.gv-prio-row { cursor: pointer; }
+.gv-prio-dismissable { position: relative; }
+.gv-prio-dismissable .gv-prio-row { padding-right: 44px; }
+.gv-prio-x { position: absolute; top: 6px; right: 6px; z-index: 1; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer; }
+.gv-prio-x:hover { background: var(--surface-2); color: var(--text-1); }
+.gv-prio-x:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
+/* a row of a list with its own actions beside it ("Já resolvido", "Concluir", "Limpar"): the row opens, the buttons act */
+.gv-act-row { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); min-width: 0; }
+.gv-rowlist > .gv-act-row:first-child { border-top: 0; }
+.gv-act-row > .gv-item-btn { flex: 1 1 auto; min-width: 0; border-top: 0 !important; }
+.gv-acts { display: inline-flex; gap: 6px; flex: none; padding-right: 4px; }
+.gv-act { min-height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--text-1); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.gv-act:hover { border-color: var(--c-leads); color: var(--c-brand); }
+.gv-act:disabled { opacity: .5; cursor: default; }
+.gv-act:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
+@media (max-width: 520px) {
+  .gv-act-row { flex-wrap: wrap; padding-bottom: 8px; }
+  .gv-act-row > .gv-item-btn { flex-basis: 100%; }
+  .gv-acts { padding-left: 50px; }
+}
 button.gv-prio-row:hover { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 4%, var(--surface)); }
 .gv-prio-n { flex: none; min-width: 40px; height: 40px; padding: 0 8px; border-radius: 10px; display: grid; place-items: center; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--tone-ink); background: color-mix(in srgb, var(--tone) 12%, transparent); }
 .gv-prio-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

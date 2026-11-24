@@ -80,11 +80,22 @@ const useStyles = makeStyles((theme) => ({
   navIcon: {
     minWidth: 0,
     color: "inherit",
-    "& svg": { fontSize: 20 },
-    // the dock grows the icon with a transform: its box keeps its size, so nothing around it moves
-    transition: "transform .14s cubic-bezier(.2,.8,.2,1)",
-    transformOrigin: "center",
-    "@media (prefers-reduced-motion: reduce)": { transition: "none" },
+    // the dock grows the drawing itself (width and height of the vector), never a transform of a picture: the icon stays sharp at any
+    // size. The box keeps its size and the drawing is centred over it, so nothing around it moves
+    position: "relative",
+    width: 22,
+    height: 22,
+    "& svg": {
+      position: "absolute",
+      left: "50%",
+      top: "50%",
+      width: "calc(1.25rem * var(--dock, 1)) !important",
+      height: "calc(1.25rem * var(--dock, 1)) !important",
+      fontSize: 20,
+      transform: "translate(-50%, -50%)",
+      transition: "width .14s cubic-bezier(.2,.8,.2,1), height .14s cubic-bezier(.2,.8,.2,1)",
+    },
+    "@media (prefers-reduced-motion: reduce)": { "& svg": { transition: "none" } },
   },
   navTextRoot: {
     flex: "0 1 auto",
@@ -192,7 +203,7 @@ const useDock = (on) => {
   const active = on && fine;
   const leave = useCallback(() => {
     cancelAnimationFrame(frame.current);
-    if (box.current) box.current.querySelectorAll("[data-dock-icon]").forEach((el) => { el.style.transform = ""; });
+    if (box.current) box.current.querySelectorAll("[data-dock-icon]").forEach((el) => { el.style.removeProperty("--dock"); });
     if (label.current) label.current.style.opacity = "0";
   }, []);
   const move = useCallback((e) => {
@@ -208,7 +219,7 @@ const useDock = (on) => {
         const d = Math.abs(y - (r.top + r.height / 2));
         const k = Math.max(0, 1 - d / DOCK_REACH);
         const icon = el.querySelector("[data-dock-icon]");
-        if (icon) icon.style.transform = `scale(${(1 + DOCK_GROW * k * k * (3 - 2 * k)).toFixed(3)})`;
+        if (icon) icon.style.setProperty("--dock", (1 + DOCK_GROW * k * k * (3 - 2 * k)).toFixed(3));
         if (d < best) { best = d; near = el; }
       });
       const tag = label.current;

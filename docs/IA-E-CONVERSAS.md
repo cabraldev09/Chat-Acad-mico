@@ -173,3 +173,64 @@ Em qualquer modo, a lista de cursos ofertados (com o formato de cada um) vai ao 
 trocada antes de chegar à pessoa (`CommercialServices/InventedCourse.ts`). Curso que deixou de ser ofertado é desligado em Cursos e
 materiais (coluna Oferta) ou em Configurações do CRM, aba Cursos.
 
+
+## Tutoria: auditoria de pendências, sem venda
+
+A tutoria fala com quem já é aluno. Nela, a IA não conversa, não qualifica e não vende:
+- `POST /tickets/:id/ai` recusa com `ERR_AI_NOT_ON_TUTORING`;
+- o atendimento automático (fluxos, chatbot antigo, menu de filas, pasta de cursos) não responde em conversa da tutoria, a não ser que haja um agente posto de propósito no número ou na fila da Tutoria;
+- as sugestões e os resumos nunca usam o agente comercial;
+- o copiloto comercial não aparece na tutoria.
+
+A IA da tutoria só **audita**, e para a **gestão acadêmica** (administração e coordenação da área acadêmica, a mesma regra de Retenção). O tutor não vê nem usa.
+
+- **Quando lê:** a cada 30 minutos (`workers/TutoringAudit.ts`), lê as conversas da tutoria que:
+  - têm mensagem nova desde a última leitura (`Tickets.tutoringAuditedMessageId`);
+  - estão paradas há meia hora;
+  - têm mensagem do tutor.
+- **O que aponta** (`services/TutoriaServices/Issues.ts`):
+  - chamado, CAA ou protocolo aberto;
+  - retorno prometido;
+  - documento pedido;
+  - problema de acesso sem solução.
+  - Também marca como resolvida a pendência que a conversa mostra resolvida.
+  - Cada pendência traz uma ideia curta para a coordenação.
+- **Custo baixo:**
+  - usa o modelo mais barato do provedor da chave (`claude-haiku-5-5` ou `gpt-4o-mini`);
+  - a resposta tem no máximo 300 tokens, sobre as últimas 30 mensagens de texto;
+  - lê no máximo `tutoring_audit_max_tickets` conversas por dia (padrão 40);
+  - respeita os tetos diários de gasto, com uso registrado como `reading`.
+  - Liga e desliga em Alunos da tutoria → Pendências.
+- **Dados pessoais:** o texto vai mascarado (CPF, telefones, e-mails, números de 8 dígitos ou mais, como protocolo e RGM, e os nomes viram marcadores). Fica guardado só o resumo curto.
+- **Alerta:** aviso no sino para a gestão acadêmica (`tutoring_issue`), nunca para o tutor.
+- **Tela:** Alunos da tutoria → aba **Pendências**, só para a gestão acadêmica. Nela a gestão:
+  - registra o número e o nome do protocolo;
+  - marca como resolvida, dispensa ou reabre;
+  - cria uma pendência à mão;
+  - pede "Ler as conversas agora".
+- **Rotas:** `/tutoria/issues` (GET, POST), `/tutoria/issues/:id` (PUT), `/tutoria/issues/count`, `/tutoria/audit/settings` (GET, PUT) e `/tutoria/audit/run`. Todas exigem a gestão acadêmica.
+
+### O lado do tutor: protocolos
+
+O tutor vê uma versão simples, sem nada sobre a leitura da IA.
+
+**Onde o tutor encontra os protocolos:**
+- **Na conversa da tutoria:**
+  - uma faixa "Falta o protocolo: …" para cada caso aberto, com o botão "Registrar protocolo";
+  - os protocolos ainda abertos, com o botão "Resolvido";
+  - em Mais ações, "Registrar protocolo" para um caso novo.
+- **Em Meus alunos → Protocolos:** os casos do tutor que aguardam protocolo, os abertos e os resolvidos nos últimos 30 dias.
+
+**O que o tutor faz:**
+- Registra o número e o assunto do protocolo. Com "Avisar o aluno nesta conversa", o aluno recebe: "Registrei o seu atendimento com o protocolo N (assunto). Assim que eu tiver o retorno, te aviso por aqui."
+- Marca como resolvido e, se quiser, avisa o aluno.
+
+**Onde fica registrado:**
+- Tudo fica no histórico do aluno (atividade do lead) e nos eventos da conversa (`TicketEvents.type = protocol`).
+- A gestão vê o protocolo registrado pelo tutor na aba Pendências.
+
+**Rotas** (tutor, acadêmico e gestão; o tutor só nas próprias conversas, e só em conversas da tutoria):
+- `GET /tutoria/protocols`;
+- `POST /tutoria/protocols`;
+- `POST /tutoria/protocols/:id/resolve`;
+- `GET /tickets/:ticketId/protocols`.

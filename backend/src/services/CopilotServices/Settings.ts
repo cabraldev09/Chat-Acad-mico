@@ -51,7 +51,10 @@ export const suggestionAgent = async (config: CopilotConfig, ticket: Ticket): Pr
       : ticketInstitutionId === legacyId;
     return sameInstitution ? agent : null; // a manual copilot must never cross university ownership
   }
-  const { agentToQualify } = await import("../AiServices/RunAiAgent");
+  const { agentToQualify, findAgentForTicket } = await import("../AiServices/RunAiAgent");
+  // the tutoring never borrows the sales agent (its prompt sells): only an agent given to the tutoring number or queue
+  const { TUTORIA_SEGMENTS } = await import("../ChannelServices/ConnectionTeam");
+  if (TUTORIA_SEGMENTS.includes(String(ticket.segment || ""))) return findAgentForTicket(ticket);
   return agentToQualify(ticket);
 };
 export const quotaOf = async (config: CopilotConfig, userId: number, connectionId: number) => {

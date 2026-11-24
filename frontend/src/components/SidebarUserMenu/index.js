@@ -71,7 +71,7 @@ const SidebarUserMenu = ({ collapsed }) => {
     <>
       <ListItem
         button
-        aria-label="account of current user"
+        aria-label="Conta e opções do usuário"
         aria-controls="menu-appbar"
         aria-haspopup="true"
         onClick={handleMenu}

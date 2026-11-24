@@ -28,7 +28,7 @@ export const focusFor = async (userId: number, institution: AnalyticsInstitution
     ),
     rows(
       `SELECT t.id, c.name AS contactName, t.lastMessage, t.lastMessageAt FROM Tickets t JOIN Contacts c ON c.id = t.contactId
-       WHERE t.userId = :userId AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND t.isGroup = false AND t.isHistorical = false AND ${scopedTicket} ORDER BY t.lastMessageAt ASC LIMIT 8`,
+       WHERE t.userId = :userId AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND (t.replyDismissedMessageId IS NULL OR t.replyDismissedMessageId <> t.lastMessageId) AND t.isGroup = false AND t.isHistorical = false AND ${scopedTicket} ORDER BY t.lastMessageAt ASC LIMIT 8`,
       { userId, ...scopeParams }
     )
   ]);

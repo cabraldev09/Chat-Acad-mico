@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw, Bot } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw, Bot, Search, Tag, MoreVertical, CalendarClock, Shuffle, Repeat2, Trash2, ClipboardList } from "lucide-react";
 import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
@@ -8,22 +8,22 @@ import { colorOf, initialsOf } from "../../utils/avatar";
 import IconButton from "@material-ui/core/IconButton";
 import Tooltip from "@material-ui/core/Tooltip";
 import Menu from "@material-ui/core/Menu";
-import ListItemIcon from "@material-ui/core/ListItemIcon";
-import MoreHoriz from "@material-ui/icons/MoreHoriz";
 import MenuItem from "@material-ui/core/MenuItem";
+import ListSubheader from "@material-ui/core/ListSubheader";
+import Divider from "@material-ui/core/Divider";
 import CircularProgress from "@material-ui/core/CircularProgress";
 import ArrowBack from "@material-ui/icons/ArrowBack";
-import Search from "@material-ui/icons/Search";
-import MoreVert from "@material-ui/icons/MoreVert";
 import Close from "@material-ui/icons/Close";
-import LocalOfferOutlined from "@material-ui/icons/LocalOfferOutlined";
-import ScheduleIcon from "@material-ui/icons/Schedule";
 
 import ChannelIcon from "../ChannelIcon";
-import TicketOptionsMenu from "../TicketOptionsMenu";
+import TransferTicketModal from "../TransferTicketModal";
+import ConfirmationModal from "../ConfirmationModal";
+import { can as canDo } from "../Can";
+import { accessLevel } from "../../utils/access";
 import TicketTagsDialog from "../TicketTagsDialog";
 import ScheduleMessageDialog from "../ScheduleMessageDialog";
 import { isManager } from "../../utils/access";
+import { prettyNumber } from "../ContactDrawer";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
@@ -89,7 +89,16 @@ const useStyles = makeStyles((theme) => {
       [theme.breakpoints.down("xs")]: { padding: "0 10px" },
     },
     primary: { backgroundColor: c.accent, borderColor: c.accent, color: "#fff", "&:hover": { backgroundColor: c.accent, filter: "brightness(1.08)" } },
-    tag: { display: "inline-block", marginLeft: 6, padding: "0 7px", borderRadius: 999, fontSize: 11, color: "#fff" },
+    count: { position: "absolute", top: 4, right: 2, minWidth: 16, height: 16, padding: "0 4px", borderRadius: 999, fontSize: 10.5, fontWeight: 700, lineHeight: "16px", background: c.accent, color: "#fff" },
+    menu: { minWidth: 280, maxWidth: "calc(100vw - 24px)", borderRadius: 14, border: `1px solid ${c.divider}`, boxShadow: "0 12px 32px rgba(0,0,0,.24)", "& .MuiList-padding": { padding: "6px 0" } },
+    menuHead: { lineHeight: "28px", padding: "6px 16px 0", fontSize: 11.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: c.textSecondary, background: "transparent" },
+    menuItem: { gap: 12, alignItems: "flex-start", padding: "8px 16px", whiteSpace: "normal", minHeight: 44 },
+    menuIcon: { width: 20, flex: "none", display: "grid", placeItems: "center", paddingTop: 1, color: c.textSecondary },
+    menuText: { display: "flex", flexDirection: "column", minWidth: 0 },
+    menuLabel: { fontSize: 14, fontWeight: 500, color: c.text },
+    menuHint: { fontSize: 12, color: c.textSecondary, marginTop: 1 },
+    danger: { "& $menuLabel, & $menuIcon": { color: theme.palette.error.main } },
+    menuDivider: { margin: "6px 0" },
   };
 });
 
@@ -99,7 +108,6 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
   const history = useHistory();
   const { user } = useContext(AuthContext);
   const [loading, setLoading] = useState(false);
-  const [menuEl, setMenuEl] = useState(null);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [pinned, setPinned] = useState(!!ticket.pinned);
@@ -119,8 +127,37 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     return () => ro.disconnect();
   }, []);
   const labelMode = barWidth >= 1050 ? "full" : barWidth >= 760 ? "short" : "none";
-  const compact = barWidth < 1050;
+  const compact = barWidth < 760;
   const [moreEl, setMoreEl] = useState(null);
+  const moreRef = useRef(null);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  // "Chamar a tutoria / o consultor" lives in this menu; the bar under the header only says what it needs to (the call received, the 24 hours)
+  const [teamCall, setTeamCall] = useState(null);
+  useEffect(() => {
+    setTeamCall(null);
+    const on = (e) => { if (e.detail && Number(e.detail.ticketId) === Number(ticket.id)) setTeamCall(e.detail.canCall || null); };
+    window.addEventListener("teamHandoffInfo", on);
+    return () => window.removeEventListener("teamHandoffInfo", on);
+  }, [ticket.id]);
+  const can = (action) => canDo(accessLevel(user), action);
+  const menuItem = (icon, label, onClick, hint, danger) => (
+    <MenuItem key={label} className={`${classes.menuItem} ${danger ? classes.danger : ""}`} onClick={() => { setMoreEl(null); onClick(); }}>
+      <span className={classes.menuIcon}>{icon}</span>
+      <span className={classes.menuText}>
+        <span className={classes.menuLabel}>{label}</span>
+        {hint && <span className={classes.menuHint}>{hint}</span>}
+      </span>
+    </MenuItem>
+  );
+  const deleteTicket = async () => {
+    try {
+      await api.delete(`/tickets/${ticket.id}`);
+      history.push("/tickets");
+    } catch (err) {
+      toastError(err);
+    }
+  };
 
   const [soundEl, setSoundEl] = useState(null);
   const [soundPref, setSoundPref] = useState("default");
@@ -133,15 +170,12 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     refresh();
     return onSoundPrefsChange(refresh);
   }, [ticket.contact?.id, contact.id]);
-  const soundIcon = soundPref === "alert" ? <BellRing size={20} /> : soundPref === "mute" ? <BellOff size={20} /> : <Bell size={20} />;
-  const soundHint =
-    soundPref === "alert"
-      ? "Contato de alerta: sempre toca o som"
-      : soundPref === "mute"
-      ? "Contato silenciado: nunca toca o som"
-      : soundMode === "all"
-      ? "Som desta conversa: segue o padrão (toca)"
-      : "Som desta conversa: segue o padrão (silêncio). Marque como alerta para tocar";
+  const soundIcon = soundPref === "alert" ? <BellRing size={18} /> : soundPref === "mute" ? <BellOff size={18} /> : <Bell size={18} />;
+  const SOUND_LABEL = {
+    alert: "Contato de alerta: sempre toca",
+    mute: "Silenciado: nunca toca",
+    default: soundMode === "all" ? "Segue o padrão: toca" : "Segue o padrão: em silêncio",
+  };
 
   // Esc leaves the conversation (like WhatsApp Web), unless a dialog, menu or picker is open
   useEffect(() => {
@@ -173,14 +207,45 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     }
   };
 
-  const toggleArchive = async () => {
+  // archiving leaves the conversation; the notice offers to undo it right there (the conversation also comes back if the contact writes)
+  const setArchived = async (next, id = ticket.id) => {
     try {
-      await api.put(`/tickets/${ticket.id}/archive`, { archived: !archived });
-      toast.success(archived ? "Conversa desarquivada." : "Conversa arquivada. Ela volta sozinha se o contato escrever.");
-      if (!archived) history.push("/tickets");
+      await api.put(`/tickets/${id}/archive`, { archived: next });
+      return true;
     } catch (err) {
       toastError(err);
+      return false;
     }
+  };
+  const toggleArchive = async () => {
+    const id = ticket.id;
+    if (!(await setArchived(!archived, id))) return;
+    if (archived) {
+      toast.success("Conversa desarquivada. Ela voltou para a lista.");
+      return;
+    }
+    history.push("/tickets");
+    toast.success(
+      ({ closeToast }) => (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span>Conversa arquivada. Ela volta sozinha se o contato escrever.</span>
+          <button
+            type="button"
+            style={{ border: 0, background: "transparent", color: "inherit", fontWeight: 700, textDecoration: "underline", cursor: "pointer", font: "inherit", padding: 0 }}
+            onClick={async () => {
+              closeToast && closeToast();
+              if (await setArchived(false, id)) {
+                toast.success("Arquivamento desfeito.");
+                history.push(`/tickets/${id}`);
+              }
+            }}
+          >
+            Desfazer
+          </button>
+        </span>
+      ),
+      { autoClose: 7000 }
+    );
   };
 
   // the management takes a conversation from its attendant on purpose (it is registered who took it from whom)
@@ -238,6 +303,8 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
 
   // team members' chats work like groups: no queue, so no accept / give back / finish buttons
   const plain = !!ticket.isGroup || !!contact.isStaff;
+  // the tutoring talks to enrolled students: no "qualify the lead" there
+  const tutoring = ["onboarding", "support"].includes(String(ticket.segment || ""));
   const SHORT = { "IA qualificar o lead": "IA qualificar", "Aceitar atendimento": "Aceitar", "Devolver à fila": "Devolver", "Finalizar atendimento": "Finalizar", "Reabrir atendimento": "Reabrir" };
   const button = (label, onClick, primary, icon, hint) => (
     <Tooltip title={hint || ""}>
@@ -256,7 +323,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     if (!number || number.includes("_")) return null;
     const nameDigits = String(c.name || "").replace(/\D/g, "");
     if (!c.name || nameDigits === number || nameDigits === number.replace(/^55/, "")) return "Contato não salvo";
-    return `+${number}`;
+    return prettyNumber(number);
   };
   const subtitle = [
     ticket.isHistorical ? "Histórico" : null,
@@ -281,11 +348,6 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
           <span className={classes.name}>
             <ChannelIcon channel={ticket.whatsapp?.channel} size={15} />
             {contact.name}
-            {(ticket.tags || []).slice(0, 3).map((t) => (
-              <span key={t.id} className={classes.tag} style={{ backgroundColor: t.color }}>
-                {t.name}
-              </span>
-            ))}
           </span>
           <span className={classes.sub}>
             {typing ? <span style={{ color: "#00a884", fontWeight: 500 }}>{typing.from === "agent" && <Bot size={13} style={{ verticalAlign: -2, marginRight: 4 }} />}{typingText(typing)}</span> : subtitle}
@@ -295,13 +357,13 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
       <div className={classes.actions}>
         {ticket.status === "pending" && !plain &&
           button("Aceitar atendimento", () => setStatus("open", user?.id), true, <UserCheck size={16} />, "Assumir esta conversa: ela passa a ser sua")}
-        {ticket.status === "pending" && !plain && !ticket.aiActive &&
+        {ticket.status === "pending" && !plain && !tutoring && !ticket.aiActive &&
           button("IA qualificar o lead", () => setAi(true), false, <Bot size={16} />, "A IA continua a qualificação de onde o lead está e devolve a conversa para você no fim")}
         {ticket.status === "open" && !plain && ticket.userId && ticket.userId !== user?.id && isManager(user) &&
           button("Assumir conversa", takeOver, true, <UserCheck size={16} />, `Tira a conversa de ${ticket.user?.name || "outro atendente"}: ela passa a ser sua`)}
         {ticket.status === "open" && !plain && (
           <>
-            {button("IA qualificar o lead", () => setAi(true), false, <Bot size={16} />, "A IA continua a qualificação de onde o lead está e devolve a conversa para você no fim")}
+            {!tutoring && button("IA qualificar o lead", () => setAi(true), false, <Bot size={16} />, "A IA continua a qualificação de onde o lead está e devolve a conversa para você no fim")}
             {button("Devolver à fila", () => setStatus("pending", null), false, <Undo2 size={16} />, "A conversa deixa de ser sua e volta para Aguardando, para outro atendente assumir")}
             {button("Finalizar atendimento", () => setStatus("closed", user?.id), true, <CheckCircle2 size={16} />, "Encerra a conversa. Se o contato escrever de novo, ela reabre")}
           </>
@@ -310,42 +372,46 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
           button("Reabrir atendimento", () => setStatus("open", user?.id), true, <RotateCcw size={16} />, "Traz a conversa de volta para você")}
         <Tooltip title="Pesquisar na conversa">
           <IconButton className={classes.icon} aria-label="Buscar na conversa" onClick={onToggleSearch}>
-            <Search />
+            <Search size={20} />
           </IconButton>
         </Tooltip>
+        {ticket.id && !compact && (
+          <Tooltip title={(ticket.tags || []).length ? `Etiquetas: ${ticket.tags.map((t) => t.name).join(", ")}` : "Etiquetas"}>
+            <IconButton className={classes.icon} aria-label="Etiquetas" onClick={() => setTagsOpen(true)} style={{ position: "relative" }}>
+              <Tag size={20} />
+              {(ticket.tags || []).length > 0 && <span className={classes.count}>{ticket.tags.length}</span>}
+            </IconButton>
+          </Tooltip>
+        )}
         {ticket.id && (
           <>
-            {!compact && (
-              <>
-            <Tooltip title="Etiquetas">
-              <IconButton className={classes.icon} aria-label="Etiquetas" onClick={() => setTagsOpen(true)}>
-                <LocalOfferOutlined />
+            <Tooltip title="Mais ações">
+              <IconButton ref={moreRef} className={classes.icon} onClick={(e) => setMoreEl(e.currentTarget)} aria-label="Mais ações da conversa" aria-haspopup="menu" aria-expanded={Boolean(moreEl)}>
+                <MoreVertical size={20} />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Agendar mensagem">
-              <IconButton className={classes.icon} aria-label="Agendar mensagem" onClick={() => setScheduleOpen(true)}>
-                <ScheduleIcon />
-              </IconButton>
-            </Tooltip>
-              </>
-            )}
-            {!compact && (
-            <Tooltip title={soundHint}>
-              <IconButton
-                className={classes.icon}
-                onClick={(e) => setSoundEl(e.currentTarget)}
-                aria-label="Som desta conversa"
-                style={soundPref === "alert" ? { color: "#c9a800" } : soundPref === "mute" ? { color: "#ed6c02" } : undefined}
-              >
-                {soundIcon}
-              </IconButton>
-            </Tooltip>
-            )}
-            <Menu anchorEl={soundEl} open={Boolean(soundEl)} onClose={() => setSoundEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+            <Menu anchorEl={moreEl} open={Boolean(moreEl)} onClose={() => setMoreEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }} PaperProps={{ className: classes.menu }}>
+              <ListSubheader disableSticky className={classes.menuHead}>Organizar</ListSubheader>
+              {compact && menuItem(<Tag size={18} />, "Etiquetas", () => setTagsOpen(true), (ticket.tags || []).length ? `${ticket.tags.length} na conversa` : "Marque o assunto da conversa")}
+              {menuItem(pinned ? <PinOff size={18} /> : <Pin size={18} />, pinned ? "Desafixar" : "Fixar no topo", togglePin, pinned ? "Volta para a ordem normal da lista" : "Fica sempre no começo da lista")}
+              {menuItem(archived ? <ArchiveRestore size={18} /> : <Archive size={18} />, archived ? "Desarquivar" : "Arquivar", toggleArchive, archived ? "Volta para a lista de conversas" : "Sai da lista e volta se o contato escrever")}
+              <ListSubheader disableSticky className={classes.menuHead}>Mensagens e avisos</ListSubheader>
+              {tutoring && !ticket.isGroup && menuItem(<ClipboardList size={18} />, "Registrar protocolo", () => window.dispatchEvent(new CustomEvent("protocolOpen", { detail: { ticketId: ticket.id } })), "Número e assunto do chamado; fica no histórico do aluno")}
+              {menuItem(<CalendarClock size={18} />, "Agendar mensagem", () => setScheduleOpen(true), "Envia sozinha no dia e na hora que você escolher")}
+              {menuItem(soundIcon, "Som desta conversa", () => setSoundEl(moreRef.current), SOUND_LABEL[soundPref])}
+              {(teamCall || ticket.status === "open") && <ListSubheader disableSticky className={classes.menuHead}>Encaminhar</ListSubheader>}
+              {teamCall && menuItem(<Shuffle size={18} />, teamCall === "tutoria" ? "Chamar a tutoria" : "Chamar o consultor", () => window.dispatchEvent(new CustomEvent("teamHandoffOpen", { detail: { ticketId: ticket.id } })), "O outro lado recebe um resumo e o seu recado")}
+              {ticket.status === "open" && menuItem(<Repeat2 size={18} />, "Transferir", () => setTransferOpen(true), "Passa a conversa para outra pessoa ou fila")}
+              {ticket.status === "open" && can("ticket-options:deleteTicket") && <Divider className={classes.menuDivider} />}
+              {ticket.status === "open" && can("ticket-options:deleteTicket") && menuItem(<Trash2 size={18} />, "Excluir conversa", () => setDeleteOpen(true), "Apaga as mensagens desta conversa", true)}
+            </Menu>
+            <Menu anchorEl={soundEl} open={Boolean(soundEl)} onClose={() => setSoundEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }} PaperProps={{ className: classes.menu }}>
+              <ListSubheader disableSticky className={classes.menuHead}>Som desta conversa</ListSubheader>
               {SOUND_CHOICES.map((choice) => (
                 <MenuItem
                   key={choice.value}
                   selected={soundPref === choice.value}
+                  className={classes.menuItem}
                   onClick={() => {
                     setContactSound(ticket.contact?.id || contact.id, choice.value);
                     setSoundEl(null);
@@ -357,66 +423,21 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
                       }[choice.value]
                     );
                   }}
-                  style={{ alignItems: "flex-start", whiteSpace: "normal", maxWidth: 320 }}
                 >
-                  <span style={{ width: 22, flex: "none", paddingTop: 2 }}>{soundPref === choice.value && <Check size={16} />}</span>
-                  <span>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{choice.label}</div>
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>{choice.hint}</div>
+                  <span className={classes.menuIcon}>{soundPref === choice.value ? <Check size={18} /> : null}</span>
+                  <span className={classes.menuText}>
+                    <span className={classes.menuLabel}>{choice.label}</span>
+                    <span className={classes.menuHint}>{choice.hint}</span>
                   </span>
                 </MenuItem>
               ))}
             </Menu>
-            {!compact && (
-              <>
-            <Tooltip title={pinned ? "Desafixar conversa" : "Fixar conversa no topo"}>
-              <IconButton className={classes.icon} onClick={togglePin} aria-label={pinned ? "Desafixar conversa" : "Fixar conversa"}>
-                {pinned ? <PinOff size={20} /> : <Pin size={20} />}
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={archived ? "Desarquivar conversa" : "Arquivar conversa"}>
-              <IconButton className={classes.icon} onClick={toggleArchive} aria-label={archived ? "Desarquivar conversa" : "Arquivar conversa"}>
-                {archived ? <ArchiveRestore size={20} /> : <Archive size={20} />}
-              </IconButton>
-            </Tooltip>
-              </>
-            )}
-            {compact && (
-              <>
-                <Tooltip title="Mais ações da conversa">
-                  <IconButton className={classes.icon} onClick={(e) => setMoreEl(e.currentTarget)} aria-label="Mais ações da conversa">
-                    <MoreHoriz />
-                  </IconButton>
-                </Tooltip>
-                <Menu anchorEl={moreEl} open={Boolean(moreEl)} onClose={() => setMoreEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
-                  <MenuItem onClick={() => { setMoreEl(null); setTagsOpen(true); }}>
-                    <ListItemIcon style={{ minWidth: 36 }}><LocalOfferOutlined fontSize="small" /></ListItemIcon>Etiquetas
-                  </MenuItem>
-                  <MenuItem onClick={() => { setMoreEl(null); setScheduleOpen(true); }}>
-                    <ListItemIcon style={{ minWidth: 36 }}><ScheduleIcon fontSize="small" /></ListItemIcon>Agendar mensagem
-                  </MenuItem>
-                  <MenuItem onClick={() => { const anchor = moreEl; setMoreEl(null); setSoundEl(anchor); }}>
-                    <ListItemIcon style={{ minWidth: 36 }}>{soundIcon}</ListItemIcon>Som desta conversa
-                  </MenuItem>
-                  <MenuItem onClick={() => { setMoreEl(null); togglePin(); }}>
-                    <ListItemIcon style={{ minWidth: 36 }}>{pinned ? <PinOff size={20} /> : <Pin size={20} />}</ListItemIcon>{pinned ? "Desafixar conversa" : "Fixar conversa no topo"}
-                  </MenuItem>
-                  <MenuItem onClick={() => { setMoreEl(null); toggleArchive(); }}>
-                    <ListItemIcon style={{ minWidth: 36 }}>{archived ? <ArchiveRestore size={20} /> : <Archive size={20} />}</ListItemIcon>{archived ? "Desarquivar conversa" : "Arquivar conversa"}
-                  </MenuItem>
-                </Menu>
-              </>
-            )}
             <TicketTagsDialog open={tagsOpen} onClose={() => setTagsOpen(false)} ticket={ticket} />
             <ScheduleMessageDialog open={scheduleOpen} onClose={() => setScheduleOpen(false)} ticket={ticket} />
-          </>
-        )}
-        {ticket.status === "open" && (
-          <>
-            <IconButton aria-label="Mais opções" className={classes.icon} onClick={(e) => setMenuEl(e.currentTarget)}>
-              <MoreVert />
-            </IconButton>
-            <TicketOptionsMenu ticket={ticket} anchorEl={menuEl} menuOpen={Boolean(menuEl)} handleClose={() => setMenuEl(null)} />
+            <TransferTicketModal modalOpen={transferOpen} onClose={() => setTransferOpen(false)} ticketid={ticket.id} ticketWhatsappId={ticket.whatsappId} ticketSegment={ticket.segment} />
+            <ConfirmationModal title={`Excluir a conversa com ${contact.name || "este contato"}?`} open={deleteOpen} onClose={setDeleteOpen} onConfirm={deleteTicket}>
+              Todas as mensagens desta conversa serão apagadas. Isso não pode ser desfeito.
+            </ConfirmationModal>
           </>
         )}
         <Tooltip title="Fechar conversa (Esc)">

@@ -133,6 +133,13 @@ const startTelegramMock = () => {
 };
 
 // Anthropic Messages API: answers by what the last user message says, and asks for tools when the scenario needs them
+// the audit of the tutoring: a case opened (protocol) is pending; a later message saying it was solved closes the open one
+const auditAnswer = (text) => {
+  const open = (String(text).match(/#(\d+) \(/) || [])[1];
+  if (/resolvid|resolveu|já foi liberad/i.test(String(text)) && open) return { pendencias: [], resolvidas: [Number(open)], ideia: "" };
+  if (/protocolo|chamado|CAA/i.test(String(text))) return { pendencias: [{ tipo: "protocolo", resumo: "Tutor abriu chamado sobre o acesso à plataforma e prometeu retorno ao aluno" }], resolvidas: [], ideia: "Cobrar a resposta do setor em até 48 horas" };
+  return { pendencias: [], resolvidas: [], ideia: "" };
+};
 const startAnthropicMock = () => {
   const app = express();
   app.use(express.json({ limit: "5mb" }));
@@ -145,6 +152,11 @@ const startAnthropicMock = () => {
   // the OpenAI format, used only by the daily review of the consultants' conversations (it answers the codes of one review)
   app.post("/v1/chat/completions", (req, res) => {
     anthropic.openai = [...(anthropic.openai || []), req.body];
+    const sys = (req.body.messages || []).find(m => m.role === "system");
+    if (sys && /Você audita, para a coordenação acadêmica/.test(String(sys.content))) {
+      anthropic.audits = (anthropic.audits || 0) + 1;
+      return res.json({ choices: [{ message: { content: JSON.stringify(auditAnswer(req.body.messages[req.body.messages.length - 1].content)) } }], usage: { prompt_tokens: 200, completion_tokens: 40, total_tokens: 240 } });
+    }
     res.json({ choices: [{ message: { content: JSON.stringify({ objections: [{ type: "preco", handled: false }], difficulties: ["bolsa"], skipped: ["grade"], note: "Explicar a bolsa antes da proposta" }) } }], usage: { prompt_tokens: 200, completion_tokens: 40, total_tokens: 240 } });
   });
   app.post("/v1/messages", (req, res) => {
@@ -152,6 +164,11 @@ const startAnthropicMock = () => {
     const usage = { input_tokens: 120, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
     const last = req.body.messages[req.body.messages.length - 1];
     const text = t => res.json({ content: [{ type: "text", text: t }], stop_reason: "end_turn", usage });
+    if (typeof req.body.system === "string" && /Você audita, para a coordenação acadêmica/.test(req.body.system)) {
+      anthropic.audits = (anthropic.audits || 0) + 1;
+      anthropic.auditModels = [...(anthropic.auditModels || []), req.body.model];
+      return text(JSON.stringify(auditAnswer(typeof last.content === "string" ? last.content : JSON.stringify(last.content))));
+    }
     const tool = (name, input) => res.json({ content: [{ type: "tool_use", id: `toolu_${anthropic.requests.length}`, name, input }], stop_reason: "tool_use", usage });
     // the print of a course: the model reads the approved text and the share of presential classes
     if (Array.isArray(req.body.tools) && req.body.tools.some(t => t.name === "registrar_print_curso")) {
@@ -1049,6 +1066,60 @@ const postMeta = (id, payload, secret, badSig) => {
       const made = await http.post(`/leads/from-contact/${teamOnly}`, {}, auth());
       assert([200, 201].includes(made.status) && leadOf("5531977772222"), `the contact was not put in the CRM: ${made.status}`);
     });
+    await test("enrollment form: the lead fills in the personal link (each change kept, the ID picture sealed, LGPD agreement), the team reads it and the lead's record is updated", async () => {
+      const leadId = Number(leadOf("5531977770000"));
+      assert(leadId, "no lead for the form");
+      const made = await http.post(`/leads/${leadId}/enrollment-form`, {}, auth());
+      assert(made.status === 200 && /\/ficha\/[a-f0-9]{48}$/.test(made.data.link), `form link ${JSON.stringify(made.data)}`);
+      const token = made.data.link.split("/ficha/")[1];
+      assert((await http.post(`/leads/${leadId}/enrollment-form`, {}, auth())).data.link === made.data.link, "a second form was born for the same lead");
+      // someone without the lead does not reach it
+      await http.post("/users", { name: "Consultora Ficha", email: "ficha-cons@x.com", password: "senha123", role: "consultor" }, auth());
+      const other = (await http.post("/auth/login", { email: "ficha-cons@x.com", password: "senha123" })).data.token;
+      assert((await http.get(`/leads/${leadId}/enrollment-form`, asUser(other))).status === 403, "another consultant read the form");
+      // the link goes to the lead in the conversation
+      const before = tg.sent.length;
+      const sent = await http.post(`/leads/${leadId}/enrollment-form/send`, {}, auth());
+      assert(sent.status === 200 && sent.data.sentAt, `send ${sent.status} ${JSON.stringify(sent.data).slice(0, 200)}`);
+      assert(tg.sent.slice(before).some(x => x.method === "sendMessage" && String(x.body.text).includes(`/ficha/${token}`)), "the link was not sent in the conversation");
+      // the public side: an unknown code is refused; the right one opens with what the CRM knew
+      assert((await http.get(`/ficha-publica/${"0".repeat(48)}`)).status === 404, "an unknown code opened a form");
+      const open = await http.get(`/ficha-publica/${token}`);
+      assert(open.status === 200 && open.data.progress < 100 && !open.data.ready, `public view ${JSON.stringify(open.data).slice(0, 200)}`);
+      const wrong = await http.put(`/ficha-publica/${token}`, { data: { cpf: "111.111.111-11" } });
+      assert(wrong.status === 200 && wrong.data.problems.cpf, "a wrong CPF was not pointed out");
+      const data = { nome: "Ana Ficha da Silva", nascimento: "2000-05-10", cpf: "746.824.890-70", rgNumero: "1234567", rgOrgao: "SSP", rgUf: "ro", mae: "Maria Ficha da Silva", cep: "76800-000", rua: "Rua das Flores", numero: "100", bairro: "Centro", cidade: "Porto Velho", uf: "RO", celular: "5569999990000", email: "Ana.Ficha@Exemplo.com" };
+      const filled = await http.put(`/ficha-publica/${token}`, { data });
+      assert(filled.status === 200 && !Object.keys(filled.data.problems).length && filled.data.progress < 100, `filled ${JSON.stringify(filled.data.problems)} ${filled.data.progress}`);
+      assert((await http.post(`/ficha-publica/${token}/submit`)).status === 400, "sent without the ID and the agreement");
+      const upload = async (kind, bytes, filename, contentType) => {
+        const f = new FormData();
+        f.append("file", bytes, { filename, contentType });
+        return http.post(`/ficha-publica/${token}/files/${kind}`, f, { headers: f.getHeaders() });
+      };
+      assert((await upload("doc_frente", Buffer.from("<html>not a picture</html>"), "rg.jpg", "image/jpeg")).status === 415, "a file that is not a picture was kept");
+      assert((await upload("doc_frente", PNG, "rg.png", "image/png")).status === 200, "front of the ID");
+      const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 1)]);
+      const back = await upload("doc_verso", JPG, "verso.jpg", "image/jpeg");
+      assert(back.status === 200 && back.data.files.length === 2 && back.data.progress < 100, `back ${back.status} ${back.data.progress}`);
+      const agreed = await http.put(`/ficha-publica/${token}`, { consent: true });
+      assert(agreed.data.progress === 100 && agreed.data.ready, `agreement ${agreed.data.progress} ${JSON.stringify(agreed.data.missing)}`);
+      // what is kept is sealed: no CPF in the row, the picture comes back whole only to the team
+      assert(/^enc:v1:/.test(sql(`SELECT data FROM EnrollmentForms WHERE leadId=${leadId}`)) && !sql(`SELECT data FROM EnrollmentForms WHERE leadId=${leadId}`).includes("74682489070"), "the data is not sealed");
+      const pic = await http.get(`/leads/${leadId}/enrollment-form/files/doc_frente`, { ...auth(), responseType: "arraybuffer" });
+      assert(pic.status === 200 && Buffer.from(pic.data).equals(PNG) && /image\/png/.test(pic.headers["content-type"]), "the team could not read the picture");
+      const done = await http.post(`/ficha-publica/${token}/submit`);
+      assert(done.status === 200 && done.data.submittedAt, `submit ${done.status} ${JSON.stringify(done.data).slice(0, 160)}`);
+      assert(sql(`SELECT cpf FROM Leads WHERE id=${leadId}`) === "74682489070" && sql(`SELECT email FROM Leads WHERE id=${leadId}`) === "ana.ficha@exemplo.com" && sql(`SELECT name FROM Leads WHERE id=${leadId}`) === "Ana Ficha da Silva", "the lead's record did not take the form");
+      assert(sql(`SELECT status FROM LeadDocuments WHERE leadId=${leadId} AND name='RG ou CNH'`) === "received", "the ID did not count as delivered");
+      const staff = (await http.get(`/leads/${leadId}/enrollment-form`, auth())).data;
+      assert(staff.progress === 100 && staff.data.cpf === "74682489070" && staff.consentAt && staff.submittedAt, `staff view ${JSON.stringify(staff).slice(0, 200)}`);
+      // erasing on request of the person (LGPD): only the management, and the pictures go
+      assert((await http.delete(`/leads/${leadId}/enrollment-form`, asUser(other))).status === 403, "a consultant erased the form");
+      assert((await http.delete(`/leads/${leadId}/enrollment-form`, auth())).status === 200, "erase");
+      assert((await http.get(`/leads/${leadId}/enrollment-form/files/doc_frente`, auth())).status === 404, "the picture survived the erasing");
+      assert((await http.get(`/ficha-publica/${token}`)).status === 410, "the erased form still opens");
+    });
     await test("a conversation the team opened, with no message yet, is nobody waiting in Responder agora", async () => {
       const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn" }, auth())).data.token}` } };
       await http.post("/api/v1/contacts", { name: "So salvei", number: "5531977773333" }, headers);
@@ -1064,6 +1135,30 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`UPDATE Tickets SET lastMessageId='rn-in-1', lastMessageFromMe=false, lastMessageAt=NOW() WHERE id=${opened.data.id}`);
       const after = (await http.get("/analytics/me", auth())).data;
       assert((after.focus.conversations || []).some(c => c.ticketId === opened.data.id), "the person answered and is not in Responder agora");
+      // "Já resolvido": an "ok" that needs no answer leaves the list and the count, and comes back when the person writes again
+      const pendingBefore = Number(after.metrics.pendingReply);
+      assert((await http.post(`/tickets/${opened.data.id}/reply-dismiss`, {}, auth())).status === 200, "reply-dismiss");
+      const dismissed = (await http.get("/analytics/me", auth())).data;
+      assert(!(dismissed.focus.conversations || []).some(c => c.ticketId === opened.data.id) && Number(dismissed.metrics.pendingReply) === pendingBefore - 1, "the conversation marked as resolved is still waiting");
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('rn-in-2', ${opened.data.id}, 'mais uma dúvida', false, false, 'chat', 0, NOW(), NOW())`);
+      sql(`UPDATE Tickets SET lastMessageId='rn-in-2', lastMessageFromMe=false, lastMessageAt=NOW() WHERE id=${opened.data.id}`);
+      assert(((await http.get("/analytics/me", auth())).data.focus.conversations || []).some(c => c.ticketId === opened.data.id), "the new message of the person did not bring the conversation back");
+      // the undo
+      await http.post(`/tickets/${opened.data.id}/reply-dismiss`, {}, auth());
+      await http.post(`/tickets/${opened.data.id}/reply-dismiss`, { undo: true }, auth());
+      assert(((await http.get("/analytics/me", auth())).data.focus.conversations || []).some(c => c.ticketId === opened.data.id), "the undo did not bring the conversation back");
+      // "Dispensar até amanhã": the priority leaves only this person's list
+      const items = async (tok) => (await http.get("/analytics/insights", tok)).data.items.map(i => i.key);
+      await new Promise(r => setTimeout(r, 10500)); // the list of priorities is cached for 10 seconds
+      const keys = await items(auth());
+      if (keys.length) {
+        const k = keys[0];
+        assert((await http.post("/analytics/insights/dismiss", { key: k }, auth())).status === 200, "dismiss");
+        await new Promise(r => setTimeout(r, 10500));
+        assert(!(await items(auth())).includes(k), `the dismissed priority ${k} is still there`);
+        await http.post("/analytics/insights/dismiss", { key: k, undo: true }, auth());
+      }
+      assert((await http.post("/analytics/insights/dismiss", { key: "x'; DROP" }, auth())).status === 400, "a bad key was accepted");
       await http.put(`/tickets/${opened.data.id}`, { status: "closed" }, auth());
     });
     await test("Cloud API campaign sends the approved template, not free text", async () => {
@@ -3142,35 +3237,40 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("home dashboard: per day (days do not mix), groups, history and team members stay out, staff flag works", async () => {
       const mkContact = (name, num, group = false) => sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${num}', '', ${group}, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
       const mkTicket = (cid, group = false) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${cid}, ${tgId}, 0, ${group}, 'sales', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
-      const before = (await http.get("/dashboard", auth())).data;
+      // the whole test looks at one day, fixed when it starts: a run that crosses midnight in the company's time zone (it did, at
+      // 00:00:49) no longer splits the messages between two days. The messages are dated inside that day, in its first seconds.
+      const TZ = "America/Porto_Velho";
+      const day = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+      const onDay = { params: { date: day } };
+      const before = (await http.get("/dashboard", { ...onDay, ...auth() })).data;
       assert(before.now && before.period && before.period.week.length === 7 && before.period.byHour.length >= 13, "dashboard shape");
 
       const customer = mkTicket(mkContact("Cliente Painel", "tg_dash_1"));
       const mate = mkContact("Colega Painel", "tg_dash_2");
       const mateTicket = mkTicket(mate);
       const grp = mkTicket(mkContact("Grupo Painel", "tg_dash_g"), true);
-      const msg = (id, ticket, body, fromMe, ago) => sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticket}, '${body}', ${fromMe}, true, 'chat', 0, NOW() - INTERVAL '${ago}', NOW())`);
-      msg("dash-c-1", customer, "oi", false, "1 minute");
-      msg("dash-c-2", customer, "tudo bem?", true, "30 seconds");
-      // yesterday at noon in the company's time zone (a fixed "30 hours ago" lands two days back before 06:00)
-      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('dash-old', ${customer}, 'ontem', false, true, 'chat', 0, (date_trunc('day', NOW() AT TIME ZONE 'America/Porto_Velho') - INTERVAL '12 hours') AT TIME ZONE 'America/Porto_Velho', NOW())`);
-      msg("dash-m-1", mateTicket, "papo interno", false, "1 minute");
-      msg("dash-g-1", grp, "mensagem de grupo", false, "1 minute");
-      const after = (await http.get("/dashboard", auth())).data;
+      const msg = (id, ticket, body, fromMe, second) => sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticket}, '${body}', ${fromMe}, true, 'chat', 0, ('${day} 00:00:${String(second).padStart(2, "0")}'::timestamp AT TIME ZONE '${TZ}'), NOW())`);
+      msg("dash-c-1", customer, "oi", false, 1);
+      msg("dash-c-2", customer, "tudo bem?", true, 2);
+      // noon of the day before the fixed day, in the company's time zone
+      const y = new Date(new Date(`${day}T12:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('dash-old', ${customer}, 'ontem', false, true, 'chat', 0, ('${y} 12:00:00'::timestamp AT TIME ZONE '${TZ}'), NOW())`);
+      msg("dash-m-1", mateTicket, "papo interno", false, 1);
+      msg("dash-g-1", grp, "mensagem de grupo", false, 1);
+      const after = (await http.get("/dashboard", { ...onDay, ...auth() })).data;
       assert(after.period.received - before.period.received === 2, `received counts today's customer + team message only: ${after.period.received - before.period.received}`);
       assert(after.period.sent - before.period.sent === 1, "sent");
       assert(after.period.attendances - before.period.attendances === 2, "conversations of the day (group out, yesterday's message not counted)");
 
       // marking the colleague as team removes them from every number
       assert((await http.put(`/contacts/${mate}/staff`, { isStaff: true }, auth())).status === 200, "mark staff");
-      const staffed = (await http.get("/dashboard", auth())).data;
+      const staffed = (await http.get("/dashboard", { ...onDay, ...auth() })).data;
       assert(staffed.period.received - before.period.received === 1 && staffed.period.attendances - before.period.attendances === 1, "team member still counted");
       const ov = (await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
       assert(sql(`SELECT isStaff FROM Contacts WHERE id=${mate}`) === "1", "flag not saved");
       assert(ov.totals, "stats still answers");
 
       // another day: yesterday shows the old message, today's are not mixed in
-      const y = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
       const yesterday = (await http.get("/dashboard", { params: { date: y }, ...auth() })).data;
       assert(yesterday.date === y && yesterday.period.received >= 1, "yesterday keeps its own message");
       const agentView = await http.get("/dashboard", asUser(agentToken));
@@ -4393,7 +4493,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.some(x => x.key === "objective" && x.optional), "the objective is an optional step");
       await consultantSays("Maira, segue a proposta da sua bolsa para o curso de Biomedicina.");
       let cp = await copNow();
-      assert(cp.current === "ficha" && /Ficha de matrícula/.test(cp.suggestion.text) && /Nome completo da mãe/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `after the proposal: ${cp.current} ${JSON.stringify(cp.suggestion)}`);
+      // the form goes as the lead's personal link (the lead fills it in on the phone, with the picture of the ID)
+      assert(cp.current === "ficha" && /ficha de matrícula/.test(cp.suggestion.text) && /\/ficha\/[a-f0-9]{48}/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `after the proposal: ${cp.current} ${JSON.stringify(cp.suggestion)}`);
       await consultantSays(cp.suggestion.text);
       cp = await copNow();
       assert(cp.current === "taxa" && /boleto da taxa de matrícula/.test(cp.suggestion.text) && /comprovante/.test(cp.suggestion.text), `after the form: ${cp.current}`);
@@ -5835,6 +5936,45 @@ const postMeta = (id, payload, secret, badSig) => {
       const mineTok = tutorId === tA.id ? atok : btok;
       const welcome = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data;
       assert(welcome.show === true && welcome.text.startsWith("Oi, Aluna!") && welcome.text.includes("Polo Matricula"), `welcome ${JSON.stringify(welcome)}`);
+      // the first approach of the tutor with the data of the enrollment: who they are, the polo and the course, the next step; no emoji, one question
+      const tutorName = sql(`SELECT name FROM Users WHERE id=${tutorId}`);
+      const welcomeCourse = (await http.post("/courses", { name: "Pedagogia Abordagem Teste", modality: "EAD", category: "Graduação - Teste", semesters: 8, monthlyFee: 500, active: true }, auth())).data;
+      sql(`UPDATE Leads SET courseId=${welcomeCourse.id} WHERE id=${lead.id}`);
+      await http.put("/settings/onboarding_welcome_template", { value: "" }, auth());
+      const first = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(first.includes(`Eu sou ${tutorName}, tutor(a) da `) && first.includes(" no polo Polo Matricula, e vou acompanhar você") && first.includes("no curso de Pedagogia Abordagem Teste."), `the default approach has no data of the enrollment: ${first}`);
+      assert(first.startsWith("Olá, Aluna!") && first.includes("ambientação") && (first.match(/\?/g) || []).length === 1, `the default approach: ${first}`);
+      assert(!/\{\{|\[\[|\]\]|\p{Extended_Pictographic}/u.test(first), `the default approach left a mark or an emoji: ${first}`);
+      // without a course the optional part leaves clean, with no hole
+      sql(`UPDATE Leads SET courseId=NULL WHERE id=${lead.id}`);
+      const noCourse = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(!noCourse.includes("no curso de") && noCourse.includes("e vou acompanhar você.\n\nO primeiro passo") && !/ {2}| \.| ,/.test(noCourse), `the approach without a course: ${noCourse}`);
+      // the text the company typed keeps working (the earlier assertion), now with the new variables and parts
+      await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}}, {{instituicao}}[[, curso {{curso}}]]." }, auth());
+      const typed = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(typed.startsWith(`Oi, Aluna! Sou ${tutorName}, `) && typed.endsWith(".") && !typed.includes("curso") && !/\{\{|\[\[/.test(typed), `the typed text with the new variables: ${typed}`);
+      // the tutor reads who the student is (course, polo, RGM, the consultant's note) right where they write
+      const facts = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data;
+      assert(facts.enrolled === true && facts.facts.rgm === rgmOfLead && facts.facts.poloName === "Polo Matricula" && facts.facts.note === "Prefere à noite", `the facts of the enrollment: ${JSON.stringify(facts.facts)}`);
+      // the student writes "oi" first (the usual way: the consultant handed the tutoring number): the text answers them
+      await http.put("/settings/onboarding_welcome_template", { value: "" }, auth());
+      sql(`UPDATE Leads SET courseId=${welcomeCourse.id} WHERE id=${lead.id}`);
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('ob-oi-1', ${ob}, 'oi', false, false, 'chat', 0, NOW(), NOW())`);
+      const answer = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(answer.startsWith(`Olá, Aluna, que bom que você chamou!\n\nEu sou ${tutorName}, tutor(a) da `) && answer.includes("no curso de Pedagogia Abordagem Teste"), `the approach after the student wrote: ${answer}`);
+      // someone with no enrollment writes to the tutoring: no greeting of a new student, only who the tutor is and the RGM
+      const obTok = (await http.post("/api-tokens", { name: "ob-unknown" }, auth())).data.token;
+      await http.post("/api/v1/contacts", { name: "Pessoa Sem Matricula", number: "5511955552777" }, { headers: { Authorization: `Bearer ${obTok}` } });
+      const strangerId = sql(`SELECT id FROM Contacts WHERE number='5511955552777'`);
+      assert(strangerId && !sql(`SELECT id FROM Leads WHERE contactId=${strangerId}`), "the contact with no enrollment already had a lead");
+      const strangerTicket = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${strangerId}, ${cid}, ${tutorId}, 1, false, 'onboarding', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('ob-stranger-1', ${strangerTicket}, 'oi', false, false, 'chat', 0, NOW(), NOW())`);
+      const stranger = (await http.get(`/tickets/${strangerTicket}/welcome`, asUser(mineTok))).data;
+      assert(stranger.show === true && stranger.enrolled === false && /RGM\?$/.test(stranger.text) && !/matr[ií]cula|ambienta/i.test(stranger.text), `the approach to a contact with no enrollment: ${JSON.stringify(stranger)}`);
+      assert(stranger.text.startsWith("Olá, Pessoa, que bom que você chamou! Eu sou "), `the greeting to the contact with no enrollment: ${stranger.text}`);
+      sql(`UPDATE Tickets SET status='closed' WHERE id=${strangerTicket}`);
+      sql(`DELETE FROM Messages WHERE id='ob-oi-1'`);
+      await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}} do polo {{polo}}." }, auth());
       // the administrator reads everything but does not answer as the tutor
       const adminSend = await http.post(`/messages/${ob}`, { body: "Oi, sou o admin" }, auth());
       assert(adminSend.status === 403 && adminSend.data.error === "ERR_ONBOARDING_TUTOR_ONLY", `administrator answered in the tutor's conversation: ${adminSend.status}`);
@@ -6865,6 +7005,20 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(one.length === 2 && one[1].includes("5511977779991"), `search gave ${one.length} lines`);
       assert((await http.get("/contacts/export.csv", { params: { searchParam: "5511977779991" }, ...asUser(cons) })).status === 200, "a consultant cannot download");
     });
+    await test("Painel do CRM: quem não é da gestão (tutora) vê só os próprios leads, nunca os da equipe", async () => {
+      await http.post("/users", { name: "Tutora Sem Leads", email: "tutora-sem-leads@x.com", password: "senha123", role: "tutor" }, auth());
+      const tok = (await http.post("/auth/login", { email: "tutora-sem-leads@x.com", password: "senha123" })).data.token;
+      const team = (await http.get("/crm/metrics", { params: { now: 1 }, ...auth() })).data;
+      const open = d => d.funnel.filter(f => f.type === "open").reduce((a, f) => a + Number(f.total), 0);
+      assert(open(team) > 0, "the team has no open lead to compare");
+      const mine = await http.get("/crm/metrics", { params: { now: 1 }, ...asUser(tok) });
+      assert(mine.status === 200 && open(mine.data) === 0 && Number(mine.data.attention.waitingFirstContact) === 0, `the tutor saw the team: ${open(mine.data)} open, ${mine.data.attention && mine.data.attention.waitingFirstContact} waiting`);
+      // asking for someone else changes nothing
+      const adminId = sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1");
+      assert(open((await http.get("/crm/metrics", { params: { now: 1, ownerId: adminId }, ...asUser(tok) })).data) === 0, "the tutor read the numbers of the administrator");
+      const triage = (await http.get("/crm/triage", asUser(tok))).data;
+      assert(triage.total === 0, `the tutor saw the team's new leads: ${triage.total}`);
+    });
     await test("amigos e equipe: saem do funil e das estatísticas, não viram lead de novo e dá para desfazer", async () => {
       const metrics = async () => (await http.get("/crm/metrics", auth())).data;
       const before = await metrics();
@@ -7382,6 +7536,111 @@ const postMeta = (id, payload, secret, badSig) => {
       } finally {
         sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
       }
+    });
+    await test("one tutoring conversation per student: the empty one opened by the enrollment on another number is folded into the one where the student writes, and the agent of every number stays out of the tutoring", async () => {
+      inDb(`const Ticket=require("./dist/models/Ticket").default,Contact=require("./dist/models/Contact").default,Whatsapp=require("./dist/models/Whatsapp").default,TicketEvent=require("./dist/models/TicketEvent").default,TicketTag=require("./dist/models/TicketTag").default,Tag=require("./dist/models/Tag").default,Message=require("./dist/models/Message").default,AiAgent=require("./dist/models/AiAgent").default;
+        const FindOrCreate=require("./dist/services/TicketServices/FindOrCreateTicketService").default,{findAgentForTicket}=require("./dist/services/AiServices/RunAiAgent"),{connectionsOf}=require("./dist/helpers/AgentConnections");
+        const contact=await Contact.create({name:"Aluno Gemeo",number:"5569977001122",isGroup:false});
+        const tutoring=await Whatsapp.create({name:"Tutoria Gemeo",status:"CONNECTED",channel:"whatsapp_cloud",team:"tutoria",isDefault:false});
+        const tag=await Tag.create({name:"Gemeo e2e",color:"#7c3aed"});
+        const global=await AiAgent.create({name:"Agente de todos os numeros e2e",model:"e2e",active:true});
+        try{
+          // the enrollment opened it on the consultants' number (the tutoring number was not set yet): no message, a handover note and a tag
+          const empty=await Ticket.create({contactId:contact.id,whatsappId:${cid},status:"open",userId:1,segment:"onboarding",isGroup:false,unreadMessages:0,aiActive:false,chatbotNodeId:-1});
+          await TicketEvent.create({ticketId:empty.id,type:"handoff",actorId:1,note:"Início da ambientação."});
+          await TicketTag.create({ticketId:empty.id,tagId:tag.id});
+          // the student writes "oi" to the tutoring number
+          const t=await FindOrCreate(contact,tutoring.id,1);
+          await empty.reload();
+          assert.notEqual(t.id,empty.id);
+          assert.equal(t.segment,"onboarding");
+          assert.equal(empty.status,"closed");
+          assert.equal(await Ticket.count({where:{contactId:contact.id,status:["open","pending"]}}),1);
+          assert.equal(await TicketEvent.count({where:{ticketId:t.id,type:"handoff"}}),1);
+          assert.equal(await TicketTag.count({where:{ticketId:t.id,tagId:tag.id}}),1);
+          const fresh=await Ticket.findByPk(t.id);
+          assert.equal(fresh.userId,1,"the tutor of the enrollment did not keep the student");
+          // a conversation with messages is never folded
+          const real=await Ticket.create({contactId:contact.id,whatsappId:${cid},status:"open",userId:1,segment:"onboarding",isGroup:false,unreadMessages:0});
+          await Message.create({id:"gemeo-"+real.id,ticketId:real.id,contactId:contact.id,body:"oi",fromMe:false,read:true,mediaType:"chat",ack:0});
+          await FindOrCreate(contact,tutoring.id,1);
+          await real.reload();assert.equal(real.status,"open");
+          // the agent that serves every number answers the sales side, never the tutoring
+          const onTutoring=await findAgentForTicket(fresh);
+          assert(!onTutoring||onTutoring.queueId||connectionsOf(onTutoring).length,"an agent of every number answered on the tutoring");
+          fresh.segment="sales";
+          assert(await findAgentForTicket(fresh),"the sales side lost its agent");
+        }finally{
+          await Message.destroy({where:{contactId:contact.id}});await TicketEvent.destroy({where:{ticketId:(await Ticket.findAll({where:{contactId:contact.id}})).map(x=>x.id)}});
+          await TicketTag.destroy({where:{tagId:tag.id}});await Ticket.destroy({where:{contactId:contact.id}});
+          await require("./dist/models/Lead").default.destroy({where:{contactId:contact.id}});await tutoring.destroy();await tag.destroy();await global.destroy();await contact.destroy();
+        }`);
+    });
+    await test("tutoring audit: the AI reads the tutors' conversations cheaply, tells the academic management what is pending, the management writes the protocol and closes it; the tutor never sees it and the AI never sells there", async () => {
+      const tutorUser = (await http.post("/users", { name: "Tutora Auditada", email: "tutora-auditada@x.com", password: "senha123", role: "tutor" }, auth())).data;
+      const tutorTok = (await http.post("/auth/login", { email: "tutora-auditada@x.com", password: "senha123" })).data.token;
+      const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Aluna Pendente Silva', '5569944443333', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${tutorUser.id}, 0, false, 'onboarding', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const say = (id, fromMe, body, minutesAgo) => sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticketId}, ${contactId}, '${body}', ${fromMe}, true, 'chat', 1, NOW() - INTERVAL '${minutesAgo} minutes', NOW())`);
+      say(`aud-${ticketId}-1`, false, "Não consigo entrar na plataforma, meu RGM 12345678", 120);
+      say(`aud-${ticketId}-2`, true, "Abri um chamado no CAA, protocolo 2026112400123, e te dou retorno", 100);
+      sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-2', lastMessageFromMe=true, lastMessageAt=NOW() - INTERVAL '100 minutes' WHERE id=${ticketId}`);
+      // the AI does not qualify nor sell on the tutoring
+      assert((await http.post(`/tickets/${ticketId}/ai`, { active: true }, auth())).data.error === "ERR_AI_NOT_ON_TUTORING", "the AI was handed a tutoring conversation");
+      // the tutor does not reach the audit
+      assert((await http.get("/tutoria/issues", asUser(tutorTok))).status === 403, "the tutor saw the audit");
+      const audits = anthropic.audits || 0;
+      const run = (await http.post("/tutoria/audit/run", {}, auth())).data;
+      assert(run.read >= 1 && run.found >= 1, `audit run ${JSON.stringify(run)}`);
+      // the text sent to the model is masked: no protocol number, no RGM, no name
+      const sentText = JSON.stringify(anthropic.requests.slice(-5).concat((anthropic.openai || []).slice(-5)));
+      assert(!sentText.includes("2026112400123") && !sentText.includes("12345678") && !/Pendente Silva/.test(sentText), "the audit sent personal data or the protocol to the model");
+      assert((anthropic.auditModels || []).slice(-1)[0] === undefined || /haiku|mini/.test((anthropic.auditModels || []).slice(-1)[0]), `the audit did not use the cheap model: ${(anthropic.auditModels || []).slice(-1)[0]}`);
+      const list = (await http.get("/tutoria/issues", auth())).data;
+      const issue = list.items.find(i => i.ticketId === Number(ticketId));
+      assert(issue && issue.kind === "protocolo" && issue.status === "aberta" && issue.idea && issue.tutor === "Tutora Auditada", `issue ${JSON.stringify(issue)}`);
+      // the academic management was told (the administrator is part of it)
+      const adminId = sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1");
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${adminId} AND kind='tutoring_issue'`)) >= 1, "the management was not told");
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${tutorUser.id} AND kind='tutoring_issue'`)) === 0, "the tutor got the audit notice");
+      // nothing new in the conversation: it is not read again
+      const before = anthropic.audits || 0;
+      await http.post("/tutoria/audit/run", {}, auth());
+      assert((anthropic.audits || 0) === before, "a conversation with nothing new was read again");
+      assert(before > audits, "the model was not called");
+      // the tutor's side, simple: the case of the conversation waits for its protocol, with no word about the AI
+      const mine = (await http.get("/tutoria/protocols", asUser(tutorTok))).data.items;
+      const waiting = mine.find(i => i.id === issue.id);
+      assert(waiting && waiting.status === "aberta" && waiting.source === undefined && waiting.idea === undefined, `the tutor's list ${JSON.stringify(waiting)}`);
+      // another tutor does not touch it
+      await http.post("/users", { name: "Outra Tutora", email: "outra-tutora@x.com", password: "senha123", role: "tutor" }, auth());
+      const otherTok = (await http.post("/auth/login", { email: "outra-tutora@x.com", password: "senha123" })).data.token;
+      assert((await http.post("/tutoria/protocols", { issueId: issue.id, protocolNumber: "1", protocolName: "x" }, asUser(otherTok))).status === 403, "another tutor registered the protocol");
+      assert((await http.post("/tutoria/protocols", { issueId: issue.id, protocolNumber: "2026112400123", protocolName: "" }, asUser(tutorTok))).status === 400, "a protocol without subject was accepted");
+      // the tutor writes the number and the subject and tells the student: the message goes in the conversation and it stays in the history
+      const sentBefore = graph.sent.length;
+      const reg = await http.post("/tutoria/protocols", { issueId: issue.id, protocolNumber: "2026112400123", protocolName: "Acesso ao AVA", notifyStudent: true }, asUser(tutorTok));
+      assert(reg.status === 201, `register ${reg.status} ${JSON.stringify(reg.data)}`);
+      await waitFor(() => graph.sent.slice(sentBefore).find(x => x.body && JSON.stringify(x.body).includes("protocolo 2026112400123")), 15000, "the student was not told the protocol");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketId} AND type='protocol'`)) === 1, "the protocol is not in the history of the conversation");
+      assert((await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.some(i => i.id === issue.id && i.protocolName === "Acesso ao AVA"), "the management does not see the protocol of the tutor");
+      // a protocol of a commercial conversation is refused
+      const sales = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${tutorUser.id}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      assert((await http.post("/tutoria/protocols", { ticketId: sales, protocolNumber: "9", protocolName: "y" }, asUser(tutorTok))).status === 400, "a protocol was written on a commercial conversation");
+      sql(`DELETE FROM Tickets WHERE id=${sales}`);
+      // the student says it was solved: the next reading closes it
+      say(`aud-${ticketId}-3`, false, "Já foi liberado, resolveu, obrigada", 60);
+      say(`aud-${ticketId}-4`, true, "Que bom! Qualquer coisa me chama", 59);
+      sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-4', lastMessageAt=NOW() - INTERVAL '59 minutes' WHERE id=${ticketId}`);
+      await http.post("/tutoria/audit/run", {}, auth());
+      const after = (await http.get("/tutoria/issues", { params: { status: "resolvida" }, ...auth() })).data.items.find(i => i.id === issue.id);
+      assert(after && after.status === "resolvida" && after.protocolNumber === "2026112400123", `resolved ${JSON.stringify(after)}`);
+      // a case written by hand, and the switch
+      const manual = await http.post("/tutoria/issues", { kind: "documento", summary: "Histórico do ensino médio pedido ao aluno" }, auth());
+      assert(manual.status === 201 && manual.data.status === "aberta", "manual issue");
+      assert((await http.post("/tutoria/issues", { summary: " " }, auth())).status === 400, "an empty issue was accepted");
+      assert((await http.put("/tutoria/audit/settings", { enabled: false, maxPerDay: 5 }, auth())).data.maxPerDay === 5, "settings");
+      await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 40 }, auth());
     });
     await test("the daily review: the AI reads a consultant's conversation without CPF, phone or names, keeps only codes, and the management sees the training needed", async () => {
       const u = (await http.post("/users", { name: "Consultora Revisada", email: "review-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;

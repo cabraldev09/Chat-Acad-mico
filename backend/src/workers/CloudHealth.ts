@@ -111,8 +111,23 @@ const tick = async (): Promise<void> => {
           // eslint-disable-next-line no-await-in-loop
           await extendCloudToken(w);
         }
+        const tokens = await import("../services/ChannelServices/CloudToken");
+        // a number saved without the App ID / App Secret takes the ones of its app from another number, so its token is renewed in time
         // eslint-disable-next-line no-await-in-loop
-        const status = await checkCloudConnection(w);
+        if (await tokens.adoptSiblingApp(w).catch(() => false)) { await w.reload(); await tokens.extendCloudToken(w).catch(() => undefined); await w.reload(); }
+        // eslint-disable-next-line no-await-in-loop
+        let status = await checkCloudConnection(w);
+        // the token was refused (expired or revoked): the access of another official number of the same account brings it back at once
+        if (status !== "CONNECTED" && /token de acesso/i.test(String(w.statusNote || ""))) {
+          // eslint-disable-next-line no-await-in-loop
+          const from = await tokens.borrowSiblingToken(w).catch(() => null);
+          if (from) {
+            await w.reload();
+            // eslint-disable-next-line no-await-in-loop
+            status = await checkCloudConnection(w);
+            if (status === "CONNECTED") await alertAdmins(w, `O número oficial "${w.name}" ficou sem acesso (o token expirou ou foi revogado) e voltou sozinho com o acesso do número "${from.name}". Nenhuma ação é necessária; para deixar cada número independente, salve nele um token permanente de usuário do sistema.`, "watchdog");
+          }
+        }
         const expiring = getConfig(w).tokenExpiresAt && new Date(getConfig(w).tokenExpiresAt).getTime() - Date.now() < 2 * 86400000;
         if (status !== "CONNECTED") await alertAdmins(w, `O número oficial "${w.name}" está desconectado. ${w.statusNote || ""}`.trim());
         else if (expiring) await alertAdmins(w, `O token de acesso do número oficial "${w.name}" vence em menos de 2 dias. Gere um token novo e cole na conexão para o número não cair.`);
@@ -127,6 +142,8 @@ const tick = async (): Promise<void> => {
 
 export const startCloudHealth = (): void => {
   setInterval(tick, Number(process.env.CLOUD_HEALTH_MS) || 10 * 60000);
+  // right after a restart (a deploy) the numbers are checked and healed in a minute, not in ten
+  if (process.env.NODE_ENV !== "test") setTimeout(tick, 60000);
 };
 
 export { tick as runCloudHealthOnce };

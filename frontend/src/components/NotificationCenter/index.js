@@ -9,9 +9,9 @@ import { noticeToast } from "../../utils/modernToast";
 // The bell's "Avisos": what the system told this person (a task given to them, a lead the AI handed over, a proposal opened, a fee paid, a
 // number down...). They stay until read, so nothing is lost while the person is away from the screen. The server sends only the person's own.
 const LEVEL = {
-  urgent: { color: "#b91c1c", Icon: AlertTriangle },
-  warning: { color: "#b45309", Icon: BellRing },
-  info: { color: "var(--accent, #0B4279)", Icon: Info },
+  urgent: { color: "#dc2626", Icon: AlertTriangle },
+  warning: { color: "#d97706", Icon: BellRing },
+  info: { color: "#0b6bcb", Icon: Info },
 };
 // the icon says what it is about at a glance; the color says how urgent it is
 const KIND_ICON = {
@@ -83,7 +83,6 @@ export const useNotices = () => {
   return { ...state, reload: load, markRead, markAll };
 };
 
-const row = { display: "flex", gap: 10, alignItems: "flex-start", width: "100%", border: 0, borderBottom: "1px solid var(--line, #e5e7eb)", background: "transparent", padding: "10px 14px", textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit" };
 const dayOf = (iso) => {
   const d = new Date(iso);
   const today = new Date();
@@ -111,37 +110,46 @@ export const NoticeList = ({ notices, onNavigate }) => {
   if (!list.length) return <div style={{ padding: 16, fontSize: 13, color: "var(--text-2, #64748b)" }}>Nenhum aviso por enquanto. Tarefas novas, leads encaminhados, propostas abertas e alertas da equipe aparecem aqui.</div>;
   const shown = onlyUnread ? list.filter((n) => !n.readAt) : list;
   const groups = ["Hoje", "Ontem", "Antes"].map((label) => ({ label, items: shown.filter((n) => dayOf(n.createdAt) === label) })).filter((g) => g.items.length);
+  // the cards of the Notification Center of the Mac: icon of the kind in a rounded square, title in bold with the time on the right, the
+  // text under it; grouped by day, with the filter of the unread ones
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderBottom: "1px solid var(--line, #e5e7eb)", flexWrap: "wrap" }}>
-        <button type="button" onClick={() => setOnlyUnread(false)} aria-pressed={!onlyUnread} style={pill(!onlyUnread)}>Todos</button>
-        <button type="button" onClick={() => setOnlyUnread(true)} aria-pressed={onlyUnread} style={pill(onlyUnread)}>Não lidos{unread ? ` ${unread}` : ""}</button>
+      <div className="mac-notes-head">
+        <b>Avisos</b>
         {unread > 0 && (
-          <button type="button" onClick={markAll} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, border: 0, background: "none", color: "var(--accent, #0B4279)", font: "inherit", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-            <CheckCheck size={14} /> Marcar todos como lidos
+          <button type="button" className="mac-notes-clear" onClick={markAll}>
+            <CheckCheck size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Marcar todos como lidos
           </button>
         )}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 10px 6px", flexWrap: "wrap" }}>
+        <button type="button" onClick={() => setOnlyUnread(false)} aria-pressed={!onlyUnread} style={pill(!onlyUnread)}>Todos</button>
+        <button type="button" onClick={() => setOnlyUnread(true)} aria-pressed={onlyUnread} style={pill(onlyUnread)}>Não lidos{unread ? ` ${unread}` : ""}</button>
       </div>
       {groups.length === 0 && <div style={{ padding: 16, fontSize: 13, color: "var(--text-2, #64748b)" }}>Tudo lido.</div>}
       {groups.map((g) => (
         <div key={g.label}>
-          <div style={{ padding: "8px 14px 4px", fontSize: 11.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-2, #64748b)" }}>{g.label}</div>
-          {g.items.map((n) => {
-            const { color, Icon: LevelIcon } = LEVEL[n.level] || LEVEL.info;
-            const Icon = KIND_ICON[n.kind] || LevelIcon;
-            return (
-              <button key={n.id} type="button" style={{ ...row, background: n.readAt ? "transparent" : "var(--surface-2, #f8fafc)" }}
-                onClick={() => { markRead(n); if (n.link) { history.push(n.link); if (onNavigate) onNavigate(); } }}>
-                <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: 10, display: "grid", placeItems: "center", flex: "none", color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}><Icon size={16} /></span>
-                <span style={{ minWidth: 0, flex: 1 }}>
-                  <span style={{ display: "block", fontSize: 13, fontWeight: n.readAt ? 500 : 700, overflowWrap: "anywhere" }}>{n.title}</span>
-                  {n.body && <span style={{ display: "block", fontSize: 12.5, color: "var(--text-2, #64748b)", overflowWrap: "anywhere" }}>{n.body}</span>}
-                  <span style={{ display: "block", fontSize: 11.5, color: "var(--text-3, #94a3b8)", marginTop: 2 }}>{when(n.createdAt)}</span>
-                </span>
-                {!n.readAt && <span aria-label="Não lido" style={{ width: 8, height: 8, borderRadius: 99, background: color, flex: "none", marginTop: 6 }} />}
-              </button>
-            );
-          })}
+          <div style={{ padding: "6px 14px 2px", fontSize: 11.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-2, #64748b)" }}>{g.label}</div>
+          <div className="mac-notes">
+            {g.items.map((n) => {
+              const { color, Icon: LevelIcon } = LEVEL[n.level] || LEVEL.info;
+              const Icon = KIND_ICON[n.kind] || LevelIcon;
+              return (
+                <button key={n.id} type="button" className={`mac-note${n.readAt ? " is-read" : ""}`}
+                  onClick={() => { markRead(n); if (n.link) { history.push(n.link); if (onNavigate) onNavigate(); } }}>
+                  <span className="mac-note-icon" style={{ background: `linear-gradient(160deg, ${color}, ${color}cc)` }} aria-hidden="true"><Icon size={16} /></span>
+                  <span className="mac-note-text">
+                    <span className="mac-note-head">
+                      <span className="mac-note-title">{n.title}</span>
+                      <span className="mac-note-time">{when(n.createdAt)}</span>
+                      {!n.readAt && <span aria-label="Não lido" style={{ width: 8, height: 8, borderRadius: 99, background: color, flex: "none", alignSelf: "center" }} />}
+                    </span>
+                    {n.body && <span className="mac-note-body">{n.body}</span>}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       ))}
     </div>

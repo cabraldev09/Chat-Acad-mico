@@ -59,6 +59,15 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
   // the same error for a wrong login, a wrong password, a blocked or a not yet activated account
   const bad = new AppError("RGM, e-mail ou senha incorretos.", 401);
   if (!student || !student.passwordHash || !student.activatedAt || student.blockedAt) {
+    // a person of the team typed their own login here: only after their password is checked the portal says to use the team login
+    // (nothing is told about who exists without the right password)
+    const typed = String(req.body?.login || "").trim().toLowerCase();
+    if (!student && typed.includes("@")) {
+      const User = (await import("../models/User")).default;
+      const member = await User.findOne({ where: where(fn("lower", col("email")), typed) as any, attributes: ["id", "passwordHash"] });
+      if (member && member.passwordHash && (await compare(password, member.passwordHash))) throw new AppError("ERR_PORTAL_STAFF_ACCOUNT", 409);
+      if (member) throw bad;
+    }
     await burnPasswordTime(password);
     throw bad;
   }

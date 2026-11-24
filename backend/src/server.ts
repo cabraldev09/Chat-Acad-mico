@@ -11,6 +11,7 @@ import { StartAllWhatsAppsSessions } from "./services/WbotServices/StartAllWhats
 import { startScheduler } from "./workers/Scheduler";
 import { startMetaWebhookQueue } from "./services/ChannelServices/MetaWebhookQueue";
 import { startConsultantReview } from "./workers/ConsultantReview";
+import { startTutoringAudit } from "./workers/TutoringAudit";
 import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
 import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
@@ -72,6 +73,7 @@ whenLeader(() => {
   startCloudHealth();
   startPendingDigest();
   startConsultantReview();
+  startTutoringAudit();
   startDataRetention();
   startFollowUpAlert();
   startProfilePicSync();
