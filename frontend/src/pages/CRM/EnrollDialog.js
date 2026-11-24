@@ -14,7 +14,7 @@ const useStyles = makeStyles((theme) => ({
   badge: { width: 40, height: 40, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "#16a34a", background: "rgba(22,163,74,.14)" },
   section: { margin: theme.spacing(2, 0, 0.5), fontSize: 13, fontWeight: 700, color: theme.palette.text.secondary },
   hint: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
-  drop: { display: "flex", alignItems: "center", gap: 12, padding: theme.spacing(1.5), borderRadius: 12, border: `1.5px dashed ${theme.palette.divider}`, cursor: "pointer", transition: "border-color .15s, background .15s", "&:hover, &:focus-visible": { borderColor: "#4595D8", background: "rgba(69,149,216,.06)", outline: "none" } },
+  drop: { display: "flex", alignItems: "center", gap: 12, padding: theme.spacing(1.5), borderRadius: 12, border: `1.5px dashed ${theme.palette.divider}`, cursor: "pointer", transition: "border-color .15s, background .15s", "&:hover": { borderColor: "#4595D8", background: "rgba(69,149,216,.06)", outline: "none" } },
   dropOn: { borderColor: "#4595D8", background: "rgba(69,149,216,.08)" },
   thumb: { width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: `1px solid ${theme.palette.divider}`, flex: "none" },
   feeBox: { padding: theme.spacing(0.5, 1.5), borderRadius: 12, border: `1px solid ${theme.palette.divider}`, marginTop: 6 },

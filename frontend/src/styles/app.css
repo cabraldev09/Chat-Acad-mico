@@ -232,5 +232,4 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 /* an option in a small menu (check list of polos and similar): it answers to the mouse and to the keyboard */
 .polo-option { background: transparent; transition: background-color .15s ease; }
 .polo-option:hover:not(:disabled) { background: var(--surface-2); }
-.polo-option:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .polo-option:disabled { cursor: progress !important; }

@@ -72,7 +72,6 @@
 }
 .lg-field input::placeholder { color: #9aa7b8; }
 .lg-field input:hover { border-color: #b9c5d4; }
-.lg-field input:focus { border-color: var(--lg-brand); box-shadow: 0 0 0 4px rgba(11, 66, 121, .14); }
 .lg-pass { position: relative; display: block; }
 .lg-pass input { padding-right: 50px; }
 .lg-pass button {
@@ -80,8 +79,6 @@
   display: grid; place-items: center; background: transparent; color: #5b6b80; cursor: pointer;
 }
 .lg-pass button:hover { background: #eef2f7; color: var(--lg-ink); }
-.lg-pass button:focus-visible, .lg-submit:focus-visible, .lg-row a:focus-visible { outline: 2px solid #2f7de1; outline-offset: 2px; }
-
 .lg-row { display: flex; justify-content: flex-end; margin-top: -6px; }
 .lg-row a { font-size: 14px; font-weight: 600; color: var(--lg-brand); text-decoration: none; }
 .lg-row a:hover { text-decoration: underline; }
@@ -106,7 +103,6 @@
 :root[data-theme="dark"] .lg-card-head p, :root[data-theme="dark"] .lg-note { color: #9aa7b8; }
 :root[data-theme="dark"] .lg-field > span:first-child { color: #cbd5e1; }
 :root[data-theme="dark"] .lg-field input { background: #141c27; border-color: #2a3646; color: #f1f5f9; }
-:root[data-theme="dark"] .lg-field input:focus { border-color: #60a5fa; box-shadow: 0 0 0 4px rgba(96, 165, 250, .18); }
 :root[data-theme="dark"] .lg-pass button { color: #9aa7b8; }
 :root[data-theme="dark"] .lg-pass button:hover { background: #1c2633; color: #f1f5f9; }
 :root[data-theme="dark"] .lg-row a { color: #93c5fd; }

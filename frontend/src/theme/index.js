@@ -100,14 +100,8 @@ const createAppTheme = (type) => {
             backgroundColor: colors.background.default,
           },
           "::selection": { background: alpha(colors.primary.main, 0.25) },
-          // the ring is drawn inside the element: outside, a scrolling panel cut it (the "broken border" around a selected item)
-          "*:focus-visible": {
-            outline: `2px solid ${colors.accent.main}`,
-            outlineOffset: -2,
-          },
-          "*:focus:not(:focus-visible)": { outline: "none" },
-          // a text field shows where the cursor is by itself: clicking a box never draws a frame around it (the keyboard ring stays on buttons and links)
-          "input:focus, textarea:focus, select:focus, [contenteditable]:focus, [tabindex='-1']:focus": { outline: "none" },
+          // no focus frame anywhere (decided by the company): neither a click nor the keyboard draws a box (see also styles/ui.css)
+          "*:focus, *:focus-visible": { outline: "none" },
           "@keyframes shimmer": {
             "0%": { backgroundPosition: "-200% 0" },
             "100%": { backgroundPosition: "200% 0" },
@@ -176,7 +170,8 @@ const createAppTheme = (type) => {
           transition: "box-shadow .15s, border-color .15s",
           "& $notchedOutline": { borderColor: colors.divider },
           "&:hover $notchedOutline": { borderColor: isDark ? "#2c4062" : "#cbd5e1" },
-          "&$focused $notchedOutline": { borderColor: colors.accent.main, borderWidth: 1 },
+          // no colored frame on focus (decided by the company): the field keeps the border of the hover
+          "&$focused $notchedOutline": { borderColor: isDark ? "#2c4062" : "#cbd5e1", borderWidth: 1 },
         },
         input: { padding: "10px 12px" },
         // one height for the whole system: a small field (38 px) is as tall as the button beside it

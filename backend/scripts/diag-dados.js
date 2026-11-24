@@ -66,5 +66,20 @@ const q = async (title, sql) => {
   await q("conversas sem nenhuma mensagem (fora de grupos)", `SELECT t.id AS ticket, t."contactId" AS contato, t."whatsappId" AS wa, t.segment, t.status, t."userId" AS t_user, t."createdAt",
       (SELECT string_agg(e.type || '@' || to_char(e."createdAt", 'DD HH24:MI'), ',' ORDER BY e.id) FROM "TicketEvents" e WHERE e."ticketId" = t.id) AS eventos
     FROM "Tickets" t WHERE t."isGroup" = false AND NOT EXISTS (SELECT 1 FROM "Messages" m WHERE m."ticketId" = t.id) ORDER BY t.id DESC LIMIT 20`);
+  // Metas por polo: por que Cerejeiras mostra 0 em novembro (só números: ids, datas, polos)
+  const CER = `(SELECT id FROM "Polos" WHERE name ILIKE '%cerejeiras%')`;
+  await q("polos Cerejeiras", `SELECT id, code, active FROM "Polos" WHERE name ILIKE '%cerejeiras%' ORDER BY id`);
+  await q("metas por polo", `SELECT id, status, "startsOn", "endsOn" FROM "Goals" WHERE kind = 'polo' ORDER BY "startsOn"`);
+  await q("linhas de Cerejeiras nas metas", `SELECT "goalId", "poloId", target, "manualCount", "manualMonthly" FROM "GoalPolos" WHERE "poloId" IN ${CER} ORDER BY "goalId"`);
+  await q("matriculados em novembro (data local) e o polo de cada um", `SELECT l.id, l."poloId", l."practicePoloId", l."poloSource", l."isHistorical", s.type AS etapa,
+      to_char(l."wonAt" AT TIME ZONE 'America/Porto_Velho', 'DD/MM HH24:MI') AS ganho, to_char(l."enrolledAt" AT TIME ZONE 'America/Porto_Velho', 'DD/MM HH24:MI') AS matricula,
+      (SELECT string_agg(substring(a.meta from '"poloId":([0-9]+)'), ',' ORDER BY a.id) FROM "LeadActivities" a WHERE a."leadId" = l.id AND a.meta LIKE '%"kind":"enrollment"%') AS polo_na_confirmacao
+    FROM "Leads" l LEFT JOIN "LeadStages" s ON s.id = l."stageId"
+    WHERE (l."wonAt" >= '2026-11-01T04:00:00Z' AND l."wonAt" < '2026-12-01T04:00:00Z') OR (l."enrolledAt" >= '2026-11-01T04:00:00Z' AND l."enrolledAt" < '2026-12-01T04:00:00Z')
+    ORDER BY l."wonAt"`);
+  await q("matrículas adicionais de novembro", `SELECT e.id, e."leadId", e."poloId", to_char(e."enrolledAt" AT TIME ZONE 'America/Porto_Velho', 'DD/MM HH24:MI') AS quando FROM "LeadEnrollments" e
+    WHERE e."enrolledAt" >= '2026-11-01T04:00:00Z' AND e."enrolledAt" < '2026-12-01T04:00:00Z' ORDER BY e."enrolledAt"`);
+  // Análise acadêmica: a matriz do curso de Serviço Social no catálogo de grades (a análise passa a usá-la para a série de cada disciplina)
+  await q("grades de Serviço Social no catálogo", `SELECT id, "courseName", modality, "updatedAt" FROM "CommercialGrades" WHERE "courseName" ILIKE '%servi%o social%' ORDER BY id`);
   process.exit(0);
 })().catch(e => { console.error(e.message); process.exit(1); });

@@ -3,7 +3,8 @@
  * Análise acadêmica, Análise curricular, Grades and Alunos. Everything lives under `.orig`, and Tailwind only reads the
  * files listed below, so the rest of the system is not affected (no global reset, no extra utilities elsewhere).
  */
-@layer theme, base, components, utilities;
+/* focusreset first: its !important rules (no focus frame, see styles/ui.css) win over the important utilities below */
+@layer focusreset, theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source(none) important;
 @source "../pages/Analysis";
@@ -85,7 +86,7 @@
   --destructive: #c0392b;
   --border: #dfe5ec;
   --input: #dfe5ec;
-  --ring: #0693e3;
+  --ring: var(--border); /* no colored frame on focus (decided by the company) */
   --radius: 0.625rem;
   font-family: var(--font-sans);
   color: var(--foreground);
@@ -139,7 +140,6 @@
 .orig.portal-experience { --portal-ease: cubic-bezier(.2, .7, .2, 1); overflow-x: clip; }
 .portal-experience :is(section, article) { scroll-margin-top: 5rem; }
 .portal-experience :is(button, a, input, summary) { -webkit-tap-highlight-color: transparent; }
-.portal-experience :is(button, a, input, summary):focus-visible { outline: 3px solid #0693e3; outline-offset: 4px; }
 .portal-experience :is(button, [data-slot="button"]) { transition: transform .2s var(--portal-ease), box-shadow .2s var(--portal-ease), background-color .2s; }
 .portal-experience button:active:not(:disabled) { transform: scale(.975); }
 .portal-experience details[open] > :not(summary) { animation: portal-expand .3s var(--portal-ease); }
@@ -204,7 +204,7 @@
   --destructive: #f2867a;
   --border: #2a2c2c;
   --input: #2f3232;
-  --ring: #4595d8;
+  --ring: var(--border);
   --color-brand-navy: #3b8fd6;
   --color-brand-navy-50: #1a2733;
   --color-brand-cyan-50: #13283a;
