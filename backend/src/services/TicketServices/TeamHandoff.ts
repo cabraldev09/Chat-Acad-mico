@@ -5,6 +5,7 @@ import AppError from "../../errors/AppError";
 import Lead from "../../models/Lead";
 import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
+import { createLiveTicket } from "./LiveTicket";
 import TicketEvent from "../../models/TicketEvent";
 import User from "../../models/User";
 import { logger } from "../../utils/logger";
@@ -68,7 +69,7 @@ export const sideConversation = async (contactId: number, team: Team, whatsappId
   }
   other = await Ticket.findOne({ where: { contactId, whatsappId, isHistorical: false } as any, order: [["updatedAt", "DESC"]] });
   if (other) await other.update({ ...state, closedAt: null, unreadMessages: 0 } as any);
-  else other = await Ticket.create({ contactId, whatsappId, unreadMessages: 0, isGroup: false, ...state } as any);
+  else other = await createLiveTicket({ contactId, whatsappId, unreadMessages: 0, isGroup: false, ...state });
   return other;
 };
 

@@ -269,6 +269,21 @@ const perDayOf = (missing: number | null, daysLeft: number): number | null =>
 
 // The board of the polos: target, done and pace of each one in the current period. Used by the Metas screen and by the
 // manager's overview (Estatísticas), so both always show the same numbers.
+// The semester in force: among the polo goals that contain today, the longest one (a short goal of one month that also contains
+// today does not take the place of the semester)
+const spanOf = (g: { startsOn: any; endsOn: any }) => new Date(String(g.endsOn)).getTime() - new Date(String(g.startsOn)).getTime();
+export const currentSemester = <T extends { startsOn: any; endsOn: any }>(periods: T[], today: string): T | undefined =>
+  periods.filter(g => String(g.startsOn) <= today && String(g.endsOn) >= today).sort((a, b) => spanOf(b) - spanOf(a))[0];
+
+// The semesters (the polo goals, in force and archived), the newest first, for the "Semestre" of the period filters: any person signed
+// in may read them (only titles and dates)
+export const semesters = async (_req: Request, res: Response): Promise<Response> => {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: getAppTz() }).format(new Date());
+  const list = await Goal.findAll({ where: { kind: "polo", status: { [Op.in]: ["active", "archived"] } } as any, attributes: ["id", "title", "startsOn", "endsOn", "status"], order: [["startsOn", "DESC"], ["id", "DESC"]], limit: 24 });
+  const current = currentSemester(list.filter(g => g.status === "active"), today);
+  return res.json(list.map(g => ({ id: g.id, title: g.title || "", startsOn: String(g.startsOn).slice(0, 10), endsOn: String(g.endsOn).slice(0, 10), current: !!current && current.id === g.id })));
+};
+
 export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promise<any> => {
   const periods = await Goal.findAll({ where: { status: "active", kind: "polo" }, order: [["startsOn", "DESC"], ["id", "DESC"]], limit: 24 });
   // no semester yet: the same shape, empty, so the screen can show the way to create one
@@ -278,7 +293,7 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
   const wanted = goalIdWanted;
   const goal =
     periods.find(g => g.id === wanted) ||
-    periods.find(g => g.startsOn <= today && g.endsOn >= today) ||
+    currentSemester(periods, today) ||
     periods[0];
   const wd = goal.workDays || 5;
   const extra = extraOf(goal);

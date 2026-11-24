@@ -306,7 +306,11 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       for (let i = 0; i < 4; i += 1) assert(ok(await send(laura, first.ticketId, `parte ${i}`)), "send");
       await sentOk(first.ticketId);
       sql(`UPDATE Tickets SET status = 'closed' WHERE id = ${first.ticketId}`);
-      const again = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('pending', ${first.contactId}, ${connectionId}, ${queueId}, NULL, 1, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      // the same person on another number (one live conversation per person and per number: the second one is on another line)
+      const other = await http.post("/whatsapp", { name: "Telegram 2", channel: "telegram", config: JSON.stringify({ botToken: "456:DEF" }), queueIds: [queueId] }, as(admin));
+      assert(other.status === 200, `second connection ${other.status}`);
+      await waitFor(async () => (await http.get(`/whatsapp/${other.data.id}`, as(admin))).data.status === "CONNECTED", 12000, "second connected");
+      const again = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('pending', ${first.contactId}, ${other.data.id}, ${queueId}, NULL, 1, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('seed-${again}', ${again}, ${first.contactId}, 'Voltei', false, false, 'chat', 0, NOW(), NOW())`);
       assert(ok(await send(laura, Number(again), "de novo")), "send again");
       await sentOk(Number(again));
