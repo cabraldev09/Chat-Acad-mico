@@ -218,3 +218,19 @@
   outline-offset: 2px;
 }
 .MuiInputBase-input:focus-visible { outline: none; }
+
+/* The loading mark of the whole system: instead of the spinning ring, a spark of eight points (the long and the short ones
+   alternating) that turns and breathes, in the color the spinner had. Only the waiting ones change: a progress with a value stays a ring. */
+.MuiCircularProgress-indeterminate { position: relative; animation: none !important; }
+.MuiCircularProgress-indeterminate > svg { opacity: 0; }
+.MuiCircularProgress-indeterminate::before {
+  content: ""; position: absolute; inset: 0; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2212.00%22%20y1%3D%229.40%22%20x2%3D%2212.00%22%20y2%3D%221.60%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2213.84%22%20y1%3D%2210.16%22%20x2%3D%2217.09%22%20y2%3D%226.91%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%2214.60%22%20y1%3D%2212.00%22%20x2%3D%2222.40%22%20y2%3D%2212.00%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2213.84%22%20y1%3D%2213.84%22%20x2%3D%2217.09%22%20y2%3D%2217.09%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%2212.00%22%20y1%3D%2214.60%22%20x2%3D%2212.00%22%20y2%3D%2222.40%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2210.16%22%20y1%3D%2213.84%22%20x2%3D%226.91%22%20y2%3D%2217.09%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%229.40%22%20y1%3D%2212.00%22%20x2%3D%221.60%22%20y2%3D%2212.00%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2210.16%22%20y1%3D%2210.16%22%20x2%3D%226.91%22%20y2%3D%226.91%22%20stroke-width%3D%222.3%22/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2212.00%22%20y1%3D%229.40%22%20x2%3D%2212.00%22%20y2%3D%221.60%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2213.84%22%20y1%3D%2210.16%22%20x2%3D%2217.09%22%20y2%3D%226.91%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%2214.60%22%20y1%3D%2212.00%22%20x2%3D%2222.40%22%20y2%3D%2212.00%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2213.84%22%20y1%3D%2213.84%22%20x2%3D%2217.09%22%20y2%3D%2217.09%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%2212.00%22%20y1%3D%2214.60%22%20x2%3D%2212.00%22%20y2%3D%2222.40%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2210.16%22%20y1%3D%2213.84%22%20x2%3D%226.91%22%20y2%3D%2217.09%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%229.40%22%20y1%3D%2212.00%22%20x2%3D%221.60%22%20y2%3D%2212.00%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2210.16%22%20y1%3D%2210.16%22%20x2%3D%226.91%22%20y2%3D%226.91%22%20stroke-width%3D%222.3%22/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: spark-load 1.5s cubic-bezier(.55, .05, .3, 1) infinite;
+}
+@keyframes spark-load {
+  0% { transform: rotate(0deg) scale(.78); opacity: .75; }
+  45% { transform: rotate(135deg) scale(1); opacity: 1; }
+  100% { transform: rotate(360deg) scale(.78); opacity: .75; }
+}
+@media (prefers-reduced-motion: reduce) { .MuiCircularProgress-indeterminate::before { animation-duration: 3s; } }
