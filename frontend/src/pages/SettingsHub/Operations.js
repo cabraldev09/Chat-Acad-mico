@@ -66,6 +66,12 @@ export default function Operations({ part = "atendimento" }) {
   }
 
   if (part === "limites") return <div style={{ display: "grid", gap: 16 }}>
+    {settings.send_quota_monthly !== undefined && <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 14 }}>
+      <Typography variant="h6">Cota de disparos por pessoa</Typography>
+      <Typography variant="body2" color="textSecondary">Quantas mensagens as campanhas e os avisos de cada pessoa podem enviar no mês. Quem passa da cota pede liberação, e a gestão aprova em Estatísticas, aba Disparos. A gestão não tem cota. 0 deixa sem limite.</Typography>
+      {numbers([["send_quota_monthly", "Mensagens por pessoa no mês (0 sem limite)"]])}
+      {saveBtn}
+    </Paper>}
     <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 14 }}>
       <Typography variant="h6">Limites de gasto por dia</Typography>
       <Typography variant="body2" color="textSecondary">Ao chegar no limite, o sistema para de gastar até o dia seguinte. 0 deixa sem limite.</Typography>

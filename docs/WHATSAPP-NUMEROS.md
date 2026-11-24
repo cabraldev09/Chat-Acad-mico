@@ -79,6 +79,19 @@ Como o sistema controla:
 - **Marketing em campanhas** fica desligado (`outbound_allow_marketing`): um modelo que a Meta classificou como Marketing não começa.
 - Tudo isso fica em Configurações → Custos: a aba WhatsApp oficial mostra o mês contra o teto, a aba Limites de gasto tem o teto,
   a cotação do dólar e os preços digitados (vazio usa a tabela).
+- **Cota de disparos por pessoa** (`send_quota_monthly`, padrão 200 mensagens por mês; 0 desliga): conta as mensagens das campanhas
+  e dos avisos que a pessoa criou no mês (enviadas, a caminho e as que esperam numa campanha em andamento; rascunho, pausada,
+  cancelada e bloqueada antes de sair não contam). Passou da cota, a prévia do aviso e a conferência da campanha mostram
+  `ERR_SEND_QUOTA` e o botão "Pedir liberação à gestão" (`SendReleases`, um pedido aguardando por vez). A gestão aprova ou recusa em
+  Estatísticas → Disparos, e o que aprova soma à cota daquele mês. Administradores e coordenação não têm cota
+  (`CampaignServices/SendQuota.ts`). Uma campanha agendada que não cabe mais na cota pausa na hora de começar.
+- **Objetivo do disparo** (`Campaigns.objective`): obrigatório em toda campanha nova; o aviso da tutoria preenche sozinho.
+- **Quem gastou** (`OutboundDeliveries.userId`, `AiUsage.userId`): cada mensagem da Meta e cada chamada da IA guarda quem a
+  provocou. Vale a pessoa logada no pedido (`helpers/Actor.ts`, posto em `isAuth`), o criador da campanha (`CampaignRunner`) e
+  quem agendou a mensagem (`Scheduler`). O que ninguém pediu (respostas automáticas, auditorias, rotinas) fica como "Automação".
+  As sessões por QR Code começam sem pessoa, para não herdar quem as ligou. O relatório é `GET /operations/costs-by-user` (gestão),
+  e a aba Disparos mostra disparos, mensagens, cota e o gasto da Meta e da IA de cada pessoa no período. As mensagens da Meta de
+  antes disso ganharam a pessoa pela chave do envio (migração `20261230000001`); as chamadas antigas da IA ficam como Automação.
 
 ## Estratégia para os 8 polos (fase 1)
 

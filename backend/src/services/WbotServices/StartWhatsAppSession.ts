@@ -3,8 +3,12 @@ import { whatsappProvider } from "../../providers/WhatsApp";
 import { getIO } from "../../libs/socket";
 import { logger } from "../../utils/logger";
 import { getAdapter } from "../../channels";
+import { withoutActor } from "../../helpers/Actor";
 
-export const StartWhatsAppSession = async (
+// started from a request (the admin connects a number): its listeners must not record that person as the actor of every answer
+export const StartWhatsAppSession = (whatsapp: Whatsapp): Promise<void> => withoutActor(() => startSession(whatsapp));
+
+const startSession = async (
   whatsapp: Whatsapp
 ): Promise<void> => {
   // Automated E2E runs must not start a real WWebJS/Chromium session when

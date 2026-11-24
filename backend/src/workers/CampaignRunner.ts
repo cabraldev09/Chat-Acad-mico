@@ -1,3 +1,5 @@
+import { withActor } from "../helpers/Actor";
+import { assertCampaignQuota } from "../services/CampaignServices/SendQuota";
 import { Op } from "sequelize";
 
 import Campaign from "../models/Campaign";
@@ -45,7 +47,10 @@ const persist = (id: number, state: RunState) =>
     { where: { id } }
   ).catch(err => logger.warn(`Campaign ${id} state not saved: ${err}`));
 
-const processCampaign = async (campaign: Campaign): Promise<void> => {
+// what the campaign sends is recorded as its creator's
+const processCampaign = (campaign: Campaign): Promise<void> => withActor(campaign.createdById, () => processOne(campaign));
+
+const processOne = async (campaign: Campaign): Promise<void> => {
   let state = states.get(campaign.id);
   if (!state) {
     state = {
@@ -221,8 +226,16 @@ const promoteScheduled = async (): Promise<void> => {
       } else {
         // eslint-disable-next-line no-await-in-loop
         await ensureShippings(c);
+        // other sends of the creator this month may have used the quota since the campaign was scheduled: it waits for a release
         // eslint-disable-next-line no-await-in-loop
-        await c.update({ status: "running", startedAt: c.startedAt || new Date(), pauseReason: null });
+        const fits = await assertCampaignQuota(c.createdById, await CampaignShipping.count({ where: { campaignId: c.id, status: "pending" } })).then(() => true, err => {
+          if (err?.message !== "ERR_SEND_QUOTA") throw err;
+          return false;
+        });
+        // eslint-disable-next-line no-await-in-loop
+        if (!fits) await c.update({ status: "paused", pauseReason: "Esta campanha passaria da cota de disparos do mês de quem a criou. Peça liberação à gestão e inicie de novo." });
+        // eslint-disable-next-line no-await-in-loop
+        else await c.update({ status: "running", startedAt: c.startedAt || new Date(), pauseReason: null });
       }
     } catch (err) {
       // an empty list cannot start: the person is told instead of a campaign that "finishes" with nothing sent

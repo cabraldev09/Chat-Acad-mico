@@ -5,6 +5,7 @@ import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, M
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { i18n } from "../../translate/i18n";
+import SendReleaseDialog, { QuotaLine } from "../../components/SendRelease";
 
 const useStyles = makeStyles((theme) => ({
   kinds: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: theme.spacing(1), marginBottom: theme.spacing(2) },
@@ -44,6 +45,7 @@ export default function NoticeDialog({ open, onClose, manager, students = [], tu
   const [failed, setFailed] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
+  const [asking, setAsking] = useState(false);
 
   useEffect(() => { if (open) { setPreview(null); setConfirming(false); } }, [open]);
 
@@ -89,6 +91,10 @@ export default function NoticeDialog({ open, onClose, manager, students = [], tu
   const blockers = preview?.blockers || [];
   const cost = preview?.cost;
   const canSend = preview && !blockers.length && preview.canReceive > 0;
+  const quota = preview && preview.quota;
+  const overQuota = blockers.includes("ERR_SEND_QUOTA");
+  const missing = quota && quota.limited ? Math.max(1, preview.canReceive - (quota.left || 0)) : 0;
+  const askContext = preview ? { type: "aviso", name: `${preview.label}${f.date ? ` ${f.date.split("-").reverse().join("/")}` : ""}`, recipients: preview.canReceive } : null;
 
   return (
     <Dialog open={open} onClose={sending ? undefined : () => onClose(false)} maxWidth="sm" fullWidth>
@@ -146,7 +152,9 @@ export default function NoticeDialog({ open, onClose, manager, students = [], tu
             <div className={c.label}>Como o aluno recebe</div>
             <div className={c.sample}>{preview.sample}</div>
             {preview.connection && <p className={c.note}>Sai pelo número {preview.connection.name}.</p>}
+            <QuotaLine quota={quota} />
             {blockers.map((b) => <div key={b} className={c.block} role="alert">{i18n.exists(`backendErrors.${b}`) ? i18n.t(`backendErrors.${b}`) : b}</div>)}
+            {overQuota && !quota.pending && <Button style={{ marginTop: 10 }} variant="outlined" color="primary" onClick={() => setAsking(true)}>Pedir liberação à gestão</Button>}
           </div>
         )}
       </DialogContent>
@@ -156,6 +164,10 @@ export default function NoticeDialog({ open, onClose, manager, students = [], tu
           ? <Button color="primary" variant="contained" disabled={!canSend || loading} onClick={() => setConfirming(true)}>Revisar envio</Button>
           : <Button color="primary" variant="contained" disabled={sending} onClick={send}>{sending ? "Enviando..." : `Confirmar envio para ${preview.canReceive} ${preview.canReceive === 1 ? "aluno" : "alunos"}`}</Button>}
       </DialogActions>
+      <SendReleaseDialog open={asking} suggested={missing} context={askContext} onClose={(q) => {
+        setAsking(false);
+        if (q) setPreview((p) => (p ? { ...p, quota: q } : p));
+      }} />
     </Dialog>
   );
 }

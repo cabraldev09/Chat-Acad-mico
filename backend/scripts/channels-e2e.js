@@ -1167,7 +1167,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put("/operations/config", { outbound_allow_templates: "true" }, auth())).status === 200, "admin template authorization");
       const list = (await http.post("/contact-lists", { name: "Vestibular" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Souza", number: "5511966665555" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Vestibular 2027", message: "Olá {{name}}, inscrições abertas!", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", templateLanguage: "pt_BR", intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Vestibular 2027", message: "Olá {{name}}, inscrições abertas!", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", templateLanguage: "pt_BR", intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       const before = graph.sent.length;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       const s = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "template"), 15000, "template send");
@@ -1190,13 +1190,13 @@ const postMeta = (id, payload, secret, badSig) => {
         { body: "Abrimos as inscrições do vestibular.", delaySec: 3 },
         { body: "Posso te explicar as bolsas?", delaySec: 3 }
       ];
-      const bad = await http.post("/campaigns", { name: "Sem texto", contactListId: list.id, steps: [{ body: "" }] }, auth());
+      const bad = await http.post("/campaigns", { objective: "Teste de envio", name: "Sem texto", contactListId: list.id, steps: [{ body: "" }] }, auth());
       assert(bad.status === 400, `empty step should be refused, got ${bad.status}`);
-      const six = await http.post("/campaigns", { name: "Seis", contactListId: list.id, steps: Array.from({ length: 6 }, () => ({ body: "x" })) }, auth());
+      const six = await http.post("/campaigns", { objective: "Teste de envio", name: "Seis", contactListId: list.id, steps: Array.from({ length: 6 }, () => ({ body: "x" })) }, auth());
       assert(six.status === 400, `6 steps should be refused, got ${six.status}`);
-      const tpl = await http.post("/campaigns", { name: "Modelo + sequência", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", steps }, auth());
+      const tpl = await http.post("/campaigns", { objective: "Teste de envio", name: "Modelo + sequência", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", steps }, auth());
       assert(tpl.status === 400, `template + several steps should be refused, got ${tpl.status}`);
-      const c = (await http.post("/campaigns", { name: "Sequência", steps, contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Sequência", steps, contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert(c.message.startsWith("Oi {{name}}") && !c.templateName, "first step should mirror message");
       const before = graph.sent.length;
       const sequenceTexts = () => graph.sent.slice(before).filter(x => x.body?.type === "text" && x.body.to === "5511955554444").map(x => x.body.text.body).filter(t => /^Oi Paula Dias!/.test(t) || steps.slice(1).some(step => step.body === t));
@@ -1219,7 +1219,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => ticketOf("5511955557777"), 8000, "buttons customer request");
       const list = (await http.post("/contact-lists", { name: "Botões" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Botões", number: "5511955557777" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Com botões", steps: [{ body: "Oi {{primeiro_nome}}, quer a sua bolsa?", buttons: ["Quero", "Agora não"], delaySec: 0 }], contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Com botões", steps: [{ body: "Oi {{primeiro_nome}}, quer a sua bolsa?", buttons: ["Quero", "Agora não"], delaySec: 0 }], contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert(Array.isArray(c.steps) && c.steps[0].buttons.join("|") === "Quero|Agora não", `steps saved ${JSON.stringify(c.steps)}`);
       const before = graph.sent.length;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
@@ -1247,7 +1247,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(items.length === 1 && items[0].number === "5511955551111", `the country code was not added: ${JSON.stringify(items)}`);
       const again = (await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Repetido", number: "11955551111" }] }, auth())).data;
       assert(again.imported === 0 && again.duplicated === 1, `the same number typed another way came twice ${JSON.stringify(again)}`);
-      const c = (await http.post("/campaigns", { name: "Nomes", message: "Oi {{name}} ({{primeiro_nome}})", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Nomes", message: "Oi {{name}} ({{primeiro_nome}})", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       const before = graph.sent.length;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       const sent = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "text" && x.body.to === "5511955551111"), 15000, "the message");
@@ -1264,9 +1264,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const list = await mk("Agenda", ["5521955552001"]);
       const empty = (await http.post("/contact-lists", { name: "Agenda vazia" }, auth())).data;
 
-      assert((await http.post("/campaigns", { ...base, name: "Passada", message: "x", contactListId: list.id, scheduledAt: new Date(Date.now() - 3600000).toISOString() }, auth())).status === 400, "a start date in the past was accepted");
-      assert((await http.post("/campaigns", { ...base, name: "Sem ninguém", message: "x", contactListId: empty.id, scheduledAt: future() }, auth())).status === 400, "scheduled with an empty list");
-      const made = await http.post("/campaigns", { ...base, name: "Agendada", message: "Oi {{name}}", contactListId: list.id, scheduledAt: future() }, auth());
+      assert((await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Passada", message: "x", contactListId: list.id, scheduledAt: new Date(Date.now() - 3600000).toISOString() }, auth())).status === 400, "a start date in the past was accepted");
+      assert((await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Sem ninguém", message: "x", contactListId: empty.id, scheduledAt: future() }, auth())).status === 400, "scheduled with an empty list");
+      const made = await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Agendada", message: "Oi {{name}}", contactListId: list.id, scheduledAt: future() }, auth());
       assert(made.status === 201 && made.data.status === "scheduled", `saving with a date should schedule: ${made.status} ${made.data.status}`);
       const id = made.data.id;
       assert((await http.put(`/campaigns/${id}`, { scheduledAt: "" }, auth())).data.status === "draft", "clearing the date should make it a draft");
@@ -1280,7 +1280,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // the time comes: it starts by itself and copies the recipients then
       const l2 = await mk("Agenda dois", ["5521955552002"]);
-      const c2 = (await http.post("/campaigns", { ...base, name: "Sozinha", message: "Oi", contactListId: l2.id, scheduledAt: future() }, auth())).data;
+      const c2 = (await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Sozinha", message: "Oi", contactListId: l2.id, scheduledAt: future() }, auth())).data;
       assert(sql(`SELECT COUNT(*) FROM CampaignShippings WHERE campaignId=${c2.id}`) === "0", "recipients copied too early");
       const before2 = graph.sent.length;
       sql(`UPDATE Campaigns SET scheduledAt = NOW() - INTERVAL '10 seconds' WHERE id=${c2.id}`);
@@ -1289,7 +1289,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // hours late (the system was off): a person decides
       const l3 = await mk("Agenda tres", ["5521955552003"]);
-      const c3 = (await http.post("/campaigns", { ...base, name: "Atrasada", message: "Oi", contactListId: l3.id, scheduledAt: future() }, auth())).data;
+      const c3 = (await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Atrasada", message: "Oi", contactListId: l3.id, scheduledAt: future() }, auth())).data;
       const before3 = graph.sent.length;
       sql(`UPDATE Campaigns SET scheduledAt = NOW() - INTERVAL '8 hours' WHERE id=${c3.id}`);
       await waitFor(() => sql(`SELECT status FROM Campaigns WHERE id=${c3.id}`) === "paused", 15000, "late campaign paused");
@@ -1298,7 +1298,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // pause, resume, cancel
       const l4 = await mk("Ritmo", ["5521955552004", "5521955552005"]);
-      const c4 = (await http.post("/campaigns", { ...base, intervalMin: 600, intervalMax: 600, name: "Devagar", message: "Oi", contactListId: l4.id }, auth())).data;
+      const c4 = (await http.post("/campaigns", { objective: "Teste de envio", ...base, intervalMin: 600, intervalMax: 600, name: "Devagar", message: "Oi", contactListId: l4.id }, auth())).data;
       const before4 = graph.sent.length;
       assert((await http.post(`/campaigns/${c4.id}/start`, {}, auth())).data.status === "running", "start");
       await waitFor(() => graph.sent.slice(before4).some(x => x.body && x.body.to === "5521955552004"), 15000, "first message");
@@ -1316,7 +1316,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("campanhas: reenviar falhas, relatório com motivo em português e em planilha, duplicar, lista em uso e conexão fora do ar", async () => {
       const list = (await http.post("/contact-lists", { name: "Falhas" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Falha Um", number: "5521955553001" }, { name: "Falha Dois", number: "5521955553002" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Com falhas", message: "Oi {{name}}", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Com falhas", message: "Oi {{name}}", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert((await http.post(`/campaigns/${c.id}/retry-failed`, {}, auth())).status === 400, "retry on a campaign that never started");
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       await waitFor(() => sql(`SELECT status FROM Campaigns WHERE id=${c.id}`) === "finished", 20000, "finished");
@@ -1350,7 +1350,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // the connection goes down: the campaign says it is waiting and goes on when it is back
       const l2 = (await http.post("/contact-lists", { name: "Conexão cai" }, auth())).data;
       await http.post(`/contact-lists/${l2.id}/import`, { items: [{ name: "Espera", number: "5521955553003" }], consent: true }, auth());
-      const c2 = (await http.post("/campaigns", { name: "Espera a conexão", message: "Oi", contactListId: l2.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c2 = (await http.post("/campaigns", { objective: "Teste de envio", name: "Espera a conexão", message: "Oi", contactListId: l2.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       sql(`UPDATE Whatsapps SET status='DISCONNECTED' WHERE id=${cid}`);
       const before2 = graph.sent.length;
       try {
@@ -1373,7 +1373,7 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('pre-known-1', ${t}, 'oi', false, true, 'chat', 0, NOW(), NOW())`);
       const list = (await http.post("/contact-lists", { name: "Conferência" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Conhecida", number: "5569999993333" }, { name: "Desconhecida", number: "5569988884444" }, { name: "Saiu", number: "5569977775555" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Conferência", message: "Oi", contactListId: list.id, whatsappId: wa.id }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Conferência", message: "Oi", contactListId: list.id, whatsappId: wa.id }, auth())).data;
       const pre = await http.get(`/campaigns/${c.id}/preflight`, auth());
       assert(pre.status === 200 && pre.data.total === 3 && pre.data.blocked.optedOut === 1 && pre.data.blocked.cold === 1 && pre.data.blocked.noConsent === 0 && pre.data.canReceive === 1, `preflight ${JSON.stringify(pre.data).slice(0, 300)}`);
       assert(pre.data.connection.riskMode === "strict" && pre.data.warnings.length >= 2 && typeof pre.data.estimatedSeconds === "number", "connection, warnings and duration");
@@ -1385,7 +1385,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(draft.status === 200 && draft.data.total === 3 && draft.data.canReceive === 2 && draft.data.messagesPerPerson === 2, `draft preflight ${draft.status} ${JSON.stringify(draft.data).slice(0, 200)}`);
       assert((await http.post("/campaigns/preflight", { whatsappId: wa.id }, auth())).status === 400, "draft preflight without a list");
       const noList = (await http.post("/contact-lists", { name: "Vazia conferência" }, auth())).data;
-      const empty = (await http.post("/campaigns", { name: "Vazia", message: "Oi", contactListId: noList.id, whatsappId: wa.id }, auth())).data;
+      const empty = (await http.post("/campaigns", { objective: "Teste de envio", name: "Vazia", message: "Oi", contactListId: noList.id, whatsappId: wa.id }, auth())).data;
       const e = (await http.get(`/campaigns/${empty.id}/preflight`, auth())).data;
       assert(e.total === 0 && e.canReceive === 0 && e.warnings.some(w => /vazia/.test(w)), "empty list preflight");
       assert((await http.post(`/campaigns/${empty.id}/start`, {}, auth())).status === 400, "an empty list started");
@@ -1966,7 +1966,7 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${wa.id}`);
       const list = (await http.post("/contact-lists", { name: "Frios" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Frio Um", number: "5511977770001" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Frios", message: "Oi {{name}}", contactListId: list.id, whatsappId: wa.id, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Frios", message: "Oi {{name}}", contactListId: list.id, whatsappId: wa.id, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       try {
         await waitFor(() => {
@@ -6259,7 +6259,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => sql(`SELECT consentSource FROM Contacts WHERE number='5511955558803'`) === "inbound", 8000, "consent of who wrote first");
       const list = (await http.post("/contact-lists", { name: "Consentimento" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Escreveu", number: "5511955558803" }, { name: "Nunca falou", number: "5511955558804" }] }, auth());
-      const c = (await http.post("/campaigns", { name: "Consentimento", message: "Oi", contactListId: list.id, whatsappId: Number(cid) }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Consentimento", message: "Oi", contactListId: list.id, whatsappId: Number(cid) }, auth())).data;
       const pre = (await http.get(`/campaigns/${c.id}/preflight`, auth())).data;
       assert(pre.noConsent === 1 && pre.blocked.noConsent === 1 && pre.canReceive === 1 && pre.warnings.some(w => /consentimento/.test(w)), `preflight consent ${JSON.stringify({ noConsent: pre.noConsent, blocked: pre.blocked, canReceive: pre.canReceive, warnings: pre.warnings })}`);
       const removed = await http.post(`/campaigns/${c.id}/remove-no-consent`, {}, auth());
@@ -7672,6 +7672,69 @@ const postMeta = (id, payload, secret, badSig) => {
         assert(Number(sql(`SELECT estimatedUsd FROM OutboundDeliveries WHERE key LIKE 'campaign:${sent.data.campaignId}:%' LIMIT 1`)) === 0.0068, "the Utility price was not used");
         assert(sql(`SELECT whatsappId FROM Campaigns WHERE id=${sent.data.campaignId}`) === String(cid), "the notice did not go by the tutoring number");
       } finally {
+        sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
+      }
+    });
+    await test("sends per person: the monthly quota blocks the tutor, the request reaches the management, an approval frees the notice, and each Meta message and AI call is recorded under who caused it", async () => {
+      const team = sql(`SELECT team FROM Whatsapps WHERE id=${cid}`);
+      sql(`UPDATE Whatsapps SET team='tutoria' WHERE id=${cid}`);
+      try {
+        const tutorTok = (await http.post("/auth/login", { email: "tutora-oficial@polo.test", password: "senha123" })).data.token;
+        const tutorId = Number(sql(`SELECT id FROM Users WHERE email='tutora-oficial@polo.test'`));
+        const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
+        // the notice of the scenario before went out: its Meta messages are the tutor's
+        const noticeId = Number(sql(`SELECT id FROM Campaigns WHERE createdById=${tutorId} AND name LIKE 'Aviso da tutoria:%' ORDER BY id DESC LIMIT 1`));
+        assert(noticeId, "no notice of the tutor");
+        assert(sql(`SELECT COUNT(*) FROM OutboundDeliveries WHERE key LIKE 'campaign:${noticeId}:%' AND (userId IS NULL OR userId<>${tutorId})`) === "0" && Number(sql(`SELECT COUNT(*) FROM OutboundDeliveries WHERE key LIKE 'campaign:${noticeId}:%' AND userId=${tutorId}`)) >= 1, "the notice's Meta messages are not the tutor's");
+        assert(/atividades do mês/.test(sql(`SELECT objective FROM Campaigns WHERE id=${noticeId}`)), "the notice has no objective");
+        // the quota of the month: 1 message, already used by that notice
+        assert((await http.put("/operations/config", { send_quota_monthly: "1" }, asUser(consTok))).status === 403, "a consultant changed the quota");
+        assert((await http.put("/operations/config", { send_quota_monthly: "1" }, auth())).status === 200, "quota not saved");
+        const mine = (await http.get("/send-quota/me", asUser(tutorTok))).data;
+        assert(mine.limited && mine.quota === 1 && mine.used >= 1 && mine.left === 0, `quota ${JSON.stringify(mine)}`);
+        assert((await http.get("/send-quota/me", auth())).data.limited === false, "the management has a quota");
+        const date = new Date(Date.now() + 12 * 864e5).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+        const body = { kind: "atividades", date, note: "entregue a atividade" };
+        const blocked = (await http.post("/tutoria/notices/preview", body, asUser(tutorTok))).data;
+        assert(blocked.blockers.includes("ERR_SEND_QUOTA") && blocked.quota.left === 0, `quota not shown ${JSON.stringify([blocked.blockers, blocked.quota])}`);
+        const refused = await http.post("/tutoria/notices", { ...body, confirm: true }, asUser(tutorTok));
+        assert(refused.status === 409 && refused.data.error === "ERR_SEND_QUOTA", `a notice passed the quota ${refused.status} ${JSON.stringify(refused.data)}`);
+        // the request for more: one at a time, with a reason; the management is told
+        assert((await http.post("/send-releases", { requested: 5, reason: "" }, asUser(tutorTok))).status === 400, "a request without a reason");
+        const asked = await http.post("/send-releases", { requested: 5, reason: "Aviso das atividades da semana", context: { type: "aviso", name: "Atividades do mês", recipients: blocked.canReceive } }, asUser(tutorTok));
+        assert(asked.status === 201 && asked.data.pending && asked.data.pending.requested === 5, `request ${asked.status} ${JSON.stringify(asked.data)}`);
+        assert((await http.post("/send-releases", { requested: 5, reason: "De novo, por favor" }, asUser(tutorTok))).status === 409, "a second request while one waits");
+        assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='send_release' AND link='/estatisticas?aba=disparos'`)) >= 1, "the management was not told");
+        assert((await http.get("/send-releases", asUser(consTok))).status === 403 && (await http.get("/send-releases", asUser(tutorTok))).status === 403, "a non-manager read the requests");
+        const list = (await http.get("/send-releases", { params: { status: "pending" }, ...auth() })).data;
+        const req = list.rows.find(r => r.userId === tutorId);
+        assert(list.pending >= 1 && req && req.reason === "Aviso das atividades da semana" && req.context.type === "aviso" && req.usage.quota === 1, `requests ${JSON.stringify(list)}`);
+        assert((await http.put(`/send-releases/${req.id}`, { action: "approve" }, asUser(consTok))).status === 403, "a consultant approved");
+        const ok = await http.put(`/send-releases/${req.id}`, { action: "approve", granted: 50, note: "Liberado para esta semana" }, auth());
+        assert(ok.status === 200 && ok.data.status === "approved" && ok.data.granted === 50, `approve ${ok.status} ${JSON.stringify(ok.data)}`);
+        assert((await http.put(`/send-releases/${req.id}`, { action: "deny" }, auth())).status === 409, "decided twice");
+        assert(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='send_release' AND userId=${tutorId}`) === "1", "the tutor was not told");
+        const freed = (await http.post("/tutoria/notices/preview", body, asUser(tutorTok))).data;
+        assert(!freed.blockers.includes("ERR_SEND_QUOTA") && freed.quota.extra === 50, `the release did not free the notice ${JSON.stringify([freed.blockers, freed.quota])}`);
+        // a new campaign says what it is for
+        const listId = sql(`SELECT id FROM ContactLists ORDER BY id LIMIT 1`);
+        const noObjective = await http.post("/campaigns", { name: "Sem objetivo", contactListId: Number(listId), message: "Olá" }, auth());
+        assert(noObjective.status === 400 && noObjective.data.error === "ERR_CAMPAIGN_OBJECTIVE", `a campaign without objective ${noObjective.status}`);
+        // what each person sent and spent: the tutor's Meta messages, and the AI calls under who asked for them
+        inDb(`const {withActor}=require("./dist/helpers/Actor"),{logUsage}=require("./dist/services/AiServices/Usage"),AiUsage=require("./dist/models/AiUsage").default;
+          await withActor(${tutorId},()=>logUsage({model:"gpt-4o-mini",kind:"copilot",usage:{input_tokens:1000,output_tokens:100}}));
+          await logUsage({model:"gpt-4o-mini",kind:"reply",usage:{input_tokens:10,output_tokens:1}});
+          const last=await AiUsage.findAll({order:[["id","DESC"]],limit:2});
+          assert.equal(last[0].userId,null);assert.equal(last[1].userId,${tutorId});`);
+        assert((await http.get("/operations/costs-by-user", asUser(consTok))).status === 403, "a consultant read the costs");
+        const costs = (await http.get("/operations/costs-by-user", auth())).data;
+        const row = costs.rows.find(r => r.userId === tutorId);
+        assert(row && row.meta.messages >= 1 && row.meta.usd > 0 && row.ai.calls >= 1 && row.ai.usd > 0 && row.campaigns >= 1 && row.quota && row.quota.extra === 50, `costs ${JSON.stringify(row)}`);
+        assert(costs.rows.some(r => r.automation) && costs.rows[costs.rows.length - 1].automation, "the automation line is missing or not the last");
+        const sends = (await http.get(`/operations/costs-by-user/${tutorId}/sends`, auth())).data;
+        assert(sends.some(c => c.id === noticeId && c.objective && c.recipients >= 1), `sends of the tutor ${JSON.stringify(sends)}`);
+      } finally {
+        await http.put("/operations/config", { send_quota_monthly: "200" }, auth());
         sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
       }
     });

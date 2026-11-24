@@ -72,7 +72,7 @@ const noticeScope = (req: Request): number | null => {
 export const noticePreview = async (req: Request, res: Response): Promise<Response> => {
   const tutorOnly = noticeScope(req);
   const { cleanNotice, previewNotice, publicPreview } = await import("../services/TutoriaServices/Notices");
-  return res.json(publicPreview(await previewNotice(cleanNotice(req.body), tutorOnly)));
+  return res.json(publicPreview(await previewNotice(cleanNotice(req.body), tutorOnly, Number(req.user.id))));
 };
 export const noticeSend = async (req: Request, res: Response): Promise<Response> => {
   const tutorOnly = noticeScope(req);
