@@ -108,6 +108,9 @@ export const startOfTodayApp = (): Date => dayBounds().start;
 // today as YYYY-MM-DD in the timezone of the company
 export const todayInAppTz = (): string => new Date().toLocaleDateString("en-CA", { timeZone: getAppTz() });
 
+// the first moment of the current month, in the company timezone
+export const monthStartApp = (): Date => dayBounds(`${todayInAppTz().slice(0, 8)}01`).start;
+
 export const shiftDays = (date: Date, days: number): Date => new Date(date.getTime() + days * 86400000);
 
 export const fmtDate = (d: Date | string | number, tz = getAppTz()): string =>

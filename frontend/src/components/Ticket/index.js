@@ -53,7 +53,9 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
-// "Novo aluno": the administration's greeting, ready to edit and send by the tutor. It disappears once someone answers.
+// The first approach of the tutor: who the person is (the data of the enrollment) and the text ready to edit and send. It disappears
+// once someone answers. A contact with no enrollment is told apart, so the tutor confirms who it is before the onboarding.
+const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "");
 const WelcomeBanner = ({ ticket }) => {
   const [welcome, setWelcome] = useState(null);
   useEffect(() => {
@@ -62,12 +64,24 @@ const WelcomeBanner = ({ ticket }) => {
     api.get(`/tickets/${ticket.id}/welcome`).then(({ data }) => setWelcome(data)).catch(() => undefined);
   }, [ticket.id, ticket.segment, ticket.firstResponseAt, ticket.status]);
   if (!welcome || !welcome.show) return null;
+  const f = welcome.facts || {};
+  const line = [f.courseName, f.poloName && `Polo ${f.poloName}`, f.rgm && `RGM ${f.rgm}`, f.enrolledAt && `matrícula em ${fmtDay(f.enrolledAt)}`, f.consultantName && `consultor ${f.consultantName}`].filter(Boolean).join(" · ");
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 16px", background: "rgba(6,147,227,.1)", borderBottom: "1px solid rgba(6,147,227,.25)", fontSize: 14 }}>
-      <span style={{ flex: 1, minWidth: 220 }}><b>Novo aluno para ambientar.</b> A mensagem de boas-vindas não é enviada sozinha: use o texto pronto e envie quando quiser.</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 16px", background: welcome.enrolled ? "rgba(6,147,227,.1)" : "rgba(217,119,6,.1)", borderBottom: `1px solid ${welcome.enrolled ? "rgba(6,147,227,.25)" : "rgba(217,119,6,.3)"}`, fontSize: 14 }}>
+      <div style={{ flex: 1, minWidth: 220, display: "grid", gap: 2 }}>
+        {welcome.enrolled ? (
+          <>
+            <span><b>Aluno novo para ambientar.</b> O texto de apresentação não é enviado sozinho: confira e envie.</span>
+            {line && <span style={{ fontSize: 13, opacity: 0.85 }}>{line}</span>}
+            {f.note && <span style={{ fontSize: 13, opacity: 0.85 }}>Observação do consultor: {f.note}</span>}
+          </>
+        ) : (
+          <span><b>Contato sem matrícula no sistema.</b> Confirme quem é antes de começar a ambientação.</span>
+        )}
+      </div>
       <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text: welcome.text } }))}
         style={{ border: 0, borderRadius: 10, background: "#0B4279", color: "#fff", padding: "8px 14px", fontFamily: "inherit", fontWeight: 600, cursor: "pointer" }}>
-        Usar texto de boas-vindas
+        Usar texto de apresentação
       </button>
     </div>
   );

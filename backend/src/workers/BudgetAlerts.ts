@@ -50,6 +50,18 @@ export const tickBudgetAlerts = async (): Promise<void> => {
         if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=custos", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key: "ai_monthly_budget_usd", level, text });
       }
     }
+    // the cap of the month of the Meta (WhatsApp oficial): 80% and 100%, once per month and level
+    const { monthBudget: outboundMonth } = await import("../services/OutboundServices/MonthBudget");
+    const meta = await outboundMonth();
+    if (meta.pct !== null) {
+      const level = meta.pct >= 100 ? 100 : meta.pct >= 80 ? 80 : 0;
+      const id = `outbound_month:${new Date().toISOString().slice(0, 7)}:${level}`;
+      if (level && !notified.has(id)) {
+        notified.add(id);
+        const text = `WhatsApp oficial no mês: ${level === 100 ? "teto atingido, os envios pagos estão parados" : `${Math.round(meta.pct)}% do teto usado`}. Confira Configurações, Custos.`;
+        if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=meta", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key: "outbound_monthly_usd", level, text });
+      }
+    }
   } catch (err) { logger.warn(`Budget alerts: ${err}`); }
   finally { busy = false; }
 };

@@ -160,15 +160,17 @@ export const counts = async (req: Request, res: Response): Promise<Response> => 
   return res.json(result);
 };
 
-// "Enviar boas-vindas" (tutor): the text the administration wrote, ready to be edited and sent by the tutor. Shown only
-// while nobody has answered the student yet.
+// The first approach of the tutor: the text, ready to be edited and sent by the tutor, and what the enrollment says about the person
+// (course, polo, RGM, consultant, the consultant's note). Shown only while nobody has answered yet. A contact the system has no enrollment
+// of gets a neutral text (who the tutor is and the RGM), never the greeting of a new student.
 export const welcome = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await Ticket.findByPk(req.params.ticketId);
   if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
   const show = ticket.segment === "onboarding" && ticket.status !== "closed" && !ticket.firstResponseAt && !ticket.isGroup;
-  if (!show) return res.json({ show: false, text: "" });
+  if (!show) return res.json({ show: false, text: "", enrolled: false, facts: null });
   const { renderWelcome } = await import("../helpers/OnboardingWelcome");
-  return res.json({ show: true, text: await renderWelcome(ticket, Number(req.user.id)) });
+  const { text, facts } = await renderWelcome(ticket, Number(req.user.id));
+  return res.json({ show: true, text, enrolled: facts.enrolled, facts });
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {

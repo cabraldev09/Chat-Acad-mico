@@ -9,7 +9,8 @@ import Whatsapp from "../../models/Whatsapp";
 import Message from "../../models/Message";
 import OutboundDelivery from "../../models/OutboundDelivery";
 import { getSetting } from "../../helpers/AppSettings";
-import { dayBounds } from "../../helpers/AppTime";
+import { dayBounds, monthStartApp } from "../../helpers/AppTime";
+import { estimateSendUsd, SendCategory } from "../ChannelServices/MetaRates";
 import AppError from "../../errors/AppError";
 import { isWithinBusinessHours } from "../AutomationServices/BusinessHours";
 import { inMessagingWindow, validateTemplate } from "./Policy";
@@ -50,23 +51,38 @@ export const deliver = async <T extends { id: any }>(ticket: Ticket, options: Se
     if (await getSetting("outbound_allow_templates", "false") !== "true") throw new AppError("ERR_TEMPLATES_NOT_AUTHORIZED", 409);
   } else if (!inMessagingWindow(channel, inboundAt)) throw new AppError("ERR_MESSAGING_WINDOW_CLOSED", 409);
   const meta = ["whatsapp_cloud", "instagram", "messenger"].includes(channel);
-  const rateRaw = await getSetting(options.template ? "outbound_meta_template_usd" : "outbound_meta_service_usd", "");
-  const rate = meta && rateRaw !== "" && Number.isFinite(Number(rateRaw)) && Number(rateRaw) >= 0 ? Number(rateRaw) : null;
-  const [dailyMessages, dailyUsd] = await Promise.all([getSetting("outbound_daily_messages", "0"), getSetting("outbound_daily_usd", "0")]);
+  // the category of this send: the template's (as the Meta last classified it) or an answer inside the 24 h
+  let category: SendCategory | null = null;
+  if (meta) category = options.template ? await (await import("../CampaignServices/Templates")).categoryOf(options.template.name) : "SERVICE";
+  const [templateUsd, serviceUsd, dailyMessages, dailyUsd, monthlyUsd] = await Promise.all([
+    getSetting("outbound_meta_template_usd", ""), getSetting("outbound_meta_service_usd", ""),
+    getSetting("outbound_daily_messages", "0"), getSetting("outbound_daily_usd", "0"), getSetting("outbound_monthly_usd", "0")
+  ]);
+  // only the Meta channels count against the month (a QR Code send has no cost of the Meta)
+  const monthStart = meta ? monthStartApp() : new Date();
+  const counted = { [Op.in]: ["sending", "sent", "uncertain"] };
+  // the answers of this number in the month: the first 1.000 are free
+  const serviceUsedThisMonth = channel === "whatsapp_cloud" && category === "SERVICE"
+    ? await OutboundDelivery.count({ where: { whatsappId: whatsapp.id, category: "SERVICE", status: counted, createdAt: { [Op.gte]: monthStart } } as any })
+    : 0;
+  const rate = meta && category ? estimateSendUsd({ channel, category, serviceUsedThisMonth, templateUsd, serviceUsd }) : null;
   const row = await sequelize.transaction(async transaction => {
     if (sequelize.getDialect() === "postgres") await sequelize.query("SELECT pg_advisory_xact_lock(918272)", { transaction });
     const concurrent = await OutboundDelivery.findOne({ where: { key }, transaction });
     if (concurrent) throw new AppError(concurrent.contactId !== ticket.contactId || concurrent.whatsappId !== ticket.whatsappId ? "ERR_DELIVERY_KEY_CONFLICT" : "ERR_DELIVERY_UNCERTAIN", 409);
-    const where = { createdAt: { [Op.gte]: dayBounds().start }, status: { [Op.in]: ["sending", "sent", "uncertain"] } };
+    const where = { createdAt: { [Op.gte]: dayBounds().start }, status: counted };
     if (Number(dailyMessages) > 0 && await OutboundDelivery.count({ where, transaction }) >= Number(dailyMessages)) throw new AppError("ERR_OUTBOUND_BUDGET", 409);
     if (meta && Number(dailyUsd) > 0) {
       if (rate === null) throw new AppError("ERR_OUTBOUND_RATE_REQUIRED", 409);
-      const unknown = await OutboundDelivery.count({ where: { ...where, channel: { [Op.in]: ["whatsapp_cloud", "messenger", "instagram"] }, estimatedUsd: { [Op.is]: null } }, transaction });
-      if (unknown) throw new AppError("ERR_OUTBOUND_RATE_REQUIRED", 409);
       const spent = Number(await OutboundDelivery.sum("estimatedUsd", { where, transaction }) || 0);
       if (spent + rate > Number(dailyUsd)) throw new AppError("ERR_OUTBOUND_BUDGET", 409);
     }
-    return OutboundDelivery.create({ key, ticketId: ticket.id, contactId: contact.id, whatsappId: whatsapp.id, channel, status: "sending", estimatedUsd: rate }, { transaction });
+    // the cap of the month (Operação e custos): what was estimated since the first day of the month, plus this message
+    if (meta && rate && Number(monthlyUsd) > 0) {
+      const spent = Number(await OutboundDelivery.sum("estimatedUsd", { where: { createdAt: { [Op.gte]: monthStart }, status: counted }, transaction }) || 0);
+      if (spent + rate > Number(monthlyUsd)) throw new AppError("ERR_OUTBOUND_MONTH_BUDGET", 409);
+    }
+    return OutboundDelivery.create({ key, ticketId: ticket.id, contactId: contact.id, whatsappId: whatsapp.id, channel, category, status: "sending", estimatedUsd: rate }, { transaction });
   });
   try {
     const result = await context.run(ticket.id, send);

@@ -1049,6 +1049,23 @@ const postMeta = (id, payload, secret, badSig) => {
       const made = await http.post(`/leads/from-contact/${teamOnly}`, {}, auth());
       assert([200, 201].includes(made.status) && leadOf("5531977772222"), `the contact was not put in the CRM: ${made.status}`);
     });
+    await test("a conversation the team opened, with no message yet, is nobody waiting in Responder agora", async () => {
+      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn" }, auth())).data.token}` } };
+      await http.post("/api/v1/contacts", { name: "So salvei", number: "5531977773333" }, headers);
+      const savedId = Number(sql(`SELECT id FROM Contacts WHERE number='5531977773333'`));
+      const adminUserId = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
+      const opened = await http.post("/tickets", { contactId: savedId, userId: adminUserId, status: "open" }, auth());
+      assert(opened.status === 200, `open conversation ${opened.status} ${JSON.stringify(opened.data).slice(0, 160)}`);
+      assert(sql(`SELECT IFNULL(lastMessageId,'') FROM Tickets WHERE id=${opened.data.id}`) === "", "the new conversation already has a message");
+      const before = (await http.get("/analytics/me", auth())).data;
+      assert(!(before.focus.conversations || []).some(c => c.ticketId === opened.data.id), "a conversation with no message is in Responder agora");
+      // the person answers: now they are waiting
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('rn-in-1', ${opened.data.id}, 'oi', false, false, 'chat', 0, NOW(), NOW())`);
+      sql(`UPDATE Tickets SET lastMessageId='rn-in-1', lastMessageFromMe=false, lastMessageAt=NOW() WHERE id=${opened.data.id}`);
+      const after = (await http.get("/analytics/me", auth())).data;
+      assert((after.focus.conversations || []).some(c => c.ticketId === opened.data.id), "the person answered and is not in Responder agora");
+      await http.put(`/tickets/${opened.data.id}`, { status: "closed" }, auth());
+    });
     await test("Cloud API campaign sends the approved template, not free text", async () => {
       assert((await http.put("/operations/config", { outbound_allow_templates: "true" }, auth())).status === 200, "admin template authorization");
       const list = (await http.post("/contact-lists", { name: "Vestibular" }, auth())).data;
@@ -1798,10 +1815,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/queue", { name: "X", color: "#000000" }, asUser(agentToken))).status === 403, "agent created a queue");
       assert((await http.post("/users", { name: "Z", email: "z@x.com", password: "123456" }, asUser(agentToken))).status === 403, "agent created a user");
       assert((await http.delete(`/tickets/${tgTicket}`, asUser(agentToken))).status === 403, "agent deleted a ticket");
-      // an agent may connect only their own QR Code number: other channels and the admin-only fields are ignored
-      const own = await http.post("/whatsapp", { name: "Hack", channel: "telegram", config: "{}", isDefault: true }, asUser(agentToken));
-      assert(own.status === 200 && own.data.channel === "whatsapp" && own.data.isDefault === false && own.data.config == null, `agent connection ${own.status} ${JSON.stringify(own.data).slice(0, 150)}`);
-      assert((await http.delete(`/whatsapp/${own.data.id}`, asUser(agentToken))).status === 200, "agent removes own number");
+      // connections are added by the management only (an agent cannot create one, of any channel, nor start an Instagram login)
+      assert((await http.post("/whatsapp", { name: "Hack", channel: "telegram", config: "{}", isDefault: true }, asUser(agentToken))).status === 403, "agent created a connection");
+      assert((await http.post("/whatsapp", { name: "Meu número" }, asUser(agentToken))).status === 403, "agent created a QR Code number");
+      assert((await http.get("/channels/instagram/authorize", asUser(agentToken))).status === 403, "agent started an Instagram login");
     });
     await test("an agent cannot open conversations of another sector", async () => {
       const t = ticketOf("tg_5552"); // sits in "Admissão", which the agent does not belong to
@@ -3174,23 +3191,20 @@ const postMeta = (id, payload, secret, badSig) => {
       const cid = (await http.post("/auth/login", { email: "admin@whaticket.com", password: "admin" })).data.token;
       assert((await http.post("/courses/load-default", {}, { headers: { Authorization: `Bearer ${cid}` } })).status === 200, "admin load");
     });
-    await test("each person connects their own WhatsApp: scoped list, one number by default, no one else's QR Code", async () => {
+    await test("a QR Code number given to a person by the management: only its owner sees it in Conexões, reads its QR Code and picks its groups", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
       const u1 = await mk("Dona Um", "dona1@x.com"), u2 = await mk("Dono Dois", "dono2@x.com");
       const t1 = (await http.post("/auth/login", { email: "dona1@x.com", password: "senha123" })).data.token;
       const t2 = (await http.post("/auth/login", { email: "dono2@x.com", password: "senha123" })).data.token;
 
-      const made = await http.post("/whatsapp", { name: "x", channel: "telegram", config: "{}", queueIds: [1] }, asUser(t1));
-      assert(made.status === 200 && made.data.channel === "whatsapp" && made.data.ownerId === u1.id, `own number ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      // nobody but the management creates a number
+      assert((await http.post("/whatsapp", { name: "x" }, asUser(t1))).status === 403, "a consultant created their own number");
+      const made = await http.post("/whatsapp", { name: "WhatsApp da Dona", channel: "whatsapp", ownerId: u1.id, isDefault: true }, auth());
+      assert(made.status === 200 && made.data.channel === "whatsapp" && made.data.ownerId === u1.id, `given number ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
       assert(sql(`SELECT CONCAT(channel,'|',status) FROM Whatsapps WHERE id=${made.data.id}`) === "whatsapp|OPENING", "E2E skip did not preserve the created QR connection without opening a session");
-      assert(/Dona/.test(made.data.name) || made.data.name === "x", "name");
       assert(made.data.isDefault === false, "a personal number must not become the default");
       assert(sql(`SELECT whatsappId FROM Users WHERE id=${u1.id}`) === String(made.data.id), "becomes the person's sending number");
-      assert((await http.post("/whatsapp", { name: "outro" }, asUser(t1))).status === 400, "second number allowed beyond the limit");
-      assert((await http.put("/settings/max_connections_per_user", { value: "2" }, auth())).status === 200, "limit setting");
-      const second = await http.post("/whatsapp", { name: "Segundo número" }, asUser(t1));
-      assert(second.status === 200, `second number with a higher limit ${second.status}`);
-      await http.put("/settings/max_connections_per_user", { value: "1" }, auth());
+      assert((await http.post("/whatsapp", { name: "De ninguém", ownerId: 999999 }, auth())).status === 404, "a number given to a user who does not exist");
 
       // visibility
       const ids = r => r.data.map(w => w.id);
@@ -3199,17 +3213,25 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get(`/whatsapp/${made.data.id}`, asUser(t2))).status === 403, "someone else's number can be opened");
       assert(ids(await http.get("/whatsapp", auth())).includes(made.data.id), "admin should see everything");
 
-      // management
-      assert((await http.put(`/whatsapp/${made.data.id}`, { name: "Meu WhatsApp", greetingMessage: "hack", queueIds: [1] }, asUser(t1))).status === 200, "owner rename");
-      assert(sql(`SELECT name FROM Whatsapps WHERE id=${made.data.id}`) === "Meu WhatsApp", "renamed");
-      assert(sql(`SELECT IFNULL(greetingMessage,'') FROM Whatsapps WHERE id=${made.data.id}`) === "", "owner changed an admin-only field");
-      assert((await http.put(`/whatsapp/${made.data.id}`, { name: "invadido" }, asUser(t2))).status === 403, "someone else renamed it");
-      assert((await http.delete(`/whatsapp/${made.data.id}`, asUser(t2))).status === 403, "someone else deleted it");
+      // the owner keeps it connected and picks its groups; the rest is the management's
+      assert((await http.post(`/whatsappsession/${made.data.id}`, {}, asUser(t1))).status === 200, "the owner cannot start the session (QR Code)");
       assert((await http.post(`/whatsappsession/${made.data.id}`, {}, asUser(t2))).status === 403, "someone else started its session");
+      assert((await http.put(`/whatsapp/${made.data.id}`, { name: "Meu WhatsApp", greetingMessage: "hack", groupsMode: "all" }, asUser(t1))).status === 200, "owner groups");
+      assert(sql(`SELECT CONCAT(name,'|',IFNULL(greetingMessage,''),'|',groupsMode) FROM Whatsapps WHERE id=${made.data.id}`) === "WhatsApp da Dona||all", "the owner changed something besides the groups");
+      assert((await http.put(`/whatsapp/${made.data.id}`, { groupsMode: "off" }, asUser(t2))).status === 403, "someone else changed it");
+      assert((await http.delete(`/whatsapp/${made.data.id}`, asUser(t1))).status === 403, "the owner deleted a number the management gave");
+      assert((await http.delete(`/whatsapp/${made.data.id}`, asUser(t2))).status === 403, "someone else deleted it");
       const shared = ids(await http.get("/whatsapp", auth())).find(i => i === cid);
       assert((await http.delete(`/whatsapp/${shared}`, asUser(t1))).status === 403, "a person deleted a shared connection");
-      assert((await http.post("/whatsapp", { name: "Via admin", channel: "whatsapp" }, auth())).status === 200, "admin can still create connections");
-      assert((await http.delete(`/whatsapp/${made.data.id}`, asUser(t1))).status === 200, "owner deletes own number");
+      assert((await http.post(`/whatsappsession/${shared}`, {}, asUser(t1))).status === 403, "a person reached the session of a shared connection");
+
+      // the management hands it to another person, then takes it back to the company
+      assert((await http.put(`/whatsapp/${made.data.id}`, { ownerId: u2.id }, auth())).status === 200, "hand over");
+      assert(sql(`SELECT ownerId FROM Whatsapps WHERE id=${made.data.id}`) === String(u2.id) && sql(`SELECT whatsappId FROM Users WHERE id=${u2.id}`) === String(made.data.id), "new owner");
+      assert((await http.post(`/whatsappsession/${made.data.id}`, {}, asUser(t1))).status === 403, "the former owner still reaches it");
+      await http.put(`/whatsapp/${made.data.id}`, { ownerId: null }, auth());
+      assert(sql(`SELECT IFNULL(ownerId,'0') FROM Whatsapps WHERE id=${made.data.id}`) === "0", "back to the company");
+      assert((await http.delete(`/whatsapp/${made.data.id}`, auth())).status === 200, "the management deletes it");
     });
     await test("conversations that arrive on a personal number go straight to its owner", async () => {
       const owner = await http.post("/users", { name: "Dona Cloud", email: "donacloud@x.com", password: "senha123", role: "consultor" }, auth());
@@ -5813,6 +5835,45 @@ const postMeta = (id, payload, secret, badSig) => {
       const mineTok = tutorId === tA.id ? atok : btok;
       const welcome = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data;
       assert(welcome.show === true && welcome.text.startsWith("Oi, Aluna!") && welcome.text.includes("Polo Matricula"), `welcome ${JSON.stringify(welcome)}`);
+      // the first approach of the tutor with the data of the enrollment: who they are, the polo and the course, the next step; no emoji, one question
+      const tutorName = sql(`SELECT name FROM Users WHERE id=${tutorId}`);
+      const welcomeCourse = (await http.post("/courses", { name: "Pedagogia Abordagem Teste", modality: "EAD", category: "Graduação - Teste", semesters: 8, monthlyFee: 500, active: true }, auth())).data;
+      sql(`UPDATE Leads SET courseId=${welcomeCourse.id} WHERE id=${lead.id}`);
+      await http.put("/settings/onboarding_welcome_template", { value: "" }, auth());
+      const first = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(first.includes(`Eu sou ${tutorName}, tutor(a) da `) && first.includes(" no polo Polo Matricula, e vou acompanhar você") && first.includes("no curso de Pedagogia Abordagem Teste."), `the default approach has no data of the enrollment: ${first}`);
+      assert(first.startsWith("Olá, Aluna!") && first.includes("ambientação") && (first.match(/\?/g) || []).length === 1, `the default approach: ${first}`);
+      assert(!/\{\{|\[\[|\]\]|\p{Extended_Pictographic}/u.test(first), `the default approach left a mark or an emoji: ${first}`);
+      // without a course the optional part leaves clean, with no hole
+      sql(`UPDATE Leads SET courseId=NULL WHERE id=${lead.id}`);
+      const noCourse = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(!noCourse.includes("no curso de") && noCourse.includes("e vou acompanhar você. O primeiro passo") && !/ {2}| \.| ,/.test(noCourse), `the approach without a course: ${noCourse}`);
+      // the text the company typed keeps working (the earlier assertion), now with the new variables and parts
+      await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}}, {{instituicao}}[[, curso {{curso}}]]." }, auth());
+      const typed = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(typed.startsWith(`Oi, Aluna! Sou ${tutorName}, `) && typed.endsWith(".") && !typed.includes("curso") && !/\{\{|\[\[/.test(typed), `the typed text with the new variables: ${typed}`);
+      // the tutor reads who the student is (course, polo, RGM, the consultant's note) right where they write
+      const facts = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data;
+      assert(facts.enrolled === true && facts.facts.rgm === rgmOfLead && facts.facts.poloName === "Polo Matricula" && facts.facts.note === "Prefere à noite", `the facts of the enrollment: ${JSON.stringify(facts.facts)}`);
+      // the student writes "oi" first (the usual way: the consultant handed the tutoring number): the text answers them
+      await http.put("/settings/onboarding_welcome_template", { value: "" }, auth());
+      sql(`UPDATE Leads SET courseId=${welcomeCourse.id} WHERE id=${lead.id}`);
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('ob-oi-1', ${ob}, 'oi', false, false, 'chat', 0, NOW(), NOW())`);
+      const answer = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(answer.startsWith(`Olá, Aluna, que bom que você chamou! Eu sou ${tutorName}, tutor(a) da `) && answer.includes("no curso de Pedagogia Abordagem Teste"), `the approach after the student wrote: ${answer}`);
+      // someone with no enrollment writes to the tutoring: no greeting of a new student, only who the tutor is and the RGM
+      const obTok = (await http.post("/api-tokens", { name: "ob-unknown" }, auth())).data.token;
+      await http.post("/api/v1/contacts", { name: "Pessoa Sem Matricula", number: "5511955552777" }, { headers: { Authorization: `Bearer ${obTok}` } });
+      const strangerId = sql(`SELECT id FROM Contacts WHERE number='5511955552777'`);
+      assert(strangerId && !sql(`SELECT id FROM Leads WHERE contactId=${strangerId}`), "the contact with no enrollment already had a lead");
+      const strangerTicket = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${strangerId}, ${cid}, ${tutorId}, 1, false, 'onboarding', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('ob-stranger-1', ${strangerTicket}, 'oi', false, false, 'chat', 0, NOW(), NOW())`);
+      const stranger = (await http.get(`/tickets/${strangerTicket}/welcome`, asUser(mineTok))).data;
+      assert(stranger.show === true && stranger.enrolled === false && /RGM\?$/.test(stranger.text) && !/matr[ií]cula|ambienta/i.test(stranger.text), `the approach to a contact with no enrollment: ${JSON.stringify(stranger)}`);
+      assert(stranger.text.startsWith("Olá, Pessoa, que bom que você chamou! Eu sou "), `the greeting to the contact with no enrollment: ${stranger.text}`);
+      sql(`UPDATE Tickets SET status='closed' WHERE id=${strangerTicket}`);
+      sql(`DELETE FROM Messages WHERE id='ob-oi-1'`);
+      await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}} do polo {{polo}}." }, auth());
       // the administrator reads everything but does not answer as the tutor
       const adminSend = await http.post(`/messages/${ob}`, { body: "Oi, sou o admin" }, auth());
       assert(adminSend.status === 403 && adminSend.data.error === "ERR_ONBOARDING_TUTOR_ONLY", `administrator answered in the tutor's conversation: ${adminSend.status}`);
@@ -6030,15 +6091,15 @@ const postMeta = (id, payload, secret, badSig) => {
       const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
       assert((await http.get("/meta/templates", asUser(consTok))).status === 403, "a consultant reached the Meta templates");
       const first = await http.get("/meta/templates", auth());
-      assert(first.status === 200 && first.data.pack.length === 17 && first.data.pack.every(p => !p.created), `templates screen ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
+      assert(first.status === 200 && first.data.pack.length === 19 && first.data.pack.every(p => !p.created), `templates screen ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
       const sent = await http.post("/meta/templates/pack", {}, auth());
-      assert(sent.status === 200 && sent.data.results.length === 17 && sent.data.results.every(x => /^enviado/.test(x.result)), `pack ${JSON.stringify(sent.data)}`);
-      assert(graph.templates.length === 17 && graph.templates.every(t => t.waba === "WABA1" && t.category === "UTILITY" && t.allow_category_change === false && t.language === "pt_BR"), `templates as sent: ${JSON.stringify(graph.templates.map(t => [t.name, t.category, t.allow_category_change]))}`);
+      assert(sent.status === 200 && sent.data.results.length === 19 && sent.data.results.every(x => /^enviado/.test(x.result)), `pack ${JSON.stringify(sent.data)}`);
+      assert(graph.templates.length === 19 && graph.templates.every(t => t.waba === "WABA1" && t.category === "UTILITY" && t.allow_category_change === false && t.language === "pt_BR"), `templates as sent: ${JSON.stringify(graph.templates.map(t => [t.name, t.category, t.allow_category_change]))}`);
       assert(graph.templates.every(t => { const n = (t.components[0].text.match(/\{\{\d+\}\}/g) || []).length; return !n || (t.components[0].example.body_text[0].length >= 1); }), "a template went without examples");
       // nothing linked while under review (the Meta would refuse a send with it)
       assert(!sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`), "a template under review was put to use");
       const again = await http.post("/meta/templates/pack", {}, auth());
-      assert(again.data.results.every(x => x.result === "já existe") && graph.templates.length === 17, "the pack was sent twice");
+      assert(again.data.results.every(x => x.result === "já existe") && graph.templates.length === 19, "the pack was sent twice");
       // nobody already talking to the team gets an "Olá" again, and the openings carry quick-reply buttons
       assert(first.data.pack.every(p => !/^\s*ol[áa]/i.test(p.body) && p.department), "a template of the pack opens with Olá or has no department");
       const opening = graph.templates.find(t => t.name === "retomada_atendimento");
@@ -7323,6 +7384,43 @@ const postMeta = (id, payload, secret, badSig) => {
         const original=await Ticket.findByPk(${tgTicket});const temporary=await Ticket.create({contactId:original.contactId,whatsappId:original.whatsappId,status:"closed",unreadMessages:0,isGroup:false});
         const delivery=await Delivery.create({key:"test:retained-charge",ticketId:temporary.id,contactId:original.contactId,whatsappId:original.whatsappId,channel:"telegram",status:"sent",estimatedUsd:0});
         await temporary.destroy();await delivery.reload();assert.equal(delivery.ticketId,null);assert.equal(delivery.status,"sent");`);
+    });
+    await test("tutoring notices: the preview shows how many and how much, the cap of the month blocks, and the notice goes as the Utility template of the tutoring number", async () => {
+      const team = sql(`SELECT team FROM Whatsapps WHERE id=${cid}`);
+      sql(`UPDATE Whatsapps SET team='tutoria' WHERE id=${cid}`);
+      try {
+        const tutorTok = (await http.post("/auth/login", { email: "tutora-oficial@polo.test", password: "senha123" })).data.token;
+        const tutorId = sql(`SELECT id FROM Users WHERE email='tutora-oficial@polo.test'`);
+        sql(`INSERT INTO Leads (name, phone, stageId, enrolledAt, consentAt, onboardingTutorId, createdAt, updatedAt) VALUES ('Aluna Aviso Mensal', '5569981112233', (SELECT id FROM LeadStages ORDER BY id LIMIT 1), NOW(), NOW(), ${tutorId}, NOW(), NOW())`);
+        const tpl = graph.templates.find(t => t.name === "aviso_atividades_mes");
+        assert(tpl, "the pack did not create the activities template");
+        tpl.status = "APPROVED";
+        const date = new Date(Date.now() + 10 * 864e5).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+        const body = { kind: "atividades", date, note: "faça primeiro o fórum" };
+        const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
+        assert((await http.post("/tutoria/notices/preview", body, asUser(consTok))).status === 403, "a consultant reached the tutoring notices");
+        const prev = await http.post("/tutoria/notices/preview", body, asUser(tutorTok));
+        assert(prev.status === 200 && prev.data.canReceive >= 1 && prev.data.template.approved && prev.data.cost.category === "UTILITY" && !prev.data.blockers.length, `preview ${JSON.stringify(prev.data)}`);
+        assert(Math.abs(prev.data.cost.totalUsd - prev.data.canReceive * 0.0068) < 0.0001 && /Orientação da tutoria: faça primeiro o fórum\./.test(prev.data.sample), `cost and sample ${JSON.stringify(prev.data.cost)} ${prev.data.sample}`);
+        assert((await http.post("/tutoria/notices", body, asUser(tutorTok))).status === 400, "sent without the confirmation");
+        // the cap of the month: a notice that would pass it does not start
+        await http.put("/operations/config", { outbound_monthly_usd: "0.000001" }, auth());
+        const capped = await http.post("/tutoria/notices/preview", body, asUser(tutorTok));
+        assert(capped.data.blockers.includes("ERR_OUTBOUND_MONTH_BUDGET"), `cap not shown ${JSON.stringify(capped.data.blockers)}`);
+        assert((await http.post("/tutoria/notices", { ...body, confirm: true }, asUser(tutorTok))).status === 409, "a notice passed the cap of the month");
+        await http.put("/operations/config", { outbound_monthly_usd: "148" }, auth());
+        const before = graph.sent.length;
+        const sent = await http.post("/tutoria/notices", { ...body, confirm: true }, asUser(tutorTok));
+        assert(sent.status === 200 && sent.data.people === prev.data.canReceive, `send ${sent.status} ${JSON.stringify(sent.data)}`);
+        const s = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "template" && x.body.to === "5569981112233"), 30000, "notice template");
+        const params = s.body.template.components[0].parameters.map(p => p.text);
+        assert(s.body.template.name === "aviso_atividades_mes" && params[0] === "Aluna" && params[2] === date.split("-").reverse().join("/") && params[3] === "faça primeiro o fórum", `notice payload ${JSON.stringify(s.body.template)}`);
+        await waitFor(() => sql(`SELECT category FROM OutboundDeliveries WHERE key LIKE 'campaign:${sent.data.campaignId}:%' AND status='sent' LIMIT 1`) === "UTILITY", 8000, "the send was not recorded as Utility");
+        assert(Number(sql(`SELECT estimatedUsd FROM OutboundDeliveries WHERE key LIKE 'campaign:${sent.data.campaignId}:%' LIMIT 1`)) === 0.0068, "the Utility price was not used");
+        assert(sql(`SELECT whatsappId FROM Campaigns WHERE id=${sent.data.campaignId}`) === String(cid), "the notice did not go by the tutoring number");
+      } finally {
+        sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
+      }
     });
     await test("the daily review: the AI reads a consultant's conversation without CPF, phone or names, keeps only codes, and the management sees the training needed", async () => {
       const u = (await http.post("/users", { name: "Consultora Revisada", email: "review-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;

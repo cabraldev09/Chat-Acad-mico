@@ -12,6 +12,8 @@ import TicketsListSkeleton from "../TicketsListSkeleton";
 import useTickets from "../../hooks/useTickets";
 import { i18n } from "../../translate/i18n";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
+import { canSeeConnections } from "../../utils/access";
 import { ErrorState } from "../ui";
 import { Link } from "react-router-dom";
 
@@ -193,6 +195,9 @@ const reducer = (state, action) => {
 	const [reloadKey, setReloadKey] = useState(0);
 	const [ticketsList, dispatch] = useReducer(reducer, []);
 	const { user } = useContext(AuthContext);
+	// the links to Conexões only for whoever can open it (the management, or the owner of a QR Code number)
+	const { whatsApps } = useContext(WhatsAppsContext);
+	const connectionsOk = canSeeConnections(user, whatsApps);
 
 	useEffect(() => {
 		dispatch({ type: "RESET" });
@@ -390,14 +395,12 @@ const reducer = (state, action) => {
 							{historical ? (
 								<p className={classes.noTicketsText}>
 									O histórico são as conversas que já existiam no WhatsApp quando o número foi conectado. Elas aparecem aqui sem entrar nas contagens.
-									<br />
-									<Link to="/connections" style={{ fontWeight: 600 }}>Copiar as conversas do WhatsApp</Link>
+									{connectionsOk && <><br /><Link to="/connections" style={{ fontWeight: 600 }}>Copiar as conversas do WhatsApp</Link></>}
 								</p>
 							) : props.groups === "only" ? (
 								<p className={classes.noTicketsText}>
 									Nenhum grupo ainda. Os grupos e comunidades do WhatsApp aparecem aqui quando o número conecta (ou ao copiar as conversas).
-									<br />
-									<Link to="/connections" style={{ fontWeight: 600 }}>Ir para Conexões e copiar as conversas</Link>
+									{connectionsOk && <><br /><Link to="/connections" style={{ fontWeight: 600 }}>Ir para Conexões e copiar as conversas</Link></>}
 								</p>
 							) : (
 								<p className={classes.noTicketsText}>

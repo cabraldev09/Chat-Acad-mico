@@ -2418,7 +2418,8 @@ CREATE TABLE public."Leads" (
     "onboardingChecklist" text,
     "practicePoloId" integer,
     rgm character varying(40),
-    "institutionId" integer
+    "institutionId" integer,
+    "poloSource" character varying(20)
 );
 
 
@@ -2500,7 +2501,8 @@ CREATE TABLE public."Messages" (
     starred boolean DEFAULT false NOT NULL,
     reactions text,
     "isEdited" boolean DEFAULT false NOT NULL,
-    "isGif" boolean DEFAULT false NOT NULL
+    "isGif" boolean DEFAULT false NOT NULL,
+    transcript text
 );
 
 
@@ -2640,7 +2642,8 @@ CREATE TABLE public."OutboundDeliveries" (
     error text,
     "estimatedUsd" numeric(14,8),
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    category character varying(20)
 );
 
 
@@ -6166,6 +6169,13 @@ CREATE INDEX outbound_daily_usage ON public."OutboundDeliveries" USING btree ("c
 
 
 --
+-- Name: outbound_deliveries_number_category_month; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX outbound_deliveries_number_category_month ON public."OutboundDeliveries" USING btree ("whatsappId", category, "createdAt");
+
+
+--
 -- Name: outbound_deliveries_status_updated; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7859,9 +7869,12 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000006-consultant-reviews.js
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000007-speed-indexes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000008-tasks-and-notifications.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000009-institutions.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000010-message-transcript.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-legacy-institution.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-messages-created-at.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000002-messages-created-at.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261224000001-lead-polo-source.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261225000001-outbound-category.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

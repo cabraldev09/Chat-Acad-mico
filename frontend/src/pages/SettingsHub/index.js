@@ -178,15 +178,9 @@ const Geral = ({ values, save, admin }) => {
         <TimezoneSelect value={values.appTimezone || "America/Porto_Velho"} onChange={(v) => save("appTimezone", v)} />
         <div className={classes.hint}>Os dados são guardados em UTC; só a exibição e a contagem do dia mudam.</div>
       </Card>
-      {/* numbers per person (WhatsApp by QR Code) and the old single API token: rarely used while the team works on the official number */}
-      <Advanced>
-      <Card title="Números de WhatsApp por pessoa (QR Code)" sub="Só vale para números conectados por QR Code. Hoje a equipe usa o número oficial (API da Meta).">
-        <TextField select variant="outlined" size="small" label="Limite por pessoa" value={Number(values.max_connections_per_user || 1)} onChange={(e) => save("max_connections_per_user", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }}>
-          {[1, 2, 3].map((n) => (<MenuItem key={n} value={n}>{n} {n === 1 ? "número" : "números"}</MenuItem>))}
-        </TextField>
-      </Card>
+      {/* the old single API token: rarely used (a QR Code number is given to a person in Conexões, by the management) */}
       {admin && (
-        <>
+        <Advanced>
           <Card title="Integração" sub="Token usado pelas integrações externas (API). Trate como uma senha.">
             <div className={classes.row}>
               <TextField style={{ flex: "1 1 260px" }} variant="outlined" size="small" label="Token da API" value={token} type={show ? "text" : "password"} InputProps={{ readOnly: true }} />
@@ -195,9 +189,8 @@ const Geral = ({ values, save, admin }) => {
             </div>
             <div className={classes.hint}>Para criar tokens por integração e cadastrar webhooks, use <Link to="/integrations">API e webhooks</Link>.</div>
           </Card>
-        </>
+        </Advanced>
       )}
-      </Advanced>
     </>
   );
 };
@@ -255,10 +248,10 @@ const Tutoria = ({ values, save }) => {
       <Card title="Boas-vindas do tutor (texto da empresa)" sub="O texto padrão que o tutor recebe pronto na conversa do aluno recém-matriculado. Cada tutor pode escrever o próprio em Ambientação → Meu texto de boas-vindas; quem não escrever usa este.">
         <TextField fullWidth multiline rows={5} variant="outlined" label="Mensagem de boas-vindas da empresa"
           defaultValue={values.onboarding_welcome_template || ""} key={values.onboarding_welcome_template || "vazio"}
-          placeholder="Olá, {{primeiro_nome}}! Parabéns pela matrícula! Eu sou {{tutor}}, do polo {{polo}}..."
+          placeholder="{{saudacao}} Eu sou {{tutor}}, tutor(a) da {{instituicao}}[[ no polo {{polo}}]], e vou acompanhar você[[ no curso de {{curso}}]]..."
           onBlur={(e) => { if (e.target.value !== (values.onboarding_welcome_template || "")) save("onboarding_welcome_template", e.target.value); }}
           InputLabelProps={{ shrink: true }} />
-        <div className={classes.hint}>O sistema nunca envia esta mensagem sozinho: o tutor vê o texto no campo de mensagem, edita se quiser e envia. Variáveis: {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"} e {"{{polo}}"}. Em branco, vale um texto padrão.</div>
+        <div className={classes.hint}>O sistema nunca envia esta mensagem sozinho: o tutor vê o texto no campo de mensagem, edita se quiser e envia. Variáveis, preenchidas com os dados da matrícula: {"{{saudacao}}"} (responde quem escreveu primeiro: "Olá, Ana, que bom que você chamou!"), {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"}, {"{{polo}}"}, {"{{curso}}"} e {"{{instituicao}}"}. O trecho entre [[ e ]] só aparece quando todas as variáveis dentro dele têm valor (por exemplo, [[ no polo {"{{polo}}"}]]). Em branco, vale um texto padrão em que o tutor se apresenta e convida para a ambientação. Para quem escreve sem ter matrícula no sistema, o tutor recebe outro texto, que pede o RGM.</div>
       </Card>
       <Card title="Contato da tutoria na matrícula" sub="Ao confirmar a matrícula, o aluno recebe na conversa do consultor o número da tutoria, para salvar e mandar um oi: a conversa no número da Tutoria começa gratuita.">
         <TextField variant="outlined" size="small" label="Número da tutoria (com DDD)" placeholder="69 99325-8103"
