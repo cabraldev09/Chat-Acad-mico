@@ -1,4 +1,5 @@
 import Course from "../../models/Course";
+import { sameCourseName } from "./CourseMatch";
 import Lead from "../../models/Lead";
 import LeadCommercial from "../../models/LeadCommercial";
 import Polo from "../../models/Polo";
@@ -40,6 +41,8 @@ export const SLOT_KINDS: Record<string, Kind> = {
   valueHeld: "number",
   // the person is choosing a course again (asked for an area, or for a course that is not offered): nothing of the old course counts until one is named
   courseChoosing: "boolean",
+  // "Você continua com interesse nesse curso ou quer ver outro?" was asked to who came back, and is waiting for the answer
+  resumeConfirm: "boolean",
   // a transfer or a second degree was told once that the subjects already taken may be reused (by the curricular analysis)
   reuseExplained: "boolean", formatTried: "boolean", formatMark: "string", formatMarkCourse: "string", priceAsks: "number",
   // the commercial lane (asked the price: "price"; wants to enroll now: "enrollment"), and the one question after "vou pensar"
@@ -181,7 +184,10 @@ export const hydrate = async (state: CommercialState, lead: Lead): Promise<Comme
   set("city", lead.city);
   set("state", lead.state);
   set("intakePeriod", lead.entryTerm);
-  if (course) {
+  // the conversation already knows the course by its name and the CRM holds another one (an older choice): the name of the conversation is the
+  // newer one, so the id of the CRM is not put beside it (that made the greeting talk about one course and the script about another)
+  const talkedOf = known("courseName") && !known("courseId") ? String(state.slots.courseName) : "";
+  if (course && !(talkedOf && !sameCourseName(talkedOf, course.name) && !edited("courseId"))) {
     const changedCourse = edited("courseId");
     set("courseId", course.id); set("offerId", course.id); set("courseName", course.name); set("courseModality", course.modality); set("courseDurationSemesters", course.semesters); set("courseDegree", course.level);
     // another course: what was explained about the old one does not count for the new one

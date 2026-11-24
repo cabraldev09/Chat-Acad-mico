@@ -45,6 +45,10 @@ class Course extends Model<Course> {
   @Column(DataType.DECIMAL(10, 2))
   monthlyFee: number;
 
+  // other names and short forms people use for this course, separated by commas ("RH, gestão de pessoas")
+  @Column(DataType.TEXT)
+  aliases: string;
+
   @Default(true)
   @Column
   active: boolean;

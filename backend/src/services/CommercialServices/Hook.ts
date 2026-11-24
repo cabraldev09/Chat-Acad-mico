@@ -77,9 +77,12 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
 
   // 1) what was found out
   // the catalogue and the polos recognise the course and the city in the words of the person; what the model brings explicitly wins
-  const auto = input.replied && ports.detect ? cleanPatch(await ports.detect(input.userText).catch(() => ({}))) : {};
+  const heard: Record<string, any> = input.replied && ports.detect ? await ports.detect(input.userText).catch(() => ({})) : {};
+  const auto = cleanPatch(heard);
   // the course of a degree the person already has (or is taking) is not the course they want: it is kept as where they come from
-  if (auto.courseName && (s.slots.courseId || s.slots.courseName) && priorStudy(input.userText)) {
+  // ("já fiz biomedicina, agora quero saber de educação física": the course after the wish IS the one they want)
+  const wished = heard.courseWished === true;
+  if (auto.courseName && !wished && (s.slots.courseId || s.slots.courseName) && priorStudy(input.userText)) {
     if (!s.slots.previousCourse) s.slots.previousCourse = auto.courseName;
     delete (auto as any).courseName; delete (auto as any).courseId;
   }

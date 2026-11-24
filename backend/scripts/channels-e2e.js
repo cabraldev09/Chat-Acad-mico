@@ -252,6 +252,8 @@ const startAnthropicMock = () => {
       if (/^quero fazer o curso de empreendedorismo$/i.test(said2.trim())) return turn("Empreendedorismo é uma ótima escolha.", { intent: "other", curso: "Empreendedorismo" });
       if (/texto com markdown/i.test(said2)) return turn("**Pedagogia** tem 8 semestres.\n\n### Como funciona\nVeja [a grade](https://exemplo.com/g.pdf) e a tabela:\n| Item | Valor |\n|---|---|\n| Duração | 8 semestres |", { intent: "other" });
       if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
+      // the model denies a course the catalogue has and pushes the old one (a real conversation): the rules put it right
+      if (/saber de rh/i.test(said2)) return turn("A Gestão de Recursos Humanos não está entre os cursos que oferecemos. Podemos explorar outras opções, como Direito, que você já conhece? Qual delas você prefere?", { intent: "other" });
       if (/nasa/i.test(said2)) return turn("Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto.", { intent: "unknown", pergunta_sem_resposta: "convênio com a Nasa" });
       if (/vou pensar/i.test(said2)) return turn("Combinado! Fico no aguardo. 😊", { intent: "follow_up", retorno_em: "2026-12-01", motivo_retorno: "vai conversar com a família" });
       if (/não tenho o histórico/i.test(said2)) return turn("Sem problema!", { intent: "other", tem_historico: false }, [{ type: "tool_use", id: `toolu_x${anthropic.requests.length}`, name: "escolher_resultado", input: { resultado: "sem_historico" } }]);
@@ -4213,6 +4215,18 @@ const postMeta = (id, payload, secret, badSig) => {
       out = await say(D, "wamid.com-d5", "oi, voltei", t => t.some(x => /falar com você de novo/.test(x)), "the return");
       assert(/Direito/.test(out.join(" ")) && !/Qual curso/.test(out.join(" ")) && anthropic.requests.length === llm, `the return should remember the course and not ask it again: ${out}`);
       await waitFor(() => runOf(D) === "waiting|orientar", 8000, "back to the guidance, not to the start");
+      // who comes back is asked, once, whether the interest is still that course (nothing of the script goes on before the answer)
+      assert(/continua com interesse nesse curso ou quer ver outro\?/.test(out.join(" ")) && (out.join(" ").match(/\?/g) || []).length === 1, `the return should confirm the interest with one question: ${out}`);
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(D)}`)).resumeConfirm === true, "the confirmation of the interest was not marked");
+      // ...and names another course by its short form ("RH"): the catalogue knows it as "Cst Em Gestão De Recursos Humanos". The course changes at
+      // once, the answer is about the new course only (the old one is not pushed, even when the model does it), with one question
+      if (sql(`SELECT COUNT(*) FROM Courses WHERE name='Cst Em Gestão De Recursos Humanos'`) === "0") await http.post("/courses", { name: "Cst Em Gestão De Recursos Humanos", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
+      out = await say(D, "wamid.com-d6", "na verdade agora quero saber de RH", t => t.some(x => /Recursos Humanos/.test(x)), "another course by its short form");
+      assert(!/Direito/.test(out.join(" ")) && !/não está entre/.test(out.join(" ")), `the old course was pushed or the new one denied: ${out}`);
+      assert((out.join(" ").match(/\?/g) || []).length <= 1, `more than one question in the answer: ${out}`);
+      const slD = JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(D)}`));
+      assert(slD.courseName === "Cst Em Gestão De Recursos Humanos" && Number(slD.courseId) === Number(sql(`SELECT id FROM Courses WHERE name='Cst Em Gestão De Recursos Humanos'`)) && !slD.resumeConfirm, `the course of the lead did not change as one (id and name): ${slD.courseName} / ${slD.courseId}`);
+      assert(sql(`SELECT c.name FROM Leads l JOIN Courses c ON c.id=l.courseId WHERE l.id=${leadId(D)}`) === "Cst Em Gestão De Recursos Humanos", "the course of the lead in the CRM did not follow the conversation");
 
       // E) transfer: the transcript is asked; without it the column and the task wait; the task is not repeated
       const E = "5511920000205";

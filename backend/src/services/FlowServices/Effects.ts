@@ -266,9 +266,9 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     },
 
     // what the AI wrote goes out as short bubbles, one after the other (the sender shows "digitando…" and waits like a person)
-    async sayBlocks(text) {
+    async sayBlocks(text, max) {
       if (flowCtx.agentId) text = await withoutRepeats(ticket.id, polishReply(text));
-      for (const block of splitIntoBlocks(text)) await this.say(block);
+      for (const block of splitIntoBlocks(text, max)) await this.say(block);
     },
 
     async say(text, choices) {
@@ -571,7 +571,7 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
       return chosen ? chosen.name : "";
     },
     async say(text) { messages.push(text); },
-    async sayBlocks(text) { splitIntoBlocks(text).forEach(b => messages.push(b)); },
+    async sayBlocks(text, max) { splitIntoBlocks(text, max).forEach(b => messages.push(b)); },
     async readField(field) {
       if (field === "hours") return sample.hours || "open";
       if (field === "channel") return sample.channel || "whatsapp";
