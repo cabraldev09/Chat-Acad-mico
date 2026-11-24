@@ -633,3 +633,15 @@ button.mx-item:focus-visible { outline: 2px solid var(--c-leads); outline-offset
   .mx-chart-plot { height: 200px; }
 }
 @media (prefers-reduced-motion: reduce) { .mx-tab { transition: none; } }
+
+/* the semester and the month: a button in the look of the period buttons that opens a list (no native list drawn over the bar) */
+.gv-which-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; max-width: 100%; min-width: 0; padding: 0 10px; border: 0; border-radius: 7px;
+  background: var(--surface); color: var(--text-1); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.gv-which-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gv-which-btn:hover { filter: brightness(0.97); }
+.gv-head .gv-which-btn { background: #fff; color: #0b4279; }
+.gv-which-menu { border-radius: 12px !important; max-height: min(420px, 70vh); min-width: 240px; }
+.gv-which-menu .MuiMenuItem-root { gap: 8px; font-size: 14px; align-items: flex-start; white-space: normal; }
+.gv-which-mark { width: 16px; flex: none; display: inline-flex; padding-top: 2px; color: var(--accent, #0b4279); }
+.gv-which-item { display: grid; gap: 1px; }
+.gv-which-item small { font-size: 12px; color: var(--text-2, #64748b); }

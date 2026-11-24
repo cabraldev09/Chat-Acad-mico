@@ -2,6 +2,7 @@ import { subHours } from "date-fns";
 import { Op } from "sequelize";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
+import { createLiveTicket, liveTicketOf } from "./LiveTicket";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import Whatsapp from "../../models/Whatsapp";
 import { hookTicketCreated } from "../CrmServices/LeadCore";
@@ -99,8 +100,9 @@ const FindOrCreateTicketService = async (
     }
   }
 
-  // someone from the copied history wrote again: that conversation comes back to life (same thread, counted from now)
-  if (!ticket) {
+  // someone from the copied history wrote again: that conversation comes back to life (same thread, counted from now), only when the
+  // person has no live conversation on this number (that one comes back below: never two live ones on the same number)
+  if (!ticket && (groupContact || !(await liveTicketOf(contact.id, whatsappId)))) {
     const history = await Ticket.findOne({
       where: { contactId: groupContact ? groupContact.id : contact.id, whatsappId, isHistorical: true },
       order: [["updatedAt", "DESC"]]
@@ -160,7 +162,7 @@ const FindOrCreateTicketService = async (
   }
 
   if (!ticket) {
-    ticket = await Ticket.create({
+    ticket = await createLiveTicket({
       contactId: groupContact ? groupContact.id : contact.id,
       status: "pending",
       isGroup: !!groupContact,
