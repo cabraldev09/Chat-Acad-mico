@@ -4,7 +4,7 @@ import { toast, ToastContainer } from "react-toastify";
 import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, Link, TextField, Tooltip, Typography } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
 import { Visibility, VisibilityOff } from "@material-ui/icons";
-import { CalendarClock, ChevronDown, KeyRound, Map as MapIcon, Settings, ShieldCheck, UploadCloud, X } from "lucide-react";
+import { CalendarClock, ChevronDown, GraduationCap, KeyRound, Map as MapIcon, Settings, ShieldCheck, UploadCloud, User, X } from "lucide-react";
 
 import BrandLogo from "../../components/BrandLogo";
 import BrandStar from "../../components/BrandStar";
@@ -20,40 +20,67 @@ import {
 
 const useStyles = makeStyles((theme) => ({
   page: { minHeight: "100vh", background: theme.palette.type === "dark" ? "#0f1520" : "#eef3f9", color: theme.palette.type === "dark" ? "#e8edf5" : "#12202f" },
-  // ---- sign in
-  split: { minHeight: "100vh", display: "grid", gridTemplateColumns: "minmax(0, 1.05fr) minmax(0, 1fr)", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr", gridTemplateRows: "auto 1fr" } },
-  // the ribbon star (it ends in gold and red, the colors of graduation) leans out of the upper right corner
-  // the graduate fills the lower right of the dark side; a gradient from the navy keeps the text on the left readable
-  art: { position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none", },
-  artCut: { position: "absolute", right: "-33%", bottom: 0, height: "64%", width: "auto", maxWidth: "none", animation: "page-in .9s var(--ease-out) both",
-    // the edges dissolve into the background: the left (waves) and the bottom (the gown) fade out instead of being cut
-    WebkitMaskImage: "linear-gradient(90deg, transparent 0%, #000 24%), linear-gradient(180deg, #000 76%, transparent 100%)", maskImage: "linear-gradient(90deg, transparent 0%, #000 24%), linear-gradient(180deg, #000 76%, transparent 100%)",
+  // ---- sign in (after the "Split Sign In Form" of 21st.dev: a clean form on one side, a large photo panel with a glass card on the other)
+  split: { minHeight: "100vh", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.08fr)", background: theme.palette.type === "dark" ? "#0b111b" : "#f4f7fb",
+    [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr", gridTemplateRows: "auto 1fr" } },
+  formSide: { display: "flex", flexDirection: "column", padding: "28px clamp(20px, 5vw, 64px)", minWidth: 0,
+    [theme.breakpoints.down("sm")]: { order: 2, padding: "0 16px 28px" } },
+  formTop: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, [theme.breakpoints.down("sm")]: { display: "none" } },
+  formWrap: { flex: 1, display: "grid", alignContent: "center", justifyItems: "center", padding: "32px 0" ,
+    [theme.breakpoints.down("sm")]: { padding: 0, alignContent: "start" } },
+  formBox: { width: "100%", maxWidth: 400, animation: "portal-rise .6s cubic-bezier(.2,.8,.2,1) both",
+    [theme.breakpoints.down("sm")]: { position: "relative", zIndex: 2, marginTop: -26, maxWidth: "none", padding: "24px 20px 22px", borderRadius: 22,
+      background: theme.palette.type === "dark" ? "#141b27" : "#fff", boxShadow: "0 22px 46px -18px rgba(11,66,121,.40), 0 2px 6px rgba(11,66,121,.10)" } },
+  kicker: { display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: theme.palette.type === "dark" ? "#7cc0ff" : "#0b6bb5",
+    background: theme.palette.type === "dark" ? "rgba(124,192,255,.12)" : "rgba(6,147,227,.10)", padding: "5px 10px", borderRadius: 999, marginBottom: 14 },
+  h1: { fontSize: 30, lineHeight: 1.15, fontWeight: 800, letterSpacing: "-0.03em", margin: "0 0 8px", [theme.breakpoints.down("sm")]: { fontSize: 24 } },
+  sub: { fontSize: 15, lineHeight: 1.55, color: theme.palette.text.secondary, margin: "0 0 22px" },
+  label: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, fontSize: 13.5, fontWeight: 650, margin: "0 0 6px", color: theme.palette.text.primary },
+  fieldWrap: { marginBottom: 16 },
+  input: { "& .MuiOutlinedInput-root": { height: 48, borderRadius: 12, background: theme.palette.type === "dark" ? "#101722" : "#fff",
+      "& fieldset": { borderColor: theme.palette.type === "dark" ? "rgba(148,163,184,.28)" : "#d6e0ec" },
+      "&:hover fieldset": { borderColor: theme.palette.type === "dark" ? "rgba(148,163,184,.5)" : "#a9bdd6" },
+      "&.Mui-focused fieldset": { borderColor: "#0693E3", borderWidth: 2 },
+      "&.Mui-focused": { boxShadow: "0 0 0 4px rgba(6,147,227,.14)" } },
+    "& .MuiOutlinedInput-input": { fontSize: 15 } },
+  inIcon: { color: theme.palette.text.secondary, display: "inline-flex" },
+  cta: { marginTop: 6, height: 48, borderRadius: 12, fontSize: 15.5, fontWeight: 700, textTransform: "none", boxShadow: "0 10px 24px -12px rgba(11,66,121,.7)", background: NAVY, color: "#fff",
+    "&:hover": { background: "#093663", boxShadow: "0 12px 26px -12px rgba(11,66,121,.8)" }, "&.Mui-disabled": { background: theme.palette.type === "dark" ? "#243247" : "#c5d3e3", color: "#fff", boxShadow: "none" } },
+  help: { marginTop: 22, paddingTop: 18, borderTop: `1px solid ${theme.palette.type === "dark" ? "rgba(148,163,184,.18)" : "#e3eaf3"}`, fontSize: 14, color: theme.palette.text.secondary, display: "flex", gap: 10, alignItems: "flex-start" },
+  foot: { fontSize: 12.5, color: theme.palette.text.secondary, [theme.breakpoints.down("sm")]: { display: "none" } },
+  // the photo panel: the graduate, large, on the navy with a blue light; a glass card with the promise of the portal
+  photoSide: { padding: 16, minWidth: 0, [theme.breakpoints.down("sm")]: { order: 1, padding: 0 } },
+  photo: { position: "relative", height: "100%", minHeight: "calc(100vh - 32px)", borderRadius: 28, overflow: "hidden", isolation: "isolate", color: "#fff",
+    background: `radial-gradient(900px circle at 80% 10%, rgba(6,147,227,.45), transparent 55%), radial-gradient(600px circle at 10% 100%, rgba(124,192,255,.18), transparent 60%), ${NAVY}`,
+    [theme.breakpoints.down("sm")]: { minHeight: 236, height: 236, borderRadius: "0 0 28px 28px" } },
+  grid: { position: "absolute", inset: 0, zIndex: 0, opacity: .35, backgroundImage: "linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px)", backgroundSize: "44px 44px",
+    WebkitMaskImage: "radial-gradient(ellipse at 70% 30%, #000 30%, transparent 75%)", maskImage: "radial-gradient(ellipse at 70% 30%, #000 30%, transparent 75%)" },
+  glow: { position: "absolute", right: "-10%", bottom: "-12%", width: "90%", height: "80%", zIndex: 0, background: "radial-gradient(closest-side, rgba(6,147,227,.55), rgba(6,147,227,.10) 62%, transparent 78%)", filter: "blur(12px)" },
+  student: { position: "absolute", zIndex: 1, right: "-8%", bottom: 0, height: "88%", width: "auto", maxWidth: "none", animation: "portal-photo 1s cubic-bezier(.2,.8,.2,1) both",
+    WebkitMaskImage: "linear-gradient(90deg, transparent 0%, #000 22%), linear-gradient(180deg, #000 82%, transparent 100%)", maskImage: "linear-gradient(90deg, transparent 0%, #000 22%), linear-gradient(180deg, #000 82%, transparent 100%)",
     WebkitMaskComposite: "source-in", maskComposite: "intersect",
-    // a narrower dark side (small notebooks): the graduate is smaller and stays below the text
-    "@media (min-width: 960px) and (max-width: 1279px)": { height: "48%", right: "-13%" },
-    [theme.breakpoints.down("sm")]: { right: "-27%", height: "82%" } },
-  artShade: { position: "absolute", inset: 0, [theme.breakpoints.down("sm")]: { background: `linear-gradient(90deg, rgba(11,66,121,.97) 0%, rgba(11,66,121,.88) 44%, rgba(11,66,121,0) 76%), linear-gradient(0deg, rgba(8,38,78,.75) 0%, rgba(8,38,78,0) 28%)` }, background: `linear-gradient(90deg, ${NAVY} 0%, rgba(11,66,121,.9) 26%, rgba(11,66,121,.2) 55%, rgba(11,66,121,0) 100%), linear-gradient(0deg, rgba(8,38,78,.9) 0%, rgba(8,38,78,.45) 16%, rgba(8,38,78,0) 42%), linear-gradient(180deg, rgba(8,38,78,.55) 0%, rgba(8,38,78,0) 22%)` },
-  artGlow: { position: "absolute", right: "-12%", bottom: "-8%", width: "86%", height: "74%", background: "radial-gradient(closest-side, rgba(6,147,227,.55), rgba(6,147,227,.12) 62%, transparent 76%)", filter: "blur(10px)" },
-  brandContent: { position: "relative", zIndex: 1 },
-  brandText: { position: "relative", zIndex: 1, marginTop: "clamp(8px, 6vh, 64px)", [theme.breakpoints.down("sm")]: { marginTop: 4 } },
-  // the logo is held by the top edge of the box: all of it outside, its base exactly on the dividing line (nothing goes into the
-  // box), lined up with the text of the box, on every screen size
-  signature: { position: "absolute", bottom: "100%", left: 32, width: "150px !important", pointerEvents: "none", [theme.breakpoints.down("sm")]: { left: 20, width: "132px !important" } },
-  brandSide: { position: "relative", overflow: "hidden", isolation: "isolate", background: `radial-gradient(900px circle at 85% 0%, rgba(6,147,227,.38), transparent 60%), ${NAVY}`, color: "#fff", padding: "44px 56px", display: "flex", flexDirection: "column", justifyContent: "flex-start", gap: 32, [theme.breakpoints.down("sm")]: { padding: "20px 20px 0", gap: 10, height: 296 } },
-  headline: { fontSize: 40, lineHeight: 1.08, fontWeight: 800, letterSpacing: "-0.035em", margin: 0, maxWidth: 460, [theme.breakpoints.down("sm")]: { fontSize: 22, maxWidth: "60%" } },
-  lead: { fontSize: 16, lineHeight: 1.6, color: "#c9dcf2", maxWidth: 440, margin: "14px 0 0", [theme.breakpoints.down("sm")]: { display: "none" } },
-  points: { display: "grid", gap: 12, margin: 0, padding: 0, listStyle: "none", [theme.breakpoints.down("sm")]: { display: "none" } },
-  point: { display: "flex", gap: 12, alignItems: "center", fontSize: 15, color: "#e6f0fb" },
-  decor: { [theme.breakpoints.down("sm")]: { display: "none" } },
-  // the sign-in area is a box (white card with shadow) over a soft background, on every screen size
-  formSide: { display: "grid", placeItems: "center", padding: theme.spacing(4, 3), background: theme.palette.type === "dark" ? "#0f1520" : "#eaf1f9",
-    [theme.breakpoints.down("sm")]: { display: "block", position: "relative", padding: "0 16px 28px" } },
-  formBox: { position: "relative", width: "100%", maxWidth: 440, padding: "32px 32px 28px", borderRadius: 24, background: theme.palette.type === "dark" ? "#141b27" : "#ffffff", boxShadow: "0 26px 56px -24px rgba(11,66,121,.5), 0 2px 8px rgba(11,66,121,.10)", border: `1px solid ${theme.palette.type === "dark" ? "rgba(255,255,255,.08)" : "rgba(11,66,121,.08)"}`,
-    // on a phone the box rises over the edge of the banner
-    [theme.breakpoints.down("sm")]: { position: "relative", zIndex: 2, margin: "-28px auto 0", padding: "22px 20px 20px", borderRadius: 22, boxShadow: "0 22px 46px -18px rgba(11,66,121,.45), 0 2px 6px rgba(11,66,121,.10)" } },
-  h1: { fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", margin: "0 0 6px" },
-  sub: { fontSize: 15, lineHeight: 1.55, color: theme.palette.text.secondary, margin: "0 0 18px" },
-  cta: { marginTop: 16, height: 50, borderRadius: 12, fontSize: 16, fontWeight: 700, textTransform: "none", boxShadow: "none", background: NAVY, color: "#fff", "&:hover": { background: "#093663", boxShadow: "none" }, "&.Mui-disabled": { background: theme.palette.action.disabledBackground } },
+    "@media (min-width: 960px) and (max-width: 1279px)": { height: "86%", right: "-34%" },
+    [theme.breakpoints.down("sm")]: { height: "112%", right: "-30%" } },
+  photoTop: { position: "absolute", zIndex: 2, top: 26, left: 28, right: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12,
+    [theme.breakpoints.down("sm")]: { top: 18, left: 18, right: 18 } },
+  star: { width: "118px !important", filter: "drop-shadow(0 10px 22px rgba(0,0,0,.25))", [theme.breakpoints.down("sm")]: { display: "none" } },
+  mobileTitle: { display: "none", [theme.breakpoints.down("sm")]: { display: "block", position: "absolute", zIndex: 2, left: 18, bottom: 44, maxWidth: "56%", fontSize: 21, lineHeight: 1.15, fontWeight: 800, letterSpacing: "-0.03em", margin: 0, textShadow: "0 2px 12px rgba(8,38,78,.65)" } },
+  glass: { position: "absolute", zIndex: 2, left: 28, bottom: 28, width: "min(440px, 62%)", padding: "22px 22px 20px", borderRadius: 22,
+    background: "linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.06))", border: "1px solid rgba(255,255,255,.22)",
+    backdropFilter: "blur(14px) saturate(140%)", WebkitBackdropFilter: "blur(14px) saturate(140%)", boxShadow: "0 24px 48px -24px rgba(0,0,0,.45)",
+    animation: "portal-rise .8s .1s cubic-bezier(.2,.8,.2,1) both",
+    // a narrower panel (small notebooks): the card shows the title and the three points only, so it stays below her face
+    "@media (min-width: 960px) and (max-width: 1279px)": { width: "min(360px, 74%)", left: 20, bottom: 20, padding: "16px 16px 14px", "& p": { display: "none" }, "& h2": { fontSize: 20, marginBottom: 12 } },
+    [theme.breakpoints.down("sm")]: { display: "none" } },
+  headline: { fontSize: 26, lineHeight: 1.15, fontWeight: 800, letterSpacing: "-0.03em", margin: 0 },
+  lead: { fontSize: 14.5, lineHeight: 1.55, color: "#d5e6f8", margin: "8px 0 16px" },
+  points: { display: "grid", gap: 8, margin: 0, padding: 0, listStyle: "none" },
+  point: { display: "flex", gap: 10, alignItems: "center", fontSize: 14, color: "#eef5fd", "& > span": { flex: "none", width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", background: "rgba(124,192,255,.18)", color: "#9dd0ff" } },
+  "@global": {
+    "@keyframes portal-rise": { from: { opacity: 0, transform: "translateY(12px)" }, to: { opacity: 1, transform: "none" } },
+    "@keyframes portal-photo": { from: { opacity: 0, transform: "translateX(24px)" }, to: { opacity: 1, transform: "none" } },
+    "@media (prefers-reduced-motion: reduce)": { "[class*='formBox'], [class*='student'], [class*='glass']": { animation: "none !important" } },
+  },
   // ---- inside
   top: { position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", gap: 10, padding: "10px 22px", background: NAVY, color: "#fff" },
   wrap: { maxWidth: 1040, margin: "0 auto", padding: theme.spacing(3, 2, 8), display: "grid", gap: theme.spacing(2.5) },
@@ -75,48 +102,63 @@ const say = (err) => {
   return (d && (d.error || d.message)) || "Algo deu errado. Tente novamente.";
 };
 
-// The graduate of the sign-in screen: cut out (no photo background), over the navy with a blue light behind her and the
-// ribbon of waves, a shadow under her and a navy gradient on the left so the text stays readable. (Tried also with the
-// sunset campus photo as the background and with the turquoise ribbon version: the cut-out on the navy looked best.)
-const StudentArt = () => {
-  const c = useStyles();
-  return (
-    <div className={c.art} aria-hidden="true">
-      <div className={c.artGlow} />
-      <img src={waves} alt="" className={c.artCut} draggable={false} />
-      <div className={c.artShade} />
-    </div>
-  );
-};
-
-const AuthShell = ({ title, subtitle, children, wide }) => {
+// The sign-in of the portal: the form on the left (on a phone, below), the photo panel on the right with the graduate cut out
+// over the navy and a glass card with what the portal gives (after the "Split Sign In Form" of 21st.dev). The graduate stays
+// the same picture as before (assets/brand/estudante-ondas.webp).
+const AuthShell = ({ title, subtitle, children }) => {
   const c = useStyles();
   return (
     <div className={c.page}>
       <div className={c.split}>
-        <div className={c.brandSide}>
-          <StudentArt />
-          <div className={c.brandContent}><BrandLogo tone="white" height={44} /></div>
-          <div className={c.brandText}>
-            <h2 className={c.headline}>Sua trajetória até a formatura, num só lugar.</h2>
-            <p className={c.lead}>Veja o que você já concluiu, o que ainda falta cursar e quando o curso termina.</p>
-          </div>
-          <ul className={`${c.points} ${c.brandContent}`} style={{ marginTop: "auto" }}>
-            <li className={c.point}><MapIcon size={20} color="#7cc0ff" />O mapa do seu curso, disciplina por disciplina</li>
-            <li className={c.point}><CalendarClock size={20} color="#7cc0ff" />Previsão de formatura sempre atualizada</li>
-            <li className={c.point}><ShieldCheck size={20} color="#7cc0ff" />Acesso só seu, com senha que você mesmo cria</li>
-          </ul>
-        </div>
         <div className={c.formSide}>
-          <div className={c.formBox} style={wide ? { maxWidth: 440 } : undefined}>
-            <BrandStar variant="escolha" size={150} glow={false} shadow={false} className={c.signature} alt="Escolha ter estrela" />
-            <h1 className={c.h1}>{title}</h1>
-            {subtitle && <p className={c.sub}>{subtitle}</p>}
-            {children}
+          <div className={c.formTop}>
+            <BrandLogo height={38} />
+            <span className={c.foot}>Portal do Aluno</span>
+          </div>
+          <div className={c.formWrap}>
+            <div className={c.formBox}>
+              <span className={c.kicker}><GraduationCap size={15} aria-hidden="true" />Portal do Aluno</span>
+              <h1 className={c.h1}>{title}</h1>
+              {subtitle && <p className={c.sub}>{subtitle}</p>}
+              {children}
+            </div>
+          </div>
+          <span className={c.foot}>Cruzeiro do Sul Virtual · acesso só do aluno</span>
+        </div>
+        <div className={c.photoSide}>
+          <div className={c.photo}>
+            <div className={c.grid} aria-hidden="true" />
+            <div className={c.glow} aria-hidden="true" />
+            <img src={waves} alt="" className={c.student} draggable={false} />
+            <div className={c.photoTop}>
+              <BrandLogo tone="white" height={34} />
+              <BrandStar variant="escolha" size={118} glow={false} shadow={false} className={c.star} alt="Escolha ter estrela" />
+            </div>
+            <h2 className={c.mobileTitle}>Sua trajetória até a formatura.</h2>
+            <div className={c.glass}>
+              <h2 className={c.headline}>Sua trajetória até a formatura, num só lugar.</h2>
+              <p className={c.lead}>Acesso só seu, com a senha que você criou pelo convite.</p>
+              <ul className={c.points}>
+                <li className={c.point}><span><MapIcon size={16} /></span>O que você já cursou e o que ainda falta</li>
+                <li className={c.point}><span><CalendarClock size={16} /></span>Quando você se forma, com a data sempre em dia</li>
+                <li className={c.point}><span><UploadCloud size={16} /></span>Envie um histórico novo e veja tudo atualizado</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
       <ToastContainer position="top-right" autoClose={4500} />
+    </div>
+  );
+};
+
+// a field with its label above it (and an optional link on the right of the label)
+const Field = ({ id, label, aside, children }) => {
+  const c = useStyles();
+  return (
+    <div className={c.fieldWrap}>
+      <label htmlFor={id} className={c.label}><span>{label}</span>{aside}</label>
+      {children}
     </div>
   );
 };
@@ -154,14 +196,20 @@ export const PortalLogin = () => {
   return (
     <AuthShell title="Entrar no portal" subtitle="Use o seu RGM (ou e-mail) e a senha que você criou pelo convite.">
       <form onSubmit={submit} noValidate>
-        <TextField {...field} autoFocus label="RGM ou e-mail" placeholder="Ex.: 44868774" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username" />
-        <TextField {...field} label="Senha" type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password"
-          InputProps={{ endAdornment: <InputAdornment position="end"><IconButton size="small" aria-label={show ? "Ocultar a senha" : "Mostrar a senha"} onClick={() => setShow((v) => !v)}>{show ? <VisibilityOff /> : <Visibility />}</IconButton></InputAdornment> }} />
-        <Button type="submit" fullWidth variant="contained" className={c.cta} disabled={busy || !login.trim() || !password}>{busy ? <CircularProgress size={22} color="inherit" /> : "Entrar"}</Button>
-        <div style={{ marginTop: 20, fontSize: 14.5, display: "grid", gap: 8 }}>
-          <Link component="button" type="button" underline="always" style={{ justifySelf: "start", fontWeight: 600 }} onClick={() => { setSent(false); setForgot(true); }}>Esqueci minha senha</Link>
-          <span style={{ opacity: 0.75 }}>Ainda não tem acesso? Peça o convite ao seu tutor.</span>
-        </div>
+        <Field id="portal-login" label="RGM ou e-mail">
+          <TextField id="portal-login" className={c.input} variant="outlined" fullWidth autoFocus placeholder="Ex.: 44868774" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="username"
+            InputProps={{ startAdornment: <InputAdornment position="start"><span className={c.inIcon}><User size={18} /></span></InputAdornment> }} />
+        </Field>
+        <Field id="portal-password" label="Senha"
+          aside={<Link component="button" type="button" underline="hover" style={{ fontSize: 13.5, fontWeight: 650 }} onClick={() => { setSent(false); setForgot(true); }}>Esqueci minha senha</Link>}>
+          <TextField id="portal-password" className={c.input} variant="outlined" fullWidth type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password"
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><span className={c.inIcon}><KeyRound size={18} /></span></InputAdornment>,
+              endAdornment: <InputAdornment position="end"><IconButton size="small" aria-label={show ? "Ocultar a senha" : "Mostrar a senha"} onClick={() => setShow((v) => !v)}>{show ? <VisibilityOff /> : <Visibility />}</IconButton></InputAdornment>,
+            }} />
+        </Field>
+        <Button type="submit" fullWidth variant="contained" className={c.cta} disabled={busy || !login.trim() || !password}>{busy ? <><CircularProgress size={18} color="inherit" style={{ marginRight: 10 }} />Entrando...</> : "Entrar"}</Button>
+        <div className={c.help}><ShieldCheck size={18} style={{ flex: "none", marginTop: 1 }} aria-hidden="true" /><span>Ainda não tem acesso? Peça o convite ao seu tutor. O primeiro acesso é feito pelo link que chega no seu e-mail.</span></div>
       </form>
       <Dialog open={forgot} onClose={() => setForgot(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Esqueci minha senha</DialogTitle>
