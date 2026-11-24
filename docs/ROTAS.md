@@ -1,6 +1,6 @@
-# Rotas da API (561)
+# Rotas da API (560)
 
-Públicas: 35 · logado (qualquer perfil): 303 · gestão: 179 · admin: 36
+Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 
 ## Públicas (sem login)
 
