@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Redirect, useHistory, useLocation } from "react-router-dom";
-import { AlertTriangle, Clock, Download, FileText, Inbox, ListTodo, TrendingUp, Users, Workflow } from "lucide-react";
+import { AlertTriangle, ChevronRight, Clock, Download, FileText, Inbox, ListTodo, TrendingUp, Users, Workflow } from "lucide-react";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
@@ -9,7 +9,7 @@ import toastError from "../../errors/toastError";
 import StatsHubBar from "../../components/StatsHub";
 import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num, fmt, minutesText } from "../../components/analytics/kit";
 import Drawer from "@material-ui/core/Drawer";
-import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, RingStat, rankRows, CountStat, BarsChart, Switch, MultiBars, BoardHead, Person, EmptyNote } from "../../components/peak";
+import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, rankRows, CountStat, BoardHead, Person, EmptyNote } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
@@ -20,20 +20,23 @@ import { Leads, mins } from "../CommercialCenter/ProcessTab";
 
 const pct = (v) => (v === null || v === undefined ? "-" : `${String(Math.round(v * 10) / 10).replace(".", ",")}%`);
 const Failed = ({ onRetry }) => <GlowPanel error onRetry={onRetry} />;
+// a small ring with the share in the middle (the lines of "Etapas do processo mais puladas")
+const MiniRing = ({ pct: value, tone }) => {
+  const r = 16;
+  const len = 2 * Math.PI * r;
+  const color = tone === "bad" ? "#dc2626" : "#d97706";
+  return (
+    <svg className="mx-ring" viewBox="0 0 40 40" aria-hidden="true">
+      <circle className="bg" cx="20" cy="20" r={r} />
+      <circle cx="20" cy="20" r={r} stroke={color} strokeLinecap="round" strokeDasharray={`${(len * Math.min(100, value)) / 100} ${len}`} transform="rotate(-90 20 20)" />
+      <text x="20" y="24" textAnchor="middle">{value}%</text>
+    </svg>
+  );
+};
 
 const PERIOD_LABEL = { today: "Hoje", week: "Últimos 7 dias", month: "Este mês", custom: "Período" };
 
-// the production of the whole team, day by day: the days of every consultant added up
-const teamSeries = (consultants) => {
-  const days = new Map();
-  (consultants || []).forEach((p) => (p.series || []).forEach((d) => {
-    const t = days.get(d.day) || { day: d.day, attendances: 0, messagesSent: 0, peopleContacted: 0, enrollments: 0 };
-    ["attendances", "messagesSent", "peopleContacted", "enrollments"].forEach((k) => { t[k] += Number(d[k]) || 0; });
-    days.set(d.day, t);
-  }));
-  return [...days.values()].sort((x, y) => (x.day < y.day ? -1 : 1));
-};
-// Resultado do período: the four numbers the management looks for first, the days behind the one chosen, and what explains them
+// Resultado do período: the four numbers the management looks for first, and what explains them
 const RESULT_KEYS = [
   { key: "enrollments", title: "Matrículas", unit: "matrículas" },
   { key: "attendances", title: "Conversas atendidas", unit: "conversas" },
@@ -44,8 +47,6 @@ const RESULT_KEYS = [
 const share = (a, b) => (b > 0 ? `${(Math.round((a / b) * 1000) / 10).toLocaleString("pt-BR")}%` : null);
 const Results = ({ params, period }) => {
   const { data, loading, error, reload } = useAnalytics("/analytics/team", params);
-  const series = useMemo(() => teamSeries(data && data.consultants), [data]);
-  const [shown, setShown] = useState("all");
   if (error && !data) return <Failed onRetry={reload} />;
   const wait = loading && !data;
   const t = (data && data.totals) || {};
@@ -58,31 +59,14 @@ const Results = ({ params, period }) => {
     peopleContacted: share(won, Number(t.peopleContacted)) ? `${share(won, Number(t.peopleContacted))} viraram matrícula` : null,
     messagesSent: won > 0 ? `${num(Math.round((Number(t.messagesSent) || 0) / won))} mensagens por matrícula` : null,
   };
-  const current = RESULT_KEYS.find((k) => k.key === shown);
   const first = t.firstContactMinutes;
   return (
     <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
       <div className="pk-grid-4" role="group" aria-label="Resultado do período">
         {RESULT_KEYS.map((k) => (
-          <CountStat key={k.key} id={k.key} label={k.title} value={Number(t[k.key]) || 0} loading={wait} hint={rates[k.key] || badge}
-            action={shown === k.key ? "Ver todas" : "Ver só esta"} onClick={() => setShown(shown === k.key ? "all" : k.key)} />
+          <CountStat key={k.key} id={k.key} label={k.title} value={Number(t[k.key]) || 0} loading={wait} hint={rates[k.key] || badge} />
         ))}
       </div>
-      <section className="gv-card" data-panel="bars" aria-busy={wait ? "true" : undefined}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <h3 className="gv-title">{current ? `${current.title} por dia` : "Todas as frentes por dia"} · {badge}</h3>
-          <Switch label="O que mostrar" value={shown} onChange={setShown} options={[["all", "Todas"], ...RESULT_KEYS.map((k) => [k.key, k.title])]} />
-        </div>
-        {wait ? <div className="pk-skel" style={{ height: 220, borderRadius: 8 }} aria-hidden="true" />
-          : current ? (
-            <>
-              <BarsChart days={series.map((d) => ({ day: d.day, value: d[current.key] }))} unit={current.unit} />
-              {rates[current.key] && <div className="gv-ffoot">Conversão no período: <b>{rates[current.key]}</b></div>}
-            </>
-          ) : (
-            <MultiBars onPick={setShown} rows={RESULT_KEYS.map((k) => ({ key: k.key, title: k.title, unit: k.unit, total: Number(t[k.key]) || 0, note: rates[k.key], days: series.map((d) => ({ day: d.day, value: d[k.key] })) }))} />
-          )}
-      </section>
       <div className="pk-grid">
         <GlowStat id="conversion" label="Conversão" icon={TrendingUp} tone="violet" loading={wait} value={fmt(t.conversion, "percent")} hint="Matrículas divididas pelos leads trabalhados" />
         <GlowStat id="firstContact" label="Primeiro contato" icon={Clock} tone={first > 15 ? "warn" : "good"} loading={wait} value={first === null || first === undefined ? "—" : minutesText(first)} hint="Média em horário comercial. Ideal: até 15 min" />
@@ -165,10 +149,19 @@ const Commercial = ({ params }) => {
         </GlowPanel>
         <GlowPanel title="Etapas do processo mais puladas" sub="Uma etapa sem fazer enquanto a seguinte já foi feita. Clique para ver quem pulou, com qual lead e quando."
           loading={wait} empty={!d.process.skipped.length} emptyText="Nenhuma etapa pulada no período.">
-          <div className="pk-ringgrid">
-            {d.process.skipped.slice(0, 6).map((x) => (
-              <RingStat key={x.step} id={`skipped-${x.step}`} tone="bad" title={x.label} value={x.n} total={Math.max(x.n, d.process.samples || 0)} unit="conversas" action="Ver quem pulou" onClick={() => setSkipped(x)} />
-            ))}
+          <div className="mx-list">
+            {d.process.skipped.slice(0, 6).map((x) => {
+              const total = Math.max(x.n, d.process.samples || 0);
+              const share = total ? Math.round((x.n / total) * 100) : 0;
+              const tone = share >= 25 ? "bad" : "warn";
+              return (
+                <button key={x.step} type="button" className="mx-item mx-skip" data-tone={tone} onClick={() => setSkipped(x)} aria-label={`${x.label}: ${x.n} de ${total} conversas. Ver quem pulou`}>
+                  <MiniRing pct={share} tone={tone} />
+                  <span className="mx-text"><b>{x.label}</b><small>{num(x.n)} de {num(total)} conversas</small></span>
+                  <span className="mx-go">Ver quem pulou <ChevronRight size={15} aria-hidden="true" /></span>
+                </button>
+              );
+            })}
           </div>
         </GlowPanel>
       </div>
