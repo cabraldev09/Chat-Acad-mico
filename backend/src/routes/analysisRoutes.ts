@@ -70,7 +70,14 @@ r.post("/grades/:id/send", isAuth, Grades.send);
 r.delete("/grades/:id", isAuth, Grades.remove);
 
 // ---- the student's own portal (its own login and token)
-r.post("/portal/login", rateLimit({ windowMs: 15 * 60000, max: 20 }), Portal.login);
+// same strength as the staff /login (this route also checks a staff password when a team e-mail is typed here):
+// only wrong answers count, per network and per login (IP + login), so it is not a softer brute-force path
+r.post(
+  "/portal/login",
+  rateLimit({ windowMs: 15 * 60000, max: (Number(process.env.LOGIN_RATE_MAX) || 10) * 6, failuresOnly: true }),
+  rateLimit({ windowMs: 15 * 60000, max: Number(process.env.LOGIN_RATE_MAX) || 10, failuresOnly: true, key: req => `portal:${req.ip}|${String(req.body?.login || "").trim().toLowerCase()}` }),
+  Portal.login
+);
 r.get("/portal/token/:token", rateLimit({ windowMs: 15 * 60000, max: 60 }), Portal.checkToken);
 r.post("/portal/activate", rateLimit({ windowMs: 15 * 60000, max: 20 }), Portal.activate);
 r.post("/portal/forgot", rateLimit({ windowMs: 15 * 60000, max: 6 }), Portal.forgot);

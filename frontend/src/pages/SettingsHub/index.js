@@ -21,7 +21,7 @@ import { Automation, Capture, EfiSettings, HoursAndAlerts } from "../CRM/Setting
 import CoursePages from "../CRM/CoursePages";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
-import { isManager } from "../../utils/access";
+import { isManager, isStrictAdmin } from "../../utils/access";
 import openSocket from "../../services/socket-io";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -43,9 +43,9 @@ const GROUPS = [
   { id: "modelos", section: "WhatsApp e custos", label: "Modelos da Meta", icon: FileText, hint: "Modelos por departamento e onde cada um é usado", keywords: "template modelo meta aprovado utilidade marketing abertura autorizar envio categoria" },
   { id: "meta", section: "WhatsApp e custos", label: "Custos", icon: CircleDollarSign, hint: "Meta e IA, orçamento e como gastar menos", keywords: "custo gasto preço orçamento openai anthropic meta fatura limite diário tokens" },
   { id: "captacao", section: "Matrícula", label: "Captação", icon: FileInput, hint: "Formulário público e páginas por curso", keywords: "formulário site página curso lead captação" },
-  { id: "pagamentos", section: "Matrícula", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true, keywords: "efí pix boleto taxa pagamento" },
+  { id: "pagamentos", section: "Matrícula", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true, system: true, keywords: "efí pix boleto taxa pagamento" },
   { id: "regras", section: "Matrícula", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true, keywords: "vagas semestres previsão análise curricular regras" },
-  { id: "email", section: "Sistema", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true, keywords: "email e-mail envio smtp resend modelo pendências diário" },
+  { id: "email", section: "Sistema", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true, system: true, keywords: "email e-mail envio smtp resend modelo pendências diário" },
   { id: "entregas", section: "Sistema", label: "Entregas e arquivos", icon: SlidersHorizontal, hint: "Mensagens interrompidas e acesso a arquivos", keywords: "entrega mensagem interrompida conferir reenviar arquivo revogar link operação" },
   { id: "erros", section: "Sistema", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true, keywords: "erro falha tela navegador" },
 ];
@@ -163,7 +163,7 @@ const useCrm = (enabled) => {
   return { s, setS, save, users, failed, retry: () => setAttempt((n) => n + 1) };
 };
 
-const Geral = ({ values, save, admin }) => {
+const Geral = ({ values, save, admin, system }) => {
   const classes = useStyles();
   const [show, setShow] = useState(false);
   const token = values.userApiToken || "";
@@ -179,7 +179,7 @@ const Geral = ({ values, save, admin }) => {
         <div className={classes.hint}>Os dados são guardados em UTC; só a exibição e a contagem do dia mudam.</div>
       </Card>
       {/* the old single API token: rarely used (a QR Code number is given to a person in Conexões, by the management) */}
-      {admin && (
+      {system && (
         <Advanced>
           <Card title="Integração" sub="Token usado pelas integrações externas (API). Trate como uma senha.">
             <div className={classes.row}>
@@ -288,10 +288,10 @@ const REGISTRY = [
   { to: "/queues", icon: ListTree, title: "Filas", what: "filas de atendimento", key: "queues" },
   { to: "/tags", icon: Tags, title: "Etiquetas", what: "etiquetas", key: "tags" },
   { to: "/crm/config", icon: GraduationCap, title: "Funil, cursos e propostas", what: "etapas do funil", key: "stages" },
-  { to: "/integrations", icon: KeyRound, title: "API e webhooks", what: "tokens e avisos", key: null, admin: true },
+  { to: "/integrations", icon: KeyRound, title: "API e webhooks", what: "tokens e avisos", key: null, admin: true, system: true },
 ];
 
-const Cadastros = ({ admin }) => {
+const Cadastros = ({ admin, system }) => {
   const classes = useStyles();
   const [counts, setCounts] = useState({});
   useEffect(() => {
@@ -306,7 +306,7 @@ const Cadastros = ({ admin }) => {
   return (
     <>
       <div className={classes.grid}>
-        {REGISTRY.filter((r) => r.key !== "connections" && (!r.admin || admin)).map((r) => {
+        {REGISTRY.filter((r) => r.key !== "connections" && (!r.admin || admin) && (!r.system || system)).map((r) => {
           const Icon = r.icon;
           const n = r.key ? counts[r.key] : null;
           return (
@@ -624,8 +624,10 @@ const SettingsHub = () => {
   const { user } = useContext(AuthContext);
   const history = useHistory();
   const { search } = useLocation();
-  const admin = isManager(user); // the coordination has the same powers as the administrator
-  const groups = useMemo(() => GROUPS.filter((g) => !g.admin || admin), [admin]);
+  const admin = isManager(user); // administrator or coordination: the settings of the team and the CRM
+  // the credentials (payment gateway, e-mail account, API tokens) are the administrator's alone
+  const system = isStrictAdmin(user);
+  const groups = useMemo(() => GROUPS.filter((g) => (!g.admin || admin) && (!g.system || system)), [admin, system]);
   const asked = new URLSearchParams(search).get("secao");
   const wanted = asked === "horario" ? "atendimento" : asked;
   const [group, setGroup] = useState(groups.some((g) => g.id === wanted) ? wanted : "prontidao");
@@ -710,7 +712,7 @@ const SettingsHub = () => {
                 {current.id === "meta" && <Costs />}
                 {current.id === "modelos" && <><Operations part="modelos" /><MetaTemplates values={values} save={save} /></>}
 
-                {current.id === "geral" && <Geral values={values} save={save} admin={admin} />}
+                {current.id === "geral" && <Geral values={values} save={save} admin={admin} system={system} />}
                 {current.id === "atendimento" && <><Horario values={values} save={save} crm={crm} /><Atendimento values={values} save={save} crm={crm} /><Operations part="atendimento" /></>}
                 {current.id === "tutoria" && <Tutoria values={values} save={save} />}
                 {current.id === "captacao" && (
@@ -719,10 +721,10 @@ const SettingsHub = () => {
                     <div style={{ marginTop: 20 }}><CoursePages /></div>
                   </>
                 )}
-                {current.id === "pagamentos" && admin && <Pagamentos />}
-                {current.id === "cadastros" && <Cadastros admin={admin} />}
+                {current.id === "pagamentos" && system && <Pagamentos />}
+                {current.id === "cadastros" && <Cadastros admin={admin} system={system} />}
                 {current.id === "regras" && admin && <RegrasAcademicas />}
-                {current.id === "email" && admin && <><Email /><EmailModels /></>}
+                {current.id === "email" && system && <><Email /><EmailModels /></>}
                 {current.id === "erros" && admin && <ErrosDeTela />}
               </SectionBoundary>
             )}

@@ -1,7 +1,8 @@
 // What a person may do is decided by the server; the screens only decide what to show.
 //  admin         everything
-//  coordenacao   coordinator: same powers as the administrator (settings, keys, connections, payments), except
-//                creating or promoting administrators
+//  coordenacao   coordinator: manages the team, the sectors, the connections and the CRM, but never creates or
+//                promotes administrators and never reads the credentials (payment gateway, API tokens, webhooks,
+//                AI keys, e-mail/SMTP): those are the administrator's alone (isStrictAdmin)
 //  everyone else their own area
 export const accessLevel = (user) => (user && user.profile === "admin" ? "admin" : user && user.role === "coordenacao" ? "coordenacao" : "user");
 export const isManager = (user) => accessLevel(user) !== "user";

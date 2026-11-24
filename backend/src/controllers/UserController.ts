@@ -3,7 +3,7 @@ import { getIO } from "../libs/socket";
 
 import AppError from "../errors/AppError";
 import User from "../models/User";
-import { roleOf } from "../helpers/Roles";
+import { isManagerRole, roleOf } from "../helpers/Roles";
 
 import CreateUserService from "../services/UserServices/CreateUserService";
 import ListUsersService from "../services/UserServices/ListUsersService";
@@ -39,6 +39,16 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     pageNumber
   });
 
+  // only the management sees the team's contact details (e-mail, phone); the other roles get just what the
+  // selectors need (who exists and their function), never the staff directory's personal data
+  if (!isManagerRole(roleOf(req.user))) {
+    const slim = users.map(u => {
+      const { email, phone, ...rest } = u.toJSON() as any;
+      return rest;
+    });
+    return res.json({ users: slim, count, hasMore });
+  }
+
   return res.json({ users, count, hasMore });
 };
 
@@ -67,6 +77,11 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
 
   // the form shows the effective role: an administrator is "admin" even when the stored role was left at the default
   const { tokenVersion, ...safe } = user.toJSON() as any;
+  // the team's contact details (e-mail, phone) are the management's to see (and each person's own); other roles get the rest
+  if (!isManagerRole(roleOf(req.user)) && Number(userId) !== Number(req.user.id)) {
+    delete safe.email;
+    delete safe.phone;
+  }
   return res.status(200).json({ ...safe, role: roleOf(user) });
 };
 
@@ -75,9 +90,16 @@ export const update = async (
   res: Response
 ): Promise<Response> => {
   const { userId } = req.params;
-  const userData = req.body;
-  const target = await User.findByPk(userId, { attributes: ["id", "profile", "role"] });
-  assertMayManage(req, { role: userData.role, profile: userData.profile }, target);
+  let userData = req.body;
+  if (isManagerRole(roleOf(req.user))) {
+    const target = await User.findByPk(userId, { attributes: ["id", "profile", "role"] });
+    assertMayManage(req, { role: userData.role, profile: userData.profile }, target);
+  } else {
+    // a person editing their own profile (canEditUser lets nobody else through): only the name, the phone and the password.
+    // Role, sectors, number, e-mail (the login) and the limits of attendance stay with the management.
+    const { name, phone, password } = req.body || {};
+    userData = { name, phone, password };
+  }
 
   const user = await UpdateUserService({ userData, userId });
 

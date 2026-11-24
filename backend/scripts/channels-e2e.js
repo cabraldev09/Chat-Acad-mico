@@ -2886,11 +2886,17 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get("/polos", as)).status === 200, "polos list");
       assert((await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as)).status === 201, "coordinator creating a polo");
 
-      // the coordination has the same powers as the administrator (decided by the company): credentials, keys, tokens...
-      assert((await http.get("/payments/efi/settings", as)).status === 200, "coordinator cannot reach the payment credentials");
-      assert((await http.get("/api-tokens", as)).status === 200, "coordinator cannot reach API tokens");
-      assert((await http.get("/ai-settings", as)).status === 200, "coordinator cannot reach AI keys");
-      assert((await http.put("/ai-settings", {}, as)).status === 200, "coordinator cannot save AI keys");
+      // the credentials and integration secrets are the administrator's alone (not coordination): payment gateway,
+      // API tokens, webhook secrets, AI keys and e-mail/SMTP
+      assert((await http.get("/payments/efi/settings", as)).status === 403, "coordinator reached the payment credentials");
+      assert((await http.get("/payments/efi/wallets", as)).status === 403, "coordinator reached the payment wallets");
+      assert((await http.get("/api-tokens", as)).status === 403, "coordinator reached API tokens");
+      assert((await http.post("/api-tokens", { name: "x" }, as)).status === 403, "coordinator created an API token");
+      assert((await http.get("/ai-settings", as)).status === 403, "coordinator reached AI keys");
+      assert((await http.put("/ai-settings", {}, as)).status === 403, "coordinator saved AI keys");
+      assert((await http.get("/webhooks-config", as)).status === 403, "coordinator reached webhook secrets");
+      assert((await http.get("/mail/settings", as)).status === 403, "coordinator reached the mail/SMTP settings");
+      // but keeps the rest of the management: the general settings (not secrets), the team and the polos
       const allSettings = await http.get("/settings", as);
       assert(allSettings.status === 200 && allSettings.data.length > 0, "coordinator cannot read every setting");
       assert((await http.put("/settings/appTimezone", { value: "America/Porto_Velho" }, as)).status === 200, "coordinator cannot change a setting");
@@ -2903,6 +2909,69 @@ const postMeta = (id, payload, secret, badSig) => {
       const cons = (await http.post("/auth/login", { email: "do-coord@x.com", password: "senha123" })).data.token;
       assert((await http.post("/users", { name: "X", email: "x-x@x.com", password: "senha123", role: "consultor" }, asUser(cons))).status === 403, "consultant created a user");
       assert((await http.get("/commissions", as)).data.scope === "all", "coordinator does not see everyone's commissions");
+    });
+    await test("a non-manager role reaches only what is theirs: no staff contact details, no hand-off of leads, no other number's state", async () => {
+      const owner = (await http.post("/users", { name: "Dona Lead", email: "dona-lead@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const other = (await http.post("/users", { name: "Outro Consultor", email: "outro-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const myTok = (await http.post("/auth/login", { email: "dona-lead@x.com", password: "senha123" })).data.token;
+      const me = asUser(myTok);
+      // the staff directory: a consultant sees who exists (for the selectors) but not their e-mail/phone
+      const seenByConsultant = (await http.get("/users", { ...me, params: { searchParam: "outro-cons@x.com" } })).data.users.find(u => u.id === other.id);
+      assert(seenByConsultant && seenByConsultant.name && seenByConsultant.email === undefined && seenByConsultant.phone === undefined, `consultant saw staff contact details: ${JSON.stringify(seenByConsultant)}`);
+      assert((await http.get(`/users/${other.id}`, me)).data.email === undefined, "consultant read a colleague's e-mail on the detail");
+      // the management still sees the contact details
+      assert(typeof (await http.get(`/users/${other.id}`, auth())).data.email === "string", "management lost the staff e-mail");
+      // a lead of the consultant: they keep it or drop it, but cannot hand it to someone else
+      const mine = (await http.post("/leads", { name: "Lead Proprio", phone: "5569977710001", source: "Site", ownerId: owner.id }, auth())).data.lead;
+      assert((await http.put(`/leads/${mine.id}`, { notes: "nota minha" }, me)).status === 200, "consultant cannot edit own lead");
+      assert((await http.put(`/leads/${mine.id}`, { ownerId: other.id }, me)).status === 403, "consultant handed a lead to someone else");
+      assert((await http.post("/leads", { name: "Para Outro", phone: "5569977710002", source: "Site", ownerId: other.id }, me)).status === 403, "consultant created a lead in another's name");
+      assert(Number(sql(`SELECT ownerId FROM Leads WHERE id=${mine.id}`)) === owner.id, "the lead changed hands");
+      // the management may reassign
+      assert((await http.put(`/leads/${mine.id}`, { ownerId: other.id }, auth())).status === 200, "management cannot reassign a lead");
+      // the health/telemetry of a connection is the management's (or its owner's), not any authenticated user's
+      const anyWa = Number(sql("SELECT id FROM Whatsapps ORDER BY id LIMIT 1"));
+      if (anyWa) assert((await http.get(`/channels/${anyWa}/safety`, me)).status === 403, "consultant read another number's safety state");
+    });
+    await test("editing a person: an empty password keeps the current one, a partial change keeps sectors and number, only a new password or role signs them out", async () => {
+      const q = (await http.post("/queue", { name: "Fila da edicao", color: "#335577" }, auth())).data;
+      const wa = Number(sql("SELECT id FROM Whatsapps ORDER BY id LIMIT 1"));
+      const made = (await http.post("/users", { name: "Pessoa Editada", email: "editada@x.com", password: "senha123", role: "consultor", queueIds: [q.id], whatsappId: wa }, auth())).data;
+      assert(made && made.id, `create ${JSON.stringify(made).slice(0, 120)}`);
+      const tok = (await http.post("/auth/login", { email: "editada@x.com", password: "senha123" })).data.token;
+      const stillIn = async () => (await http.get("/users", asUser(tok))).status === 200;
+      const sectors = () => Number(sql(`SELECT COUNT(*) FROM UserQueues WHERE userId=${made.id}`));
+      // the edit form always sends the password field, empty when it is not being changed: that is "keep", never an error
+      const ed = await http.put(`/users/${made.id}`, { name: "Pessoa Editada", email: "editada@x.com", password: "", role: "consultor", queueIds: [q.id], whatsappId: wa, phone: "" }, auth());
+      assert(ed.status === 200, `edit with the password field empty: ${ed.status} ${JSON.stringify(ed.data)}`);
+      assert((await http.post("/auth/login", { email: "editada@x.com", password: "senha123" })).status === 200, "the empty field changed the password");
+      assert(await stillIn(), "changing only the sectors signed the person out");
+      // a partial change (only the name) keeps the sectors and the default number
+      assert((await http.put(`/users/${made.id}`, { name: "Pessoa Renomeada" }, auth())).status === 200, "partial edit");
+      assert(sectors() === 1 && Number(sql(`SELECT whatsappId FROM Users WHERE id=${made.id}`)) === wa, "a partial edit wiped the sectors or the number");
+      assert(await stillIn(), "a new name signed the person out");
+      // a short password is refused with the Portuguese code; a missing one when creating too
+      const short = await http.put(`/users/${made.id}`, { password: "abc" }, auth());
+      assert(short.status === 400 && short.data.error === "ERR_PASSWORD_SHORT", `short password: ${short.status} ${JSON.stringify(short.data)}`);
+      const noPass = await http.post("/users", { name: "Sem Senha", email: "sem-senha@x.com", role: "consultor" }, auth());
+      assert(noPass.status === 400 && noPass.data.error === "ERR_PASSWORD_REQUIRED", `create without a password: ${noPass.status} ${JSON.stringify(noPass.data)}`);
+      const badMail = await http.post("/users", { name: "Mail Ruim", email: "nao-e-email", password: "senha123", role: "consultor" }, auth());
+      assert(badMail.status === 400 && badMail.data.error === "ERR_INVALID_EMAIL", `invalid e-mail: ${badMail.status} ${JSON.stringify(badMail.data)}`);
+      // the person's own profile ("Perfil" in the menu): name and phone change, the role, sectors and e-mail of the login do not;
+      // nobody else's profile can be changed; their own e-mail is visible to them
+      const own = await http.put(`/users/${made.id}`, { name: "Nome Proprio", phone: "69 99999-0000", role: "admin", queueIds: [], email: "outro@x.com", password: "" }, asUser(tok));
+      assert(own.status === 200, `own profile: ${own.status} ${JSON.stringify(own.data)}`);
+      const row = sql(`SELECT name, role, email, profile FROM Users WHERE id=${made.id}`);
+      assert(row === "Nome Proprio|consultor|editada@x.com|user", `own profile changed more than name/phone: ${row}`);
+      assert(sectors() === 1, "own profile wiped the sectors");
+      assert(await stillIn(), "editing the own name signed the person out");
+      assert((await http.get(`/users/${made.id}`, asUser(tok))).data.email === "editada@x.com", "the person cannot see their own e-mail");
+      const adminId = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
+      assert((await http.put(`/users/${adminId}`, { name: "Invadido" }, asUser(tok))).status === 403, "a consultant edited someone else");
+      // a new password ends the old sessions, and the new one works
+      assert((await http.put(`/users/${made.id}`, { password: "outra-senha-9" }, auth())).status === 200, "password change");
+      assert(!(await stillIn()), "the old session survived a password change");
+      assert((await http.post("/auth/login", { email: "editada@x.com", password: "outra-senha-9" })).status === 200, "the new password does not work");
     });
     await test("team goals: automatic count from the CRM, manual adjustment, shared line, repeat the period, managers only", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
