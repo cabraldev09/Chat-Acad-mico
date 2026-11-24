@@ -132,6 +132,21 @@ Além do funil: quantos leads **entraram** no sistema (evento `lead_created`, po
   - sem exigir "curso de" e em áudio longo transcrito;
   - cursos repetidos no cadastro ("Educação Física" e "… (Área Básica De Ingresso)", "Cst Em Criminologia" e "Criminologia") contam como um curso só; vale o de nome simples;
   - os cursos "2.0" ("Educação Física 2.0", "Administração 2.0") são outros cursos: só são escolhidos quando a pessoa diz "2.0", e pedir um deles com o outro anotado é troca de curso;
+- **Graduação 2.0** (`CommercialServices/Graduacao2.ts`): segunda graduação com percurso mais curto, só para quem já tem uma formação específica (tabela institucional; o consultor confirma pelo diploma). Vale para os cursos "2.0" do cadastro:
+
+  | Curso 2.0 | Quem pode | Semestres |
+  |---|---|---|
+  | Administração | Ciências Contábeis, Gestão da TI ou tecnólogo da área de negócios | 4 |
+  | Ciências Contábeis | Administração, Administração Pública, Ciências Econômicas ou Atuariais | 2 |
+  | Ciências Econômicas | Administração ou Administração Pública | 4 |
+  | Educação Física (bacharelado) | Licenciatura em Educação Física | 4 |
+  | Engenharia Ambiental | Engenharia Civil (5); Elétrica, Produção, Mecânica ou Gestão Ambiental (6) | 5 ou 6 |
+  | Engenharia de Produção | Engenharia Civil, Elétrica ou Mecânica (5); Ambiental ou Gestão da Produção Industrial (6) | 5 ou 6 |
+
+  - pedido um curso 2.0 sem a formação conhecida: a IA diz para quem é e pergunta "Você já tem essa formação?"; "não" leva ao curso regular;
+  - formação que não dá acesso: a IA diz isso e indica a segunda graduação regular, com análise do histórico;
+  - quem tem a formação e pede o curso regular ouve, uma vez, que pode fazer pela Graduação 2.0; "sim" troca o curso para o 2.0;
+  - as licenciaturas 2.0 e o percurso de Engenharia Civil para bombeiros não estão no cadastro de cursos e não são oferecidos; a tabela é atualizada aqui quando a instituição mudar.
   - uma palavra que serve para muitos cursos ("gestão", "segurança") não decide nada; uma parte que serve para até quatro ("letras") vira uma escolha para a pessoa.
 - **Outros nomes e siglas do curso:** em Cursos e materiais, dentro do curso, a gestão escreve como as pessoas chamam o curso (`Courses.aliases`). A IA passa a reconhecê-lo por esses nomes.
 - **Um só curso do lead:** o nome e o código do curso andam juntos. O nome reconhecido na conversa é o mais novo e decide; o código antigo do cadastro não é posto ao lado dele (`Slots.hydrate`), e uma busca com código e nome de cursos diferentes fica com o nome (`Academic.findCourse`).

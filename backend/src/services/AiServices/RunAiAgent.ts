@@ -39,6 +39,7 @@ import { dropClosingQuestion, gapNote, RETURN_GAP_MS, sinceText, whenText } from
 import { connectionsOf } from "../../helpers/AgentConnections";
 import { notOfferedText, offeredCourses } from "../CommercialServices/Academic";
 import { courseLabel, inventedCourse } from "../CommercialServices/InventedCourse";
+import { graduacao2Block } from "../CommercialServices/Graduacao2";
 import { todayLine } from "../CommercialServices/Hours";
 import { maskNamedPerson, maskPii } from "./ChatExport";
 import { sameAgentInstitution } from "../FlowServices/AgentInstitution";
@@ -359,8 +360,9 @@ const catalogBlock = async (given?: Array<{ name: string; level?: string | null;
   return [
     "Cursos que a instituição oferece (a lista completa; não existe nenhum outro), cada um com o seu formato:",
     ...[...byLevel.entries()].map(([level, names]) => `- ${level}: ${names.join("; ")}`),
+    graduacao2Block(list.map(c => c.name)),
     "Fale SÓ de cursos desta lista e diga o formato que está nela, nunca outro. Se a pessoa pedir um curso que não está nela (por exemplo Medicina ou Enfermagem, se não constarem), diga com clareza que a instituição não oferece esse curso e sugira os da lista que mais se aproximam. Se pedir uma área (saúde, gestão, tecnologia), cite só os cursos da lista que são dessa área; se não houver nenhum, diga isso e pergunte o que mais interessa. Nunca invente valor, duração, grade ou vaga."
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 };
 
 const commercialStatic = (agent: AiAgent, stage: StageData, training = "", catalog = ""): string =>

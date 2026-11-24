@@ -16,6 +16,7 @@ import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
 import { DOUBTS_QUESTION, ENTRY_LABEL, modalityShortOf, PRESENT_BRIDGE, REUSE_TEXT, PRESENT_BRIDGE_PLAIN, ENROLL_BRIDGE, PRICE_ASKS, THINK_PROBE, THINK_BYE, laneAsksName, lanePending, personName, affirms, asksSomething, asksForTime, saysNoInterest, cityCandidateOf, priorStudy, afterCourseChange, formatPending, reuseAlreadySaid, VALUE_BRIDGE, VALUE_BRIDGE_SHORT, holdsProposal, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, modalityMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion, oneQuestion, RESUME_QUESTION, wantsAnotherCourse } from "./Rules";
 import { coreOf, foldCourse, sameCourseName } from "./CourseMatch";
+import { is20, offer20Text, previousFrom, regularText, routeFor, text20, twinOf } from "./Graduacao2";
 import { configOf } from "./Config";
 import { detectFromText, findConsultantByName } from "./Detect";
 import { AcademicCtx, findCourse, notOfferedText, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
@@ -297,6 +298,30 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     return answered("Sem problema. Qual curso você tem interesse agora?", null, "other", { patch: { courseChoosing: true, resumeConfirm: false }, endsWithQuestion: true });
   }
 
+  // Graduação 2.0 (Graduacao2.ts): the answer to "Você já tem essa formação?" and to "Quer seguir pela Graduação 2.0?"
+  if (d.input !== null && wrote && !media.length && !state.slots.enrolledStudent && lastText.trim().length <= 60) {
+    const bot = foldCourse(lastBot);
+    const said = foldCourse(lastText);
+    const yes = /^(sim|s|ss|tenho|tenho sim|ja tenho|isso|claro|com certeza|sou|sou sim|quero|quero sim|pode ser|pode|ok|bora|vamos)\b/.test(said);
+    const no = /^(nao|n|ainda nao|nao tenho|nao sou)\b/.test(said);
+    const current = String(state.slots.courseName || "");
+    const list20 = yes || no ? await offeredCourses().catch(() => [] as Awaited<ReturnType<typeof offeredCourses>>) : [];
+    const next20 = (slots: Record<string, any>) => nextQuestionOf(slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds, scriptTexts(d));
+    if (/voce ja tem essa formacao/.test(bot) && is20(current) && (yes || no)) {
+      if (yes) {
+        const after = { ...state.slots, entryType: "second_degree", hasHigherEducation: true };
+        return answered(`Ótimo. Com essa formação você faz a *${current}* aproveitando o que já cursou; o consultor confirma pelo seu diploma.\n\n${next20(after) || "Quer que eu te explique como o curso funciona?"}`, null, "other", { patch: { entryType: "second_degree", hasHigherEducation: true }, endsWithQuestion: true });
+      }
+      const twin = twinOf(current, list20);
+      if (twin) return answered(regularText(current), null, "other", { patch: { courseId: twin.id, courseName: twin.name }, endsWithQuestion: true });
+    }
+    if (/quer seguir pela graduacao 2 0/.test(bot) && !is20(current) && (yes || no)) {
+      const twin = yes ? twinOf(current, list20) : null;
+      if (twin) return answered(`Combinado, seguimos pela *${twin.name}*.\n\n${next20({ ...state.slots, entryType: "second_degree" }) || "Quer que eu te explique como o curso funciona?"}`, null, "other", { patch: { courseId: twin.id, courseName: twin.name, entryType: "second_degree", hasHigherEducation: true }, endsWithQuestion: true });
+      if (no) return answered(`Tudo bem, seguimos com *${courseLabel(current)}*.\n\n${next20(state.slots) || "Quer que eu te explique como o curso funciona?"}`, null, "other", { endsWithQuestion: true });
+    }
+  }
+
   // "não tenho dúvidas, pode prosseguir": the process goes on by itself (next question, the format, the data for the scholarship, the consultant)
   if (d.input !== null && wrote && !media.length && (proceeds(lastText) || affirms(lastText, lastBot)) && !state.slots.enrolledStudent && !state.slots.courseChoosing) {
     const slots = state.slots;
@@ -365,6 +390,27 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   if (Array.isArray(heardNow.courseOptions) && heardNow.courseOptions.length >= 2 && !priorNow) {
     const names = heardNow.courseOptions.map((n: string) => `*${courseLabel(n)}*`);
     return answered(`Temos os dois: ${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}.\n\nPosso te explicar como funciona cada um. Por qual deles você quer começar?`, null, "other", { patch: { courseChoosing: true }, endsWithQuestion: true });
+  }
+
+  // Graduação 2.0: a 2.0 course is explained with who may take it (never offered to who does not have that degree); a person whose degree
+  // opens the 2.0 version of the course they named hears about the shorter path, once
+  if (heardNow.courseName && !state.slots.enrolledStudent) {
+    const said = previousFrom(lastText);
+    const previous = said || state.slots.previousCourse || null;
+    const prevPatch = said ? { previousCourse: said, hasHigherEducation: true } : {};
+    const list20 = await offeredCourses().catch(() => [] as Awaited<ReturnType<typeof offeredCourses>>);
+    if (is20(String(heardNow.courseName))) {
+      const text = text20(String(heardNow.courseName), previous);
+      const route = routeFor(String(heardNow.courseName), previous);
+      const twin = route === null ? twinOf(String(heardNow.courseName), list20) : null;
+      if (text) return answered(text, null, "other", { patch: { ...prevPatch, ...(route ? { entryType: "second_degree" } : {}), ...(twin ? { courseId: twin.id, courseName: twin.name } : {}) }, endsWithQuestion: true });
+    } else if (previous) {
+      const twin = twinOf(String(heardNow.courseName), list20);
+      const route = twin ? routeFor(twin.name, previous) : null;
+      if (twin && route && state.slots.offered20 !== twin.name) {
+        return answered(offer20Text(twin.name, route), null, "other", { patch: { ...prevPatch, offered20: twin.name, entryType: "second_degree", courseId: heardNow.courseId, courseName: heardNow.courseName }, endsWithQuestion: true });
+      }
+    }
   }
 
   // "cursos na área da saúde", "gestão ou educação?": the courses of the catalogue of those areas (the model never lists from memory)

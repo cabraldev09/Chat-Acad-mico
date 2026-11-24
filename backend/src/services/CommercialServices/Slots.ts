@@ -43,6 +43,8 @@ export const SLOT_KINDS: Record<string, Kind> = {
   courseChoosing: "boolean",
   // "Você continua com interesse nesse curso ou quer ver outro?" was asked to who came back, and is waiting for the answer
   resumeConfirm: "boolean",
+  // the 2.0 version of the course was offered to this person (once)
+  offered20: "string",
   // a transfer or a second degree was told once that the subjects already taken may be reused (by the curricular analysis)
   reuseExplained: "boolean", formatTried: "boolean", formatMark: "string", formatMarkCourse: "string", priceAsks: "number",
   // the commercial lane (asked the price: "price"; wants to enroll now: "enrollment"), and the one question after "vou pensar"
