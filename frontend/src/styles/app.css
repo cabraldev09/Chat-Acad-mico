@@ -152,6 +152,9 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 .mtoast-text { min-width: 0; }
 .mtoast-title { font-size: 14px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; }
 .mtoast-msg { margin-top: 2px; font-size: 13.5px; line-height: 1.4; color: #526078; overflow-wrap: anywhere; }
+.mtoast-action { margin-top: 8px; border: 0; border-radius: 9px; padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; color: #fff; background: var(--toast-color, #0693e3); }
+.mtoast-action:hover { filter: brightness(1.08); }
+.mtoast-action:focus-visible { outline: 2px solid var(--toast-color, #0693e3); outline-offset: 2px; }
 :root[data-theme="dark"] .mtoast-msg { color: #a9b6cc; }
 .Toastify__toast--success { --toast-color: #16a34a; }
 .Toastify__toast--error { --toast-color: #dc2626; }
