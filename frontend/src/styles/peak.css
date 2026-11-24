@@ -354,22 +354,25 @@ button.gv-frow:hover .gv-fbar { background: color-mix(in srgb, var(--c-brand) 86
 .gv-head .gv-dates input { border-color: rgba(255, 255, 255, 0.3); }
 
 /* ---- the funnel drawn as a funnel: every stage a slice that narrows into the next one ---- */
-.gv-fun { display: grid; gap: 3px; flex: 1; align-content: start; }
-.gv-fun-row { display: grid; grid-template-columns: minmax(96px, 26%) minmax(0, 1fr) 84px; align-items: center; gap: 10px; border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; width: 100%; border-radius: 6px; }
+.gv-fun { display: grid; gap: 2px; flex: 1; align-content: start; padding: 4px 0; }
+.gv-fun-row { display: grid; grid-template-columns: minmax(110px, 24%) minmax(0, 1fr) 56px; align-items: stretch; gap: 14px; border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; width: 100%; border-radius: 8px; transition: opacity .2s ease; }
 button.gv-fun-row { cursor: pointer; }
-.gv-fun-name { font-size: 13px; color: var(--text-1); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gv-fun[data-hover] .gv-fun-row:not([data-on]) { opacity: 0.45; }
+.gv-fun-name { align-self: center; font-size: 13px; color: var(--text-1); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gv-fun-row[data-empty="1"] .gv-fun-name { color: var(--text-2); font-weight: 450; }
-.gv-fun-shape { position: relative; display: block; height: 32px; min-width: 0; }
-.gv-fun-slice { position: absolute; inset: 0; background: color-mix(in srgb, var(--c-brand) calc(100% - var(--k) * 62%), #9cc8f5); transition: clip-path .5s cubic-bezier(.2,.8,.2,1), filter .15s ease; }
-.gv-fun-row[data-empty="1"] .gv-fun-slice { opacity: 0.45; }
-button.gv-fun-row:hover .gv-fun-slice { filter: brightness(1.12); }
-.gv-fun-in { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
-.gv-fun-val { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.gv-fun-val b { font-size: 13.5px; font-weight: 700; color: var(--text-1); }
+.gv-fun-shape { position: relative; display: block; min-height: 38px; min-width: 0; }
+.gv-fun-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; transform-origin: center top; animation: gv-fun-in .55s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i) * 45ms); }
+.gv-fun-layer { fill: var(--c-brand); transition: transform .3s cubic-bezier(.2,.8,.2,1); transform-origin: center; transform-box: fill-box; }
+.gv-fun-row[data-on] .gv-fun-layer:nth-child(1) { transform: scaleX(1.12); }
+.gv-fun-row[data-on] .gv-fun-layer:nth-child(2) { transform: scaleX(1.06); }
+.gv-fun-pill { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 2px 9px; border-radius: 999px; background: var(--surface, #fff); color: var(--text-1); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 1px 4px rgba(11, 26, 46, .18); pointer-events: none; white-space: nowrap; }
+.gv-fun-val { align-self: center; display: flex; justify-content: flex-end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gv-fun-val b { font-size: 15px; font-weight: 700; color: var(--text-1); }
 .gv-fun-row[data-empty="1"] .gv-fun-val b { color: var(--text-3); font-weight: 600; }
-.gv-fun-val span { font-size: 12px; color: var(--text-2); min-width: 36px; text-align: right; }
-:root[data-theme="dark"] .gv-fun-in { color: #0b1a2e; }
-@media (prefers-reduced-motion: reduce) { .gv-fun-slice { transition: none; } }
+@keyframes gv-fun-in { from { transform: scaleX(0.2); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
+:root[data-theme="dark"] .gv-fun-layer { fill: #6aa8ec; }
+:root[data-theme="dark"] .gv-fun-pill { background: #0f1b2b; color: #e8eef7; box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+@media (prefers-reduced-motion: reduce) { .gv-fun-svg { animation: none; } .gv-fun-layer { transition: none; } }
 
 /* ---- shares: one bar with every part and a line for each ---- */
 .gv-sharelist { display: grid; gap: 12px; min-width: 0; }
@@ -405,7 +408,7 @@ button.gv-prio-row:hover { border-color: var(--tone); background: color-mix(in s
 .gv-prio-txt span { font-size: 12.5px; color: var(--text-2); line-height: 1.4; }
 .gv-prio-go { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: 12.5px; font-weight: 650; color: var(--c-brand); white-space: nowrap; }
 :root[data-theme="dark"] .gv-prio li { --tone-ink: var(--tone); }
-@media (max-width: 520px) { .gv-prio-row { flex-wrap: wrap; } .gv-prio-txt { flex-basis: calc(100% - 56px); } .gv-prio-go { margin-left: 52px; } .gv-fun-row { grid-template-columns: minmax(88px, 32%) minmax(0, 1fr) 70px; gap: 6px; } .gv-fun-name { white-space: normal; font-size: 12.5px; line-height: 1.2; } }
+@media (max-width: 520px) { .gv-prio-row { flex-wrap: wrap; } .gv-prio-txt { flex-basis: calc(100% - 56px); } .gv-prio-go { margin-left: 52px; } .gv-fun-row { grid-template-columns: minmax(84px, 34%) minmax(0, 1fr) 34px; gap: 8px; } .gv-fun-name { white-space: normal; font-size: 12.5px; line-height: 1.2; } }
 
 .gv-av { flex: none; border-radius: 50%; display: inline-grid; place-items: center; font-weight: 700; letter-spacing: 0.01em; }
 .gv-rowlist { display: grid; }

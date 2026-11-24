@@ -95,7 +95,7 @@ whenLeader(() => {
   import("./services/CommercialServices/MecDefaults").then(({ seedMecDefaults }) => seedMecDefaults()).catch(() => undefined);
   // the goals of the polos: what was typed as "Já realizado" is the total shown (once)
   import("./helpers/GoalTotals").then(({ migrateGoalTotals }) => migrateGoalTotals()).catch(() => undefined);
-  // every contact already in the system becomes a lead too (idempotent)
+  // every person who already wrote to us becomes a lead too (idempotent; a contact the team only talked to stays a contact)
   import("./services/CrmServices/LeadCore")
     .then(({ backfillLeads }) => backfillLeads())
     .then(r => logger.info(`CRM backfill: ${r.created} new leads`))
