@@ -7,6 +7,7 @@ import { META_RATES_BR, META_RATES_DATE, META_RULES } from "../services/ChannelS
 import { Op } from "sequelize";
 import { dayBounds } from "../helpers/AppTime";
 import OutboundDelivery from "../models/OutboundDelivery";
+import { monthBudget } from "../services/OutboundServices/MonthBudget";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -24,16 +25,19 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   const { start } = dayBounds(from, tz);
   const { end } = dayBounds(to, tz);
   const where = { createdAt: { [Op.between]: [start, end] }, channel: "whatsapp_cloud", status: { [Op.in]: ["sent", "uncertain"] } } as any;
-  const [estimatedUsd, messages, unpriced] = await Promise.all([
+  const [estimatedUsd, messages, unpriced, month] = await Promise.all([
     OutboundDelivery.sum("estimatedUsd", { where }),
     OutboundDelivery.count({ where }),
-    OutboundDelivery.count({ where: { ...where, estimatedUsd: null } })
+    OutboundDelivery.count({ where: { ...where, estimatedUsd: null } }),
+    monthBudget()
   ]);
   const real = Number(report.total || 0);
   const est = Number(estimatedUsd || 0);
   const suggestedRate = messages > unpriced && real > 0 && (!report.currency || report.currency === "USD") ? Math.round((real / (messages - unpriced)) * 10000) / 10000 : null;
   return res.json({
     ...report,
+    // the estimate of this month against the cap of the month (Operação e custos)
+    month,
     estimate: { usd: Math.round(est * 100) / 100, messages, unpriced, sameCurrency: !report.currency || report.currency === "USD", suggestedRate },
     // how the Meta charges, with the reference rate of each category (Brazil) and the date of the table
     pricing: { date: META_RATES_DATE, currency: "USD", country: "Brasil", rates: META_RATES_BR, rules: META_RULES }

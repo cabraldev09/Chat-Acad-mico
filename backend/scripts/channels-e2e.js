@@ -6015,15 +6015,15 @@ const postMeta = (id, payload, secret, badSig) => {
       const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
       assert((await http.get("/meta/templates", asUser(consTok))).status === 403, "a consultant reached the Meta templates");
       const first = await http.get("/meta/templates", auth());
-      assert(first.status === 200 && first.data.pack.length === 17 && first.data.pack.every(p => !p.created), `templates screen ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
+      assert(first.status === 200 && first.data.pack.length === 19 && first.data.pack.every(p => !p.created), `templates screen ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
       const sent = await http.post("/meta/templates/pack", {}, auth());
-      assert(sent.status === 200 && sent.data.results.length === 17 && sent.data.results.every(x => /^enviado/.test(x.result)), `pack ${JSON.stringify(sent.data)}`);
-      assert(graph.templates.length === 17 && graph.templates.every(t => t.waba === "WABA1" && t.category === "UTILITY" && t.allow_category_change === false && t.language === "pt_BR"), `templates as sent: ${JSON.stringify(graph.templates.map(t => [t.name, t.category, t.allow_category_change]))}`);
+      assert(sent.status === 200 && sent.data.results.length === 19 && sent.data.results.every(x => /^enviado/.test(x.result)), `pack ${JSON.stringify(sent.data)}`);
+      assert(graph.templates.length === 19 && graph.templates.every(t => t.waba === "WABA1" && t.category === "UTILITY" && t.allow_category_change === false && t.language === "pt_BR"), `templates as sent: ${JSON.stringify(graph.templates.map(t => [t.name, t.category, t.allow_category_change]))}`);
       assert(graph.templates.every(t => { const n = (t.components[0].text.match(/\{\{\d+\}\}/g) || []).length; return !n || (t.components[0].example.body_text[0].length >= 1); }), "a template went without examples");
       // nothing linked while under review (the Meta would refuse a send with it)
       assert(!sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`), "a template under review was put to use");
       const again = await http.post("/meta/templates/pack", {}, auth());
-      assert(again.data.results.every(x => x.result === "já existe") && graph.templates.length === 17, "the pack was sent twice");
+      assert(again.data.results.every(x => x.result === "já existe") && graph.templates.length === 19, "the pack was sent twice");
       // nobody already talking to the team gets an "Olá" again, and the openings carry quick-reply buttons
       assert(first.data.pack.every(p => !/^\s*ol[áa]/i.test(p.body) && p.department), "a template of the pack opens with Olá or has no department");
       const opening = graph.templates.find(t => t.name === "retomada_atendimento");
@@ -7308,6 +7308,43 @@ const postMeta = (id, payload, secret, badSig) => {
         const original=await Ticket.findByPk(${tgTicket});const temporary=await Ticket.create({contactId:original.contactId,whatsappId:original.whatsappId,status:"closed",unreadMessages:0,isGroup:false});
         const delivery=await Delivery.create({key:"test:retained-charge",ticketId:temporary.id,contactId:original.contactId,whatsappId:original.whatsappId,channel:"telegram",status:"sent",estimatedUsd:0});
         await temporary.destroy();await delivery.reload();assert.equal(delivery.ticketId,null);assert.equal(delivery.status,"sent");`);
+    });
+    await test("tutoring notices: the preview shows how many and how much, the cap of the month blocks, and the notice goes as the Utility template of the tutoring number", async () => {
+      const team = sql(`SELECT team FROM Whatsapps WHERE id=${cid}`);
+      sql(`UPDATE Whatsapps SET team='tutoria' WHERE id=${cid}`);
+      try {
+        const tutorTok = (await http.post("/auth/login", { email: "tutora-oficial@polo.test", password: "senha123" })).data.token;
+        const tutorId = sql(`SELECT id FROM Users WHERE email='tutora-oficial@polo.test'`);
+        sql(`INSERT INTO Leads (name, phone, stageId, enrolledAt, consentAt, onboardingTutorId, createdAt, updatedAt) VALUES ('Aluna Aviso Mensal', '5569981112233', (SELECT id FROM LeadStages ORDER BY id LIMIT 1), NOW(), NOW(), ${tutorId}, NOW(), NOW())`);
+        const tpl = graph.templates.find(t => t.name === "aviso_atividades_mes");
+        assert(tpl, "the pack did not create the activities template");
+        tpl.status = "APPROVED";
+        const date = new Date(Date.now() + 10 * 864e5).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+        const body = { kind: "atividades", date, note: "faça primeiro o fórum" };
+        const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
+        assert((await http.post("/tutoria/notices/preview", body, asUser(consTok))).status === 403, "a consultant reached the tutoring notices");
+        const prev = await http.post("/tutoria/notices/preview", body, asUser(tutorTok));
+        assert(prev.status === 200 && prev.data.canReceive >= 1 && prev.data.template.approved && prev.data.cost.category === "UTILITY" && !prev.data.blockers.length, `preview ${JSON.stringify(prev.data)}`);
+        assert(Math.abs(prev.data.cost.totalUsd - prev.data.canReceive * 0.0068) < 0.0001 && /Orientação da tutoria: faça primeiro o fórum\./.test(prev.data.sample), `cost and sample ${JSON.stringify(prev.data.cost)} ${prev.data.sample}`);
+        assert((await http.post("/tutoria/notices", body, asUser(tutorTok))).status === 400, "sent without the confirmation");
+        // the cap of the month: a notice that would pass it does not start
+        await http.put("/operations/config", { outbound_monthly_usd: "0.000001" }, auth());
+        const capped = await http.post("/tutoria/notices/preview", body, asUser(tutorTok));
+        assert(capped.data.blockers.includes("ERR_OUTBOUND_MONTH_BUDGET"), `cap not shown ${JSON.stringify(capped.data.blockers)}`);
+        assert((await http.post("/tutoria/notices", { ...body, confirm: true }, asUser(tutorTok))).status === 409, "a notice passed the cap of the month");
+        await http.put("/operations/config", { outbound_monthly_usd: "148" }, auth());
+        const before = graph.sent.length;
+        const sent = await http.post("/tutoria/notices", { ...body, confirm: true }, asUser(tutorTok));
+        assert(sent.status === 200 && sent.data.people === prev.data.canReceive, `send ${sent.status} ${JSON.stringify(sent.data)}`);
+        const s = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "template" && x.body.to === "5569981112233"), 30000, "notice template");
+        const params = s.body.template.components[0].parameters.map(p => p.text);
+        assert(s.body.template.name === "aviso_atividades_mes" && params[0] === "Aluna" && params[2] === date.split("-").reverse().join("/") && params[3] === "faça primeiro o fórum", `notice payload ${JSON.stringify(s.body.template)}`);
+        await waitFor(() => sql(`SELECT category FROM OutboundDeliveries WHERE key LIKE 'campaign:${sent.data.campaignId}:%' AND status='sent' LIMIT 1`) === "UTILITY", 8000, "the send was not recorded as Utility");
+        assert(Number(sql(`SELECT estimatedUsd FROM OutboundDeliveries WHERE key LIKE 'campaign:${sent.data.campaignId}:%' LIMIT 1`)) === 0.0068, "the Utility price was not used");
+        assert(sql(`SELECT whatsappId FROM Campaigns WHERE id=${sent.data.campaignId}`) === String(cid), "the notice did not go by the tutoring number");
+      } finally {
+        sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
+      }
     });
     await test("the daily review: the AI reads a consultant's conversation without CPF, phone or names, keeps only codes, and the management sees the training needed", async () => {
       const u = (await http.post("/users", { name: "Consultora Revisada", email: "review-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;

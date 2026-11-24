@@ -169,9 +169,17 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
       // a failed step is not retried (the earlier ones already reached the person)
       const errorCode = /^ERR_[A-Z0-9_]+$/.test(String(err?.message || "")) ? String(err.message) : "UNEXPECTED";
       logger.warn({ campaignId: fresh.id, shippingId: shipping.id, step: index + 1, errorCode }, "Campaign delivery step failed");
+      // the cap of the month of the Meta was reached: nothing left, the person goes back to the queue and the campaign pauses (sending
+      // the rest one by one would only fail each of them)
+      if (errorCode === "ERR_OUTBOUND_MONTH_BUDGET") {
+        await shipping.update({ status: "pending", error: null });
+        await fresh.update({ status: "paused", pauseReason: "O teto do mês do WhatsApp oficial foi atingido (Configurações, Operação e custos). A campanha continua quando o teto for ajustado ou no próximo mês." });
+        await emitCampaign(fresh.id);
+        return;
+      }
       // a refusal decided here, before anything left (opted out, closed window, template not authorized, budget, business hours): it
       // surely did not reach the person, so it is "failed" with the reason, never "uncertain" (which asks the team to check the chat)
-      const refused = /^ERR_(CONTACT_OPTED_OUT|MESSAGING_WINDOW_CLOSED|TEMPLATES_NOT_AUTHORIZED|TEMPLATE_INVALID|TEMPLATES_UNSUPPORTED|OUTBOUND_BUDGET|OUTBOUND_RATE_REQUIRED|OUTSIDE_BUSINESS_HOURS|NO_WAPP_FOUND|INVALID_NUMBER|WAPP_NOT_INITIALIZED)$/.test(String(err?.message || ""));
+      const refused = /^ERR_(CONTACT_OPTED_OUT|MESSAGING_WINDOW_CLOSED|TEMPLATES_NOT_AUTHORIZED|TEMPLATE_INVALID|TEMPLATES_UNSUPPORTED|OUTBOUND_BUDGET|OUTBOUND_MONTH_BUDGET|OUTBOUND_RATE_REQUIRED|OUTSIDE_BUSINESS_HOURS|NO_WAPP_FOUND|INVALID_NUMBER|WAPP_NOT_INITIALIZED)$/.test(String(err?.message || ""));
       await shipping.update({
         status: refused ? "failed" : "uncertain",
         error: `${steps.length > 1 ? `Mensagem ${index + 1} de ${steps.length}: ` : ""}${String(err.message || err)}`.slice(0, 500)
