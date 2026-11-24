@@ -3142,35 +3142,40 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("home dashboard: per day (days do not mix), groups, history and team members stay out, staff flag works", async () => {
       const mkContact = (name, num, group = false) => sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${num}', '', ${group}, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
       const mkTicket = (cid, group = false) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${cid}, ${tgId}, 0, ${group}, 'sales', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
-      const before = (await http.get("/dashboard", auth())).data;
+      // the whole test looks at one day, fixed when it starts: a run that crosses midnight in the company's time zone (it did, at
+      // 00:00:49) no longer splits the messages between two days. The messages are dated inside that day, in its first seconds.
+      const TZ = "America/Porto_Velho";
+      const day = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+      const onDay = { params: { date: day } };
+      const before = (await http.get("/dashboard", { ...onDay, ...auth() })).data;
       assert(before.now && before.period && before.period.week.length === 7 && before.period.byHour.length >= 13, "dashboard shape");
 
       const customer = mkTicket(mkContact("Cliente Painel", "tg_dash_1"));
       const mate = mkContact("Colega Painel", "tg_dash_2");
       const mateTicket = mkTicket(mate);
       const grp = mkTicket(mkContact("Grupo Painel", "tg_dash_g"), true);
-      const msg = (id, ticket, body, fromMe, ago) => sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticket}, '${body}', ${fromMe}, true, 'chat', 0, NOW() - INTERVAL '${ago}', NOW())`);
-      msg("dash-c-1", customer, "oi", false, "1 minute");
-      msg("dash-c-2", customer, "tudo bem?", true, "30 seconds");
-      // yesterday at noon in the company's time zone (a fixed "30 hours ago" lands two days back before 06:00)
-      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('dash-old', ${customer}, 'ontem', false, true, 'chat', 0, (date_trunc('day', NOW() AT TIME ZONE 'America/Porto_Velho') - INTERVAL '12 hours') AT TIME ZONE 'America/Porto_Velho', NOW())`);
-      msg("dash-m-1", mateTicket, "papo interno", false, "1 minute");
-      msg("dash-g-1", grp, "mensagem de grupo", false, "1 minute");
-      const after = (await http.get("/dashboard", auth())).data;
+      const msg = (id, ticket, body, fromMe, second) => sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticket}, '${body}', ${fromMe}, true, 'chat', 0, ('${day} 00:00:${String(second).padStart(2, "0")}'::timestamp AT TIME ZONE '${TZ}'), NOW())`);
+      msg("dash-c-1", customer, "oi", false, 1);
+      msg("dash-c-2", customer, "tudo bem?", true, 2);
+      // noon of the day before the fixed day, in the company's time zone
+      const y = new Date(new Date(`${day}T12:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('dash-old', ${customer}, 'ontem', false, true, 'chat', 0, ('${y} 12:00:00'::timestamp AT TIME ZONE '${TZ}'), NOW())`);
+      msg("dash-m-1", mateTicket, "papo interno", false, 1);
+      msg("dash-g-1", grp, "mensagem de grupo", false, 1);
+      const after = (await http.get("/dashboard", { ...onDay, ...auth() })).data;
       assert(after.period.received - before.period.received === 2, `received counts today's customer + team message only: ${after.period.received - before.period.received}`);
       assert(after.period.sent - before.period.sent === 1, "sent");
       assert(after.period.attendances - before.period.attendances === 2, "conversations of the day (group out, yesterday's message not counted)");
 
       // marking the colleague as team removes them from every number
       assert((await http.put(`/contacts/${mate}/staff`, { isStaff: true }, auth())).status === 200, "mark staff");
-      const staffed = (await http.get("/dashboard", auth())).data;
+      const staffed = (await http.get("/dashboard", { ...onDay, ...auth() })).data;
       assert(staffed.period.received - before.period.received === 1 && staffed.period.attendances - before.period.attendances === 1, "team member still counted");
       const ov = (await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
       assert(sql(`SELECT isStaff FROM Contacts WHERE id=${mate}`) === "1", "flag not saved");
       assert(ov.totals, "stats still answers");
 
       // another day: yesterday shows the old message, today's are not mixed in
-      const y = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
       const yesterday = (await http.get("/dashboard", { params: { date: y }, ...auth() })).data;
       assert(yesterday.date === y && yesterday.period.received >= 1, "yesterday keeps its own message");
       const agentView = await http.get("/dashboard", asUser(agentToken));
