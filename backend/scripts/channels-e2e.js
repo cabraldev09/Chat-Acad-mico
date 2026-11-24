@@ -7720,9 +7720,22 @@ const postMeta = (id, payload, secret, badSig) => {
       const noticesBefore = Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='tutoring_issue'`));
       say(`aud-${ticketId}-5`, true, "Abri outra solicitação no CAA, protocolo 2026112400777, sobre a nota da prova", 58);
       sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-5', lastMessageAt=NOW() - INTERVAL '58 minutes' WHERE id=${ticketId}`);
-      await http.post("/tutoria/audit/run", {}, auth());
+      const freeRun = (await http.post("/tutoria/audit/run", {}, auth())).data;
       const auto = (await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.find(i => i.protocolNumber === "2026112400777");
-      assert(auto && auto.source === "ia" && auto.ticketId === Number(ticketId), `protocol found in the conversation ${JSON.stringify(auto)}`);
+      assert(auto && auto.source === "ia" && auto.ticketId === Number(ticketId), `protocol found in the conversation ${JSON.stringify(auto)} run ${JSON.stringify(freeRun)} ticket ${sql(`SELECT CONCAT(lastMessageId,'|',tutoringAuditedMessageId,'|',lastMessageAt) FROM Tickets WHERE id=${ticketId}`)}`);
+      // the free part does not depend on the daily limit of the AI: with no reading left today, a number written is still registered
+      sql(`UPDATE Settings SET value='0' WHERE key='tutoring_audit_count'`);
+      const limit = await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 1 }, auth());
+      assert(limit.status === 200, `audit settings ${limit.status}`);
+      sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('tutoring_audit_count', '1', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value='1'`);
+      sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('tutoring_audit_day', '${new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" })}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
+      say(`aud-${ticketId}-6`, true, "Abri o requerimento 7788990011 para a segunda chamada", 57);
+      sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-6', lastMessageAt=NOW() - INTERVAL '57 minutes' WHERE id=${ticketId}`);
+      const capped = (await http.post("/tutoria/audit/run", {}, auth())).data;
+      assert(capped.reason === "daily_limit" && capped.read === 0, `the AI read past its daily limit ${JSON.stringify(capped)}`);
+      assert((await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.some(i => i.protocolNumber === "7788990011"), "the free part stopped at the daily limit of the AI");
+      await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 40 }, auth());
+      sql(`UPDATE Settings SET value='0' WHERE key='tutoring_audit_count'`);
       assert(!JSON.stringify(anthropic.requests.slice(-5).concat((anthropic.openai || []).slice(-5))).includes("2026112400777"), "the protocol number went to the model");
       assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='tutoring_issue'`)) === noticesBefore, "a protocol registered by itself notified the management");
       assert((await http.get("/tutoria/protocols", asUser(tutorTok))).data.items.some(i => i.protocolNumber === "2026112400777" && i.status === "registrada"), "the tutor does not see the protocol found");

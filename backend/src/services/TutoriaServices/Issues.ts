@@ -226,6 +226,16 @@ export const auditTicket = async (c: any, access: { agent: any; apiKey: string }
   }
 };
 
+// how many conversations with something new get the free reading of protocol numbers in one round
+const FREE_SCAN = 200;
+
+// the free part alone (no model): the protocol numbers of the last messages; the conversation is not marked as read
+const captureOnly = async (c: any): Promise<number> => {
+  const msgs = await rows(`SELECT m.body FROM Messages m WHERE m.ticketId = :ticketId AND m.isDeleted = false AND m.body IS NOT NULL ORDER BY m.createdAt DESC LIMIT ${MAX_MESSAGES}`, { ticketId: Number(c.id) });
+  const [lead] = await rows(`SELECT l.id, l.onboardingTutorId FROM Leads l WHERE l.contactId = :contactId ORDER BY l.updatedAt DESC LIMIT 1`, { contactId: c.contactId });
+  return captureProtocols({ ticketId: Number(c.id), leadId: lead ? Number(lead.id) : null, tutorId: Number(c.userId) || (lead ? Number(lead.onboardingTutorId) || null : null), institutionId: c.institutionId || null, lastMessageId: c.lastMessageId }, msgs);
+};
+
 // The round of the worker: at most N conversations a day (setting), stopping at the first budget refusal (the rest waits for tomorrow)
 export const runTutoringAudit = async (opts: { limit?: number; force?: boolean } = {}): Promise<AuditRun> => {
   const run: AuditRun = { read: 0, found: 0, resolved: 0, skipped: 0, failed: 0, stoppedByBudget: false };
@@ -235,23 +245,18 @@ export const runTutoringAudit = async (opts: { limit?: number; force?: boolean }
   const perDay = Math.min(500, Math.max(1, Number(await getSetting("tutoring_audit_max_tickets", "40")) || 40));
   const usedToday = (await getSetting("tutoring_audit_day", "")) === today ? Number(await getSetting("tutoring_audit_count", "0")) || 0 : 0;
   const left = Math.max(0, Math.min(opts.limit ?? perDay, perDay - usedToday));
-  if (!left) return { ...run, reason: "daily_limit" };
-  const list = await candidates(left);
-  if (!list.length) return run;
-  const access = await auditorAccess();
-  if (!access) {
-    // without an AI key the free part still runs: the protocol numbers written in the conversations are registered (the conversation
-    // is not marked as read, so the AI reads it when a key is set)
-    for (const c of list) {
-      // eslint-disable-next-line no-await-in-loop
-      const msgs = await rows(`SELECT m.body FROM Messages m WHERE m.ticketId = :ticketId AND m.isDeleted = false AND m.body IS NOT NULL ORDER BY m.createdAt DESC LIMIT ${MAX_MESSAGES}`, { ticketId: Number(c.id) });
-      // eslint-disable-next-line no-await-in-loop
-      const [lead] = await rows(`SELECT l.id, l.onboardingTutorId FROM Leads l WHERE l.contactId = :contactId ORDER BY l.updatedAt DESC LIMIT 1`, { contactId: c.contactId });
-      // eslint-disable-next-line no-await-in-loop
-      run.found += await captureProtocols({ ticketId: Number(c.id), leadId: lead ? Number(lead.id) : null, tutorId: Number(c.userId) || (lead ? Number(lead.onboardingTutorId) || null : null), institutionId: c.institutionId || null, lastMessageId: c.lastMessageId }, msgs).catch(() => 0);
-    }
-    return { ...run, reason: "no_api_key" };
+  // every conversation with something new gets the free part (the protocol numbers written in it), whatever the daily limit of the AI
+  // or the key; the AI reads, cheaply, only up to the limit (the oldest first). What the AI did not read stays unread for the next round.
+  const all = await candidates(Math.max(left, FREE_SCAN));
+  if (!all.length) return { ...run, ...(left ? {} : { reason: "daily_limit" }) };
+  const access = left ? await auditorAccess() : null;
+  const list = access ? all.slice(0, left) : [];
+  for (const c of all.slice(list.length)) {
+    // eslint-disable-next-line no-await-in-loop
+    run.found += await captureOnly(c).catch(() => 0);
   }
+  if (!left) return { ...run, reason: "daily_limit" };
+  if (!access) return { ...run, reason: "no_api_key" };
   let spent = 0;
   for (const c of list) {
     try {
