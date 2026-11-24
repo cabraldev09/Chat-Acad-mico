@@ -134,33 +134,69 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 }
 
 
-/* ---------- toasts: card with an accent bar, icon and thin progress ---------- */
-.Toastify__toast-container { width: 400px; padding: 0 12px; top: 14px; }
+/* ---------- toasts: notifications in the style of the Mac (frosted card, icon in a rounded square, time on the right) ---------- */
+.Toastify__toast-container { width: 380px; padding: 0 12px; top: 12px; }
 .Toastify__toast {
-  min-height: 0; margin-bottom: 10px; padding: 14px 16px; border-radius: 16px;
-  background: #fff; color: #0f172a; border: 1px solid #e3e9f2;
-  box-shadow: 0 18px 44px -14px rgba(11,66,121,.30), 0 2px 6px rgba(11,66,121,.06);
-  font-family: inherit; overflow: hidden; backdrop-filter: blur(6px);
-  animation-duration: .28s;
+  min-height: 0; margin-bottom: 8px; padding: 12px 14px; border-radius: 18px;
+  background: rgba(246, 246, 248, .78); color: #111827; border: 1px solid rgba(255, 255, 255, .55);
+  box-shadow: 0 10px 34px -10px rgba(15, 23, 42, .35), 0 0 0 .5px rgba(15, 23, 42, .12);
+  -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%);
+  font-family: inherit; overflow: visible; animation-duration: .32s;
 }
-:root[data-theme="dark"] .Toastify__toast { background: #242626; color: #e9edef; border-color: #2f3232; box-shadow: 0 18px 44px -14px rgba(0,0,0,.8); }
+:root[data-theme="dark"] .Toastify__toast {
+  background: rgba(44, 44, 48, .72); color: #f3f4f6; border-color: rgba(255, 255, 255, .10);
+  box-shadow: 0 14px 40px -12px rgba(0, 0, 0, .7), 0 0 0 .5px rgba(0, 0, 0, .5);
+}
 .Toastify__toast::before { display: none; }
 .Toastify__toast-body { margin: 0; padding: 0; display: block; }
 .Toastify__toast-body::before { display: none; }
-.mtoast { display: flex; align-items: flex-start; gap: 12px; padding-right: 18px; }
-.mtoast-icon { flex: none; width: 38px; height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
-.mtoast-text { min-width: 0; }
-.mtoast-title { font-size: 14px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; }
-.mtoast-msg { margin-top: 2px; font-size: 13.5px; line-height: 1.4; color: #526078; overflow-wrap: anywhere; }
-:root[data-theme="dark"] .mtoast-msg { color: #a9b6cc; }
+.mtoast { display: flex; align-items: flex-start; gap: 11px; }
+.mtoast-icon { flex: none; width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.12); }
+.mtoast-text { min-width: 0; flex: 1; }
+.mtoast-head { display: flex; align-items: baseline; gap: 8px; }
+.mtoast-title { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 700; letter-spacing: -.01em; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mtoast-time { flex: none; font-size: 12px; color: rgba(17, 24, 39, .5); }
+:root[data-theme="dark"] .mtoast-time { color: rgba(243, 244, 246, .5); }
+.mtoast-msg { margin-top: 1px; font-size: 13px; line-height: 1.38; color: rgba(17, 24, 39, .78); overflow-wrap: anywhere; }
+:root[data-theme="dark"] .mtoast-msg { color: rgba(243, 244, 246, .78); }
 .Toastify__toast--success { --toast-color: #16a34a; }
 .Toastify__toast--error { --toast-color: #dc2626; }
 .Toastify__toast--warning { --toast-color: #d97706; }
 .Toastify__toast--info, .Toastify__toast--default { --toast-color: #0693e3; }
-.Toastify__close-button { position: absolute; top: 10px; right: 10px; opacity: .4; color: inherit; transition: opacity .15s; }
-.Toastify__close-button:hover { opacity: 1; }
-.Toastify__progress-bar { height: 3px; bottom: 0; background: var(--toast-color, #0693e3); opacity: .8; }
-@media (max-width: 480px) { .Toastify__toast-container { width: 100vw; padding: 8px; } }
+/* the close button: a small round "x" on the top-left corner, shown on hover (and to the keyboard), as on the Mac */
+.Toastify__close-button {
+  position: absolute; top: -7px; left: -7px; width: 22px; height: 22px; min-width: 0; min-height: 0; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(246, 246, 248, .95); color: #374151; opacity: 0; box-shadow: 0 1px 4px rgba(0,0,0,.25); transition: opacity .15s;
+}
+.Toastify__close-button > svg { width: 10px; height: 10px; }
+:root[data-theme="dark"] .Toastify__close-button { background: rgba(70, 70, 76, .95); color: #f3f4f6; }
+.Toastify__toast:hover .Toastify__close-button, .Toastify__close-button:focus-visible { opacity: 1; }
+@media (hover: none) { .Toastify__close-button { opacity: .9; } }
+.Toastify__progress-bar { display: none; }
+@media (max-width: 480px) { .Toastify__toast-container { width: 100vw; padding: 8px 10px; } }
+
+/* the bell's notices, as the Notification Center of the Mac: each one a frosted card */
+.mac-notes { display: grid; gap: 8px; padding: 10px; }
+.mac-note {
+  display: flex; align-items: flex-start; gap: 11px; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  padding: 11px 12px; border-radius: 16px; border: 1px solid rgba(15, 23, 42, .08);
+  background: rgba(246, 246, 248, .85); box-shadow: 0 1px 2px rgba(15, 23, 42, .06); transition: background .15s, transform .15s;
+}
+.mac-note:hover { background: rgba(236, 238, 242, .95); }
+:root[data-theme="dark"] .mac-note { background: rgba(52, 52, 58, .78); border-color: rgba(255, 255, 255, .08); }
+:root[data-theme="dark"] .mac-note:hover { background: rgba(62, 62, 70, .9); }
+.mac-note-icon { flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: #fff; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.12); }
+.mac-note-text { min-width: 0; flex: 1; }
+.mac-note-head { display: flex; align-items: baseline; gap: 8px; }
+.mac-note-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.mac-note-time { flex: none; font-size: 11.5px; opacity: .55; }
+.mac-note-body { display: block; margin-top: 1px; font-size: 12.5px; line-height: 1.38; opacity: .8; overflow-wrap: anywhere; }
+.mac-note.is-read .mac-note-title { font-weight: 600; }
+.mac-note.is-read { opacity: .78; }
+.mac-notes-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 0; }
+.mac-notes-head b { font-size: 13px; }
+.mac-notes-clear { border: 0; border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; color: inherit; background: rgba(120, 120, 128, .16); }
+.mac-notes-clear:hover { background: rgba(120, 120, 128, .26); }
 
 /* ---------- new message pop-up (any screen) ---------- */
 .msgtoast-card.Toastify__toast { cursor: pointer; padding: 10px 12px; border-left: 0; --toast-color: #00a884; animation: msgtoast-in .32s var(--ease-spring, cubic-bezier(.22,1,.36,1)) both; }
@@ -172,7 +208,7 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 .msgtoast-name { font-weight: 700; font-size: 14px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .msgtoast-msg { font-size: 13px; line-height: 17px; opacity: .82; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
 .msgtoast-time { align-self: flex-start; font-size: 11px; opacity: .55; font-variant-numeric: tabular-nums; }
-.msgtoast-progress.Toastify__progress-bar { background: #00a884; height: 3px; }
+.msgtoast-progress.Toastify__progress-bar { display: none; }
 @keyframes msgtoast-in { from { opacity: 0; transform: translateX(28px) scale(.97); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .msgtoast-card.Toastify__toast { animation: none; } }
 
