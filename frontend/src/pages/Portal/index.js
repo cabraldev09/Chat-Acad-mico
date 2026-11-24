@@ -137,11 +137,11 @@ const AuthShell = ({ title, subtitle, children }) => {
             <h2 className={c.mobileTitle}>Sua trajetória até a formatura.</h2>
             <div className={c.glass}>
               <h2 className={c.headline}>Sua trajetória até a formatura, num só lugar.</h2>
-              <p className={c.lead}>Veja o que você já concluiu, o que ainda falta cursar e quando o curso termina.</p>
+              <p className={c.lead}>Acesso só seu, com a senha que você criou pelo convite.</p>
               <ul className={c.points}>
-                <li className={c.point}><span><MapIcon size={16} /></span>O mapa do seu curso, disciplina por disciplina</li>
-                <li className={c.point}><span><CalendarClock size={16} /></span>Previsão de formatura sempre atualizada</li>
-                <li className={c.point}><span><ShieldCheck size={16} /></span>Acesso só seu, com a senha que você cria</li>
+                <li className={c.point}><span><MapIcon size={16} /></span>O que você já cursou e o que ainda falta</li>
+                <li className={c.point}><span><CalendarClock size={16} /></span>Quando você se forma, com a data sempre em dia</li>
+                <li className={c.point}><span><UploadCloud size={16} /></span>Envie um histórico novo e veja tudo atualizado</li>
               </ul>
             </div>
           </div>
