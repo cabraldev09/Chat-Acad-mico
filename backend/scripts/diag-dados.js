@@ -87,5 +87,18 @@ const q = async (title, sql) => {
   await q("lead 2 (matrícula de 23/11)", `SELECT id, "poloId", "entryTerm", "entrySemester", to_char("wonAt" AT TIME ZONE 'America/Porto_Velho', 'DD/MM HH24:MI') AS ganho FROM "Leads" WHERE id = 2`);
   await q("metas de polo (período no título)", `SELECT id, title, status, "startsOn", "endsOn" FROM "Goals" WHERE kind = 'polo' ORDER BY "startsOn"`);
   await q("períodos de entrada configurados", `SELECT key, value FROM "Settings" WHERE key IN ('crm_entry_terms', 'crm_default_entry_term', 'entryTerms', 'defaultEntryTerm')`);
+  // Metas depois do período de entrada (só ids e números)
+  await q("metas de polo com o período de entrada", `SELECT id, "entryTerm", status, "startsOn", "endsOn", "updatedAt" FROM "Goals" WHERE kind = 'polo' ORDER BY "startsOn"`);
+  await q("lead 2 agora", `SELECT id, "poloId", "entryTerm", "stageId", to_char("wonAt" AT TIME ZONE 'America/Porto_Velho', 'DD/MM HH24:MI') AS ganho, to_char("updatedAt" AT TIME ZONE 'America/Porto_Velho', 'DD/MM HH24:MI') AS alterado FROM "Leads" WHERE id = 2`);
+  await q("linhas de Buritis nas metas (digitado)", `SELECT "goalId", "poloId", target, "manualCount", canceled, "manualMonthly", to_char("updatedAt" AT TIME ZONE 'America/Porto_Velho', 'DD/MM HH24:MI') AS alterado FROM "GoalPolos" WHERE "poloId" = 1 ORDER BY "goalId"`);
+  await q("soma do digitado por meta", `SELECT "goalId", SUM(target) AS meta, SUM("manualCount") AS digitado, SUM(canceled) AS cancelados, COUNT(*) AS polos FROM "GoalPolos" GROUP BY 1 ORDER BY 1`);
+  const { buildPoloBoard } = require("/app/backend/dist/controllers/GoalController");
+  for (const gid of [1, 2]) {
+    const b = await buildPoloBoard(gid);
+    const row = (b.rows || []).find(r => r.poloId === 1) || {};
+    console.log(`\n== quadro da meta ${gid} (como a tela calcula)`);
+    console.log(JSON.stringify({ goal: b.goal && { id: b.goal.id, entryTerm: b.goal.entryTerm }, totals: b.totals && { done: b.totals.done, target: b.totals.target, inCourse: b.totals.inCourse, canceled: b.totals.canceled },
+      buritis: { auto: row.auto, manual: row.manual, adjust: row.adjust, done: row.done, inCourse: row.inCourse, canceled: row.canceled, months: (row.months || []).map(m => `${m.month}:${m.done}`) } }));
+  }
   process.exit(0);
 })().catch(e => { console.error(e.message); process.exit(1); });
