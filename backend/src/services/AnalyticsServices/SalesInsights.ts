@@ -62,7 +62,7 @@ export const salesInsights = async (users: Array<{ id: number; name: string }>, 
   const ids = users.map(u => u.id);
   const nameOf = new Map(users.map(u => [u.id, u.name]));
   const labelOf = new Map(steps.map(s => [s.key, s.label]));
-  const empty = { consultants: [], stages: [], objections: { byType: [], byConsultant: [] }, lostReasons: [], sales: { byConsultant: [], byCity: [], byCourse: [], top: [] }, process: { skipped: [], samples: 0 }, volume: { conversations: 0, peopleContacted: 0, newContacts: 0 } };
+  const empty = { consultants: [], stages: [], objections: { byType: [], byConsultant: [] }, lostReasons: [], sales: { byConsultant: [], byCity: [], byCourse: [], top: [] }, process: { skipped: [], samples: 0, steps: [], previousSamples: 0 }, volume: { conversations: 0, peopleContacted: 0, newContacts: 0 } };
   if (!ids.length) return empty;
   const rep = { ids, from: period.start, to: period.end, stalledBefore: new Date(Date.now() - STALL_DAYS * 86400000) };
 
@@ -219,6 +219,39 @@ export const salesInsights = async (users: Array<{ id: number; name: string }>, 
     skippedSteps(steps, done).forEach(k => { p.skipped.set(k, (p.skipped.get(k) || 0) + 1); skippedAll.set(k, (skippedAll.get(k) || 0) + 1); });
     prog.set(id, p);
   });
+  // every required step of the process, in order: how many conversations did it, how many skipped it, who skipped it most, and the
+  // share of the previous period of the same length (to see whether it is getting better)
+  const doneAll = new Map<string, number>();
+  snaps.forEach(s => {
+    const done: string[] = Array.isArray(s.doneKeys) ? s.doneKeys : (() => { try { return JSON.parse(s.doneKeys || "[]"); } catch (_) { return []; } })();
+    done.forEach(k => doneAll.set(k, (doneAll.get(k) || 0) + 1));
+  });
+  const span = new Date(period.end).getTime() - new Date(period.start).getTime();
+  const prevSnaps = await safe(rows(`SELECT doneKeys FROM CopilotSnapshots WHERE userId IN (:ids) AND updatedAt BETWEEN :pfrom AND :pto LIMIT 20000`, { ids, pfrom: new Date(new Date(period.start).getTime() - span), pto: new Date(period.start) }), "processo do período anterior");
+  const prevSkipped = new Map<string, number>();
+  prevSnaps.forEach(s => {
+    const done: string[] = Array.isArray(s.doneKeys) ? s.doneKeys : (() => { try { return JSON.parse(s.doneKeys || "[]"); } catch (_) { return []; } })();
+    skippedSteps(steps, done).forEach(k => prevSkipped.set(k, (prevSkipped.get(k) || 0) + 1));
+  });
+  const nameOfUser = new Map(users.map(u => [u.id, u.name]));
+  const processSteps = steps.filter(st => !st.optional).map(st => {
+    let top: { userId: number; name: string; n: number } | null = null;
+    prog.forEach((p, id) => {
+      const c = p.skipped.get(st.key) || 0;
+      if (c > 0 && (!top || c > top.n)) top = { userId: id, name: nameOfUser.get(id) || `#${id}`, n: c };
+    });
+    const skippedN = skippedAll.get(st.key) || 0;
+    return {
+      step: st.key,
+      label: st.label,
+      done: doneAll.get(st.key) || 0,
+      skipped: skippedN,
+      share: pct(skippedN, snaps.length),
+      previousShare: prevSnaps.length ? pct(prevSkipped.get(st.key) || 0, prevSnaps.length) : null,
+      top
+    };
+  });
+
   prog.forEach((p, id) => {
     const m = at(id); if (!m) return;
     m.processSamples = p.n;
@@ -252,7 +285,7 @@ export const salesInsights = async (users: Array<{ id: number; name: string }>, 
       top: [...pairs.values()].sort((a, b) => b.n - a.n).slice(0, 5)
     },
     // samples: the conversations with a process in the period, so a skipped step reads as "n of samples"
-    process: { skipped: [...skippedAll.entries()].map(([k, c]) => ({ step: k, label: labelOf.get(k) || k, n: c })).sort((a, b) => b.n - a.n), samples: snaps.length },
+    process: { skipped: [...skippedAll.entries()].map(([k, c]) => ({ step: k, label: labelOf.get(k) || k, n: c })).sort((a, b) => b.n - a.n), samples: snaps.length, steps: processSteps, previousSamples: prevSnaps.length },
     volume: { conversations: totalOf("conversations"), peopleContacted: totalOf("peopleContacted"), newContacts: totalOf("newContacts") }
   };
 };

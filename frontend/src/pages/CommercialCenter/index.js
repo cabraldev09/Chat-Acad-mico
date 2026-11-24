@@ -207,46 +207,109 @@ const dayTime = (iso) => {
   return same ? `hoje ${hm}` : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hm}`;
 };
 
-const Team = ({ consultants, onOpen }) => {
+const AREAS = [
+  { key: "comercial", label: "Comercial" },
+  { key: "tutoria", label: "Tutoria" },
+  { key: "relacionamento", label: "Relacionamento" },
+  { key: "gestao", label: "Gestão" },
+];
+const ROLE_LABEL = { consultor: "Consultor(a)", tutor: "Tutor(a)", academico: "Acadêmico", relacionamento: "Relacionamento", coordenacao: "Coordenação", admin: "Administração" };
+const TONES = { on: "#16a34a", warn: "#d97706", bad: "#dc2626", off: "#94a3b8" };
+// one reading of where the person is: online and working, online but stopped, in working hours but out of the system, or offline
+const statusOf = (p) => {
+  if (p.online && p.state === "active") return { tone: "on", rank: 1, text: `Online${p.lastActivityAt ? ` · última ação ${since(p.lastActivityAt)}` : ""}` };
+  if (p.online) return { tone: p.onSchedule ? "warn" : "on", rank: p.onSchedule ? 0 : 2, text: p.onSchedule ? `Online, sem ação${p.lastActivityAt ? ` ${since(p.lastActivityAt)}` : " hoje"}` : "Online" };
+  if (p.onSchedule) return { tone: "warn", rank: 0, text: `No horário e fora do sistema${p.lastSeenAt ? ` · acessou ${dayTime(p.lastSeenAt)}` : ""}` };
+  return { tone: "off", rank: 3, text: p.lastSeenAt ? `Offline · acessou ${dayTime(p.lastSeenAt)}` : "Ainda não acessou o sistema" };
+};
+const waProblem = (m) => m.presence.whatsapp.state !== "connected" && (m.ownNumber || m.presence.whatsapp.state === "none");
+
+// "Equipe agora": the whole team (consultants, tutors, academic, relationship, coordination), grouped by area, in real time. Each line says
+// only what matters: the state (with the dot), the schedule of today when there is one, and the WhatsApp only when it has a problem.
+const Team = ({ members, canOpen, onOpen }) => {
   const c = useKit();
-  const rank = (b) => (b.presence.whatsapp.state !== "connected" ? 0 : b.presence.state === "idle" ? 1 : b.presence.online ? 2 : 3);
-  const list = [...consultants].sort((a, b) => rank(a) - rank(b) || a.user.name.localeCompare(b.user.name));
-  const online = consultants.filter((b) => b.presence.online).length;
-  const noNumber = consultants.filter((b) => b.presence.whatsapp.state !== "connected").length;
+  const [area, setArea] = useState("all");
+  const [q, setQ] = useState("");
+  const list = (members || []).map((m) => ({ ...m, status: statusOf(m.presence) }));
+  const present = AREAS.filter((a) => list.some((m) => m.user.area === a.key));
+  const online = list.filter((m) => m.presence.online).length;
+  const attention = list.filter((m) => m.status.tone === "warn" || waProblem(m)).length;
+  const norm = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const shown = list
+    .filter((m) => area === "all" || m.user.area === area)
+    .filter((m) => !q.trim() || norm(m.user.name).includes(norm(q.trim())));
+  const groups = present
+    .map((a) => ({ ...a, items: shown.filter((m) => m.user.area === a.key).sort((x, y) => (waProblem(y) - waProblem(x)) || x.status.rank - y.status.rank || x.user.name.localeCompare(y.user.name, "pt-BR")) }))
+    .filter((g) => g.items.length);
+  const chip = (key, label, n) => (
+    <button key={key} type="button" onClick={() => setArea(key)} aria-pressed={area === key}
+      style={{ border: `1px solid ${area === key ? "var(--c-brand)" : "var(--line)"}`, background: area === key ? "color-mix(in srgb, var(--c-brand) 10%, transparent)" : "transparent", color: area === key ? "var(--c-brand)" : "var(--text-2)", borderRadius: 999, padding: "4px 11px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+      {label}{typeof n === "number" ? ` ${n}` : ""}
+    </button>
+  );
   return (
     <div className={c.panel}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <BlockTitle icon={<Users size={16} />} title="Equipe agora" />
-        <span className={c.sub}><b style={{ color: "#16a34a" }}>{online}</b> online · <b style={{ color: noNumber ? "#dc2626" : undefined }}>{noNumber}</b> sem WhatsApp</span>
+        <span className={c.sub} style={{ display: "inline-flex", gap: 10, alignItems: "center", marginTop: 0 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: TONES.on }} /><b style={{ color: "var(--text-1)" }}>{online}</b> online</span>
+          {attention > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: TONES.warn }} /><b style={{ color: "var(--text-1)" }}>{attention}</b> pedem atenção</span>}
+        </span>
       </div>
-      {list.length === 0 && <div className={c.sub}>Nenhum consultor cadastrado.</div>}
-      {list.map((b) => {
-        const p = b.presence;
-        const wa = (WA[p.whatsapp.state] || WA.none);
-        const down = p.whatsapp.state !== "connected";
-        const slots = p.scheduleToday.length ? p.scheduleToday.map((s) => `${s.start}–${s.end}`).join(", ") : "";
-        return (
-          <button key={b.user.id} type="button" onClick={() => onOpen(b.user.id)} className={c.row} style={{ padding: "12px 0", alignItems: "flex-start" }}>
-            <span style={{ position: "relative", width: 38, height: 38, flex: "none" }}>
-              <span style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 13, fontWeight: 700, background: "color-mix(in srgb, var(--c-brand) 14%, transparent)", color: "var(--c-brand)" }}>{initials(b.user.name)}</span>
-              <span title={p.online ? "Online agora" : "Offline"} style={{ position: "absolute", right: -1, bottom: -1, width: 11, height: 11, borderRadius: "50%", background: p.online ? "#16a34a" : "#94a3b8", border: "2px solid var(--surface)" }} />
-            </span>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.user.name}</b>
-              <span className={c.sub} style={{ display: "block", marginTop: 0 }}>
-                {p.online ? <b style={{ color: "#16a34a" }}>Online agora</b> : p.lastSeenAt ? `Acessou ${dayTime(p.lastSeenAt)}` : p.lastActivityAt ? `Última atividade ${dayTime(p.lastActivityAt)}` : "Sem registro de acesso ainda"}
-                {p.lastActivityAt && (p.online || p.lastSeenAt) ? ` · última ação ${since(p.lastActivityAt)}` : ""}
-              </span>
-              <span className={c.sub} style={{ display: "block", marginTop: 0 }}>
-                {slots ? `Hoje ${slots}${p.onSchedule ? " · no horário" : " · fora do horário"}` : "Sem horário cadastrado para hoje"}
-              </span>
-            </span>
-            <span title={wa.label} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: wa.color, flex: "none", paddingTop: 2 }}>
-              {down ? <WifiOff size={14} /> : <Wifi size={14} />}{down ? (p.whatsapp.state === "none" ? "Sem número" : "Desconectado") : "Conectado"}
-            </span>
-          </button>
-        );
-      })}
+      {list.length === 0 ? <div className={c.sub} style={{ marginTop: 10 }}>Ninguém da equipe cadastrado ainda. Cadastre em Usuários.</div> : (
+        <>
+          {(present.length > 1 || list.length > 8) && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "10px 0 2px" }}>
+              {present.length > 1 && [chip("all", "Todos", list.length), ...present.map((a) => chip(a.key, a.label, list.filter((m) => m.user.area === a.key).length))]}
+              {list.length > 8 && (
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar pessoa" aria-label="Buscar pessoa na equipe"
+                  style={{ marginLeft: "auto", minWidth: 0, flex: "1 1 140px", maxWidth: 220, border: "1px solid var(--line)", borderRadius: 10, padding: "6px 10px", fontFamily: "inherit", fontSize: 13, background: "transparent", color: "inherit" }} />
+              )}
+            </div>
+          )}
+          {groups.length === 0 && <div className={c.sub} style={{ marginTop: 10 }}>Ninguém encontrado.</div>}
+          {groups.map((g) => (
+            <div key={g.key} style={{ marginTop: 10 }}>
+              {(present.length > 1 && area === "all") && (
+                <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-2)", margin: "6px 0 2px" }}>
+                  {g.label} · {g.items.filter((m) => m.presence.online).length} de {g.items.length} online
+                </div>
+              )}
+              {g.items.map((m) => {
+                const p = m.presence;
+                const tone = TONES[m.status.tone];
+                const slots = p.scheduleToday.length ? p.scheduleToday.map((sl) => `${sl.start}–${sl.end}`).join(", ") : "";
+                const clickable = canOpen && canOpen.has(m.user.id);
+                const Tag = clickable ? "button" : "div";
+                return (
+                  <Tag key={m.user.id} type={clickable ? "button" : undefined} onClick={clickable ? () => onOpen(m.user.id) : undefined} className={c.row}
+                    style={{ padding: "10px 0", alignItems: "center", cursor: clickable ? "pointer" : "default" }} title={clickable ? "Ver os números desta pessoa" : undefined}>
+                    <span style={{ position: "relative", width: 36, height: 36, flex: "none" }}>
+                      <span style={{ width: 36, height: 36, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 12.5, fontWeight: 700, background: "color-mix(in srgb, var(--c-brand) 14%, transparent)", color: "var(--c-brand)" }}>{initials(m.user.name)}</span>
+                      <span aria-hidden="true" style={{ position: "absolute", right: -1, bottom: -1, width: 11, height: 11, borderRadius: "50%", background: tone, border: "2px solid var(--card-bg, #fff)" }} />
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, display: "grid", gap: 1 }}>
+                      <span style={{ display: "flex", gap: 6, alignItems: "baseline", minWidth: 0 }}>
+                        <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.user.name}</b>
+                        <span style={{ fontSize: 11.5, color: "var(--text-2)", flex: "none" }}>{ROLE_LABEL[m.user.role] || ""}</span>
+                      </span>
+                      <span style={{ fontSize: 12.5, color: m.status.tone === "off" ? "var(--text-2)" : tone, fontWeight: m.status.tone === "off" ? 400 : 600 }}>{m.status.text}</span>
+                    </span>
+                    <span style={{ display: "grid", justifyItems: "end", gap: 2, flex: "none", fontSize: 12 }}>
+                      {slots && <span style={{ color: "var(--text-2)" }}>{slots}</span>}
+                      {waProblem(m) && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 600, color: TONES.bad }}>
+                          <WifiOff size={13} />{p.whatsapp.state === "none" ? "Sem WhatsApp" : "WhatsApp desconectado"}
+                        </span>
+                      )}
+                    </span>
+                  </Tag>
+                );
+              })}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 };
@@ -267,8 +330,7 @@ const WHY = {
 };
 const RANK = { high: 0, medium: 1, low: 2 };
 
-const Alerts = ({ alerts, onOpen, history }) => {
-  const c = useKit();
+const groupByPerson = (alerts) => {
   const people = [];
   alerts.forEach((a) => {
     let g = people.find((x) => x.userId === a.userId);
@@ -276,53 +338,84 @@ const Alerts = ({ alerts, onOpen, history }) => {
     g.items.push(a);
   });
   people.forEach((g) => g.items.sort((x, y) => RANK[x.level] - RANK[y.level]));
-  people.sort((x, y) => RANK[x.items[0].level] - RANK[y.items[0].level] || y.items.length - x.items.length);
+  return people.sort((x, y) => RANK[x.items[0].level] - RANK[y.items[0].level] || y.items.length - x.items.length);
+};
+
+// What needs attention and where there is room to grow, in two parts: "Precisa de atenção" (the WhatsApp down, late tasks, clients waiting,
+// someone stopped in working hours) and "Oportunidades" (below the goal of the day, follow-ups of today, leads with no enrollment, training).
+// One line per person, the worst first; the reason is written under it, not hidden in a tooltip.
+const Alerts = ({ alerts, onOpen, history }) => {
+  const c = useKit();
+  const [showAll, setShowAll] = useState(false);
+  const attention = groupByPerson(alerts.filter((a) => a.level !== "low"));
+  const chances = groupByPerson(alerts.filter((a) => a.level === "low"));
   const open = (a) => {
     if (a.code === "tasks_overdue") history.push(`/crm/tarefas?scope=all&status=overdue&userId=${a.userId}`);
-    else if (a.code === "whatsapp_offline") history.push("/connections");
+    else if (a.code === "whatsapp_offline" || a.code === "whatsapp_none") history.push("/connections");
+    else if (a.code === "pending_reply") history.push("/tickets");
     else onOpen(a.userId);
   };
   const TONE = { high: "bad", medium: "warn", low: "info" };
+  const limit = showAll ? 99 : 4;
+  const block = (title, hint, people, tone) => people.length > 0 && (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "0 0 6px" }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: tone }}>{title} · {people.length}</span>
+        <span className="mx-sub" style={{ margin: 0 }}>{hint}</span>
+      </div>
+      <div className="mx-list">
+        {people.slice(0, limit).map((g) => {
+          const [head, ...rest] = g.items;
+          return (
+            <div key={g.userId} className="mx-item" style={{ alignItems: "flex-start", borderLeft: `3px solid ${LEVEL[head.level]}` }}>
+              <span className="mx-avatar" style={{ background: colorOf(g.name) }} aria-hidden="true">{initialsOf(g.name)}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <b className="mx-name" style={{ fontSize: 13.5 }}>{g.name}</b>
+                  <button type="button" className="mx-go" style={{ border: 0, background: "none", cursor: "pointer", padding: "6px 0", font: "inherit", fontSize: 12.5, fontWeight: 650, color: "var(--c-brand)" }} onClick={() => open(head)}>
+                    {head.code === "tasks_overdue" ? "Ver tarefas" : head.code === "pending_reply" ? "Ver conversas" : head.code.startsWith("whatsapp") ? "Ver conexão" : "Ver detalhe"} <ChevronRight size={15} aria-hidden="true" />
+                  </button>
+                </div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>{head.text}</div>
+                {WHY[head.code] && <div className="mx-sub" style={{ marginTop: 2 }}>{WHY[head.code]}</div>}
+                {rest.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    {rest.map((a) => (
+                      <Tooltip key={a.code} title={WHY[a.code] || ""} enterDelay={0} placement="top" arrow>
+                        <button type="button" className="mx-pill" data-tone={TONE[a.level]} onClick={() => open(a)} style={{ border: 0, cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 650 }}>{a.text}</button>
+                      </Tooltip>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+  const hidden = Math.max(0, attention.length - 4) + Math.max(0, chances.length - 4);
   return (
     <div className={c.panel}>
       <div className="mx-head">
-        <span className="mx-ico" data-tone={people.length ? TONE[people[0].items[0].level] : "good"} aria-hidden="true"><AlertTriangle size={17} /></span>
+        <span className="mx-ico" data-tone={attention.length ? TONE[attention[0].items[0].level] : chances.length ? "info" : "good"} aria-hidden="true"><AlertTriangle size={17} /></span>
         <div style={{ minWidth: 0 }}>
           <h3 className="mx-title">Alertas e oportunidades</h3>
-          <div className="mx-sub">Uma linha por pessoa, com o problema mais grave primeiro.</div>
+          <div className="mx-sub">O que precisa de ação agora e onde a equipe pode render mais hoje.</div>
         </div>
       </div>
-      {people.length === 0 ? (
+      {attention.length === 0 && chances.length === 0 ? (
         <div className="mx-empty"><span className="mx-ico" data-tone="good" aria-hidden="true"><CheckCircle2 size={17} /></span><div><b>Tudo em dia</b><span>Nada pedindo atenção agora.</span></div></div>
       ) : (
-        <div className="mx-list">
-          {people.slice(0, 6).map((g) => {
-            const [head, ...rest] = g.items;
-            return (
-              <div key={g.userId} className="mx-item" style={{ alignItems: "flex-start", borderLeft: `3px solid ${LEVEL[head.level]}` }}>
-                <span className="mx-avatar" style={{ background: colorOf(g.name) }} aria-hidden="true">{initialsOf(g.name)}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                    <b className="mx-name" style={{ fontSize: 13.5 }}>{g.name}</b>
-                    <button type="button" className="mx-go" style={{ border: 0, background: "none", cursor: "pointer", padding: "6px 0", font: "inherit", fontSize: 12.5, fontWeight: 650, color: "var(--c-brand)" }} onClick={() => onOpen(g.userId)}>Ver detalhe <ChevronRight size={15} aria-hidden="true" /></button>
-                  </div>
-                  <Tooltip title={WHY[head.code] || ""} enterDelay={0} placement="top" arrow>
-                    <button type="button" onClick={() => open(head)} style={{ display: "block", textAlign: "left", border: 0, background: "none", font: "inherit", fontSize: 13.5, color: "inherit", padding: 0, cursor: "pointer", lineHeight: 1.45 }}>{head.text}</button>
-                  </Tooltip>
-                  {rest.length > 0 && (
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                      {rest.map((a) => (
-                        <Tooltip key={a.code} title={WHY[a.code] || ""} enterDelay={0} placement="top" arrow>
-                          <button type="button" className="mx-pill" data-tone={TONE[a.level]} onClick={() => open(a)} style={{ border: 0, cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 650 }}>{a.text}</button>
-                        </Tooltip>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          {block("Precisa de atenção", "resolva primeiro", attention, "#dc2626")}
+          {block("Oportunidades", "metas do dia, retornos e conversão", chances, "#2563eb")}
+          {hidden > 0 && !showAll && (
+            <button type="button" onClick={() => setShowAll(true)} style={{ marginTop: 10, border: 0, background: "none", color: "var(--c-brand)", fontWeight: 650, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
+              Ver mais {hidden} {hidden === 1 ? "pessoa" : "pessoas"}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
