@@ -252,6 +252,8 @@ const startAnthropicMock = () => {
       if (/^quero fazer o curso de empreendedorismo$/i.test(said2.trim())) return turn("Empreendedorismo é uma ótima escolha.", { intent: "other", curso: "Empreendedorismo" });
       if (/texto com markdown/i.test(said2)) return turn("**Pedagogia** tem 8 semestres.\n\n### Como funciona\nVeja [a grade](https://exemplo.com/g.pdf) e a tabela:\n| Item | Valor |\n|---|---|\n| Duração | 8 semestres |", { intent: "other" });
       if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
+      // the model denies a course the catalogue has and pushes the old one (a real conversation): the rules put it right
+      if (/saber de rh/i.test(said2)) return turn("A Gestão de Recursos Humanos não está entre os cursos que oferecemos. Podemos explorar outras opções, como Direito, que você já conhece? Qual delas você prefere?", { intent: "other" });
       if (/nasa/i.test(said2)) return turn("Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto.", { intent: "unknown", pergunta_sem_resposta: "convênio com a Nasa" });
       if (/vou pensar/i.test(said2)) return turn("Combinado! Fico no aguardo. 😊", { intent: "follow_up", retorno_em: "2026-12-01", motivo_retorno: "vai conversar com a família" });
       if (/não tenho o histórico/i.test(said2)) return turn("Sem problema!", { intent: "other", tem_historico: false }, [{ type: "tool_use", id: `toolu_x${anthropic.requests.length}`, name: "escolher_resultado", input: { resultado: "sem_historico" } }]);
@@ -4213,6 +4215,35 @@ const postMeta = (id, payload, secret, badSig) => {
       out = await say(D, "wamid.com-d5", "oi, voltei", t => t.some(x => /falar com você de novo/.test(x)), "the return");
       assert(/Direito/.test(out.join(" ")) && !/Qual curso/.test(out.join(" ")) && anthropic.requests.length === llm, `the return should remember the course and not ask it again: ${out}`);
       await waitFor(() => runOf(D) === "waiting|orientar", 8000, "back to the guidance, not to the start");
+      // who comes back is asked, once, whether the interest is still that course (nothing of the script goes on before the answer)
+      assert(/continua com interesse nesse curso ou quer ver outro\?/.test(out.join(" ")) && (out.join(" ").match(/\?/g) || []).length === 1, `the return should confirm the interest with one question: ${out}`);
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(D)}`)).resumeConfirm === true, "the confirmation of the interest was not marked");
+      // ...and names another course by its short form ("RH"): the catalogue knows it as "Cst Em Gestão De Recursos Humanos". The course changes at
+      // once, the answer is about the new course only (the old one is not pushed, even when the model does it), with one question
+      if (sql(`SELECT COUNT(*) FROM Courses WHERE name='Cst Em Gestão De Recursos Humanos'`) === "0") await http.post("/courses", { name: "Cst Em Gestão De Recursos Humanos", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
+      out = await say(D, "wamid.com-d6", "na verdade agora quero saber de RH", t => t.some(x => /Recursos Humanos/.test(x)), "another course by its short form");
+      assert(!/Direito/.test(out.join(" ")) && !/não está entre/.test(out.join(" ")), `the old course was pushed or the new one denied: ${out}`);
+      assert((out.join(" ").match(/\?/g) || []).length <= 1, `more than one question in the answer: ${out}`);
+      const slD = JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(D)}`));
+      assert(slD.courseName === "Cst Em Gestão De Recursos Humanos" && Number(slD.courseId) === Number(sql(`SELECT id FROM Courses WHERE name='Cst Em Gestão De Recursos Humanos'`)) && !slD.resumeConfirm, `the course of the lead did not change as one (id and name): ${slD.courseName} / ${slD.courseId}`);
+      assert(sql(`SELECT c.name FROM Leads l JOIN Courses c ON c.id=l.courseId WHERE l.id=${leadId(D)}`) === "Cst Em Gestão De Recursos Humanos", "the course of the lead in the CRM did not follow the conversation");
+
+      // Graduação 2.0: a second degree only for who has the degree it asks for. Asked without the degree known: who may take it, and the
+      // question; "não": the regular course. A licensed teacher of the plain course hears about the 2.0 once; "sim": the course becomes the 2.0.
+      for (const name of ["Educação Física", "Educação Física 2.0"]) if (sql(`SELECT COUNT(*) FROM Courses WHERE name='${name}'`) === "0") await http.post("/courses", { name, modality: "Semipresencial", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 400, active: true }, auth());
+      const G1 = "5511920000290";
+      await say(G1, "wamid.com-g1a", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of G1");
+      llm = anthropic.requests.length;
+      out = await say(G1, "wamid.com-g1b", "quero saber da educação física 2.0", t => t.some(x => /Você já tem essa formação\?/.test(x)), "a 2.0 course asked for");
+      assert(/segunda graduação para quem já é formado em Licenciatura em Educação Física/.test(out.join(" ")) && anthropic.requests.length === llm, `the 2.0 was not explained by the system: ${out}`);
+      out = await say(G1, "wamid.com-g1c", "não", t => t.some(x => /curso regular de \*Educação Física\*/.test(x)), "no degree: the regular course");
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(G1)}`)).courseName === "Educação Física", "the course did not go back to the regular one");
+      const G2 = "5511920000291";
+      await say(G2, "wamid.com-g2a", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of G2");
+      out = await say(G2, "wamid.com-g2b", "sou licenciado em educação física e quero fazer o bacharelado", t => t.some(x => /Quer seguir pela Graduação 2\.0\?/.test(x)), "the 2.0 offered to who may take it");
+      out = await say(G2, "wamid.com-g2c", "sim", t => t.some(x => /seguimos pela \*Educação Física 2\.0\*/.test(x)), "the course becomes the 2.0");
+      const slG2 = JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(G2)}`));
+      assert(slG2.courseName === "Educação Física 2.0" && slG2.entryType === "second_degree", `the 2.0 was not kept: ${slG2.courseName} / ${slG2.entryType}`);
 
       // E) transfer: the transcript is asked; without it the column and the task wait; the task is not repeated
       const E = "5511920000205";

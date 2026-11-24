@@ -1655,7 +1655,8 @@ CREATE TABLE public."Courses" (
     "updatedAt" timestamp with time zone NOT NULL,
     "institutionId" integer,
     category character varying(255),
-    semesters integer DEFAULT 8 NOT NULL
+    semesters integer DEFAULT 8 NOT NULL,
+    aliases text
 );
 
 
@@ -8070,6 +8071,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261226000001-enrollment-forms.js')
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000001-ticket-reply-dismissed.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000002-tutoring-issues.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261228000001-one-conversation-per-number.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-course-aliases.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).

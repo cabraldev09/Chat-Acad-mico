@@ -80,6 +80,17 @@ export const setActive = async (req: Request, res: Response): Promise<Response> 
   return res.json({ id: course.id, active: course.active });
 };
 
+// the other names and short forms people use for the course ("RH, gestão de pessoas"): the agent recognises the course by them
+export const setAliases = async (req: Request, res: Response): Promise<Response> => {
+  mustManage(req);
+  const course = await Course.findByPk(req.params.id);
+  if (!course) throw new AppError("Curso não encontrado.", 404);
+  const list = String(req.body?.aliases || "").split(/[,;\n]/).map(a => a.replace(/\s+/g, " ").trim()).filter(a => a.length >= 2 && a.length <= 60);
+  const aliases = [...new Set(list)].slice(0, 20).join(", ");
+  await course.update({ aliases: aliases || (null as any) });
+  return res.json({ id: course.id, aliases: course.aliases || "" });
+};
+
 export const list = async (req: Request, res: Response): Promise<Response> => {
   const course = await Course.findByPk(req.params.id, { attributes: ["id", "name", "modality", "semesters"] });
   if (!course) throw new AppError("Curso não encontrado.", 404);
@@ -87,7 +98,7 @@ export const list = async (req: Request, res: Response): Promise<Response> => {
   const r = await CourseRegulation.findOne({ where: { courseId: course.id, intakeTerm: null } as any });
   const names = await userNames(rows);
   return res.json({
-    course: { id: course.id, name: course.name, modality: course.modality, semesters: course.semesters || null, mec: mecRequirementOf(await areaOfCourse(course), r),
+    course: { id: course.id, name: course.name, aliases: course.aliases || "", modality: course.modality, semesters: course.semesters || null, mec: mecRequirementOf(await areaOfCourse(course), r),
       approvedText: r && r.commercialApprovedText && !isStandardText(r.commercialApprovedText) ? r.commercialApprovedText : null },
     materials: rows.map(m => materialView(m, names)), canManage: manager(req)
   });

@@ -2,6 +2,7 @@ import { institutionName } from "../../helpers/Institution";
 import { cleanCommercial, fillGreeting } from "./Config";
 import { CommercialState, Slots } from "./Slots";
 import { BOLSA_ASKS } from "./BolsaData";
+import { courseLabel } from "./InventedCourse";
 
 // The commercial rules, written as plain functions: the same input always gives the same answer, no model involved. The AI only
 // understands what the person said (the intent); the temperature, the score, the next action, the funnel column, the notes and the
@@ -71,9 +72,14 @@ export const asksForTime = (text: string): boolean => /\b(vou pensar|vou ver|dep
 // a doubt or a question of the lead: it is answered first; nothing else is asked on top of it
 export const asksSomething = (text: string): boolean => /\?/.test(text) || /^\s*(como|quando|quanto|qual|quais|onde|por ?que|tem |posso|da pra|da para|e se|sera que|e o |e a )/.test(plain(text));
 // "sim", "entendi", "ok", "blz" as the answer to "Até aqui você compreendeu?" or to the question of the doubts: the process goes on
+// what is asked to who comes back after a while, before the script goes on
+export const RESUME_QUESTION = "Você continua com interesse nesse curso ou quer ver outro?";
+// "quero ver outro", "mudei de ideia", "outro curso" as the answer to that question, without naming the other course
+export const wantsAnotherCourse = (text: string): boolean => /\b(outro|outra|outros|mudar|mudei|trocar|troquei|diferente|nao quero mais|nao tenho mais interesse nesse)\b/.test(plain(text)) || /^(nao|n)[ ,.!]*$/.test(plain(text).trim());
 export const affirms = (text: string, lastQuestion: string): boolean => {
   const q = plain(lastQuestion);
-  if (!/ate aqui voce compreendeu|ficou claro|alguma duvida|quer que eu te explique|quer que eu ja peca|seguimos com/.test(q)) return false;
+  if (!/ate aqui voce compreendeu|ficou claro|alguma duvida|quer que eu te explique|quer que eu ja peca|seguimos com|continua com interesse nesse curso/.test(q)) return false;
+  if (/continua com interesse nesse curso/.test(q) && /^((sim|s|ss|continuo|continuo sim|quero continuar|esse mesmo|esse|isso|claro|com certeza|tenho|tenho sim|ainda tenho|tenho interesse|ainda tenho interesse|pode ser|mantenho|o mesmo|mesmo curso)[ ,.!]*)+$/.test(plain(text).trim())) return true;
   return /^((sim|s|ss|entendi|compreendi|ok|okay|certo|beleza|blz|show|perfeito|otimo|claro|pode|pode sim|isso|uhum|aham|tudo certo|tudo bem|ta|ta bom|ficou claro|ficou|deu pra entender|entendido|legal|top)[ ,.!]*)+$/.test(plain(text).trim());
 };
 
@@ -250,7 +256,9 @@ export const openingText = (slots: Slots, first: string, returning: boolean, per
     return `Olá! Tudo bem?\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institutionName()}.\n\n${question}`;
   }
   if (returning) {
-    return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
+    // the interest is confirmed before anything of the script goes on: the person may want another course now
+    if (course) return `Oi${name}! Que bom falar com você de novo.\n\nDa última vez conversamos sobre *${courseLabel(course)}*. ${RESUME_QUESTION}`;
+    return `Oi${name}! Que bom falar com você de novo. ${ask}`;
   }
   // the lead came with a course (a form, an ad): the team opens with the scholarship, then asks the first degree
   return `${introText(persona, first)}${course ? `\n\nRecebi o seu interesse em cursar *${course}* e quero te ajudar a verificar a melhor bolsa disponível para você.\n\n` : " "}${ask}`;
@@ -313,6 +321,22 @@ export const entryAnswer = (text: string, lastQuestion: string): "first_degree" 
 
 // the handover of a qualified lead does not leave a question hanging: the last sentences that only ask something are dropped (the handover
 // message that follows says what happens next)
+// one question per message: of everything the answer asks, only the last question stays (the others are dropped where they are)
+export const oneQuestion = (text: string): string => {
+  const paragraphs = String(text || "").trim().split(/\n{2,}/);
+  let lastAsk = -1;
+  paragraphs.forEach((p, i) => { if (/\?[\s"”')*_]*$/.test(p.trim())) lastAsk = i; });
+  if (lastAsk < 0) return String(text || "").trim();
+  return paragraphs.map((p, i) => {
+    if (i === lastAsk) {
+      // inside the last paragraph: the sentences that ask before the final one are dropped too
+      const parts = p.trim().split(/(?<=[.!?])\s+/);
+      return parts.filter((s, k) => k === parts.length - 1 || !/\?[\s"”')*_]*$/.test(s)).join(" ");
+    }
+    const parts = p.trim().split(/(?<=[.!?])\s+/).filter(s => !/\?[\s"”')*_]*$/.test(s));
+    return parts.join(" ");
+  }).filter(Boolean).join("\n\n").trim();
+};
 export const withoutClosingQuestion = (text: string): string => {
   const parts = String(text || "").trim().split(/(?<=[.!?])\s+/);
   while (parts.length && /\?[\s"”')]*$/.test(parts[parts.length - 1])) parts.pop();
