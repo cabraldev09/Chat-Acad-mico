@@ -15,6 +15,7 @@ import { ErrorState } from "../../components/ui";
 import ImportWizard from "../../components/ImportWizard";
 import NoticeDialog from "./NoticeDialog";
 import IssuesPanel from "./IssuesPanel";
+import MyProtocols from "./MyProtocols";
 import { canOperateRetention } from "../../utils/access";
 
 // the columns of the spreadsheet of students the tutor brings (the management also says whose they are)
@@ -72,7 +73,8 @@ export default function Tutoria() {
   // "Pendências": the audit of the tutoring by the AI, only for the management of the academic side (the tutors do not see it)
   const audits = canOperateRetention(user);
   const asked = new URLSearchParams(query).get("aba");
-  const tab = asked === "ambientacao" ? "ambientacao" : asked === "pendencias" && audits ? "pendencias" : "alunos";
+  // "Protocolos": the tutor's own cases (number, subject, told to the student); the academic management has "Pendências" instead
+  const tab = asked === "ambientacao" ? "ambientacao" : asked === "pendencias" && audits ? "pendencias" : asked === "protocolos" && !audits ? "protocolos" : "alunos";
   const setTab = (t) => history.replace(t === "alunos" ? "/meus-alunos" : `/meus-alunos?aba=${t}`);
   const [issuesOpen, setIssuesOpen] = useState(null);
   useEffect(() => {
@@ -129,7 +131,7 @@ export default function Tutoria() {
       <MainHeader>
         <Title>{manager ? "Alunos da tutoria" : "Meus alunos"}</Title>
         <div className="ui-tabs" role="tablist" aria-label="Seções da tutoria">
-          {[["alunos", "Alunos"], ["ambientacao", "Ambientação"], ...(audits ? [["pendencias", issuesOpen ? `Pendências (${issuesOpen})` : "Pendências"]] : [])].map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className={`ui-tabs__btn${tab === k ? " is-on" : ""}`} onClick={() => setTab(k)}>{l}</button>)}
+          {[["alunos", "Alunos"], ["ambientacao", "Ambientação"], ...(audits ? [["pendencias", issuesOpen ? `Pendências (${issuesOpen})` : "Pendências"]] : [["protocolos", "Protocolos"]])].map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className={`ui-tabs__btn${tab === k ? " is-on" : ""}`} onClick={() => setTab(k)}>{l}</button>)}
         </div>
         <span style={{ marginLeft: "auto" }} />
         <Button size="small" variant="outlined" startIcon={<Upload size={15} />} onClick={() => setImporting(true)}>{manager ? "Importar alunos" : "Subir meus alunos"}</Button>
@@ -154,7 +156,7 @@ export default function Tutoria() {
           "Os alunos importados não contam como novas matrículas nos relatórios.",
         ]}
       />
-      {tab === "pendencias" ? <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}><IssuesPanel onCount={setIssuesOpen} /></div> : tab === "ambientacao" ? <Onboarding embedded /> : <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 16 }}>
+      {tab === "pendencias" ? <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}><IssuesPanel onCount={setIssuesOpen} /></div> : tab === "protocolos" ? <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}><MyProtocols /></div> : tab === "ambientacao" ? <Onboarding embedded /> : <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 16 }}>
       <div className={c.intro}>
         {manager ? "Os alunos de cada tutor" : "Os alunos que estão com você"} e o que precisa de atenção agora. A conversa abre no número da Tutoria{data?.rules?.numberName ? ` (${data.rules.numberName})` : ""}: o comercial não vê essas conversas.
         {data && !data.rules?.numberName && " Ainda não há número da Tutoria: marque a Função do número = Tutoria em Conexões."}

@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 
 import AppError from "../errors/AppError";
 import { getSetting, setSetting } from "../helpers/AppSettings";
-import { canOperateRetention } from "../helpers/Roles";
+import { canOperateRetention, isManagerRole, roleOf } from "../helpers/Roles";
 import * as Issues from "../services/TutoriaServices/Issues";
 
 // The audit of the tutoring belongs to the management of the academic side (the administration and the academic coordination): the tutor
@@ -38,3 +38,22 @@ export const saveSettings = async (req: Request, res: Response): Promise<Respons
 };
 
 export const runNow = async (_req: Request, res: Response): Promise<Response> => res.json(await Issues.runTutoringAudit({ force: true }));
+
+// ---- the tutor: the protocols of their own students (the tutoring and the management; never the commercial side)
+export const tutorSide = (req: Request, _res: Response, next: () => void): void => {
+  const role = roleOf(req.user as any);
+  if (!["tutor", "academico"].includes(role) && !isManagerRole(role)) throw new AppError("ERR_NO_PERMISSION", 403);
+  next();
+};
+const managerOf = (req: Request): boolean => isManagerRole(roleOf(req.user as any));
+
+export const myProtocols = async (req: Request, res: Response): Promise<Response> => res.json({ items: await Issues.myProtocols(Number(req.user.id)) });
+export const ticketProtocols = async (req: Request, res: Response): Promise<Response> => res.json({ items: await Issues.ticketProtocols(Number(req.params.ticketId)) });
+export const registerProtocol = async (req: Request, res: Response): Promise<Response> => {
+  const { issue, warning } = await Issues.registerProtocol(Number(req.user.id), managerOf(req), req.body || {});
+  return res.status(201).json({ id: issue.id, warning });
+};
+export const resolveProtocol = async (req: Request, res: Response): Promise<Response> => {
+  const { issue, warning } = await Issues.resolveProtocol(Number(req.params.id), Number(req.user.id), managerOf(req), req.body || {});
+  return res.json({ id: issue.id, warning });
+};

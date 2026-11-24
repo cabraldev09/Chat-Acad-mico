@@ -1,6 +1,6 @@
-# Rotas da API (582)
+# Rotas da API (586)
 
-Públicas: 40 · logado (qualquer perfil): 319 · gestão: 178 · admin: 37
+Públicas: 40 · logado (qualquer perfil): 323 · gestão: 178 · admin: 37
 
 ## Públicas (sem login)
 
@@ -94,6 +94,8 @@ Públicas: 40 · logado (qualquer perfil): 319 · gestão: 178 · admin: 37
 - PUT /tutoria/issues/:id (extraRoutes.ts)
 - PUT /tutoria/audit/settings (extraRoutes.ts)
 - POST /tutoria/audit/run (extraRoutes.ts)
+- POST /tutoria/protocols (extraRoutes.ts)
+- POST /tutoria/protocols/:id/resolve (extraRoutes.ts)
 - POST /tutoria/students/import (extraRoutes.ts)
 - POST /tutoria/students/:leadId/conversation (extraRoutes.ts)
 - POST /proposals/preview (extraRoutes.ts)

@@ -441,6 +441,11 @@ r.put("/tutoria/issues/:id", isAuth, TutoringIssue.academicManagement, TutoringI
 r.get("/tutoria/audit/settings", isAuth, TutoringIssue.academicManagement, TutoringIssue.settings);
 r.put("/tutoria/audit/settings", isAuth, TutoringIssue.academicManagement, TutoringIssue.saveSettings);
 r.post("/tutoria/audit/run", isAuth, TutoringIssue.academicManagement, TutoringIssue.runNow);
+// the tutor's protocols: number and subject of a case opened in the institution's system, told to the student and kept in the history
+r.get("/tutoria/protocols", isAuth, TutoringIssue.tutorSide, TutoringIssue.myProtocols);
+r.post("/tutoria/protocols", isAuth, TutoringIssue.tutorSide, TutoringIssue.registerProtocol);
+r.post("/tutoria/protocols/:id/resolve", isAuth, TutoringIssue.tutorSide, TutoringIssue.resolveProtocol);
+r.get("/tickets/:ticketId/protocols", isAuth, canReadTicket, TutoringIssue.tutorSide, TutoringIssue.ticketProtocols);
 r.get("/tutoria/students", isAuth, Tutoria.students);
 r.get("/tutoria/panel", isAuth, Tutoria.panel);
 r.post("/tutoria/students/import", isAuth, Tutoria.importStudents);

@@ -259,3 +259,112 @@ export const updateIssue = async (id: number, body: any, userId: number) => {
 };
 
 export const openCount = async (): Promise<number> => TutoringIssue.count({ where: { status: { [Op.in]: OPEN } } as any });
+
+// ---------------------------------------------------------------- the tutor's side: the protocols of their own students
+// Simple on purpose: the tutor writes the number and the subject of the case opened in the institution's system, may tell the student in
+// the conversation, and it stays in the student's history. The tutor's list shows the cases of their own conversations, never how they
+// were found.
+
+const PROTOCOL_EVENT = "protocol";
+
+const tutorTicket = async (ticketId: number, userId: number, manager: boolean): Promise<Ticket> => {
+  const ticket = await Ticket.findByPk(ticketId, { include: ["contact", "whatsapp"] });
+  if (!ticket || !TUTORIA_SEGMENTS.includes(String(ticket.segment || ""))) throw new AppError("ERR_PROTOCOL_NOT_TUTORING", 400);
+  if (!manager && ticket.userId !== userId) throw new AppError("ERR_NO_PERMISSION", 403);
+  return ticket;
+};
+
+const leadOfTicket = async (ticket: Ticket): Promise<number | null> => {
+  const [row] = await rows(`SELECT l.id FROM Leads l WHERE l.contactId = :contactId ORDER BY l.updatedAt DESC LIMIT 1`, { contactId: ticket.contactId });
+  return row ? Number(row.id) : null;
+};
+
+// the line of the student's history and of the conversation's events
+const record = async (ticket: Ticket, leadId: number | null, userId: number, text: string): Promise<void> => {
+  const { default: TicketEvent } = await import("../../models/TicketEvent");
+  await TicketEvent.create({ ticketId: ticket.id, type: PROTOCOL_EVENT, actorId: userId, note: text.slice(0, 1000) } as any);
+  if (leadId) {
+    const { addActivity } = await import("../CrmServices/LeadCore");
+    await addActivity(leadId, userId, "note", text.slice(0, 2000)).catch(() => undefined);
+  }
+};
+
+// the message to the student, in the conversation (no emoji, one idea); a closed window of the official number is said, not hidden
+const tellStudent = async (ticket: Ticket, userId: number, body: string): Promise<string | null> => {
+  try {
+    const SendToContact = (await import("../ChannelServices/SendToContact")).default;
+    await SendToContact({ contact: (ticket as any).contact, whatsapp: (ticket as any).whatsapp, body, ticketId: ticket.id, keepOpen: { userId }, byPerson: true });
+    return null;
+  } catch (err) {
+    return "O protocolo foi registrado, mas a mensagem ao aluno não saiu. Avise o aluno pela conversa quando ela estiver aberta.";
+  }
+};
+
+const firstName = (ticket: Ticket): string => String((ticket as any).contact?.name || "").trim().split(/\s+/)[0];
+
+export const myProtocols = async (userId: number) => {
+  const issues = await TutoringIssue.findAll({
+    where: { tutorId: userId, [Op.or]: [{ status: { [Op.in]: OPEN } }, { status: "resolvida", resolvedAt: { [Op.gt]: new Date(Date.now() - 30 * 864e5) } }] } as any,
+    order: [["detectedAt", "DESC"]],
+    limit: 200
+  });
+  const ticketIds = [...new Set(issues.map(i => i.ticketId).filter(Boolean))];
+  const people = ticketIds.length ? await rows(`SELECT t.id, ct.name AS student FROM Tickets t JOIN Contacts ct ON ct.id = t.contactId WHERE t.id IN (:ids)`, { ids: ticketIds }) : [];
+  const studentOf = new Map(people.map(p => [Number(p.id), p.student]));
+  return issues.map(i => ({
+    id: i.id, ticketId: i.ticketId, kindLabel: KINDS[i.kind] || "Outro", summary: i.summary, protocolNumber: i.protocolNumber, protocolName: i.protocolName,
+    status: i.status === "resolvida" ? "resolvida" : i.protocolNumber ? "registrada" : "aberta", at: i.detectedAt, resolvedAt: i.resolvedAt,
+    student: i.ticketId ? studentOf.get(i.ticketId) || null : null
+  }));
+};
+
+export const ticketProtocols = async (ticketId: number) =>
+  (await TutoringIssue.findAll({ where: { ticketId, status: { [Op.in]: [...OPEN, "resolvida"] } } as any, order: [["detectedAt", "DESC"]], limit: 20 }))
+    .map(i => ({ id: i.id, kindLabel: KINDS[i.kind] || "Outro", summary: i.summary, protocolNumber: i.protocolNumber, protocolName: i.protocolName, status: i.status === "resolvida" ? "resolvida" : i.protocolNumber ? "registrada" : "aberta" }));
+
+// the tutor writes the protocol: on a case already in the list (issueId) or a new one of this conversation
+export const registerProtocol = async (userId: number, manager: boolean, body: any) => {
+  const number = clip(body?.protocolNumber, 60);
+  const subject = clip(body?.protocolName, 160);
+  if (!number) throw new AppError("ERR_PROTOCOL_NUMBER", 400);
+  if (!subject) throw new AppError("ERR_PROTOCOL_SUBJECT", 400);
+  let issue = body?.issueId ? await TutoringIssue.findByPk(Number(body.issueId)) : null;
+  const ticketId = issue ? issue.ticketId : Number(body?.ticketId);
+  if (!ticketId) throw new AppError("ERR_PROTOCOL_NOT_TUTORING", 400);
+  const ticket = await tutorTicket(ticketId, userId, manager);
+  const leadId = await leadOfTicket(ticket);
+  if (issue) {
+    if (!manager && issue.tutorId && issue.tutorId !== userId) throw new AppError("ERR_NO_PERMISSION", 403);
+    issue.set({ protocolNumber: number, protocolName: subject, status: issue.status === "aberta" ? "registrada" : issue.status } as any);
+    await issue.save();
+  } else {
+    issue = await TutoringIssue.create({
+      ticketId, leadId, tutorId: ticket.userId || userId, institutionId: (ticket as any).institutionId || null, kind: "protocolo",
+      summary: `Protocolo ${number}: ${subject}`.slice(0, 280), protocolNumber: number, protocolName: subject, status: "registrada", source: "tutor", detectedAt: new Date()
+    } as any);
+  }
+  await record(ticket, leadId, userId, `Protocolo ${number} registrado pela tutoria: ${subject}.`);
+  const first = firstName(ticket);
+  const warning = body?.notifyStudent
+    ? await tellStudent(ticket, userId, `${first ? `${first}, r` : "R"}egistrei o seu atendimento com o protocolo ${number} (${subject}). Assim que eu tiver o retorno, te aviso por aqui.`)
+    : null;
+  return { issue, warning };
+};
+
+// the case is solved: it leaves the open list, stays in the history, and the student may be told
+export const resolveProtocol = async (id: number, userId: number, manager: boolean, body: any) => {
+  const issue = await TutoringIssue.findByPk(id);
+  if (!issue || !issue.ticketId) throw new AppError("ERR_NOT_FOUND", 404);
+  if (!manager && issue.tutorId && issue.tutorId !== userId) throw new AppError("ERR_NO_PERMISSION", 403);
+  const ticket = await tutorTicket(issue.ticketId, userId, manager || issue.tutorId === userId);
+  issue.set({ status: "resolvida", resolvedAt: new Date(), resolvedBy: userId } as any);
+  await issue.save();
+  const leadId = issue.leadId || (await leadOfTicket(ticket));
+  const label = issue.protocolNumber ? `Protocolo ${issue.protocolNumber}` : "Atendimento";
+  await record(ticket, leadId, userId, `${label} resolvido pela tutoria${issue.protocolName ? `: ${issue.protocolName}` : ""}.`);
+  const first = firstName(ticket);
+  const warning = body?.notifyStudent
+    ? await tellStudent(ticket, userId, `${first ? `${first}, o` : "O"} seu atendimento${issue.protocolNumber ? ` do protocolo ${issue.protocolNumber}` : ""} foi resolvido. Se precisar de mais alguma coisa, é só me chamar.`)
+    : null;
+  return { issue, warning };
+};

@@ -268,6 +268,7 @@ export const CircleDashed = /*#__PURE__*/ make(PhCircleDashed, "CircleDashed", "
 export const CircleDollarSign = /*#__PURE__*/ make(PhCurrencyCircleDollar, "CircleDollarSign", "duotone");
 export const CircleSlash = /*#__PURE__*/ make(PhProhibitInset, "CircleSlash", "duotone");
 export const ClipboardCopy = /*#__PURE__*/ make(PhClipboard, "ClipboardCopy", "duotone");
+export const ClipboardList = /*#__PURE__*/ make(PhClipboardText, "ClipboardList", "duotone");
 export const ClipboardPaste = /*#__PURE__*/ make(PhClipboardText, "ClipboardPaste", "duotone");
 export const Clock = /*#__PURE__*/ make(PhClock, "Clock", "duotone");
 export const Clock3 = /*#__PURE__*/ make(PhClock, "Clock3", "duotone");

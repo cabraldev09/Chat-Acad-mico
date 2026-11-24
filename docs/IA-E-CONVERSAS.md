@@ -209,3 +209,28 @@ A IA da tutoria só **audita**, e para a **gestão acadêmica** (administração
   - cria uma pendência à mão;
   - pede "Ler as conversas agora".
 - **Rotas:** `/tutoria/issues` (GET, POST), `/tutoria/issues/:id` (PUT), `/tutoria/issues/count`, `/tutoria/audit/settings` (GET, PUT) e `/tutoria/audit/run`. Todas exigem a gestão acadêmica.
+
+### O lado do tutor: protocolos
+
+O tutor vê uma versão simples, sem nada sobre a leitura da IA.
+
+**Onde o tutor encontra os protocolos:**
+- **Na conversa da tutoria:**
+  - uma faixa "Falta o protocolo: …" para cada caso aberto, com o botão "Registrar protocolo";
+  - os protocolos ainda abertos, com o botão "Resolvido";
+  - em Mais ações, "Registrar protocolo" para um caso novo.
+- **Em Meus alunos → Protocolos:** os casos do tutor que aguardam protocolo, os abertos e os resolvidos nos últimos 30 dias.
+
+**O que o tutor faz:**
+- Registra o número e o assunto do protocolo. Com "Avisar o aluno nesta conversa", o aluno recebe: "Registrei o seu atendimento com o protocolo N (assunto). Assim que eu tiver o retorno, te aviso por aqui."
+- Marca como resolvido e, se quiser, avisa o aluno.
+
+**Onde fica registrado:**
+- Tudo fica no histórico do aluno (atividade do lead) e nos eventos da conversa (`TicketEvents.type = protocol`).
+- A gestão vê o protocolo registrado pelo tutor na aba Pendências.
+
+**Rotas** (tutor, acadêmico e gestão; o tutor só nas próprias conversas, e só em conversas da tutoria):
+- `GET /tutoria/protocols`;
+- `POST /tutoria/protocols`;
+- `POST /tutoria/protocols/:id/resolve`;
+- `GET /tickets/:ticketId/protocols`.

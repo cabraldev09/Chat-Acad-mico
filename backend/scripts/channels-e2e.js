@@ -7608,9 +7608,26 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post("/tutoria/audit/run", {}, auth());
       assert((anthropic.audits || 0) === before, "a conversation with nothing new was read again");
       assert(before > audits, "the model was not called");
-      // the management writes the protocol and its name
-      const reg = await http.put(`/tutoria/issues/${issue.id}`, { protocolNumber: "2026112400123", protocolName: "Acesso ao AVA" }, auth());
-      assert(reg.status === 200 && reg.data.status === "registrada", `register ${JSON.stringify(reg.data)}`);
+      // the tutor's side, simple: the case of the conversation waits for its protocol, with no word about the AI
+      const mine = (await http.get("/tutoria/protocols", asUser(tutorTok))).data.items;
+      const waiting = mine.find(i => i.id === issue.id);
+      assert(waiting && waiting.status === "aberta" && waiting.source === undefined && waiting.idea === undefined, `the tutor's list ${JSON.stringify(waiting)}`);
+      // another tutor does not touch it
+      await http.post("/users", { name: "Outra Tutora", email: "outra-tutora@x.com", password: "senha123", role: "tutor" }, auth());
+      const otherTok = (await http.post("/auth/login", { email: "outra-tutora@x.com", password: "senha123" })).data.token;
+      assert((await http.post("/tutoria/protocols", { issueId: issue.id, protocolNumber: "1", protocolName: "x" }, asUser(otherTok))).status === 403, "another tutor registered the protocol");
+      assert((await http.post("/tutoria/protocols", { issueId: issue.id, protocolNumber: "2026112400123", protocolName: "" }, asUser(tutorTok))).status === 400, "a protocol without subject was accepted");
+      // the tutor writes the number and the subject and tells the student: the message goes in the conversation and it stays in the history
+      const sentBefore = graph.sent.length;
+      const reg = await http.post("/tutoria/protocols", { issueId: issue.id, protocolNumber: "2026112400123", protocolName: "Acesso ao AVA", notifyStudent: true }, asUser(tutorTok));
+      assert(reg.status === 201, `register ${reg.status} ${JSON.stringify(reg.data)}`);
+      await waitFor(() => graph.sent.slice(sentBefore).find(x => x.body && JSON.stringify(x.body).includes("protocolo 2026112400123")), 15000, "the student was not told the protocol");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketId} AND type='protocol'`)) === 1, "the protocol is not in the history of the conversation");
+      assert((await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.some(i => i.id === issue.id && i.protocolName === "Acesso ao AVA"), "the management does not see the protocol of the tutor");
+      // a protocol of a commercial conversation is refused
+      const sales = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${tutorUser.id}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      assert((await http.post("/tutoria/protocols", { ticketId: sales, protocolNumber: "9", protocolName: "y" }, asUser(tutorTok))).status === 400, "a protocol was written on a commercial conversation");
+      sql(`DELETE FROM Tickets WHERE id=${sales}`);
       // the student says it was solved: the next reading closes it
       say(`aud-${ticketId}-3`, false, "Já foi liberado, resolveu, obrigada", 60);
       say(`aud-${ticketId}-4`, true, "Que bom! Qualquer coisa me chama", 59);

@@ -62,7 +62,7 @@ const IssueCard = ({ c, it, onSaved, onOpen }) => {
         <span>{it.kindLabel}</span>
         {it.student && <span className={c.who}>· {it.student}</span>}
         {it.tutor && <span>· tutor {it.tutor}</span>}
-        <span className={c.when}>{it.source === "ia" ? "Visto pela IA" : "Registrado pela gestão"} em {when(it.detectedAt)}</span>
+        <span className={c.when}>{it.source === "ia" ? "Visto pela IA" : it.source === "tutor" ? "Registrado pelo tutor" : "Registrado pela gestão"} em {when(it.detectedAt)}</span>
       </div>
       <div className={c.summary}>{it.summary}</div>
       {it.idea && <div className={c.idea}><Lightbulb size={16} style={{ flex: "none", marginTop: 2 }} /><span>{it.idea}</span></div>}
