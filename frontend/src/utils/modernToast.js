@@ -39,9 +39,15 @@ export const installModernToast = () => {
     ["info", "info"],
   ].forEach(([fn, type]) => {
     const original = toast[fn];
-    toast[fn] = (content, options) =>
-      typeof content === "string" || typeof content === "number" || React.isValidElement(content)
-        ? original(<Body type={type} content={content} />, options)
-        : original(content, options);
+    toast[fn] = (content, options) => {
+      if (!(typeof content === "string" || typeof content === "number" || React.isValidElement(content))) return original(content, options);
+      // the same message again (a wrong password typed three times) does not stack: the one on the screen just starts its time over
+      const id = (options && options.toastId) || (typeof content === "string" || typeof content === "number" ? `${type}:${content}` : undefined);
+      if (id && toast.isActive(id)) {
+        toast.update(id, { render: <Body type={type} content={content} />, autoClose: (options && options.autoClose) ?? 4500 });
+        return id;
+      }
+      return original(<Body type={type} content={content} />, id ? { ...options, toastId: id } : options);
+    };
   });
 };

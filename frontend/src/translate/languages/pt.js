@@ -499,6 +499,7 @@ const messages = {
         ERR_NOTICE_TEMPLATE_NOT_APPROVED: "O modelo deste aviso ainda não foi aprovado pela Meta. Envie-o em Modelos da Meta.",
         ERR_NOTICE_NO_STUDENTS: "Nenhum aluno deste filtro pode receber o aviso.",
         ERR_NOTICE_CONFIRM: "Confirme o envio do aviso.",
+        ERR_PORTAL_STAFF_ACCOUNT: "Este é um acesso da equipe. Funcionários entram pelo login da equipe.",
         ERR_OUTBOUND_RATE_REQUIRED: "Cadastre a estimativa do preço da mensagem antes de usar um orçamento em dólares.",
         ERR_TEMPLATES_NOT_AUTHORIZED: "O administrador precisa autorizar o envio com modelos em Configurações → Modelos da Meta.",
         ERR_TEMPLATE_INVALID: "Confira nome, idioma e parâmetros do template aprovado.",

@@ -202,7 +202,7 @@
 @media (pointer: coarse), (max-width: 599px) {
   button:not(.MuiChip-root):not(.MuiChip-deleteIcon):not([data-compact]),
   [role="button"]:not(.MuiChip-root):not(.MuiSelect-root):not([data-compact]),
-  [role="tab"], .ui-seg-btn, .ui-tabs__btn, .MuiIconButton-root:not(.MuiChip-deleteIcon), .MuiButton-root {
+  [role="tab"], .ui-seg-btn, .ui-tabs__btn, .MuiIconButton-root:not(.MuiChip-deleteIcon), .MuiButton-root, a.MuiButtonBase-root {
     min-height: 40px;
   }
   .MuiIconButton-root:not(.MuiChip-deleteIcon):not(.MuiCheckbox-root):not(.MuiRadio-root):not(.MuiSwitch-switchBase) { min-width: 40px; }
@@ -213,11 +213,18 @@
 }
 
 /* Moving with the keyboard (Tab), wherever the focus is, a clear ring around it; a click or a tap shows nothing (rule above) */
-:focus-visible, .MuiButtonBase-root.Mui-focusVisible, .MuiInputBase-root.Mui-focused:has(:focus-visible) {
+:focus-visible, .MuiButtonBase-root.Mui-focusVisible {
   outline: 2px solid var(--brand-cerulean, #0693e3);
   outline-offset: 2px;
 }
-.MuiInputBase-input:focus-visible { outline: none; }
+/* No ring where it would be a second frame or where nobody chose the focus (Safari draws it in both cases):
+   - text fields: their own border already shows the focus (and a field focused when a screen opens looked like a stray blue box);
+   - what receives the focus only by code: a dialog, a drawer, a panel (tabindex -1), and the page root. */
+input:not([type=checkbox]):not([type=radio]):not([type=range]):focus-visible, textarea:focus-visible, select:focus-visible,
+[contenteditable]:focus-visible, .MuiInputBase-input:focus-visible, .MuiSelect-root:focus-visible,
+[tabindex="-1"]:focus-visible, .MuiDialog-container:focus-visible, .MuiPaper-root[role=dialog]:focus-visible, .MuiDrawer-paper:focus-visible, .MuiPopover-paper:focus-visible, .MuiMenu-list:focus-visible, .MuiList-root:focus-visible {
+  outline: none;
+}
 
 /* The loading mark of the whole system: instead of the spinning ring, a spark of eight points (the long and the short ones
    alternating) that turns and breathes, in the color the spinner had. Only the waiting ones change: a progress with a value stays a ring. */

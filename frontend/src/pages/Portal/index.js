@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link as RouterLink, useHistory, useParams } from "react-router-dom";
-import { toast, ToastContainer } from "react-toastify";
+import { toast } from "react-toastify";
 import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, Link, TextField, Tooltip, Typography } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
 import { Visibility, VisibilityOff } from "@material-ui/icons";
@@ -147,7 +147,6 @@ const AuthShell = ({ title, subtitle, children }) => {
           </div>
         </div>
       </div>
-      <ToastContainer position="top-right" autoClose={4500} />
     </div>
   );
 };
@@ -174,6 +173,8 @@ export const PortalLogin = () => {
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
   const [sent, setSent] = useState(false);
+  // a team account used here: the portal is only for students, the team signs in at /login
+  const [staff, setStaff] = useState(false);
 
   useEffect(() => { if (portalToken()) history.replace("/portal"); }, [history]);
 
@@ -184,7 +185,10 @@ export const PortalLogin = () => {
       const { data } = await portalApi.post("/portal/login", { login, password });
       setPortalToken(data.token);
       history.replace("/portal");
-    } catch (err) { toast.error(say(err)); }
+    } catch (err) {
+      const code = err && err.response && err.response.data && (err.response.data.error || err.response.data.message);
+      if (code === "ERR_PORTAL_STAFF_ACCOUNT") setStaff(true); else toast.error(say(err));
+    }
     setBusy(false);
   };
   const sendForgot = async () => {
@@ -208,8 +212,14 @@ export const PortalLogin = () => {
               endAdornment: <InputAdornment position="end"><IconButton size="small" aria-label={show ? "Ocultar a senha" : "Mostrar a senha"} onClick={() => setShow((v) => !v)}>{show ? <VisibilityOff /> : <Visibility />}</IconButton></InputAdornment>,
             }} />
         </Field>
+        {staff && (
+          <div role="alert" className={c.help} style={{ borderColor: "#f59e0b", background: "rgba(245,158,11,.10)" }}>
+            <ShieldCheck size={18} style={{ flex: "none", marginTop: 1 }} aria-hidden="true" />
+            <span>Este é um acesso da equipe, não de aluno. Funcionários entram pelo login da equipe. <Link href="/login" underline="always" style={{ fontWeight: 700 }}>Ir para o login da equipe</Link></span>
+          </div>
+        )}
         <Button type="submit" fullWidth variant="contained" className={c.cta} disabled={busy || !login.trim() || !password}>{busy ? <><CircularProgress size={18} color="inherit" style={{ marginRight: 10 }} />Entrando...</> : "Entrar"}</Button>
-        <div className={c.help}><ShieldCheck size={18} style={{ flex: "none", marginTop: 1 }} aria-hidden="true" /><span>Ainda não tem acesso? Peça o convite ao seu tutor. O primeiro acesso é feito pelo link que chega no seu e-mail.</span></div>
+        <div className={c.help}><ShieldCheck size={18} style={{ flex: "none", marginTop: 1 }} aria-hidden="true" /><span>Ainda não tem acesso? Peça o convite ao seu tutor. O primeiro acesso é feito pelo link que chega no seu e-mail. É da equipe? <Link href="/login" underline="always" style={{ fontWeight: 650 }}>Entre pelo login da equipe</Link>.</span></div>
       </form>
       <Dialog open={forgot} onClose={() => setForgot(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Esqueci minha senha</DialogTitle>
@@ -265,6 +275,12 @@ export const PortalActivate = () => {
         <TextField {...field} autoFocus label="Nova senha" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} helperText={password.length > 0 && password.length < 8 ? "Use 8 ou mais caracteres." : ""} />
         <TextField {...field} label="Repita a senha" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)}
           error={again.length > 0 && again !== password} helperText={again.length > 0 && again !== password ? "As senhas não são iguais." : ""} />
+        {staff && (
+          <div role="alert" className={c.help} style={{ borderColor: "#f59e0b", background: "rgba(245,158,11,.10)" }}>
+            <ShieldCheck size={18} style={{ flex: "none", marginTop: 1 }} aria-hidden="true" />
+            <span>Este é um acesso da equipe, não de aluno. Funcionários entram pelo login da equipe. <Link href="/login" underline="always" style={{ fontWeight: 700 }}>Ir para o login da equipe</Link></span>
+          </div>
+        )}
         <Button type="submit" fullWidth variant="contained" className={c.cta} disabled={busy || !ok}>{busy ? <CircularProgress size={22} color="inherit" /> : "Salvar a senha"}</Button>
       </form>
     </AuthShell>
@@ -663,7 +679,6 @@ const Portal = () => {
       </main>
 
       <SettingsSheet open={settings} onClose={() => setSettings(false)} student={data.student} onChangePassword={changePassword} />
-      <ToastContainer position="top-right" autoClose={4500} />
     </div>
   );
 };
