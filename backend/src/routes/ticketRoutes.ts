@@ -57,6 +57,7 @@ ticketRoutes.put("/tickets/:ticketId/pin", isAuth, canReadTicket, TicketControll
 ticketRoutes.post("/tickets/:ticketId/claim", isAuth, canWriteTicket, TicketController.claim);
 ticketRoutes.post("/tickets/:ticketId/take", isAuth, canReadTicket, TicketController.take);
 ticketRoutes.post("/tickets/:ticketId/ai", isAuth, canWriteTicket, TicketController.ai);
+ticketRoutes.post("/tickets/:ticketId/reply-dismiss", isAuth, canWriteTicket, TicketController.dismissReply);
 ticketRoutes.put("/tickets/:ticketId/archive", isAuth, canWriteTicket, TicketController.archive);
 ticketRoutes.put("/tickets/:ticketId/unread", isAuth, canWriteTicket, TicketController.markUnread);
 ticketRoutes.post("/tickets/:ticketId/typing", isAuth, canWriteTicket, TicketController.typing);

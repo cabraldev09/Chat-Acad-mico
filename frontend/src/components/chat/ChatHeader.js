@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw, Bot, Search, Tag, MoreVertical, CalendarClock, Shuffle, Repeat2, Trash2 } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw, Bot, Search, Tag, MoreVertical, CalendarClock, Shuffle, Repeat2, Trash2, ClipboardList } from "lucide-react";
 import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
@@ -396,6 +396,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
               {menuItem(pinned ? <PinOff size={18} /> : <Pin size={18} />, pinned ? "Desafixar" : "Fixar no topo", togglePin, pinned ? "Volta para a ordem normal da lista" : "Fica sempre no começo da lista")}
               {menuItem(archived ? <ArchiveRestore size={18} /> : <Archive size={18} />, archived ? "Desarquivar" : "Arquivar", toggleArchive, archived ? "Volta para a lista de conversas" : "Sai da lista e volta se o contato escrever")}
               <ListSubheader disableSticky className={classes.menuHead}>Mensagens e avisos</ListSubheader>
+              {tutoring && !ticket.isGroup && menuItem(<ClipboardList size={18} />, "Registrar protocolo", () => window.dispatchEvent(new CustomEvent("protocolOpen", { detail: { ticketId: ticket.id } })), "Número e assunto do chamado; fica no histórico do aluno")}
               {menuItem(<CalendarClock size={18} />, "Agendar mensagem", () => setScheduleOpen(true), "Envia sozinha no dia e na hora que você escolher")}
               {menuItem(soundIcon, "Som desta conversa", () => setSoundEl(moreRef.current), SOUND_LABEL[soundPref])}
               {(teamCall || ticket.status === "open") && <ListSubheader disableSticky className={classes.menuHead}>Encaminhar</ListSubheader>}

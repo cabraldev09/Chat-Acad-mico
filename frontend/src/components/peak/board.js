@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useChartTheme } from "../charts";
-import { Check, ChevronRight, Inbox } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Inbox, X } from "lucide-react";
 
 import api from "../../services/api";
 import { initialsOf, colorOf } from "../../utils/avatar";
@@ -216,49 +216,149 @@ export const useCycle = () => {
   return cycle;
 };
 
-// the two dates of what was chosen: today, the last 7 days, the month so far, the dates typed, or the cycle of goals
-export const rangeDates = (value, cycle) => {
-  const now = new Date();
-  const today = iso(now);
-  if (value.range === "today") return { from: today, to: today };
-  if (value.range === "week") { const d = new Date(now); d.setDate(d.getDate() - 6); return { from: iso(d), to: today }; }
-  if (value.range === "custom") return { from: value.from || today, to: value.to || today };
-  if (value.range === "cycle" && cycle) return { from: cycle.from, to: cycle.to };
-  return { from: `${today.slice(0, 8)}01`, to: today };
+// Every cycle of goals registered in Metas (the ones in force and the archived ones), the newest first: "Ciclo" picks one of them
+let cyclesAsked = null;
+export const loadCycles = () => {
+  if (!cyclesAsked) {
+    const read = (params) => api.get("/goals", { params }).then(({ data }) => (Array.isArray(data) ? data : [])).catch(() => []);
+    cyclesAsked = Promise.all([read({}), read({ status: "archived" })]).then(([a, b]) => {
+      const seen = new Set();
+      return [...a, ...b]
+        .filter((g) => g && g.startsOn && g.endsOn && !seen.has(g.id) && seen.add(g.id))
+        .map((g) => ({ id: g.id, title: g.title || "", from: String(g.startsOn).slice(0, 10), endsOn: String(g.endsOn).slice(0, 10) }))
+        .sort((x, y) => (x.from < y.from ? 1 : -1));
+    });
+  }
+  return cyclesAsked;
 };
-export const rangeText = (value, cycle) => {
-  if (value.range === "today") return "Hoje";
-  if (value.range === "week") return "Últimos 7 dias";
-  if (value.range === "month") return "Este mês";
-  const d = rangeDates(value, cycle);
-  return value.range === "cycle" ? `Ciclo${cycle && cycle.title ? ` ${cycle.title}` : ""}` : `${br(d.from)} a ${br(d.to)}`;
+export const useCycles = () => {
+  const [list, setList] = useState(undefined);
+  useEffect(() => { let alive = true; loadCycles().then((l) => { if (alive) setList(l); }); return () => { alive = false; }; }, []);
+  return list;
 };
 
-/** Hoje | Semana | Mês | Período | Ciclo. "Período" opens the two dates; "Ciclo" is the period of goals in force. */
+const MONTH_NAMES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const dayOf = (key) => new Date(`${key}T12:00:00`);
+const addDays = (key, n) => { const d = dayOf(key); d.setDate(d.getDate() + n); return iso(d); };
+// (mondayOf, above, gives the Monday of the week of a day: the week goes from Monday to Sunday)
+const lastDayOf = (month) => { const [y, m] = month.split("-").map(Number); return iso(new Date(y, m, 0)); };
+const monthText = (month) => `${MONTH_NAMES[Number(month.slice(5, 7)) - 1]} de ${month.slice(0, 4)}`;
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+const cycleDates = (c) => {
+  const today = iso(new Date());
+  return { from: c.from, to: c.endsOn < today ? c.endsOn : today < c.from ? c.endsOn : today };
+};
+
+// the two dates of what was chosen. Semana: the week chosen (Monday to Sunday; the current one up to today). Mês: the month chosen (the
+// current one up to today). Período: the dates typed. Ciclo: the cycle of goals chosen (the one in force when none was picked).
+export const rangeDates = (value, cycle) => {
+  const today = iso(new Date());
+  const v = value || {};
+  if (v.range === "today") return { from: today, to: today };
+  if (v.range === "week") {
+    const from = v.week || mondayOf(today);
+    const end = addDays(from, 6);
+    return { from, to: end > today ? today : end };
+  }
+  if (v.range === "custom") return { from: v.from || today, to: v.to || today };
+  if (v.range === "cycle") {
+    if (v.cycleFrom && v.cycleTo) return { from: v.cycleFrom, to: v.cycleTo };
+    if (cycle) return { from: cycle.from, to: cycle.to };
+  }
+  const month = v.month || today.slice(0, 7);
+  const end = lastDayOf(month);
+  return { from: `${month}-01`, to: end > today ? today : end };
+};
+export const rangeText = (value, cycle) => {
+  const v = value || {};
+  const today = iso(new Date());
+  if (v.range === "today") return "Hoje";
+  if (v.range === "week") return !v.week || v.week === mondayOf(today) ? "Esta semana" : `${br(v.week)} a ${br(addDays(v.week, 6))}`;
+  if (v.range === "month" || !v.range) return !v.month || v.month === today.slice(0, 7) ? "Este mês" : cap(monthText(v.month));
+  if (v.range === "cycle") return `Ciclo${v.cycleTitle ? ` ${v.cycleTitle}` : cycle && cycle.title ? ` ${cycle.title}` : ""}`;
+  const d = rangeDates(v, cycle);
+  return `${br(d.from)} a ${br(d.to)}`;
+};
+
+// The second half of the picker: WHICH week, month or cycle (or the two dates of "Período"), always the same height as the buttons
+const PeriodWhich = ({ value, onChange, cycles }) => {
+  const today = iso(new Date());
+  const thisWeek = mondayOf(today);
+  const thisMonth = today.slice(0, 7);
+  if (value.range === "week") {
+    const week = value.week || thisWeek;
+    return (
+      <span className="gv-which" role="group" aria-label="Qual semana">
+        <button type="button" className="gv-step" aria-label="Semana anterior" onClick={() => onChange({ ...value, week: addDays(week, -7) })}><ChevronLeft size={16} /></button>
+        <span className="gv-which-text">{week === thisWeek ? `Esta semana · ${br(week)} a ${br(addDays(week, 6))}` : `${br(week)} a ${br(addDays(week, 6))}`}</span>
+        <button type="button" className="gv-step" aria-label="Próxima semana" disabled={week >= thisWeek} onClick={() => onChange({ ...value, week: addDays(week, 7) })}><ChevronRight size={16} /></button>
+      </span>
+    );
+  }
+  if (value.range === "month") {
+    const month = value.month || thisMonth;
+    const months = Array.from({ length: 24 }, (_, i) => { const d = new Date(Number(thisMonth.slice(0, 4)), Number(thisMonth.slice(5, 7)) - 1 - i, 1); return iso(d).slice(0, 7); });
+    const shift = (n) => { const d = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1 + n, 1); onChange({ ...value, month: iso(d).slice(0, 7) }); };
+    return (
+      <span className="gv-which" role="group" aria-label="Qual mês">
+        <button type="button" className="gv-step" aria-label="Mês anterior" disabled={month <= months[months.length - 1]} onClick={() => shift(-1)}><ChevronLeft size={16} /></button>
+        <select className="gv-which-select" aria-label="Mês" value={month} onChange={(e) => onChange({ ...value, month: e.target.value })}>
+          {months.map((m) => <option key={m} value={m}>{m === thisMonth ? "Este mês" : cap(monthText(m))}</option>)}
+        </select>
+        <button type="button" className="gv-step" aria-label="Próximo mês" disabled={month >= thisMonth} onClick={() => shift(1)}><ChevronRight size={16} /></button>
+      </span>
+    );
+  }
+  if (value.range === "cycle") {
+    if (!cycles || !cycles.length) return <span className="gv-which"><span className="gv-which-text">{cycles === undefined ? "Carregando os ciclos..." : "Nenhum ciclo cadastrado em Metas"}</span></span>;
+    return (
+      <span className="gv-which">
+        <select className="gv-which-select" aria-label="Qual ciclo" value={value.cycleId || ""}
+          onChange={(e) => { const c = cycles.find((x) => String(x.id) === e.target.value); if (c) onChange({ ...value, cycleId: c.id, cycleTitle: c.title, cycleFrom: cycleDates(c).from, cycleTo: cycleDates(c).to }); }}>
+          {cycles.map((c) => <option key={c.id} value={c.id}>{`${c.title || "Ciclo"} · ${br(c.from)}/${c.from.slice(2, 4)} a ${br(c.endsOn)}/${c.endsOn.slice(2, 4)}`}</option>)}
+        </select>
+      </span>
+    );
+  }
+  if (value.range === "custom") {
+    return (
+      <span className="gv-which gv-dates">
+        <input aria-label="De" type="date" value={value.from || ""} max={value.to || today} onChange={(e) => onChange({ ...value, from: e.target.value })} />
+        <span>até</span>
+        <input aria-label="Até" type="date" value={value.to || ""} min={value.from || undefined} max={today} onChange={(e) => onChange({ ...value, to: e.target.value })} />
+      </span>
+    );
+  }
+  return null;
+};
+
+/** Hoje | Semana | Mês | Período | Ciclo, and beside it which one: the week, the month, the two dates or the cycle of goals. */
 export const RangePicker = ({ value, onChange, cycle }) => {
+  const cycles = useCycles();
   const pick = (range) => {
-    if (range === "custom") { const d = rangeDates(value, cycle); onChange({ range, from: value.from || d.from, to: value.to || d.to }); } else onChange({ ...value, range });
+    if (range === "custom") { const d = rangeDates(value, cycle); onChange({ ...value, range, from: value.from || d.from, to: value.to || d.to }); return; }
+    if (range === "cycle") {
+      // the cycle in force (today inside it), else the newest one
+      const today = iso(new Date());
+      const list = cycles || [];
+      const c = list.find((x) => x.from <= today && today <= x.endsOn) || list[0];
+      if (c) { const d = cycleDates(c); onChange({ ...value, range, cycleId: c.id, cycleTitle: c.title, cycleFrom: d.from, cycleTo: d.to }); return; }
+      if (cycle) { onChange({ ...value, range, cycleTitle: cycle.title, cycleFrom: cycle.from, cycleTo: cycle.to }); return; }
+    }
+    onChange({ ...value, range });
   };
+  const noCycle = cycles !== undefined && !cycles.length && !cycle;
   return (
     <div className="gv-range">
       <div className="gv-seg" role="group" aria-label="Período">
-        {Object.keys(RANGE_LABEL).map((k) => {
-          const off = k === "cycle" && !cycle;
-          return (
-            <button key={k} type="button" aria-pressed={value.range === k} disabled={off} onClick={() => pick(k)}
-              title={k === "cycle" ? (cycle ? `${cycle.title ? `${cycle.title}: ` : ""}${br(cycle.from)} a ${br(cycle.endsOn)}` : cycle === undefined ? "Carregando o ciclo de metas" : "Nenhum ciclo de metas cadastrado em Metas") : undefined}>
-              {RANGE_LABEL[k]}
-            </button>
-          );
-        })}
+        {Object.keys(RANGE_LABEL).map((k) => (
+          <button key={k} type="button" aria-pressed={value.range === k} disabled={k === "cycle" && noCycle} onClick={() => pick(k)}
+            title={k === "cycle" && noCycle ? "Nenhum ciclo de metas cadastrado em Metas" : undefined}>
+            {RANGE_LABEL[k]}
+          </button>
+        ))}
       </div>
-      {value.range === "custom" && (
-        <span className="gv-dates">
-          <input aria-label="De" type="date" value={value.from || ""} max={value.to || undefined} onChange={(e) => onChange({ ...value, from: e.target.value })} />
-          <span>até</span>
-          <input aria-label="Até" type="date" value={value.to || ""} min={value.from || undefined} onChange={(e) => onChange({ ...value, to: e.target.value })} />
-        </span>
-      )}
+      <PeriodWhich value={value} onChange={onChange} cycles={cycles} />
     </div>
   );
 };
@@ -358,7 +458,9 @@ export const PriorityList = ({ items, action = "Resolver" }) => (
       const rest = m ? m[2].charAt(0).toUpperCase() + m[2].slice(1) : it.title;
       const Tag = it.onClick ? "button" : "div";
       return (
-        <li key={it.key} data-tone={PRIORITY_TONE[it.tone] || "info"}>
+        <li key={it.key} data-tone={PRIORITY_TONE[it.tone] || "info"} className={it.onDismiss ? "gv-prio-dismissable" : undefined}>
+          {/* "Dispensar até amanhã": the point leaves the list for the rest of the day */}
+          {it.onDismiss ? <button type="button" className="gv-prio-x" onClick={it.onDismiss} aria-label={`Dispensar até amanhã: ${it.title}`} title="Dispensar até amanhã"><X size={15} /></button> : null}
           <Tag type={it.onClick ? "button" : undefined} className="gv-prio-row" onClick={it.onClick} aria-label={it.onClick ? `${action}: ${it.title}` : undefined}>
             <span className="gv-prio-n" aria-hidden={m ? undefined : "true"}>{m ? m[1] : it.tone === "good" ? <Check size={18} /> : "!"}</span>
             <span className="gv-prio-txt"><b>{rest}</b>{it.detail ? <span>{it.detail}</span> : null}</span>

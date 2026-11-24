@@ -696,6 +696,12 @@ const messages = {
         ERR_NO_DEF_WAPP_FOUND:
           "Nenhum WhatsApp padrão encontrado. Verifique a página de conexões.",
         ERR_MESSAGE_NOT_ON_PHONE: "Não encontrei esta mensagem no celular. Ela pode ser muito antiga. Você ainda pode apagar só aqui no sistema.",
+        ERR_AI_NOT_ON_TUTORING: "Na tutoria a IA não qualifica nem vende: ela só aponta o que ficou pendente nas conversas.",
+        ERR_PROTOCOL_NOT_TUTORING: "O protocolo é registrado numa conversa da tutoria.",
+        ERR_PROTOCOL_NUMBER: "Informe o número do protocolo.",
+        ERR_PROTOCOL_SUBJECT: "Informe o assunto do protocolo.",
+        ERR_TUTORING_ISSUE_SUMMARY: "Escreva o que está pendente.",
+        ERR_TUTORING_ISSUE_STATUS: "Situação inválida para a pendência.",
         ERR_FORM_NOT_FOUND: "Este link de ficha não existe. Peça um novo ao seu consultor.",
         ERR_FORM_EXPIRED: "Este link de ficha venceu. Peça um novo ao seu consultor: o que você já preencheu continua salvo.",
         ERR_FORM_LOCKED: "A matrícula já foi confirmada: a ficha não pode mais ser alterada.",

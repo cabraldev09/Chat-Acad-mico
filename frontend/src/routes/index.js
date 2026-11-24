@@ -196,7 +196,8 @@ const Routes = () => {
               </LoggedInLayout>
             </WhatsAppsProvider>
           </Switch>
-          <ToastContainer position="top-right" autoClose={4500} newestOnTop pauseOnHover draggable closeOnClick limit={4} />
+          {/* every notice leaves by itself after a few seconds: no pause when the pointer rests on it or the window loses focus */}
+          <ToastContainer position="top-right" autoClose={4500} newestOnTop pauseOnHover={false} pauseOnFocusLoss={false} draggable closeOnClick limit={4} />
         </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>

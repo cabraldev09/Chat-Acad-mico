@@ -69,6 +69,8 @@ export const rows = async (sql: string, replacements: Record<string, any>): Prom
 
 // Customers only: no groups, copied history, team members' chats or personal contacts; and of the university of the screen, when one is chosen
 export const VALID_TICKET = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person')) AND ${instOf("t")}`;
+// the client wrote last and nobody marked that message "Já resolvido" (an "ok" that needs no answer)
+export const REPLY_PENDING = "(t.replyDismissedMessageId IS NULL OR t.replyDismissedMessageId <> t.lastMessageId)";
 
 // ---------------------------------------------------------------- configuration (schedules, targets, rules)
 export interface AnalyticsConfig {
@@ -199,7 +201,7 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
 
   // the situation right now
   (await rows(`SELECT t.userId, COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND ${VALID_TICKET} GROUP BY t.userId`, rep)).forEach(r => set(r, "inProgress"));
-  (await rows(`SELECT t.userId, COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND ${VALID_TICKET} GROUP BY t.userId`, rep)).forEach(r => set(r, "pendingReply"));
+  (await rows(`SELECT t.userId, COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND ${REPLY_PENDING} AND ${VALID_TICKET} GROUP BY t.userId`, rep)).forEach(r => set(r, "pendingReply"));
 
   // tasks and follow-ups
   (await rows(`SELECT userId, COUNT(*) AS n FROM LeadTasks WHERE userId IN (:ids) AND doneAt IS NULL GROUP BY userId`, rep)).forEach(r => set(r, "tasksOpen"));

@@ -19,6 +19,7 @@ import { runAgentGraph } from "../FlowServices/Runner";
 import { noteAutomation } from "./AutomationTrace";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { runFlowForTicket } from "../FlowServices/Runner";
+import { TUTORIA_SEGMENTS } from "../ChannelServices/ConnectionTeam";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
 import { applyToLead } from "../AiServices/Tools";
 import Lead from "../../models/Lead";
@@ -399,7 +400,7 @@ const runAi = async (ticket: Ticket): Promise<boolean> => {
   }
   // a consultant handed this conversation to the AI to qualify ("IA qualificar") and the agent of the connection has no process of its own: the
   // sales agent with a published process takes it, so the lead goes through the whole process instead of the short "name and city" of the simple mode
-  const seller = ticket.aiReturnUserId ? await commercialAgentForTicket(ticket) : null;
+  const seller = ticket.aiReturnUserId && !TUTORIA_SEGMENTS.includes(String(ticket.segment || "")) ? await commercialAgentForTicket(ticket) : null;
   if (seller && seller.id !== agent.id && (await runAgentGraph(ticket, seller))) {
     trace(ticket, `agente "${agent.name}" sem roteiro publicado: o processo comercial do agente "${seller.name}" responde`);
     return true;
@@ -514,6 +515,12 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
     // an agent given to this connection (or queue) answers first: only a flow with a keyword (the person asked for it) or one already in
     // progress goes ahead of it, and the old menu stays out
     const dedicated = ticket.aiActive ? await findDedicatedAgent(ticket) : null;
+    // the tutoring talks to enrolled students: no sales flow, old menu, course folder or sales agent answers there. Only an agent given to
+    // the tutoring number or queue on purpose (with its flows by keyword); without one, the conversation waits for the tutor
+    if (TUTORIA_SEGMENTS.includes(String(ticket.segment || "")) && !dedicated) {
+      trace(ticket, "conversa da tutoria: nenhum robô de vendas responde aqui; a conversa espera o tutor");
+      return;
+    }
     if (dedicated) trace(ticket, `o agente "${dedicated.name}" foi escolhido para esta conexão: fluxos que começam em qualquer mensagem e o menu antigo ficam de fora`);
     if (await runFlowForTicket(ticket, body, { keywordOnly: !!dedicated })) {
       trace(ticket, "um fluxo do Chatbot e fluxos respondeu antes do agente de IA");

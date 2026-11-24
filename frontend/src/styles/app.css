@@ -88,8 +88,7 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 .MuiTab-root { transition: background-color .18s ease, color .18s ease, border-color .18s ease, box-shadow .2s ease, transform .15s var(--ease-out) !important; }
 .MuiButton-root:active:not(.Mui-disabled),
 .MuiIconButton-root:active:not(.Mui-disabled) { transform: scale(0.96); }
-.MuiIconButton-root:hover:not(.Mui-disabled) .ico { transform: scale(1.08); }
-.MuiIconButton-root .ico { transition: transform .2s var(--ease-spring); }
+/* the hover of an icon button is its color and background: a scaled icon is redrawn as a stretched picture while it moves */
 
 /* skeletons: moving sheen instead of the default fade */
 .MuiSkeleton-root {

@@ -295,3 +295,23 @@ export const meOverview = async (req: Request, res: Response): Promise<Response>
     coaching: coaching ? { reviewed: coaching.reviewed, items: coaching.items || [], strengths: coaching.strengths || [] } : null
   });
 };
+
+// "Dispensar até amanhã": the priority (by its key) leaves this person's list until the day changes. Only the person's own preferences change.
+export const dismissInsight = async (req: Request, res: Response): Promise<Response> => {
+  const key = String(req.body?.key || "").trim();
+  if (!/^[a-z0-9_:-]{1,60}$/i.test(key)) throw new AppError("ERR_INVALID_PARAMETER", 400);
+  const { default: User } = await import("../models/User");
+  const { todayInAppTz } = await import("../helpers/AppTime");
+  const user = await User.findByPk(Number(req.user.id), { attributes: ["id", "preferences"] });
+  if (!user) throw new AppError("ERR_NO_USER_FOUND", 404);
+  let prefs: Record<string, any> = {};
+  try { prefs = user.preferences ? JSON.parse(user.preferences) || {} : {}; } catch (e) { prefs = {}; }
+  const today = todayInAppTz();
+  // only today's dismissals are kept (yesterday's are gone by themselves)
+  const kept = Object.fromEntries(Object.entries(prefs.dismissedInsights || {}).filter(([, day]) => day === today));
+  kept[key] = today;
+  prefs.dismissedInsights = req.body?.undo === true ? Object.fromEntries(Object.entries(kept).filter(([k]) => k !== key)) : kept;
+  user.set({ preferences: JSON.stringify(prefs) } as any);
+  await user.save();
+  return res.json({ key, dismissed: req.body?.undo !== true });
+};

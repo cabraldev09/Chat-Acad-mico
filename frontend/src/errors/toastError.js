@@ -20,6 +20,9 @@ const byStatus = {
 // red error toast on top of it (it looked like something had broken).
 const SESSION_ENDED = ["ERR_SESSION_EXPIRED"];
 
+// an error stays a little longer than a success (time to read it), and then leaves by itself
+const ERROR_MS = 6000;
+
 const toastError = err => {
 	const errorMsg = err?.response?.data?.message || err?.response?.data?.error;
 	if (err?.response?.status === 401 && SESSION_ENDED.includes(errorMsg)) return;
@@ -27,23 +30,23 @@ const toastError = err => {
 		const detail = err?.response?.data?.data?.detail;
 		if (i18n.exists(`backendErrors.${errorMsg}`)) {
 			// the real reason the server gives (for example why the AI provider refused) goes under the title
-			toast.error(detail ? `${i18n.t(`backendErrors.${errorMsg}`)} ${detail}` : i18n.t(`backendErrors.${errorMsg}`), { toastId: detail ? `${errorMsg}:${detail}` : errorMsg, autoClose: detail ? 9000 : undefined });
+			toast.error(detail ? `${i18n.t(`backendErrors.${errorMsg}`)} ${detail}` : i18n.t(`backendErrors.${errorMsg}`), { toastId: detail ? `${errorMsg}:${detail}` : errorMsg, autoClose: detail ? 9000 : ERROR_MS });
 		} else if (/^ERR_FIELD_REQUIRED_/.test(String(errorMsg))) {
-			toast.error("Preencha todos os campos obrigatórios.", { toastId: errorMsg });
+			toast.error("Preencha todos os campos obrigatórios.", { toastId: errorMsg, autoClose: ERROR_MS });
 		} else if (/^ERR_[A-Z0-9_]+$/.test(String(errorMsg))) {
-			toast.error(byStatus[err.response.status] || "Não foi possível concluir a ação.", { toastId: errorMsg });
+			toast.error(byStatus[err.response.status] || "Não foi possível concluir a ação.", { toastId: errorMsg, autoClose: ERROR_MS });
 		} else if (/^[\x00-\x7F]*$/.test(String(errorMsg)) && /[a-z]{4,} [a-z]{3,}/i.test(String(errorMsg))) {
 			// plain English server text: show the friendly Portuguese one instead
-			toast.error(byStatus[err.response?.status] || "Não foi possível concluir a ação.", { toastId: String(errorMsg) });
+			toast.error(byStatus[err.response?.status] || "Não foi possível concluir a ação.", { toastId: String(errorMsg), autoClose: ERROR_MS });
 		} else {
-			toast.error(errorMsg, { toastId: errorMsg });
+			toast.error(errorMsg, { toastId: errorMsg, autoClose: ERROR_MS });
 		}
 	} else if (err?.response?.status && byStatus[err.response.status]) {
-		toast.error(byStatus[err.response.status]);
+		toast.error(byStatus[err.response.status], { autoClose: ERROR_MS });
 	} else if (!err?.response) {
-		toast.error("Sem conexão com o servidor. Verifique a internet e tente novamente.");
+		toast.error("Sem conexão com o servidor. Verifique a internet e tente novamente.", { autoClose: ERROR_MS });
 	} else {
-		toast.error("Algo deu errado. Tente novamente.");
+		toast.error("Algo deu errado. Tente novamente.", { autoClose: ERROR_MS });
 	}
 };
 

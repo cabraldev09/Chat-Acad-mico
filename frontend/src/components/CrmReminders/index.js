@@ -53,7 +53,7 @@ const CrmReminders = () => {
     });
     socket.on("budgetAlert", (a) => {
       if (user.profile !== "admin" && user.role !== "admin") return;
-      toast.warn(a.text, { toastId: `budget:${a.key}:${a.level}`, autoClose: false, onClick: () => history.push("/configuracoes?secao=meta") });
+      toast.warn(a.text, { toastId: `budget:${a.key}:${a.level}`, autoClose: 30000, onClick: () => history.push("/configuracoes?secao=meta") });
     });
     // a new lead nobody answered in time: the owner and the managers are warned
     socket.on("leadAlert", (a) => {
@@ -131,7 +131,7 @@ const CrmReminders = () => {
       const admin = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
       if (!(a.ownerId === user.id || admin)) return;
       toast.error(`O WhatsApp “${a.name}” desconectou. Abra Conexões e leia o QR Code de novo para voltar a receber mensagens (as mensagens que já chegaram continuam guardadas aqui).`, {
-        autoClose: false,
+        autoClose: 20000,
         onClick: () => history.push("/connections"),
       });
     });
