@@ -82,6 +82,21 @@
   - janela de 24h fechada.
   - Ações: abrir a conversa no número da Tutoria e enviar a abertura.
 
+## Primeira abordagem do tutor
+- Quando a conversa chega ao tutor e ninguém respondeu ainda, aparece um aviso no topo com o texto de apresentação pronto. O sistema
+  **nunca envia sozinho**: o tutor clica em "Usar texto de apresentação", confere e envia.
+- **Aluno com matrícula:** o aviso mostra curso, polo, RGM, data da matrícula, consultor e a observação do consultor (por exemplo
+  "Prefere à noite"). O texto padrão responde ao aluno, apresenta o tutor, cita o polo e o curso e convida para a ambientação, com uma
+  pergunta só:
+  > Olá, Ana, que bom que você chamou! Eu sou João, tutor(a) da Cruzeiro do Sul Virtual no polo Porto Velho, e vou acompanhar você no curso de Pedagogia. O primeiro passo é a sua ambientação, a apresentação da plataforma de estudos. Qual o melhor dia e horário para falarmos?
+- **Contato sem matrícula no sistema** (alguém que escreveu no número da Tutoria e não tem matrícula): o aviso diz isso e o texto não
+  fala de matrícula nem de ambientação, só apresenta o tutor e pede o RGM.
+- **Texto da empresa e de cada tutor:** Configurações → Tutoria e Ambientação → "Meu texto de boas-vindas". Variáveis: `{{saudacao}}`
+  ("Olá, Ana, que bom que você chamou!" quando o aluno escreveu primeiro, senão "Olá, Ana!"), `{{primeiro_nome}}`, `{{nome}}`,
+  `{{tutor}}`, `{{polo}}`, `{{curso}}` e `{{instituicao}}`, preenchidas com os dados da matrícula. O trecho entre `[[` e `]]` só aparece
+  quando todas as variáveis dentro dele têm valor: `[[ no polo {{polo}}]]` some se o aluno ainda não tem polo.
+- Código: `backend/src/helpers/OnboardingWelcome.ts` (`fillWelcome`, `welcomeFacts`) e `GET /tickets/:id/welcome`.
+
 ## Criar o número da Tutoria
 ### 1. O número
 - **Mais fácil e garantido: um chip pré-pago** de qualquer operadora, de preferência com DDD 69 (cerca de R$ 15). Ele só serve para receber o código uma vez; não precisa ficar num celular depois.

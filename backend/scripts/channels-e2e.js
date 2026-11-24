@@ -5813,6 +5813,45 @@ const postMeta = (id, payload, secret, badSig) => {
       const mineTok = tutorId === tA.id ? atok : btok;
       const welcome = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data;
       assert(welcome.show === true && welcome.text.startsWith("Oi, Aluna!") && welcome.text.includes("Polo Matricula"), `welcome ${JSON.stringify(welcome)}`);
+      // the first approach of the tutor with the data of the enrollment: who they are, the polo and the course, the next step; no emoji, one question
+      const tutorName = sql(`SELECT name FROM Users WHERE id=${tutorId}`);
+      const welcomeCourse = (await http.post("/courses", { name: "Pedagogia Abordagem Teste", modality: "EAD", category: "Graduação - Teste", semesters: 8, monthlyFee: 500, active: true }, auth())).data;
+      sql(`UPDATE Leads SET courseId=${welcomeCourse.id} WHERE id=${lead.id}`);
+      await http.put("/settings/onboarding_welcome_template", { value: "" }, auth());
+      const first = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(first.includes(`Eu sou ${tutorName}, tutor(a) da `) && first.includes(" no polo Polo Matricula, e vou acompanhar você") && first.includes("no curso de Pedagogia Abordagem Teste."), `the default approach has no data of the enrollment: ${first}`);
+      assert(first.startsWith("Olá, Aluna!") && first.includes("ambientação") && (first.match(/\?/g) || []).length === 1, `the default approach: ${first}`);
+      assert(!/\{\{|\[\[|\]\]|\p{Extended_Pictographic}/u.test(first), `the default approach left a mark or an emoji: ${first}`);
+      // without a course the optional part leaves clean, with no hole
+      sql(`UPDATE Leads SET courseId=NULL WHERE id=${lead.id}`);
+      const noCourse = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(!noCourse.includes("no curso de") && noCourse.includes("e vou acompanhar você. O primeiro passo") && !/ {2}| \.| ,/.test(noCourse), `the approach without a course: ${noCourse}`);
+      // the text the company typed keeps working (the earlier assertion), now with the new variables and parts
+      await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}}, {{instituicao}}[[, curso {{curso}}]]." }, auth());
+      const typed = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(typed.startsWith(`Oi, Aluna! Sou ${tutorName}, `) && typed.endsWith(".") && !typed.includes("curso") && !/\{\{|\[\[/.test(typed), `the typed text with the new variables: ${typed}`);
+      // the tutor reads who the student is (course, polo, RGM, the consultant's note) right where they write
+      const facts = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data;
+      assert(facts.enrolled === true && facts.facts.rgm === rgmOfLead && facts.facts.poloName === "Polo Matricula" && facts.facts.note === "Prefere à noite", `the facts of the enrollment: ${JSON.stringify(facts.facts)}`);
+      // the student writes "oi" first (the usual way: the consultant handed the tutoring number): the text answers them
+      await http.put("/settings/onboarding_welcome_template", { value: "" }, auth());
+      sql(`UPDATE Leads SET courseId=${welcomeCourse.id} WHERE id=${lead.id}`);
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('ob-oi-1', ${ob}, 'oi', false, false, 'chat', 0, NOW(), NOW())`);
+      const answer = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
+      assert(answer.startsWith(`Olá, Aluna, que bom que você chamou! Eu sou ${tutorName}, tutor(a) da `) && answer.includes("no curso de Pedagogia Abordagem Teste"), `the approach after the student wrote: ${answer}`);
+      // someone with no enrollment writes to the tutoring: no greeting of a new student, only who the tutor is and the RGM
+      const obTok = (await http.post("/api-tokens", { name: "ob-unknown" }, auth())).data.token;
+      await http.post("/api/v1/contacts", { name: "Pessoa Sem Matricula", number: "5511955552777" }, { headers: { Authorization: `Bearer ${obTok}` } });
+      const strangerId = sql(`SELECT id FROM Contacts WHERE number='5511955552777'`);
+      assert(strangerId && !sql(`SELECT id FROM Leads WHERE contactId=${strangerId}`), "the contact with no enrollment already had a lead");
+      const strangerTicket = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${strangerId}, ${cid}, ${tutorId}, 1, false, 'onboarding', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('ob-stranger-1', ${strangerTicket}, 'oi', false, false, 'chat', 0, NOW(), NOW())`);
+      const stranger = (await http.get(`/tickets/${strangerTicket}/welcome`, asUser(mineTok))).data;
+      assert(stranger.show === true && stranger.enrolled === false && /RGM\?$/.test(stranger.text) && !/matr[ií]cula|ambienta/i.test(stranger.text), `the approach to a contact with no enrollment: ${JSON.stringify(stranger)}`);
+      assert(stranger.text.startsWith("Olá, Pessoa, que bom que você chamou! Eu sou "), `the greeting to the contact with no enrollment: ${stranger.text}`);
+      sql(`UPDATE Tickets SET status='closed' WHERE id=${strangerTicket}`);
+      sql(`DELETE FROM Messages WHERE id='ob-oi-1'`);
+      await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}} do polo {{polo}}." }, auth());
       // the administrator reads everything but does not answer as the tutor
       const adminSend = await http.post(`/messages/${ob}`, { body: "Oi, sou o admin" }, auth());
       assert(adminSend.status === 403 && adminSend.data.error === "ERR_ONBOARDING_TUTOR_ONLY", `administrator answered in the tutor's conversation: ${adminSend.status}`);
