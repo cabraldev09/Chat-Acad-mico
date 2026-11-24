@@ -1,4 +1,5 @@
 import { notOfferedReply } from "./InventedCourse";
+import { matchCourses, sameCourseName } from "./CourseMatch";
 import { courseInstitutionWhere, currentInstitutionId, institutionsWithNumbers } from "../../helpers/Institution";
 import fs from "fs";
 import path from "path";
@@ -78,15 +79,15 @@ const cached = async <T>(ctx: AcademicCtx, key: string, fn: () => Promise<T>): P
 export const clearAcademicCache = (): void => memo.clear();
 
 // The courses the institution offers: the active ones of the catalogue of the system. The agent talks about these and only these.
-export interface OfferedCourse { id: number; name: string; level: string | null; modality: string | null }
+export interface OfferedCourse { id: number; name: string; level: string | null; modality: string | null; aliases?: string | null }
 export const offeredCourses = async (): Promise<OfferedCourse[]> => {
   const stamp = await stampOf();
   // each university offers its own courses (and the ones of no university in particular)
   const key = `offered:${currentInstitutionId() || 0}:${currentInstitutionId() ? (await institutionsWithNumbers()).join(",") : ""}`;
   const hit = memo.get(key);
   if (hit && hit.stamp === stamp) return hit.value as OfferedCourse[];
-  const rows = await Course.findAll({ where: { active: true, ...(await courseInstitutionWhere()) } as any, attributes: ["id", "name", "level", "modality"], order: [["name", "ASC"]], limit: 300 });
-  const value = rows.map(c => ({ id: c.id, name: String(c.name || "").trim(), level: c.level || null, modality: c.modality || null })).filter(c => c.name);
+  const rows = await Course.findAll({ where: { active: true, ...(await courseInstitutionWhere()) } as any, attributes: ["id", "name", "level", "modality", "aliases"], order: [["name", "ASC"]], limit: 300 });
+  const value = rows.map(c => ({ id: c.id, name: String(c.name || "").trim(), level: c.level || null, modality: c.modality || null, aliases: c.aliases || null })).filter(c => c.name);
   memo.set(key, { stamp, value });
   return value;
 };
@@ -166,12 +167,24 @@ const fuzzyCourse = async (name: string): Promise<Course | null> => {
 
 export const findCourse = async (input: { courseId?: any; courseName?: any; offerId?: any }, modality?: string | null): Promise<Course | null> => {
   const id = Number(input.offerId || input.courseId) || 0;
+  const name = String(input.courseName || "").trim();
   if (id) {
     const byId = await Course.findByPk(id);
-    if (byId) return byId;
+    // an id and the name of ANOTHER course together (the id is older than the name): the name is what the person is talking about now
+    if (byId && (!name || sameCourseName(name, byId.name) || matchCourses(name, [byId]).length)) return byId;
+    if (byId && !name) return byId;
+    if (byId) {
+      const byName = await findCourse({ courseName: name }, modality);
+      return byName || byId;
+    }
   }
-  const name = String(input.courseName || "").trim();
   if (!name) return null;
+  // the way people write it first ("RH", "ADS", "recursos humanos", a typo): the same rule the turn uses
+  const hits = matchCourses(`${name}${modality ? ` ${modality}` : ""}`, await offeredCourses().catch(() => []));
+  if (hits.length === 1 && hits[0].course.id) {
+    const hit = await Course.findByPk(hits[0].course.id);
+    if (hit) return hit;
+  }
   const like = isPg() ? { [Op.iLike]: `%${name.replace(/[%_]/g, "")}%` } : { [Op.like]: `%${name.replace(/[%_]/g, "")}%` };
   const want = plain(name);
   const found = (await Course.findAll({ where: { active: true, name: like, ...(await courseInstitutionWhere()) } as any, limit: 12 })).filter(c => startsAWord(plain(c.name), want));

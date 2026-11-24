@@ -1,4 +1,5 @@
 import Course from "../../models/Course";
+import { sameCourseName } from "./CourseMatch";
 import Lead from "../../models/Lead";
 import LeadCommercial from "../../models/LeadCommercial";
 import Polo from "../../models/Polo";
@@ -181,7 +182,10 @@ export const hydrate = async (state: CommercialState, lead: Lead): Promise<Comme
   set("city", lead.city);
   set("state", lead.state);
   set("intakePeriod", lead.entryTerm);
-  if (course) {
+  // the conversation already knows the course by its name and the CRM holds another one (an older choice): the name of the conversation is the
+  // newer one, so the id of the CRM is not put beside it (that made the greeting talk about one course and the script about another)
+  const talkedOf = known("courseName") && !known("courseId") ? String(state.slots.courseName) : "";
+  if (course && !(talkedOf && !sameCourseName(talkedOf, course.name) && !edited("courseId"))) {
     const changedCourse = edited("courseId");
     set("courseId", course.id); set("offerId", course.id); set("courseName", course.name); set("courseModality", course.modality); set("courseDurationSemesters", course.semesters); set("courseDegree", course.level);
     // another course: what was explained about the old one does not count for the new one
