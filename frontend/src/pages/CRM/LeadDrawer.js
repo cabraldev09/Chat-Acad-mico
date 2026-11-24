@@ -29,6 +29,7 @@ import NotALead from "./NotALead";
 import { ScoreRing, SourceIcon, StagePill, ago, isOverdue, burst, initials } from "./shared";
 import { onColor, tint } from "../../utils/color";
 import AiBrief from "../../components/AiBrief";
+import StudentRecord from "./StudentRecord";
 
 const useStyles = makeStyles((theme) => ({
   paper: { width: 500, maxWidth: "100vw", display: "flex", flexDirection: "column", borderLeft: theme.border.divider, animation: "slide-in-left .0s" },
@@ -317,6 +318,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
             {tab === 0 && (
               <>
                 {lead.commercial && <div style={{ marginBottom: 16 }}><AiBrief leadId={lead.id} /></div>}
+                <StudentRecord lead={lead} users={users} manager={!!me && isManager(me)} onChanged={changed} />
                 <LeadFields lead={draft} options={options} courses={courses} users={users} tags={tags}
                   onChange={(d) => setDraft({ ...d, __dirty: true })} />
               </>
