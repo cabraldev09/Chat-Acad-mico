@@ -16,8 +16,13 @@ const byStatus = {
 	503: "O servidor está indisponível no momento. Tente de novo em instantes.",
 };
 
+// The session ended (the login expired and could not be renewed): the app already takes the person to the login screen, so no
+// red error toast on top of it (it looked like something had broken).
+const SESSION_ENDED = ["ERR_SESSION_EXPIRED"];
+
 const toastError = err => {
 	const errorMsg = err?.response?.data?.message || err?.response?.data?.error;
+	if (err?.response?.status === 401 && SESSION_ENDED.includes(errorMsg)) return;
 	if (errorMsg) {
 		const detail = err?.response?.data?.data?.detail;
 		if (i18n.exists(`backendErrors.${errorMsg}`)) {

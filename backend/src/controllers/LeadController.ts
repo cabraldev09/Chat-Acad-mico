@@ -7,7 +7,7 @@ import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
 import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes, standardWeek } from "../helpers/BusinessTime";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
-import { withLeadScope, isAdminReq, reqRole } from "../middleware/scope";
+import { withLeadScope, withOnboardingScope, isAdminReq, reqRole } from "../middleware/scope";
 import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
 import { Op, literal } from "sequelize";
 import { randomBytes } from "crypto";
@@ -1204,7 +1204,7 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
 // how many students wait for the first contact of the person (the badge of the menu)
 export const onboardingPending = async (req: Request, res: Response): Promise<Response> => {
   const mine = reqRole(req) === "consultor" ? { ownerId: uid(req) } : reqRole(req) === "tutor" ? { onboardingTutorId: uid(req) } : {};
-  const total = await Lead.count({ where: await withLeadScope(req, { onboardingStatus: "pending", ...mine }) });
+  const total = await Lead.count({ where: await withOnboardingScope(req, { onboardingStatus: "pending", ...mine }) });
   return res.json({ pending: total });
 };
 
@@ -1218,7 +1218,7 @@ export const onboardingList = async (req: Request, res: Response): Promise<Respo
   const { parseChecklist } = await import("../services/CrmServices/EnrollLead");
   const rows = await Lead.findAll({
     // a consultant sees only the students THEY sent to the ambientação; tutors see theirs (and the polo's queue), the management everyone
-    where: await withLeadScope(req, { onboardingStatus: { [Op.ne]: "none" }, ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}) }),
+    where: await withOnboardingScope(req, { onboardingStatus: { [Op.ne]: "none" }, ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}) }),
     include: leadInclude as any,
     order: [["enrolledAt", "DESC"]],
     limit: 300

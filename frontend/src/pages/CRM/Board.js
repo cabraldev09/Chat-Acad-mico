@@ -3,9 +3,9 @@ import { useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
-  Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper, Menu, IconButton,
+  Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper, Menu, IconButton, Drawer, useMediaQuery,
 } from "@material-ui/core";
-import { MonitorCheck, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass, Flame, MoreHorizontal } from "lucide-react";
+import { MonitorCheck, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass, Flame, MoreHorizontal, SlidersHorizontal } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -25,21 +25,43 @@ import { NEXT_LABEL, TEMP_COLOR, TEMP_LABEL } from "../../utils/commercial";
 
 const useStyles = makeStyles((theme) => ({
   filters: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", marginBottom: theme.spacing(1.5) },
+  // on the phone: the search and a "Filtros" button on one line; the filters open in a sheet from the bottom
+  phoneBar: { display: "flex", gap: theme.spacing(1), alignItems: "stretch", marginBottom: theme.spacing(1), "& > :first-child": { flex: 1, minWidth: 0 } },
+  filterBtn: { flex: "none", minHeight: 40, textTransform: "none", fontWeight: 600, borderRadius: 10, whiteSpace: "nowrap" },
+  sheet: { borderRadius: "18px 18px 0 0", padding: theme.spacing(2, 2, "calc(16px + env(safe-area-inset-bottom))"), maxHeight: "85vh", display: "grid", gap: theme.spacing(1.5) },
+  sheetHead: { display: "flex", alignItems: "center", gap: 8, "& h2": { margin: 0, fontSize: 17, fontWeight: 700, flex: 1 } },
+  // the stages as chips: a tap jumps to the column (the columns slide sideways on the phone)
+  stageChips: { display: "flex", gap: 6, overflowX: "auto", margin: theme.spacing(0, 0, 1), paddingBottom: 2, scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } },
+  stageChip: {
+    flex: "none", display: "inline-flex", alignItems: "center", gap: 6, minHeight: 36, padding: "0 12px", borderRadius: 999, font: "inherit", fontSize: 13, fontWeight: 600,
+    color: theme.palette.text.primary, background: theme.palette.cards.background, border: theme.border.divider, cursor: "pointer",
+    "&[aria-current=true]": { borderColor: theme.palette.accent.main, boxShadow: `0 0 0 1px ${theme.palette.accent.main}` },
+    "&:focus-visible": { outline: `2px solid ${theme.palette.accent.main}`, outlineOffset: 2 },
+  },
   board: {
     display: "grid", gap: theme.spacing(1.5), alignItems: "stretch", gridAutoRows: "min-content", flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden",
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", paddingBottom: theme.spacing(2), ...theme.scrollbarStyles,
+    // the phone: one stage at a time, sliding sideways (the stages one under the other made an endless page)
+    [theme.breakpoints.down("xs")]: {
+      display: "flex", overflowX: "auto", overflowY: "hidden", scrollSnapType: "x mandatory", gap: theme.spacing(1.25),
+      padding: theme.spacing(0, 0, 2), overscrollBehaviorX: "contain",
+    },
   },
   col: {
     background: theme.palette.type === "dark" ? "#0a1424" : "#d9e2ef", borderRadius: 14, padding: theme.spacing(1),
     display: "flex", flexDirection: "column", gap: theme.spacing(1), border: "1px solid transparent",
     transition: "border-color .15s, background .15s, box-shadow .2s",
+    [theme.breakpoints.down("xs")]: { flex: "0 0 86%", scrollSnapAlign: "start", minWidth: 0 },
   },
   colOver: { borderColor: theme.palette.accent.main, boxShadow: `0 0 0 3px ${theme.palette.accent.main}26`, background: theme.palette.action.selected },
   colHead: { display: "flex", alignItems: "center", gap: 8, padding: theme.spacing(0.5, 0.75) },
   dot: { width: 9, height: 9, borderRadius: "50%", flex: "none" },
   colName: { fontWeight: 600, fontSize: 13.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   count: { fontSize: 12, fontWeight: 600, color: theme.palette.text.secondary, background: theme.palette.cards.background, borderRadius: 999, padding: "1px 8px", border: theme.border.divider },
-  colBody: { display: "flex", flexDirection: "column", gap: theme.spacing(1), maxHeight: "calc(100vh - 330px)", minHeight: 40, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
+  colBody: {
+    display: "flex", flexDirection: "column", gap: theme.spacing(1), maxHeight: "calc(100vh - 330px)", minHeight: 40, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles,
+    [theme.breakpoints.down("xs")]: { maxHeight: "calc(100dvh - 300px)" },
+  },
   card: {
     background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 12, padding: theme.spacing(1.25),
     cursor: "grab", display: "grid", gap: 8, animation: "pop-in .25s var(--ease-out) both",
@@ -57,7 +79,7 @@ const useStyles = makeStyles((theme) => ({
   chipLate: { background: "rgba(220,38,38,.12)", color: "#dc2626" },
   chipHot: { background: "rgba(254,248,76,.45)", color: "#6b5d00" },
   chipPaid: { background: "rgba(22,163,74,.14)", color: "#15803d" },
-  more: { fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", cursor: "pointer", padding: 4, "&:hover": { color: theme.palette.text.primary } },
+  more: { font: "inherit", fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", cursor: "pointer", padding: 8, minHeight: 36, border: 0, background: "transparent", borderRadius: 8, "&:hover": { color: theme.palette.text.primary }, "&:focus-visible": { outline: `2px solid ${theme.palette.accent.main}` } },
   empty: { fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", padding: theme.spacing(2, 1), border: `1px dashed ${theme.palette.divider}`, borderRadius: 10 },
   // while a card is dragged every stage is one drop away, whatever the scroll of the board (a stage far above or below the card)
   dropBar: {
@@ -181,6 +203,9 @@ const Board = () => {
   const location = useLocation();
   const ctx = useCrmOptions();
   const [view, setView] = useState("board");
+  const phone = useMediaQuery((t) => t.breakpoints.down("xs"));
+  const [sheet, setSheet] = useState(false);
+  const [current, setCurrent] = useState(null);
   const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", affiliate: "", tagId: new URLSearchParams(location.search).get("tagId") || "", ready: "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
   const [board, setBoard] = useState(null);
   const [list, setList] = useState({ leads: [], count: 0 });
@@ -319,6 +344,7 @@ const Board = () => {
     setBoard((prev) => prev.map((s) => (s.id === stage.id ? { ...s, leads: [...s.leads, ...data.leads] } : s)));
   };
 
+  const activeFilters = ["ownerId", "courseId", "source", "affiliate", "tagId", "ready", "followUp"].filter((k) => filters[k]).length;
   const totalOpen = board ? board.filter((s) => s.type === "open").reduce((a, s) => a + s.count, 0) : 0;
 
   return (
@@ -351,13 +377,71 @@ const Board = () => {
             <Button onClick={() => setView("board")} variant={view === "board" ? "contained" : "outlined"} color={view === "board" ? "primary" : "default"} startIcon={<LayoutGrid size={15} />}>Funil</Button>
             <Button onClick={() => setView("list")} variant={view === "list" ? "contained" : "outlined"} color={view === "list" ? "primary" : "default"} startIcon={<List size={15} />}>Lista</Button>
           </ButtonGroup>
-          <Button variant="outlined" startIcon={<Upload size={16} />} onClick={() => setImportOpen(true)}>Importar</Button>
-          <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setNewOpen(true)}>Novo lead</Button>
+          {phone ? (
+            <>
+              <IconButton size="small" aria-label="Importar leads" onClick={() => setImportOpen(true)} style={{ border: "1px solid var(--line-strong)", borderRadius: 10, width: 40, height: 40 }}><Upload size={18} /></IconButton>
+              <Button variant="contained" color="primary" disableElevation startIcon={<Plus size={16} />} onClick={() => setNewOpen(true)} style={{ minHeight: 40 }}>Novo</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outlined" startIcon={<Upload size={16} />} onClick={() => setImportOpen(true)}>Importar</Button>
+              <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setNewOpen(true)}>Novo lead</Button>
+            </>
+          )}
         </MainHeaderButtonsWrapper>
       </MainHeader>
 
-      <div className={classes.filters}>
-        <TextField size="small" variant="outlined" placeholder="Buscar nome, telefone ou e-mail" value={filters.search}
+      {phone ? (
+        <>
+          <div className={classes.phoneBar}>
+            <TextField size="small" variant="outlined" placeholder="Buscar nome, telefone ou e-mail" value={filters.search}
+          onChange={(e) => setFilters({ ...filters, search: e.target.value })} style={{ minWidth: phone ? 0 : 260 }} inputProps={{ "aria-label": "Buscar lead" }}
+          InputProps={{ startAdornment: (<InputAdornment position="start"><Search size={16} /></InputAdornment>) }} />
+            <Button variant="outlined" className={classes.filterBtn} startIcon={<SlidersHorizontal size={16} />} onClick={() => setSheet(true)} aria-haspopup="dialog">
+              Filtros{activeFilters ? ` (${activeFilters})` : ""}
+            </Button>
+          </div>
+          <Drawer anchor="bottom" open={sheet} onClose={() => setSheet(false)} PaperProps={{ className: classes.sheet, role: "dialog", "aria-label": "Filtros do funil" }}>
+            <div className={classes.sheetHead}>
+              <h2>Filtros</h2>
+              {activeFilters > 0 && <Button size="small" onClick={() => setFilters((f) => ({ ...f, ownerId: "", courseId: "", source: "", affiliate: "", tagId: "", ready: "", followUp: "" }))}>Limpar</Button>}
+            </div>
+            <TextField select size="small" variant="outlined" label="Responsável" value={filters.ownerId} onChange={(e) => setFilters({ ...filters, ownerId: e.target.value })} style={phone ? { width: "100%" } : { minWidth: 160 }}>
+          <MenuItem value="">Todos</MenuItem>
+          <MenuItem value="none">Sem responsável</MenuItem>
+          {ctx.users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Curso" value={filters.courseId} onChange={(e) => setFilters({ ...filters, courseId: e.target.value })} style={phone ? { width: "100%" } : { minWidth: 170 }}>
+          <MenuItem value="">Todos</MenuItem>
+          {ctx.courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Origem" value={filters.source} onChange={(e) => setFilters({ ...filters, source: e.target.value })} style={phone ? { width: "100%" } : { minWidth: 150 }}>
+          <MenuItem value="">Todas</MenuItem>
+          {(ctx.options.sources || []).map((s) => (<MenuItem key={s} value={s}>{s}</MenuItem>))}
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Afiliados" value={filters.affiliate} onChange={(e) => setFilters({ ...filters, affiliate: e.target.value })} style={phone ? { width: "100%" } : { minWidth: 150 }}>
+          <MenuItem value="">Todos os leads</MenuItem>
+          <MenuItem value="any">Só indicados por afiliado</MenuItem>
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Etiqueta" value={filters.tagId} onChange={(e) => setFilters({ ...filters, tagId: e.target.value })} style={phone ? { width: "100%" } : { minWidth: 150 }}>
+          <MenuItem value="">Todas</MenuItem>
+          {ctx.tags.map((t) => (<MenuItem key={t.id} value={String(t.id)}>{t.name}</MenuItem>))}
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Agente de IA" value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })} style={phone ? { width: "100%" } : { minWidth: 190 }}>
+          <MenuItem value="">Todos</MenuItem>
+          <MenuItem value="consultant">Prontos para o consultor</MenuItem>
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Retorno" value={filters.followUp} onChange={(e) => setFilters({ ...filters, followUp: e.target.value })} style={phone ? { width: "100%" } : { minWidth: 140 }}>
+          <MenuItem value="">Todos</MenuItem>
+          <MenuItem value="overdue">Atrasados</MenuItem>
+          <MenuItem value="today">Hoje</MenuItem>
+        </TextField>
+            <Button variant="contained" color="primary" disableElevation onClick={() => setSheet(false)} style={{ minHeight: 44 }}>Ver resultados</Button>
+          </Drawer>
+        </>
+      ) : (
+        <div className={classes.filters}>
+          <TextField size="small" variant="outlined" placeholder="Buscar nome, telefone ou e-mail" value={filters.search}
           onChange={(e) => setFilters({ ...filters, search: e.target.value })} style={{ minWidth: 260 }}
           InputProps={{ startAdornment: (<InputAdornment position="start"><Search size={16} /></InputAdornment>) }} />
         <TextField select size="small" variant="outlined" label="Responsável" value={filters.ownerId} onChange={(e) => setFilters({ ...filters, ownerId: e.target.value })} style={{ minWidth: 160 }}>
@@ -390,7 +474,19 @@ const Board = () => {
           <MenuItem value="overdue">Atrasados</MenuItem>
           <MenuItem value="today">Hoje</MenuItem>
         </TextField>
-      </div>
+        </div>
+      )}
+
+      {phone && view === "board" && board && (
+        <div className={classes.stageChips} role="tablist" aria-label="Etapas do funil">
+          {board.map((stage) => (
+            <button key={stage.id} type="button" role="tab" className={classes.stageChip} aria-current={current === stage.id}
+              onClick={() => { setCurrent(stage.id); const el = document.getElementById(`stage-${stage.id}`); if (el) el.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" }); }}>
+              <span className={classes.dot} style={{ background: stage.color }} />{stage.name}<span style={{ color: stage.color }}>{stage.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {view === "board" ? (
         <div className={classes.board} ref={boardRef}>
@@ -408,7 +504,7 @@ const Board = () => {
             </div></div>
           )}
           {(board || []).map((stage) => (
-            <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`} style={{ "--stage": stage.color }}
+            <div key={stage.id} id={`stage-${stage.id}`} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`} style={{ "--stage": stage.color }}
               onDragOver={(e) => { e.preventDefault(); if (over !== stage.id) setOver(stage.id); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}
               onDrop={(e) => onDrop(e, stage)}>
@@ -422,9 +518,9 @@ const Board = () => {
                   <LeadCard key={l.id} lead={l} stage={stage} onOpen={setOpenId} dragging={drag && drag.id === l.id} onMenu={(lead, el) => setMoveMenu({ lead, el })}
                     onDragStart={setDrag} onDragEnd={() => { setDrag(null); setOver(null); }} />
                 ))}
-                {stage.count === 0 && <div className={classes.empty}>Arraste um lead para cá</div>}
+                {stage.count === 0 && <div className={classes.empty}>{phone ? "Nenhum lead nesta etapa" : "Arraste um lead para cá"}</div>}
                 {stage.count > stage.leads.length && (
-                  <div className={classes.more} onClick={() => loadMore(stage)}>Carregar mais ({stage.count - stage.leads.length})</div>
+                  <button type="button" className={classes.more} onClick={() => loadMore(stage)}>Carregar mais ({stage.count - stage.leads.length})</button>
                 )}
               </div>
             </div>

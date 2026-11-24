@@ -394,7 +394,9 @@ async function sweepRole(browser, name, def, detailRoutes = []) {
     await check(`/configuracoes?secao=${g}`);
   }
   // the phone (390×844): every screen again, looking for anything wider than the screen (the page or a box sticking out of it)
-  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  // as an iPhone (Safari's address bar and touch): the size of an iPhone 13/14 and its browser's identification
+  await page.setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1");
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
     for (const route of [...roleRoutes, ...SETTINGS_GROUPS.map((g) => `/configuracoes?secao=${g}`)]) {
       current = `${route} (celular)`;
       try { await clientNavigate(page, route); } catch (e) { note("timeout", e.message); continue; }
@@ -430,6 +432,31 @@ async function sweepRole(browser, name, def, detailRoutes = []) {
         return [...new Set(out)];
       }).catch(() => []);
       edges.forEach((w) => note("borda", `degradê repetido sob a borda: ${w}`));
+      // touch and keyboard: a control too small for a finger (under 32 px), a control without a name (a screen reader says only
+      // "botão"), and something clickable that the keyboard cannot reach (cursor of a hand, but no button, link or tabindex)
+      const touch = await page.evaluate(() => {
+        const out = [];
+        const seen = new Set();
+        const label = (el) => `${el.tagName.toLowerCase()}.${String(el.className.baseVal ?? el.className).split(" ")[0].slice(0, 28)}`;
+        const visible = (el) => { const r = el.getBoundingClientRect(); const c = getComputedStyle(el); return r.width > 0 && r.height > 0 && c.visibility !== "hidden" && r.bottom > 0 && r.top < innerHeight * 3; };
+        const main = document.querySelector("main") || document.body;
+        main.querySelectorAll("button, a[href], [role=button], [role=tab], input:not([type=hidden]), select, [role=checkbox], [role=switch]").forEach((el) => {
+          if (!visible(el) || el.closest("[aria-hidden=true]") || el.disabled) return;
+          const r = el.getBoundingClientRect();
+          const inline = el.tagName === "A" && getComputedStyle(el).display === "inline";
+          if (!inline && (r.height < 32 || r.width < 32) && !["INPUT", "SELECT"].includes(el.tagName) && el.type !== "checkbox") { const k = `toque:${label(el)}`; if (!seen.has(k)) { seen.add(k); out.push(["toque", `${label(el)} ${Math.round(r.width)}×${Math.round(r.height)}px`]); } }
+          const name = (el.getAttribute("aria-label") || el.getAttribute("title") || el.innerText || el.getAttribute("placeholder") || (el.labels && el.labels[0] && el.labels[0].innerText) || (el.getAttribute("aria-labelledby") && document.getElementById(el.getAttribute("aria-labelledby")) ? "x" : "")).trim();
+          if (!name && el.type !== "checkbox" && el.type !== "radio") { const k = `nome:${label(el)}`; if (!seen.has(k)) { seen.add(k); out.push(["nome", `${label(el)} sem nome`]); } }
+        });
+        main.querySelectorAll("div, span, li, tr, p, svg").forEach((el) => {
+          if (getComputedStyle(el).cursor !== "pointer" || !visible(el)) return;
+          if (el.closest("button, a[href], [role=button], [role=tab], [role=option], [role=menuitem], [tabindex], label, input, select, summary")) return;
+          if (el.parentElement && getComputedStyle(el.parentElement).cursor === "pointer") return;
+          const k = `teclado:${label(el)}`; if (!seen.has(k)) { seen.add(k); out.push(["teclado", `${label(el)} clicável sem teclado`]); }
+        });
+        return out.slice(0, 12);
+      }).catch(() => []);
+      touch.forEach(([kind, text]) => note(kind, text));
     }
   await ctx.close();
   return issues;
@@ -484,8 +511,8 @@ async function sweepRole(browser, name, def, detailRoutes = []) {
   fs.writeFileSync(process.env.REPORT || "/tmp/smoke-report.txt", lines.join("\n") + "\n");
   console.log(lines.join("\n") || "no findings");
   // what fails the check: an error page, a script error, a blank page, a failed login, a 5xx, a screen that did not open in time, a page
-  // wider than the phone, a failed preparation, and an error toast that was not expected (console messages are only reported)
-  const failing = all.filter((i) => ["ERROR PAGE", "script", "blank", "login", "timeout", "mobile", "setup"].includes(i.kind) || i.kind.startsWith("http") || i.kind === "toast");
+  // wider than the phone, a control too small for a finger, a control without a name, a click the keyboard cannot reach, a failed preparation, and an error toast that was not expected (console messages are only reported)
+  const failing = all.filter((i) => ["ERROR PAGE", "script", "blank", "login", "timeout", "mobile", "setup", "toque", "nome", "teclado"].includes(i.kind) || i.kind.startsWith("http") || i.kind === "toast");
   if (failing.length) console.log(`\n${failing.length} finding(s) fail the check.`);
   process.exit(failing.length ? 1 : 0);
 })();

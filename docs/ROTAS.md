@@ -2,6 +2,16 @@
 
 Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 
+## Quem vê quais leads (CRM)
+
+Regra em `backend/src/middleware/scope.ts` (`leadScopeWhere`), usada no funil, na lista, nas propostas, nos pagamentos e nas campanhas:
+
+- **Admin e coordenação:** todos.
+- **Consultor:** só os leads em que é o responsável. Os leads sem responsável são distribuídos pela gestão.
+- **Tutor:** os leads em que é o responsável e os alunos dados a ele. Os alunos do polo ainda sem tutor aparecem na tela Alunos da
+  tutoria, não no CRM.
+- **Relacionamento:** os alunos matriculados.
+
 ## Públicas (sem login)
 
 - POST /portal/login (analysisRoutes.ts)
