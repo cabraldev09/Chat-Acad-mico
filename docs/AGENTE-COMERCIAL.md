@@ -130,7 +130,8 @@ Além do funil: quantos leads **entraram** no sistema (evento `lead_created`, po
 - **Um só jeito de reconhecer o curso** (`CommercialServices/CourseMatch.ts`), usado pelo turno (`Detect.detectFromText`), pela busca do modelo (`Academic.findCourse`) e pela checagem de "não ofertado":
   - pelo nome, por apelido ou sigla (RH, ADS, adm, ed. física, contábeis, gestão de pessoas), por parte do nome ("recursos humanos" para "Cst Em Gestão De Recursos Humanos") e com erro de digitação;
   - sem exigir "curso de" e em áudio longo transcrito;
-  - cursos repetidos no cadastro ("Educação Física", "Educação Física 2.0", "… (Área Básica De Ingresso)", "Cst Em Criminologia" e "Criminologia") contam como um curso só; vale o de nome simples;
+  - cursos repetidos no cadastro ("Educação Física" e "… (Área Básica De Ingresso)", "Cst Em Criminologia" e "Criminologia") contam como um curso só; vale o de nome simples;
+  - os cursos "2.0" ("Educação Física 2.0", "Administração 2.0") são outros cursos: só são escolhidos quando a pessoa diz "2.0", e pedir um deles com o outro anotado é troca de curso;
   - uma palavra que serve para muitos cursos ("gestão", "segurança") não decide nada; uma parte que serve para até quatro ("letras") vira uma escolha para a pessoa.
 - **Outros nomes e siglas do curso:** em Cursos e materiais, dentro do curso, a gestão escreve como as pessoas chamam o curso (`Courses.aliases`). A IA passa a reconhecê-lo por esses nomes.
 - **Um só curso do lead:** o nome e o código do curso andam juntos. O nome reconhecido na conversa é o mais novo e decide; o código antigo do cadastro não é posto ao lado dele (`Slots.hydrate`), e uma busca com código e nome de cursos diferentes fica com o nome (`Academic.findCourse`).

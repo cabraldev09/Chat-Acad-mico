@@ -28,13 +28,22 @@ describe("the course a person names, as people write it", () => {
     expect(found("quero saber de educação física")).toEqual(["Educação Física"]);
     expect(found("Oi, boa tarde, tudo bem? Eu queria saber mais informações de como funciona a educação física aí com vocês, se tem que ir no polo e como que eu faço para começar a estudar ainda esse ano")).toEqual(["Educação Física"]);
   });
-  it("takes the plain course of a family, never the 2.0 or the one in brackets, and the longer name over the one inside it", () => {
+  it("a 2.0 is another course: chosen only when the person says so", () => {
+    expect(found("educação física")).toEqual(["Educação Física"]);
+    expect(found("quero educação física 2.0")).toEqual(["Educação Física 2.0"]);
+    expect(found("tem a educação física dois ponto zero?")).toEqual(["Educação Física 2.0"]);
+    expect(found("adm 2.0")).toEqual(["Administração 2.0"]);
+    expect(found("quero adm")).toEqual(["Administração"]);
+    expect(sameCourseName("Educação Física 2.0", "Educação Física")).toBe(false);
+    expect(sameCourseName("Administração 2.0", "Administração")).toBe(false);
+  });
+  it("takes the plain course of a family, never the one in brackets, and the longer name over the one inside it", () => {
     expect(found("educação física")).toEqual(["Educação Física"]);
     expect(found("criminologia")).toEqual(["Criminologia"]);
     expect(found("administração pública")).toEqual(["Administração Pública"]);
     expect(found("física")).toEqual(["Física"]);
     expect(sameCourseName("Cst Em Criminologia", "Criminologia")).toBe(true);
-    expect(sameCourseName("Educação Física 2.0", "Educação Física (Área Básica De Ingresso)")).toBe(true);
+    expect(sameCourseName("Educação Física", "Educação Física (Área Básica De Ingresso)")).toBe(true);
     expect(coreOf("Cst Em Gestão De Recursos Humanos")).toBe("gestao de recursos humanos");
   });
   it("forgives a typo and uses the names the team wrote for the course", () => {

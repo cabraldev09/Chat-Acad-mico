@@ -2,8 +2,9 @@
 // the model, the "not offered" check). No database here: the catalogue comes as a list, so the rules can be tested alone.
 //
 // People do not write the name of the catalogue: they write "RH", "ADS", "ed física", "gestão de pessoas", "recursos humanos" for
-// "Cst Em Gestão De Recursos Humanos". And the catalogue repeats a course under other labels ("Educação Física 2.0", "Educação Física (Área
-// Básica De Ingresso)", "Cst Em Criminologia" beside "Criminologia"): to the person they are one course.
+// "Cst Em Gestão De Recursos Humanos". And the catalogue repeats a course under other labels ("Educação Física (Área Básica De Ingresso)",
+// "Cst Em Criminologia" beside "Criminologia"): to the person they are one course. The "2.0" courses are not that: they are different courses,
+// chosen only when the person says "2.0".
 
 export interface CatalogCourse { id?: number; name: string; level?: string | null; modality?: string | null; aliases?: string | null }
 
@@ -11,9 +12,10 @@ export const foldCourse = (s: string): string =>
   String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
 const DEGREE_PREFIX = /^(cst|curso superior de tecnologia|superior de tecnologia|tecnologo|tecnologia|bacharelado|licenciatura|segunda licenciatura|graduacao) (em|de|do|da) /;
-const TAIL = / (2 0|bacharelado|licenciatura|tecnologo|ead|semipresencial|semi presencial|presencial|a distancia)$/;
+const TAIL = / (bacharelado|licenciatura|tecnologo|ead|semipresencial|semi presencial|presencial|a distancia)$/;
 
-// what the person would call the course: without the degree in front, the "2.0", what is between brackets and the format
+// what the person would call the course: without the degree in front, what is between brackets and the format
+// (a "2.0" stays: "Educação Física 2.0" is ANOTHER course of the institution, not a label of "Educação Física")
 export const coreOf = (name: string): string => {
   let n = foldCourse(String(name || "").replace(/\([^)]*\)/g, " "));
   for (let i = 0; i < 3; i += 1) n = n.replace(DEGREE_PREFIX, "").replace(TAIL, "").trim();
@@ -22,6 +24,7 @@ export const coreOf = (name: string): string => {
 
 // how people write a course in a hurry; the right side is in the words of the catalogue (without accents)
 const ALIASES: Array<[RegExp, string]> = [
+  [/\b(dois|2) ponto (zero|0)\b/g, "2 0"],
   [/\brh\b/g, "recursos humanos"], [/\bgestao de pessoas\b/g, "recursos humanos"], [/\bdepartamento pessoal\b/g, "recursos humanos"],
   [/\bads\b/g, "analise e desenvolvimento de sistemas"], [/\banalise de sistemas\b/g, "analise e desenvolvimento de sistemas"],
   [/\badm\b/g, "administracao"], [/\badministracao de empresas\b/g, "administracao"],
@@ -79,15 +82,15 @@ const CUE = /\b(curso|cursos|faculdade|graduacao|bacharelado|licenciatura|tecnol
 
 export interface CourseHit<T extends CatalogCourse> { core: string; course: T; variants: T[]; at: number; how: "name" | "alias" | "part" | "typo" }
 
-// the course of a family the person means when nothing else is said: the plain name ("Educação Física" before "Educação Física 2.0" and
-// "… (Área Básica De Ingresso)", "Criminologia" before "Cst Em Criminologia"), in the format they named when they named one
+// the course of a family the person means when nothing else is said: the plain name ("Educação Física" before "Educação Física (Área
+// Básica De Ingresso)", "Criminologia" before "Cst Em Criminologia"), in the format they named when they named one
 const pickVariant = <T extends CatalogCourse>(variants: T[], text: string): T => {
   const wantsSemi = /\bsemi ?presencial\b/.test(text);
   const wantsEad = !wantsSemi && /\b(ead|a distancia|online|100 ead)\b/.test(text);
   const score = (c: T): number => {
     const folded = foldCourse(c.name);
     const mod = foldCourse(c.modality || "");
-    return (folded === coreOf(c.name) ? 20 : 0) + (/\b2 0\b/.test(folded) ? -6 : 0) + (/\(/.test(c.name) ? -4 : 0)
+    return (folded === coreOf(c.name) ? 20 : 0) + (/\(/.test(c.name) ? -4 : 0)
       + (wantsSemi && mod.includes("semi") ? 10 : 0) + (wantsEad && mod.includes("ead") ? 10 : 0) - Math.min(c.name.length, 80) / 100;
   };
   return [...variants].sort((a, b) => score(b) - score(a))[0];
