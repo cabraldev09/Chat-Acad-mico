@@ -15,6 +15,7 @@ import Lead from "../../models/Lead";
 import Queue from "../../models/Queue";
 import User from "../../models/User";
 import TicketEvent from "../../models/TicketEvent";
+import { foldTutoringTwins } from "./TutoringTwin";
 
 // the affiliate of this number (if any) and where their conversation goes: their consultant, or the queue without the robot
 const routeAffiliate = async (ticket: Ticket, contact: Contact): Promise<{ owner: User | null } | null> => {
@@ -188,6 +189,8 @@ const FindOrCreateTicketService = async (
     await ticket.update({ segment: "onboarding", ...(queue ? { queueId: queue.id } : {}) });
     changed = true;
   }
+  // the enrollment may have opened the tutoring conversation on another number, still empty: it is folded into this one
+  if (!groupContact && TUTORIA_SEGMENTS.includes(String(ticket.segment || "")) && (await foldTutoringTwins(ticket)).length) changed = true;
 
   // a personal number: the conversation belongs to the person who connected it (the bots stay out).
   // Groups too: nobody "accepts" a group, whoever is in it already took part

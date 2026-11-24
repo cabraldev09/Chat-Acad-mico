@@ -90,6 +90,8 @@ const SitePrivacy = inPage(SitePrivacyLazy);
 const SiteTerms = inPage(SiteTermsLazy);
 const SiteDeletion = inPage(SiteDeletionLazy);
 const PortalActivatePage = inPage(PortalActivate);
+// the enrollment form the lead fills in by a personal link (no login)
+const EnrollmentFormPage = inPage(lazy(() => import("../pages/EnrollmentForm")));
 const PortalHomePage = inPage(PortalHome);
 
 // every address gets its own boundary state: an error on one screen never shows on the next
@@ -130,6 +132,7 @@ const Routes = () => {
             <Route exact path="/portal/login" component={PortalLoginPage} publicPage />
             <Route exact path="/portal/ativar/:token" component={PortalActivatePage} publicPage />
             <Route exact path="/portal" component={PortalHomePage} publicPage />
+            <Route exact path="/ficha/:token" component={EnrollmentFormPage} publicPage />
             <WhatsAppsProvider>
               <LoggedInLayout>
                 <Guarded>

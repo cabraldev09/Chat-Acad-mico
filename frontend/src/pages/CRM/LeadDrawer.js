@@ -272,7 +272,12 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
 
             <div className={classes.actions}>
               <Button size="small" variant="contained" color="primary" startIcon={<MessageSquare size={16} />} onClick={openChat}>Abrir conversa</Button>
-              {lead.phone && <Button size="small" variant="outlined" startIcon={<Phone size={16} />} href={`tel:+${lead.phone}`}>Ligar</Button>}
+              {lead.phone && <Button size="small" variant="outlined" startIcon={<Phone size={16} />} onClick={() => {
+                const number = `+${String(lead.phone).replace(/\D/g, "")}`;
+                (navigator.clipboard ? navigator.clipboard.writeText(number) : Promise.reject(new Error("sem área de transferência")))
+                  .then(() => toast.success(`Número copiado: ${number}`))
+                  .catch(() => toast.error("Não foi possível copiar. Selecione o número e copie."));
+              }}>Copiar número</Button>}
               {lead.email && <Button size="small" variant="outlined" startIcon={<Mail size={16} />} href={`mailto:${lead.email}`}>E-mail</Button>}
               <Button size="small" variant="contained" color="primary" startIcon={<FilePlus2 size={16} />} onClick={() => setStudio({})}>Gerar proposta</Button>
               {lead.stage.type === "open" && (
@@ -305,7 +310,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
             <Tab className={classes.tab} label={<span>Tarefas{tasks.filter((t) => !t.doneAt).length ? <b className={classes.tabCount}>{tasks.filter((t) => !t.doneAt).length}</b> : null}</span>} />
             <Tab className={classes.tab} label={<span>Propostas{proposals.length ? <b className={classes.tabCount}>{proposals.length}</b> : null}</span>} />
             <Tab className={classes.tab} label="Matrícula" />
-            <Tab className={classes.tab} label="Documentos" />
+            <Tab className={classes.tab} label="Ficha e documentos" />
           </Tabs>
 
           <div className={classes.body}>

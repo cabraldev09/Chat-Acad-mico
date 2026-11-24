@@ -19,6 +19,7 @@ import isAdmin from "../middleware/isAdmin";
 import isManager from "../middleware/isManager";
 import { canReadTicket, canWriteTicket } from "../middleware/canAccessTicket";
 import { canAccessLead, canAccessProposal, canAccessPayment } from "../middleware/scope";
+import * as EnrollmentForm from "../controllers/EnrollmentFormController";
 import uploadConfig from "../config/upload";
 
 import * as Tag from "../controllers/TagController";
@@ -379,6 +380,13 @@ r.post("/retention/rematricula/:leadId", isAuth, Retention.setRematricula);
 r.get("/leads/:id/documents", isAuth, canAccessLead, Lead.documents);
 r.put("/leads/:id/documents/:docId", isAuth, canAccessLead, Lead.setDocument);
 r.post("/leads/:id/documents/remind", isAuth, canAccessLead, Lead.remindDocs);
+// the enrollment form the lead fills in by a personal link (data and picture of the ID); erasing it (LGPD) is for the administration
+r.get("/leads/:id/enrollment-form", isAuth, canAccessLead, EnrollmentForm.show);
+r.post("/leads/:id/enrollment-form", isAuth, canAccessLead, EnrollmentForm.create);
+r.post("/leads/:id/enrollment-form/send", isAuth, canAccessLead, EnrollmentForm.send);
+r.get("/leads/:id/enrollment-form/files/:kind", isAuth, canAccessLead, EnrollmentForm.file);
+r.delete("/leads/:id/enrollment-form", isAuth, isAdmin, canAccessLead, EnrollmentForm.erase);
+r.post("/tickets/:ticketId/enrollment-form", isAuth, canWriteTicket, EnrollmentForm.sendFromTicket);
 r.get("/lead-stages", isAuth, cached(), Lead.stages.index);
 r.post("/lead-stages", isAuth, isManager, Lead.stages.store);
 r.put("/lead-stages/:id", isAuth, isManager, Lead.stages.update);

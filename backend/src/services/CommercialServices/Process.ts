@@ -139,10 +139,12 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
   return { slots: out, asked, got, proposalSent, now };
 };
 
+interface FichaLink { link: string; progress: number }
+
 const first = (name: string | null | undefined): string => String(name || "").trim().split(/\s+/)[0] || "";
 
 // the text of the next step, in the words of the team (the same pieces the agent uses)
-const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text: string; action: "send_grade" | "proposal" | "enroll" | null } | null> => {
+const textFor = async (key: StepKey, s: Slots, leadName: string, ficha?: FichaLink | null): Promise<{ text: string; action: "send_grade" | "proposal" | "enroll" | null } | null> => {
   switch (key) {
     case "entry": return { text: QUESTIONS.entry, action: null };
     case "course": return { text: "Me conta: o que você está procurando? Qual curso você tem interesse em fazer?", action: null };
@@ -172,7 +174,10 @@ const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text
       return { text: `${name ? `${name}, c` : "C"}onforme combinamos, estou te encaminhando a proposta da sua bolsa${s.courseName ? ` para o curso de *${s.courseName}*` : ""}.`, action: "proposal" };
     }
     case "objective": return { text: s.courseName ? `Para eu te orientar certinho e não te indicar nada fora do seu objetivo: você está buscando o curso de *${s.courseName}* pensando em prestar concurso público, em crescer na carreira ou mais para ter uma formação superior e usar profissionalmente?` : "Para eu te orientar certinho e não te indicar nada fora do seu objetivo: você está buscando essa graduação pensando em prestar concurso público ou mais para ter uma formação superior e usar profissionalmente?", action: null };
-    case "ficha": return { text: "Perfeito! Para dar andamento à matrícula, preciso da foto do seu RG ou CNH (frente e verso) e que você preencha os dados abaixo.\n\nFicha de matrícula (fotos ou PDFs legíveis)\n\n* Nome completo:\n* Data de nascimento:\n* CPF:\n* RG (nº, órgão emissor, UF):\n* Nome completo da mãe:\n* Endereço completo (rua, nº, bairro, cidade, CEP):\n* Telefone celular atualizado:\n* E-mail pessoal:\n* Histórico do Ensino Médio (caso já tenha em mãos)", action: null };
+    case "ficha":
+      // the lead fills in the form by the personal link (the picture of the ID by the phone's camera); the list in the text is the fallback
+      if (ficha) return { text: `Perfeito! Para dar andamento à matrícula, preencha a sua ficha de matrícula pelo link abaixo. Leva poucos minutos e dá para tirar a foto do RG ou da CNH pelo próprio celular.\n\n${ficha.link}\n\nO que você preencher fica salvo, então dá para continuar depois.`, action: null };
+      return { text: "Perfeito! Para dar andamento à matrícula, preciso da foto do seu RG ou CNH (frente e verso) e que você preencha os dados abaixo.\n\nFicha de matrícula (fotos ou PDFs legíveis)\n\n* Nome completo:\n* Data de nascimento:\n* CPF:\n* RG (nº, órgão emissor, UF):\n* Nome completo da mãe:\n* Endereço completo (rua, nº, bairro, cidade, CEP):\n* Telefone celular atualizado:\n* E-mail pessoal:\n* Histórico do Ensino Médio (caso já tenha em mãos)", action: null };
     case "taxa": return { text: "Vou te enviar agora o boleto da taxa de matrícula e o código Pix copia e cola. Assim que você realizar o pagamento, me envia o comprovante para eu dar baixa junto ao setor financeiro, por gentileza.", action: null };
     case "comprovante": return { text: "Recebi, obrigado! Estou prosseguindo com a sua matrícula e já te aviso assim que ela for confirmada.", action: null };
     case "enroll": return { text: `${first(s.fullName || leadName) ? `${first(s.fullName || leadName)}, s` : "S"}ua matrícula${s.courseName ? ` em *${s.courseName}*` : ""} foi confirmada com sucesso! Parabéns por essa nova etapa. Seja muito bem-vindo(a) à ${institutionName()}!`, action: "enroll" };
@@ -206,8 +211,13 @@ const STEP_SHORT: Partial<Record<StepKey, string>> = {
   bolsa: "o nome completo e o CPF", ficha: "a ficha de matrícula e os documentos", taxa: "o pagamento da taxa de matrícula"
 };
 // a reminder for a question already sent (short, different from the first message, one question)
-const reminderFor = (key: StepKey, s: Slots, name: string): string => {
+const reminderFor = (key: StepKey, s: Slots, name: string, ficha?: FichaLink | null): string => {
   const hi = name ? `${name}, ` : "";
+  if (key === "ficha" && ficha) {
+    return ficha.progress > 0
+      ? `${hi}a sua ficha de matrícula está ${ficha.progress}% preenchida. Falta pouco: abra o link para completar, o que você já preencheu está salvo.\n\n${ficha.link}`
+      : `${hi}conseguiu abrir a ficha de matrícula? É só preencher pelo link e tirar a foto do documento pelo celular.\n\n${ficha.link}`;
+  }
   switch (key) {
     case "bolsa": return `${hi}conseguiu ver a minha mensagem? ${bolsaRequestFor({ name: !s.fullName, cpf: !s.cpfGiven })}`;
     case "format": return `${hi}ficou alguma dúvida sobre o formato do curso? Posso explicar de novo o ponto que não ficou claro.`;
@@ -225,7 +235,7 @@ const retakeFor = (key: StepKey, s: Slots, standard: string): string =>
 
 export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise<Copilot> => {
   const settings = config || await configOf();
-  const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name", "cpf", "enrolledAt", "courseId", "poloId", "city", "state", "email", "phone", "entryTerm", "admissionType"] }) : null;
+  const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name", "cpf", "enrolledAt", "courseId", "poloId", "city", "state", "email", "phone", "entryTerm", "admissionType", "contactId"] }) : null;
   const state = lead ? await hydrate(await loadState(lead.id), lead) : { slots: {} as Slots };
   const { slots, asked, got, proposalSent, now } = await readConversation(ticket, state.slots, lead?.cpf || null);
   const progress = await CopilotProgress.findByPk(ticket.id);
@@ -254,7 +264,18 @@ export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise
   // the process does not wait for the optional steps: the next one is the first undone step that is not optional (the optional one only when nothing else is left)
   const current = (steps.find(x => !x.done && !x.optional) || steps.find(x => !x.done))?.key || null;
   const configured = settings.steps.find(s => s.key === current);
-  const next = current ? (configured?.message ? { text: configured.message, action: null } : await textFor(current as StepKey, slots, lead?.name || "")) : null;
+  // the enrollment form of the lead (its personal link), when the process is at that step
+  let ficha: FichaLink | null = null;
+  if (current === "ficha" && lead && !lead.enrolledAt) {
+    try {
+      const { formForLead, staffView } = await import("../CrmServices/EnrollmentForm");
+      const view = staffView(await formForLead(lead, null));
+      if (view) ficha = { link: view.link, progress: view.progress };
+    } catch (err) {
+      ficha = null;
+    }
+  }
+  const next = current ? (configured?.message ? { text: configured.message, action: null } : await textFor(current as StepKey, slots, lead?.name || "", ficha)) : null;
   const minutesSince = now.lastAt ? Math.max(0, Math.round((Date.now() - now.lastAt.getTime()) / 60000)) : null;
   const leadAsked = now.lastFrom === "lead" && !!now.lastLeadText && looksLikeQuestion(now.lastLeadText);
   const askedAt = current ? now.askedAt[current as StepKey] || null : null;
@@ -264,7 +285,7 @@ export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise
     const label = STEP_SHORT[current as StepKey] || "esta etapa";
     if (!now.leadAfter[current as StepKey]) {
       // already said and nothing came back: never the same message again; a short reminder for when the lead takes long
-      suggestion = { text: reminderFor(current as StepKey, slots, first(slots.fullName || lead?.name || "")), action: null, kind: "waiting", note: `Você já pediu ${label} às ${hourOf(askedAt)}. Aguarde a resposta do lead; se ele demorar, use o lembrete abaixo.` };
+      suggestion = { text: reminderFor(current as StepKey, slots, first(slots.fullName || lead?.name || ""), ficha), action: null, kind: "waiting", note: `Você já pediu ${label} às ${hourOf(askedAt)}. Aguarde a resposta do lead; se ele demorar, use o lembrete abaixo.` };
     } else if (now.lastFrom === "lead") {
       // the lead answered, but not what the step needs: the consultant answers what was said and takes the step up again
       suggestion = { ...suggestion, text: retakeFor(current as StepKey, slots, next!.text), kind: "reply", note: leadAsked ? `O lead respondeu com uma pergunta. Responda primeiro (use Sugerir resposta) e depois retome ${label}.` : `O lead respondeu, mas ainda falta ${label}. Reconheça o que ele disse e retome.` };

@@ -20,7 +20,7 @@ import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
 import TicketEvent from "../../models/TicketEvent";
 import User from "../../models/User";
-import { connectionOfTeam } from "../ChannelServices/ConnectionTeam";
+import { connectionOfTeam, TUTORIA_SEGMENTS } from "../ChannelServices/ConnectionTeam";
 import Whatsapp from "../../models/Whatsapp";
 import { pickUserForQueue } from "../AutomationServices/AutoAssignTicket";
 import syncPoloQueues from "../PoloServices/SyncPoloQueues";
@@ -34,7 +34,7 @@ import { addActivity, changeStage, loadLead, resolveLeadTarget } from "./LeadCor
 import { markMilestone } from "../CommercialServices/Milestones";
 import { tutorConnectionFor } from "../TicketServices/TutorNumber";
 import Student from "../../models/Student";
-import { assertRgmFree, handoverNote, rgmOf, studentForEnrollment } from "./EnrollStudent";
+import { assertRgmFree, handoverNote, portalAccessAtEnrollment, rgmOf, studentForEnrollment } from "./EnrollStudent";
 import { notifyOnboarding, notifyTaskAssigned } from "./TaskNotify";
 
 
@@ -186,6 +186,20 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   let ticket = await Ticket.findOne({
     where: { contactId: contact.id, whatsappId: whatsapp.id, status: { [Op.in]: ["open", "pending"] }, segment: "onboarding" }
   });
+  // the student already talks with the tutoring on another number: that conversation is the one (never a second one beside it)
+  if (!ticket) {
+    ticket = await Ticket.findOne({
+      where: { contactId: contact.id, isGroup: false, status: { [Op.in]: ["open", "pending"] }, segment: { [Op.in]: TUTORIA_SEGMENTS } } as any,
+      order: [["updatedAt", "DESC"]]
+    });
+    if (ticket) {
+      const keep: Record<string, unknown> = { queueId: queue.id };
+      if (!ticket.leadId) keep.leadId = lead.id;
+      if (!ticket.userId && tutor) Object.assign(keep, { userId: tutor.id, status: "open" });
+      ticket.set(keep as any);
+      await ticket.save();
+    }
+  }
   if (!ticket) {
     ticket = await Ticket.create({
       contactId: contact.id,
@@ -212,6 +226,7 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // the student of the portal is born here, with the RGM; and the tutor reads who arrived in one note of the conversation
   const actor = await User.findByPk(actorId, { attributes: ["id", "name"] });
   const student = await studentForEnrollment({ lead, rgm, courseName: course ? course.name : null, poloId: polo.id, tutorId: tutor?.id || null });
+  await portalAccessAtEnrollment(lead, student, warnings);
   await TicketEvent.create({
     ticketId: ticket.id,
     type: "handoff",
@@ -299,6 +314,7 @@ const enrollAdditional = async (lead: Lead, actorId: number, input: EnrollInput)
     enrolledAt: new Date()
   } as any);
   const student = await studentForEnrollment({ lead, rgm, courseName, poloId: polo.id, tutorId: tutor?.id || null });
+  await portalAccessAtEnrollment(lead, student, warnings);
   const total = 1 + (await LeadEnrollment.count({ where: { leadId: lead.id } }));
   const label = courseName ? ` em ${courseName}` : "";
   const extraTask = await LeadTask.create({

@@ -4,7 +4,8 @@ import { makeStyles } from "@material-ui/core/styles";
 import Typography from "@material-ui/core/Typography";
 import IconButton from "@material-ui/core/IconButton";
 import CloseIcon from "@material-ui/icons/Close";
-import Link from "@material-ui/core/Link";
+import Menu from "@material-ui/core/Menu";
+import { Copy, User as UserIcon, Phone } from "lucide-react";
 import InputLabel from "@material-ui/core/InputLabel";
 import Avatar from "@material-ui/core/Avatar";
 import Button from "@material-ui/core/Button";
@@ -81,6 +82,13 @@ const useStyles = makeStyles(theme => {
 		viewer: { position: "fixed", inset: 0, zIndex: 1400, background: "rgba(0,0,0,.86)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out", padding: 16 },
 		name: { fontSize: 20, color: c.text, textAlign: "center" },
 		number: { fontSize: 15, color: c.textSecondary },
+		copyable: {
+			border: 0, background: "transparent", fontFamily: "inherit", lineHeight: 1.35, padding: "2px 8px", borderRadius: 8, cursor: "pointer", maxWidth: "100%", overflowWrap: "anywhere",
+			"&:hover, &:focus-visible": { background: c.hover, outline: "none" },
+		},
+		copyMenu: { minWidth: 240, maxWidth: "calc(100vw - 24px)", borderRadius: 12 },
+		copyItem: { gap: 12, minHeight: 44, fontSize: 14 },
+		copyValue: { display: "block", fontSize: 12, color: c.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 },
 		label: { fontSize: 13, color: c.accent, marginBottom: 2 },
 		"@global": { "@keyframes contactPanelIn": { from: { opacity: 0, transform: "translateX(24px)" }, to: { opacity: 1, transform: "none" } } },
 	};
@@ -96,6 +104,28 @@ const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading,
 	// like the WhatsApp profile: the picture read now (also for the official number, through a QR connection) and the "recado"
 	const [profile, setProfile] = useState(null);
 	const [viewer, setViewer] = useState(false);
+	// a click on the name or the number offers to copy them (never a "tel:" link, which makes the browser ask to open another app)
+	const [copyEl, setCopyEl] = useState(null);
+	const copy = async (value, done) => {
+		setCopyEl(null);
+		try {
+			if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(value);
+			else {
+				const area = document.createElement("textarea");
+				area.value = value;
+				area.setAttribute("readonly", "");
+				area.style.position = "fixed";
+				area.style.opacity = "0";
+				document.body.appendChild(area);
+				area.select();
+				document.execCommand("copy");
+				document.body.removeChild(area);
+			}
+			toast.success(done);
+		} catch (err) {
+			toast.error("Não foi possível copiar. Selecione o texto e copie.");
+		}
+	};
 	// the drawer is reused from one contact to the next
 	useEffect(() => setRelation(null), [contact && contact.id]);
 	useEffect(() => {
@@ -131,14 +161,35 @@ const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading,
 						>
 							{initialsOf(contact.name)}
 						</Avatar>
-						<div className={classes.name}>{contact.name}</div>
+						<button type="button" className={`${classes.name} ${classes.copyable}`} onClick={e => setCopyEl(e.currentTarget)} aria-haspopup="menu" title="Copiar o nome ou o número">
+							{contact.name}
+						</button>
 						{contact.isGroup ? (
 							<span className={classes.number}>{contact.kind === "community" || contact.parentGroupId ? "Comunidade" : "Grupo"}</span>
 						) : (
-							<Link className={classes.number} href={`tel:${contact.number}`}>
+							<button type="button" className={`${classes.number} ${classes.copyable}`} onClick={e => setCopyEl(e.currentTarget)} aria-haspopup="menu" title="Copiar o número">
 								{String(contact.number || "").includes("_") ? contact.number : prettyNumber(contact.number)}
-							</Link>
+							</button>
 						)}
+						<Menu anchorEl={copyEl} open={Boolean(copyEl)} onClose={() => setCopyEl(null)} getContentAnchorEl={null}
+							anchorOrigin={{ vertical: "bottom", horizontal: "center" }} transformOrigin={{ vertical: "top", horizontal: "center" }} PaperProps={{ className: classes.copyMenu }}>
+							{!contact.isGroup && contact.number && !String(contact.number).includes("_") && (
+								<MenuItem className={classes.copyItem} onClick={() => copy(prettyNumber(contact.number), "Número copiado.")}>
+									<Phone size={18} />
+									<span><span>Copiar número</span><span className={classes.copyValue}>{prettyNumber(contact.number)}</span></span>
+								</MenuItem>
+							)}
+							{!contact.isGroup && contact.number && !String(contact.number).includes("_") && (
+								<MenuItem className={classes.copyItem} onClick={() => copy(String(contact.number).replace(/\D/g, ""), "Número copiado só com os dígitos.")}>
+									<Copy size={18} />
+									<span><span>Copiar só os dígitos</span><span className={classes.copyValue}>{String(contact.number).replace(/\D/g, "")}</span></span>
+								</MenuItem>
+							)}
+							<MenuItem className={classes.copyItem} onClick={() => copy(contact.name || "", "Nome copiado.")}>
+								<UserIcon size={18} />
+								<span><span>Copiar nome</span><span className={classes.copyValue}>{contact.name}</span></span>
+							</MenuItem>
+						</Menu>
 						<Button variant="outlined" color="primary" size="small" style={{ marginTop: 8 }} onClick={() => setModalOpen(true)}>
 							{i18n.t("contactDrawer.buttons.edit")}
 						</Button>

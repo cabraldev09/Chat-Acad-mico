@@ -1049,6 +1049,60 @@ const postMeta = (id, payload, secret, badSig) => {
       const made = await http.post(`/leads/from-contact/${teamOnly}`, {}, auth());
       assert([200, 201].includes(made.status) && leadOf("5531977772222"), `the contact was not put in the CRM: ${made.status}`);
     });
+    await test("enrollment form: the lead fills in the personal link (each change kept, the ID picture sealed, LGPD agreement), the team reads it and the lead's record is updated", async () => {
+      const leadId = Number(leadOf("5531977770000"));
+      assert(leadId, "no lead for the form");
+      const made = await http.post(`/leads/${leadId}/enrollment-form`, {}, auth());
+      assert(made.status === 200 && /\/ficha\/[a-f0-9]{48}$/.test(made.data.link), `form link ${JSON.stringify(made.data)}`);
+      const token = made.data.link.split("/ficha/")[1];
+      assert((await http.post(`/leads/${leadId}/enrollment-form`, {}, auth())).data.link === made.data.link, "a second form was born for the same lead");
+      // someone without the lead does not reach it
+      await http.post("/users", { name: "Consultora Ficha", email: "ficha-cons@x.com", password: "senha123", role: "consultor" }, auth());
+      const other = (await http.post("/auth/login", { email: "ficha-cons@x.com", password: "senha123" })).data.token;
+      assert((await http.get(`/leads/${leadId}/enrollment-form`, asUser(other))).status === 403, "another consultant read the form");
+      // the link goes to the lead in the conversation
+      const before = tg.sent.length;
+      const sent = await http.post(`/leads/${leadId}/enrollment-form/send`, {}, auth());
+      assert(sent.status === 200 && sent.data.sentAt, `send ${sent.status} ${JSON.stringify(sent.data).slice(0, 200)}`);
+      assert(tg.sent.slice(before).some(x => x.method === "sendMessage" && String(x.body.text).includes(`/ficha/${token}`)), "the link was not sent in the conversation");
+      // the public side: an unknown code is refused; the right one opens with what the CRM knew
+      assert((await http.get(`/ficha-publica/${"0".repeat(48)}`)).status === 404, "an unknown code opened a form");
+      const open = await http.get(`/ficha-publica/${token}`);
+      assert(open.status === 200 && open.data.progress < 100 && !open.data.ready, `public view ${JSON.stringify(open.data).slice(0, 200)}`);
+      const wrong = await http.put(`/ficha-publica/${token}`, { data: { cpf: "111.111.111-11" } });
+      assert(wrong.status === 200 && wrong.data.problems.cpf, "a wrong CPF was not pointed out");
+      const data = { nome: "Ana Ficha da Silva", nascimento: "2000-05-10", cpf: "746.824.890-70", rgNumero: "1234567", rgOrgao: "SSP", rgUf: "ro", mae: "Maria Ficha da Silva", cep: "76800-000", rua: "Rua das Flores", numero: "100", bairro: "Centro", cidade: "Porto Velho", uf: "RO", celular: "5569999990000", email: "Ana.Ficha@Exemplo.com" };
+      const filled = await http.put(`/ficha-publica/${token}`, { data });
+      assert(filled.status === 200 && !Object.keys(filled.data.problems).length && filled.data.progress < 100, `filled ${JSON.stringify(filled.data.problems)} ${filled.data.progress}`);
+      assert((await http.post(`/ficha-publica/${token}/submit`)).status === 400, "sent without the ID and the agreement");
+      const upload = async (kind, bytes, filename, contentType) => {
+        const f = new FormData();
+        f.append("file", bytes, { filename, contentType });
+        return http.post(`/ficha-publica/${token}/files/${kind}`, f, { headers: f.getHeaders() });
+      };
+      assert((await upload("doc_frente", Buffer.from("<html>not a picture</html>"), "rg.jpg", "image/jpeg")).status === 415, "a file that is not a picture was kept");
+      assert((await upload("doc_frente", PNG, "rg.png", "image/png")).status === 200, "front of the ID");
+      const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 1)]);
+      const back = await upload("doc_verso", JPG, "verso.jpg", "image/jpeg");
+      assert(back.status === 200 && back.data.files.length === 2 && back.data.progress < 100, `back ${back.status} ${back.data.progress}`);
+      const agreed = await http.put(`/ficha-publica/${token}`, { consent: true });
+      assert(agreed.data.progress === 100 && agreed.data.ready, `agreement ${agreed.data.progress} ${JSON.stringify(agreed.data.missing)}`);
+      // what is kept is sealed: no CPF in the row, the picture comes back whole only to the team
+      assert(/^enc:v1:/.test(sql(`SELECT data FROM EnrollmentForms WHERE leadId=${leadId}`)) && !sql(`SELECT data FROM EnrollmentForms WHERE leadId=${leadId}`).includes("74682489070"), "the data is not sealed");
+      const pic = await http.get(`/leads/${leadId}/enrollment-form/files/doc_frente`, { ...auth(), responseType: "arraybuffer" });
+      assert(pic.status === 200 && Buffer.from(pic.data).equals(PNG) && /image\/png/.test(pic.headers["content-type"]), "the team could not read the picture");
+      const done = await http.post(`/ficha-publica/${token}/submit`);
+      assert(done.status === 200 && done.data.submittedAt, `submit ${done.status} ${JSON.stringify(done.data).slice(0, 160)}`);
+      assert(sql(`SELECT cpf FROM Leads WHERE id=${leadId}`) === "74682489070" && sql(`SELECT email FROM Leads WHERE id=${leadId}`) === "ana.ficha@exemplo.com" && sql(`SELECT name FROM Leads WHERE id=${leadId}`) === "Ana Ficha da Silva", "the lead's record did not take the form");
+      assert(sql(`SELECT status FROM LeadDocuments WHERE leadId=${leadId} AND name='RG ou CNH'`) === "received", "the ID did not count as delivered");
+      const staff = (await http.get(`/leads/${leadId}/enrollment-form`, auth())).data;
+      assert(staff.progress === 100 && staff.data.cpf === "74682489070" && staff.consentAt && staff.submittedAt, `staff view ${JSON.stringify(staff).slice(0, 200)}`);
+      // erasing on request of the person (LGPD): only the management, and the pictures go
+      assert((await http.delete(`/leads/${leadId}/enrollment-form`, asUser(other))).status === 403, "a consultant erased the form");
+      assert((await http.delete(`/leads/${leadId}/enrollment-form`, auth())).status === 200, "erase");
+      assert((await http.get(`/leads/${leadId}/enrollment-form/files/doc_frente`, auth())).status === 404, "the picture survived the erasing");
+      assert((await http.get(`/ficha-publica/${token}`)).status === 410, "the erased form still opens");
+    });
     await test("a conversation the team opened, with no message yet, is nobody waiting in Responder agora", async () => {
       const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn" }, auth())).data.token}` } };
       await http.post("/api/v1/contacts", { name: "So salvei", number: "5531977773333" }, headers);
@@ -4393,7 +4447,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.some(x => x.key === "objective" && x.optional), "the objective is an optional step");
       await consultantSays("Maira, segue a proposta da sua bolsa para o curso de Biomedicina.");
       let cp = await copNow();
-      assert(cp.current === "ficha" && /Ficha de matrícula/.test(cp.suggestion.text) && /Nome completo da mãe/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `after the proposal: ${cp.current} ${JSON.stringify(cp.suggestion)}`);
+      // the form goes as the lead's personal link (the lead fills it in on the phone, with the picture of the ID)
+      assert(cp.current === "ficha" && /ficha de matrícula/.test(cp.suggestion.text) && /\/ficha\/[a-f0-9]{48}/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `after the proposal: ${cp.current} ${JSON.stringify(cp.suggestion)}`);
       await consultantSays(cp.suggestion.text);
       cp = await copNow();
       assert(cp.current === "taxa" && /boleto da taxa de matrícula/.test(cp.suggestion.text) && /comprovante/.test(cp.suggestion.text), `after the form: ${cp.current}`);
@@ -5847,7 +5902,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // without a course the optional part leaves clean, with no hole
       sql(`UPDATE Leads SET courseId=NULL WHERE id=${lead.id}`);
       const noCourse = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
-      assert(!noCourse.includes("no curso de") && noCourse.includes("e vou acompanhar você. O primeiro passo") && !/ {2}| \.| ,/.test(noCourse), `the approach without a course: ${noCourse}`);
+      assert(!noCourse.includes("no curso de") && noCourse.includes("e vou acompanhar você.\n\nO primeiro passo") && !/ {2}| \.| ,/.test(noCourse), `the approach without a course: ${noCourse}`);
       // the text the company typed keeps working (the earlier assertion), now with the new variables and parts
       await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}}, {{instituicao}}[[, curso {{curso}}]]." }, auth());
       const typed = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
@@ -5860,7 +5915,7 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`UPDATE Leads SET courseId=${welcomeCourse.id} WHERE id=${lead.id}`);
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('ob-oi-1', ${ob}, 'oi', false, false, 'chat', 0, NOW(), NOW())`);
       const answer = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
-      assert(answer.startsWith(`Olá, Aluna, que bom que você chamou! Eu sou ${tutorName}, tutor(a) da `) && answer.includes("no curso de Pedagogia Abordagem Teste"), `the approach after the student wrote: ${answer}`);
+      assert(answer.startsWith(`Olá, Aluna, que bom que você chamou!\n\nEu sou ${tutorName}, tutor(a) da `) && answer.includes("no curso de Pedagogia Abordagem Teste"), `the approach after the student wrote: ${answer}`);
       // someone with no enrollment writes to the tutoring: no greeting of a new student, only who the tutor is and the RGM
       const obTok = (await http.post("/api-tokens", { name: "ob-unknown" }, auth())).data.token;
       await http.post("/api/v1/contacts", { name: "Pessoa Sem Matricula", number: "5511955552777" }, { headers: { Authorization: `Bearer ${obTok}` } });
@@ -7421,6 +7476,45 @@ const postMeta = (id, payload, secret, badSig) => {
       } finally {
         sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
       }
+    });
+    await test("one tutoring conversation per student: the empty one opened by the enrollment on another number is folded into the one where the student writes, and the agent of every number stays out of the tutoring", async () => {
+      inDb(`const Ticket=require("./dist/models/Ticket").default,Contact=require("./dist/models/Contact").default,Whatsapp=require("./dist/models/Whatsapp").default,TicketEvent=require("./dist/models/TicketEvent").default,TicketTag=require("./dist/models/TicketTag").default,Tag=require("./dist/models/Tag").default,Message=require("./dist/models/Message").default,AiAgent=require("./dist/models/AiAgent").default;
+        const FindOrCreate=require("./dist/services/TicketServices/FindOrCreateTicketService").default,{findAgentForTicket}=require("./dist/services/AiServices/RunAiAgent"),{connectionsOf}=require("./dist/helpers/AgentConnections");
+        const contact=await Contact.create({name:"Aluno Gemeo",number:"5569977001122",isGroup:false});
+        const tutoring=await Whatsapp.create({name:"Tutoria Gemeo",status:"CONNECTED",channel:"whatsapp_cloud",team:"tutoria",isDefault:false});
+        const tag=await Tag.create({name:"Gemeo e2e",color:"#7c3aed"});
+        const global=await AiAgent.create({name:"Agente de todos os numeros e2e",model:"e2e",active:true});
+        try{
+          // the enrollment opened it on the consultants' number (the tutoring number was not set yet): no message, a handover note and a tag
+          const empty=await Ticket.create({contactId:contact.id,whatsappId:${cid},status:"open",userId:1,segment:"onboarding",isGroup:false,unreadMessages:0,aiActive:false,chatbotNodeId:-1});
+          await TicketEvent.create({ticketId:empty.id,type:"handoff",actorId:1,note:"Início da ambientação."});
+          await TicketTag.create({ticketId:empty.id,tagId:tag.id});
+          // the student writes "oi" to the tutoring number
+          const t=await FindOrCreate(contact,tutoring.id,1);
+          await empty.reload();
+          assert.notEqual(t.id,empty.id);
+          assert.equal(t.segment,"onboarding");
+          assert.equal(empty.status,"closed");
+          assert.equal(await Ticket.count({where:{contactId:contact.id,status:["open","pending"]}}),1);
+          assert.equal(await TicketEvent.count({where:{ticketId:t.id,type:"handoff"}}),1);
+          assert.equal(await TicketTag.count({where:{ticketId:t.id,tagId:tag.id}}),1);
+          const fresh=await Ticket.findByPk(t.id);
+          assert.equal(fresh.userId,1,"the tutor of the enrollment did not keep the student");
+          // a conversation with messages is never folded
+          const real=await Ticket.create({contactId:contact.id,whatsappId:${cid},status:"open",userId:1,segment:"onboarding",isGroup:false,unreadMessages:0});
+          await Message.create({id:"gemeo-"+real.id,ticketId:real.id,contactId:contact.id,body:"oi",fromMe:false,read:true,mediaType:"chat",ack:0});
+          await FindOrCreate(contact,tutoring.id,1);
+          await real.reload();assert.equal(real.status,"open");
+          // the agent that serves every number answers the sales side, never the tutoring
+          const onTutoring=await findAgentForTicket(fresh);
+          assert(!onTutoring||onTutoring.queueId||connectionsOf(onTutoring).length,"an agent of every number answered on the tutoring");
+          fresh.segment="sales";
+          assert(await findAgentForTicket(fresh),"the sales side lost its agent");
+        }finally{
+          await Message.destroy({where:{contactId:contact.id}});await TicketEvent.destroy({where:{ticketId:(await Ticket.findAll({where:{contactId:contact.id}})).map(x=>x.id)}});
+          await TicketTag.destroy({where:{tagId:tag.id}});await Ticket.destroy({where:{contactId:contact.id}});
+          await require("./dist/models/Lead").default.destroy({where:{contactId:contact.id}});await tutoring.destroy();await tag.destroy();await global.destroy();await contact.destroy();
+        }`);
     });
     await test("the daily review: the AI reads a consultant's conversation without CPF, phone or names, keeps only codes, and the management sees the training needed", async () => {
       const u = (await http.post("/users", { name: "Consultora Revisada", email: "review-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;

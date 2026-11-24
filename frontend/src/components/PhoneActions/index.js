@@ -57,7 +57,6 @@ const PhoneActions = ({ href, children }) => {
       <div className={classes.actions}>
         {ticketId && <><ButtonBase className={classes.action} disabled={busy || !state || state.registered === false} onClick={chat}><MessageSquare size={22} />Conversar com {display}</ButtonBase><Divider /></>}
         <ButtonBase className={classes.action} component="a" href={`https://wa.me/${number.slice(1)}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={22} />Abrir no WhatsApp</ButtonBase><Divider />
-        <ButtonBase className={classes.action} component="a" href={`tel:${number}`}><Phone size={22} />Ligar pelo telefone</ButtonBase><Divider />
         <ButtonBase className={classes.action} onClick={async () => { try { await navigator.clipboard.writeText(number); toast.success("Número copiado."); setAnchor(null); } catch (err) { toastError(err); } }}><Copy size={22} />Copiar número</ButtonBase>
       </div>
     </Popover>

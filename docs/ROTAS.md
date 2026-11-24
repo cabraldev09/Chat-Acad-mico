@@ -1,6 +1,6 @@
-# Rotas da API (560)
+# Rotas da API (573)
 
-Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
+Públicas: 40 · logado (qualquer perfil): 310 · gestão: 178 · admin: 37
 
 ## Públicas (sem login)
 
@@ -22,6 +22,11 @@ Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 - POST /efi/:secret/pix (efiWebhookRoutes.ts)
 - POST /efi/:secret/billet (efiWebhookRoutes.ts)
 - POST /efi/:secret (efiWebhookRoutes.ts)
+- GET /:token (enrollmentFormPublicRoutes.ts)
+- PUT /:token (enrollmentFormPublicRoutes.ts)
+- POST /:token/files/:kind (enrollmentFormPublicRoutes.ts)
+- DELETE /:token/files/:kind (enrollmentFormPublicRoutes.ts)
+- POST /:token/submit (enrollmentFormPublicRoutes.ts)
 - GET /_aluna.webp (leadFormRoutes.ts)
 - GET /:token (leadFormRoutes.ts)
 - GET /:token/u/:slug (leadFormRoutes.ts)
@@ -146,12 +151,17 @@ Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
 - POST /retention/run → isRetentionOperator
 - PUT /leads/:id/documents/:docId → canAccessLead
 - POST /leads/:id/documents/remind → canAccessLead
+- POST /leads/:id/enrollment-form → canAccessLead
+- POST /leads/:id/enrollment-form/send → canAccessLead
+- POST /tickets/:ticketId/enrollment-form → canWriteTicket
 - PUT /leads/:id → canAccessLead
 - PUT /leads/:id/stage → canAccessLead
 - POST /leads/:id/relation → canAccessLead
 - POST /leads/:id/activities → canAccessLead
 - POST /leads/:id/tasks → canAccessLead
 - POST /leads/:id/open-ticket → canAccessLead
+- POST /tutoria/notices/preview → tutoriaStaff
+- POST /tutoria/notices → tutoriaStaff
 - PUT /leads/:id/onboarding/access → canAccessLead
 - POST /leads/:id/onboarding/access/send → canAccessLead
 - PUT /leads/:id/onboarding/checklist → canAccessLead
