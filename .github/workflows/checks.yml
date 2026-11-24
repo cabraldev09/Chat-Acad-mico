@@ -61,6 +61,9 @@ jobs:
       - name: Menu sem ícones repetidos
         working-directory: frontend
         run: node scripts/check-menu-icons.js
+      - name: Avisos somem sozinhos
+        working-directory: frontend
+        run: node scripts/check-toast-timer.js
       - name: Frontend sem variáveis inexistentes (evita tela branca)
         working-directory: frontend
         run: >
