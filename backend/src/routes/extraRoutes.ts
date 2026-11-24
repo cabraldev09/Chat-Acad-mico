@@ -18,7 +18,7 @@ import canManageWhatsapp from "../middleware/canManageWhatsapp";
 import isAdmin from "../middleware/isAdmin";
 import isManager from "../middleware/isManager";
 import { canReadTicket, canWriteTicket } from "../middleware/canAccessTicket";
-import { canAccessLead, canAccessProposal, canAccessPayment } from "../middleware/scope";
+import { canAccessLead, canAccessOnboarding, canAccessProposal, canAccessPayment } from "../middleware/scope";
 import uploadConfig from "../config/upload";
 
 import * as Tag from "../controllers/TagController";
@@ -461,18 +461,18 @@ r.post("/meta/templates", isAuth, isManager, MetaTemplates.store);
 r.post("/meta/templates/pack", isAuth, isManager, MetaTemplates.pack);
 r.delete("/meta/templates/:name", isAuth, isManager, MetaTemplates.remove);
 r.post("/tutoria/students/:leadId/conversation", isAuth, Tutoria.openConversation);
-r.put("/leads/:id/onboarding/access", isAuth, canAccessLead, Lead.onboardingAccessSave);
-r.post("/leads/:id/onboarding/access/send", isAuth, canAccessLead, Lead.onboardingAccessSend);
+r.put("/leads/:id/onboarding/access", isAuth, canAccessOnboarding, Lead.onboardingAccessSave);
+r.post("/leads/:id/onboarding/access/send", isAuth, canAccessOnboarding, Lead.onboardingAccessSend);
 r.get("/onboarding/pending", isAuth, Lead.onboardingPending);
 r.get("/onboarding/stats", isAuth, Lead.onboardingStats);
-r.put("/leads/:id/onboarding/checklist", isAuth, canAccessLead, Lead.onboardingChecklist);
+r.put("/leads/:id/onboarding/checklist", isAuth, canAccessOnboarding, Lead.onboardingChecklist);
 // the print of the enrollment: read (the RGM fills the field) before confirming, and seen later
 r.post("/leads/:id/enrollment-proof", isAuth, canAccessLead, materialUpload.single("file"), Enrollment.uploadProof);
 r.get("/leads/:id/enrollment-proof/:proofId/file", isAuth, canAccessLead, Enrollment.proofFile);
 r.post("/leads/:id/enroll", isAuth, canAccessLead, Lead.enroll);
 r.get("/leads/:id/enrollments", isAuth, canAccessLead, Lead.enrollments);
-r.post("/leads/:id/onboarding", isAuth, canAccessLead, Lead.onboarding);
-r.put("/leads/:id/onboarding", isAuth, canAccessLead, Lead.editOnboarding);
+r.post("/leads/:id/onboarding", isAuth, canAccessOnboarding, Lead.onboarding);
+r.put("/leads/:id/onboarding", isAuth, canAccessOnboarding, Lead.editOnboarding);
 r.put("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.updateTask);
 r.post("/leads/:id/tasks/:taskId/toggle", isAuth, canAccessLead, Lead.completeTask);
 // conclude or reopen with the choice said (done: true | false): never flips a task the system closed a moment ago

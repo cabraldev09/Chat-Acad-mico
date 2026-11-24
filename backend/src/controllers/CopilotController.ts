@@ -46,7 +46,9 @@ const ticketOf = async (req: Request): Promise<Ticket> => {
   if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
   return ticket;
 };
-const eligible = (ticket: Ticket): boolean => !ticket.isGroup && !ticket.isHistorical && ticket.status !== "closed";
+// the copilot is the sales process (matrícula): it shows only in the conversations of the commercial side, never in the tutoring
+// (onboarding, support) or in the relationship with the student
+const eligible = (ticket: Ticket): boolean => !ticket.isGroup && !ticket.isHistorical && ticket.status !== "closed" && sideOfSegment(ticket.segment) === "atendimento";
 export const show = (req: Request, res: Response) => withInstitutionOf({ ticketId: Number(req.params.ticketId) || null }, () => showNow(req, res));
 const showNow = async (req: Request, res: Response) => {
   const ticket = await ticketOf(req);
