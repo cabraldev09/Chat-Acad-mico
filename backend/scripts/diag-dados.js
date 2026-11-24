@@ -46,5 +46,18 @@ const q = async (title, sql) => {
     WHERE t.status IN ('open','pending') AND t."isGroup" = false AND t.segment IN ('onboarding','support')
       AND t."contactId" IN (SELECT t2."contactId" FROM "Tickets" t2 WHERE t2.status IN ('open','pending') AND t2."isGroup" = false AND t2.segment IN ('onboarding','support') GROUP BY 1 HAVING COUNT(*) > 1)
     ORDER BY t."contactId", t.id LIMIT 40`);
+  // only internal numbers: the commercial side (segment empty or sales) with more than one conversation of the same person, and the
+  // same telephone saved as more than one contact (with and without the 9, with and without 55)
+  await q("conversas do comercial repetidas (mesmo contato)", `SELECT t."contactId" AS contato, t.id AS ticket, t."whatsappId" AS wa, w.channel, w.team AS wa_team, t.segment, t.status, t."userId" AS t_user,
+      t."leadId" AS t_lead, t."isHistorical" AS hist, t."createdAt", (SELECT COUNT(*) FROM "Messages" m WHERE m."ticketId" = t.id) AS msgs,
+      (SELECT string_agg(e.type || '@' || to_char(e."createdAt", 'DD HH24:MI'), ',' ORDER BY e.id) FROM "TicketEvents" e WHERE e."ticketId" = t.id) AS eventos
+    FROM "Tickets" t LEFT JOIN "Whatsapps" w ON w.id = t."whatsappId"
+    WHERE t."isGroup" = false AND COALESCE(t.segment, 'sales') NOT IN ('onboarding','support','relationship') AND t.status IN ('open','pending')
+      AND t."contactId" IN (SELECT t2."contactId" FROM "Tickets" t2 WHERE t2."isGroup" = false AND t2.status IN ('open','pending') AND COALESCE(t2.segment, 'sales') NOT IN ('onboarding','support','relationship') GROUP BY 1 HAVING COUNT(*) > 1)
+    ORDER BY t."contactId", t.id LIMIT 60`);
+  await q("mesmo telefone em mais de um contato (com e sem o 9)", `WITH n AS (SELECT id, CASE WHEN length(d) = 13 AND substr(d, 5, 1) = '9' THEN substr(d, 1, 4) || substr(d, 6) WHEN length(d) = 11 AND substr(d, 3, 1) = '9' THEN '55' || substr(d, 1, 2) || substr(d, 4) WHEN length(d) = 10 THEN '55' || d ELSE d END AS k
+      FROM (SELECT id, regexp_replace(number, '\\D', '', 'g') AS d FROM "Contacts" WHERE "isGroup" = false) x)
+    SELECT k_count.n AS contatos, k_count.ids, (SELECT COUNT(*) FROM "Tickets" t WHERE t."contactId" = ANY(k_count.idarr) AND t.status IN ('open','pending')) AS conversas_abertas
+    FROM (SELECT k, COUNT(*) AS n, string_agg(id::text, ',' ORDER BY id) AS ids, array_agg(id) AS idarr FROM n WHERE length(k) >= 12 GROUP BY k HAVING COUNT(*) > 1) k_count ORDER BY n DESC LIMIT 40`);
   process.exit(0);
 })().catch(e => { console.error(e.message); process.exit(1); });
