@@ -36,14 +36,17 @@ export function classifyAcademicDocument(
     )
       return "SIMPLE_ACADEMIC_HISTORY";
     const signature =
-      /ASSINATURA ELETRONICA|CERTIFICADO DIGITAL|CERTIFICACAO DIGITAL/.test(
+      /ASSINATURA (?:ELETRONICA|DIGITAL)|CERTIFICADO DIGITAL|CERTIFICACAO DIGITAL/.test(
         text,
       );
     const verification =
-      /HTTPS:\/\/(?:[A-Z0-9.-]+\.EDU\.BR\/|VALIDAR\.ITI\.GOV\.BR)|VALIDACAO DIGITAL|QR\s*CODE/.test(
+      /HTTPS:\/\/(?:[A-Z0-9.-]+\.EDU\.BR\/|VALIDAR\.ITI\.GOV\.BR)|VALIDACAO DIGITAL|CODIGO DE VALIDACAO|QR\s*CODE/.test(
         text,
       );
     if (signature && verification) return "OFFICIAL_ACADEMIC_HISTORY";
+    // the digital layout no longer prints "simples conferência": the copy for checking is the one without validation
+    if (/PERIODO LETIVO\s+(?:\d{4}\/[12]|\*+)/.test(text) && /DOCENTE\s*\S?\s*TITULACAO/.test(text))
+      return "SIMPLE_ACADEMIC_HISTORY";
     return "UNKNOWN_ACADEMIC_DOCUMENT";
   }
   const rows = /A\s+CURSAR|CURSANDO|\bAE\*?\b/.test(text);

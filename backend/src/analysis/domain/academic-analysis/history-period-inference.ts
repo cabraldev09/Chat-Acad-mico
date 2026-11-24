@@ -90,6 +90,34 @@ export function inferHistoryPeriods(
   return { periods, periodCount: split.length, currentPeriod, confident, reasons };
 }
 
+export const HISTORY_TERM_SOURCE = "HISTORY_TERM_ORDER";
+
+const ROMAN: Record<string, number> = { I: 1, V: 5, X: 10 };
+const romanAtEnd = (key: string): number => {
+  const found = key.match(/ ([IVX]+)$/)?.[1];
+  if (!found) return 0;
+  return [...found].reduce((sum, ch, i, all) => sum + (ROMAN[ch] < (ROMAN[all[i + 1]] ?? 0) ? -ROMAN[ch] : ROMAN[ch]), 0);
+};
+
+/**
+ * Histórico digital: as disciplinas vêm agrupadas por semestre letivo e o que ainda falta vem num bloco só, sem
+ * semestre. A ordem do semestre vira a sugestão de período; no bloco que falta, só os componentes que existem uma
+ * vez por período (numerados) recebem sugestão, na sequência. O resto fica em 0: o tutor confirma.
+ */
+export function inferPeriodsByTerm(rows: Array<Pick<AcademicDiscipline, "name" | "academicTerm">>): number[] {
+  const terms = [...new Set(rows.map((row) => row.academicTerm).filter(isAcademicTerm))].sort();
+  const periods = rows.map((row) => (isAcademicTerm(row.academicTerm) ? terms.indexOf(row.academicTerm) + 1 : 0));
+  if (!terms.length) return periods;
+  ANCHOR_FAMILIES.forEach((family) => {
+    const ahead = rows
+      .map((row, index) => ({ index, key: sortKey(row.name), term: row.academicTerm }))
+      .filter((row) => !isAcademicTerm(row.term) && family.test(row.key) && romanAtEnd(row.key) > 0)
+      .sort((a, b) => romanAtEnd(a.key) - romanAtEnd(b.key) || a.index - b.index);
+    ahead.forEach((row, i) => (periods[row.index] = terms.length + 1 + i));
+  });
+  return periods;
+}
+
 function isAcademicTerm(term: string | null | undefined): term is string {
   return Boolean(term && /^\d{4}\/[12]$/.test(term));
 }
@@ -115,6 +143,7 @@ export interface AppliedHistoryMapping {
 export function applyHistoryPeriodInference(
   input: AcademicGridSnapshot,
   assigned?: number[],
+  origin?: { source: string; confirmed: boolean },
 ): AppliedHistoryMapping {
   const snapshot = structuredClone(input);
   const sourceIndexes = snapshot.disciplines
@@ -137,13 +166,13 @@ export function applyHistoryPeriodInference(
     return { snapshot: input, applied: false, mappedRows: 0, inference };
 
   const latestTerm = latestAcademicTerm(ordered);
-  const source = assigned ? "AI_ASSISTED_HISTORY_MAPPING" : HISTORY_ORDER_SOURCE;
+  const source = origin?.source ?? (assigned ? "AI_ASSISTED_HISTORY_MAPPING" : HISTORY_ORDER_SOURCE);
   let mappedRows = 0;
   ordered.forEach((row, i) => {
     if (row.period !== null || !(periods[i] >= 1 && periods[i] <= 20)) return;
     row.period = periods[i];
-    row.rawPeriod = `${periods[i]}º período (identificado automaticamente)`;
-    row.curricularPeriodProvenance = { source, confirmed: true };
+    row.rawPeriod = `${periods[i]}º período (${origin && !origin.confirmed ? "sugerido pelo semestre letivo" : "identificado automaticamente"})`;
+    row.curricularPeriodProvenance = { source, confirmed: origin?.confirmed ?? true };
     if (
       row.normalizedStatus === "A CURSAR" &&
       /PENDENTE/.test(row.originalStatus) &&

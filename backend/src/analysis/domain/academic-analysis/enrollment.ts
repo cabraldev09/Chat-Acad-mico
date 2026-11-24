@@ -30,8 +30,11 @@ export const classifyEnrollmentWord = (word: string): EnrollmentSituationCode | 
 /** Reads "Situação da matrícula / do aluno: Cancelado" from the text of a document, when the document prints it. */
 export const enrollmentFromText = (text: string): EnrollmentSituation | null => {
   const found = fold(text).match(/SITUACAO\s+(?:DA\s+MATRICULA|DO\s+ALUNO|ACADEMICA|DO\s+VINCULO)\s*[:\-]\s*(?:\d+\s*[-–]\s*)?([A-Z ]{3,24})/);
-  if (!found) return null;
-  const code = classifyEnrollmentWord(found[1]);
+  // the digital history prints "Situação atual" and the value on the line below
+  const current = found ? null : fold(text).match(/SITUACAO\s+ATUAL\s*[:\-]?\s*([A-Z ]{3,24})/);
+  const word = found?.[1] ?? current?.[1];
+  if (!word) return null;
+  const code = classifyEnrollmentWord(word);
   return code ? { code, label: ENROLLMENT_LABEL[code], source: "DOCUMENT" } : null;
 };
 
