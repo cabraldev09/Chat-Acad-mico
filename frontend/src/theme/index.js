@@ -107,7 +107,8 @@ const createAppTheme = (type) => {
             "100%": { backgroundPosition: "200% 0" },
           },
           "@media (prefers-reduced-motion: reduce)": {
-            "*": { animationDuration: "0.01ms !important", transitionDuration: "0.01ms !important" },
+            // the toasts' hidden bar is their timer (the toast closes when its animation ends): it keeps its own duration
+            "*:not(.Toastify__progress-bar)": { animationDuration: "0.01ms !important", transitionDuration: "0.01ms !important" },
           },
         },
       },

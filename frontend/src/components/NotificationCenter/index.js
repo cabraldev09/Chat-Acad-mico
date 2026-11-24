@@ -43,7 +43,8 @@ export const useNotices = () => {
       if (!n) return;
       setState((s) => ({ ...s, list: [n, ...(s.list || []).filter((x) => x.id !== n.id)].slice(0, 40), unread: s.unread + 1 }));
       if (!HAS_TOAST.has(n.kind)) {
-        const opts = { toastId: `notice-${n.id}`, autoClose: n.level === "urgent" ? false : 8000 };
+        // every pop-up closes by itself (the urgent one stays longer); the notice stays in the bell until read
+        const opts = { toastId: `notice-${n.id}`, autoClose: n.level === "urgent" ? 15000 : 8000 };
         const text = `${n.title}${n.body ? ` · ${n.body}` : ""}`;
         if (n.level === "urgent") toast.error(text, opts);
         else if (n.level === "warning") toast.warning(text, opts);
