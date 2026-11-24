@@ -676,7 +676,8 @@ CREATE TABLE public."AiUsage" (
     "nodeId" character varying(40),
     "latencyMs" integer,
     "leadId" integer,
-    "estimatedUsd" numeric(14,8)
+    "estimatedUsd" numeric(14,8),
+    "userId" integer
 );
 
 
@@ -912,7 +913,8 @@ CREATE TABLE public."Campaigns" (
     "templateParams" text,
     "templateBody" text,
     "createdById" integer,
-    "institutionId" integer
+    "institutionId" integer,
+    objective text
 );
 
 
@@ -1957,7 +1959,8 @@ CREATE TABLE public."Goals" (
     "updatedAt" timestamp with time zone NOT NULL,
     "workDays" integer DEFAULT 5 NOT NULL,
     kind character varying(255) DEFAULT 'team'::character varying NOT NULL,
-    "extraHolidays" text
+    "extraHolidays" text,
+    "entryTerm" character varying(7)
 );
 
 
@@ -2686,7 +2689,8 @@ CREATE TABLE public."OutboundDeliveries" (
     "estimatedUsd" numeric(14,8),
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
-    category character varying(20)
+    category character varying(20),
+    "userId" integer
 );
 
 
@@ -3338,6 +3342,47 @@ CREATE SEQUENCE public."Schedules_id_seq"
 --
 
 ALTER SEQUENCE public."Schedules_id_seq" OWNED BY public."Schedules".id;
+
+
+--
+-- Name: SendReleases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."SendReleases" (
+    id integer NOT NULL,
+    "userId" integer NOT NULL,
+    month character varying(7) NOT NULL,
+    requested integer NOT NULL,
+    reason text NOT NULL,
+    context jsonb,
+    status character varying(10) DEFAULT 'pending'::character varying NOT NULL,
+    granted integer,
+    "decidedBy" integer,
+    "decidedAt" timestamp with time zone,
+    "decisionNote" character varying(300),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: SendReleases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."SendReleases_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: SendReleases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."SendReleases_id_seq" OWNED BY public."SendReleases".id;
 
 
 --
@@ -4437,6 +4482,13 @@ ALTER TABLE ONLY public."Schedules" ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: SendReleases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SendReleases" ALTER COLUMN id SET DEFAULT nextval('public."SendReleases_id_seq"'::regclass);
+
+
+--
 -- Name: StudentTokens id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5314,6 +5366,14 @@ ALTER TABLE ONLY public."Schedules"
 
 
 --
+-- Name: SendReleases SendReleases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SendReleases"
+    ADD CONSTRAINT "SendReleases_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: SequelizeMeta SequelizeMeta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5632,6 +5692,13 @@ CREATE INDEX ai_usage_agent_id_created_at ON public."AiUsage" USING btree ("agen
 --
 
 CREATE INDEX ai_usage_created_at ON public."AiUsage" USING btree ("createdAt");
+
+
+--
+-- Name: ai_usage_user_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_usage_user_created ON public."AiUsage" USING btree ("userId", "createdAt");
 
 
 --
@@ -6321,6 +6388,13 @@ CREATE INDEX outbound_deliveries_status_updated ON public."OutboundDeliveries" U
 
 
 --
+-- Name: outbound_deliveries_user_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX outbound_deliveries_user_created ON public."OutboundDeliveries" USING btree ("userId", "createdAt");
+
+
+--
 -- Name: outbound_messages_status_next; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6430,6 +6504,20 @@ CREATE INDEX retention_messages_whatsapp_id_created_at ON public."RetentionMessa
 --
 
 CREATE INDEX schedules_status_send ON public."Schedules" USING btree (status, "sendAt");
+
+
+--
+-- Name: send_releases_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX send_releases_status ON public."SendReleases" USING btree (status);
+
+
+--
+-- Name: send_releases_user_month; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX send_releases_user_month ON public."SendReleases" USING btree ("userId", month);
 
 
 --
@@ -7476,6 +7564,22 @@ ALTER TABLE ONLY public."Schedules"
 
 
 --
+-- Name: SendReleases SendReleases_decidedBy_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SendReleases"
+    ADD CONSTRAINT "SendReleases_decidedBy_fkey" FOREIGN KEY ("decidedBy") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: SendReleases SendReleases_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SendReleases"
+    ADD CONSTRAINT "SendReleases_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: StudentTokens StudentTokens_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8070,6 +8174,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000001-ticket-reply-dismisse
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000002-tutoring-issues.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261228000001-one-conversation-per-number.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-course-aliases.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261230000001-send-quota-and-costs.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

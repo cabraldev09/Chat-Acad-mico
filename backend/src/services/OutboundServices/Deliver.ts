@@ -15,6 +15,7 @@ import AppError from "../../errors/AppError";
 import { isWithinBusinessHours } from "../AutomationServices/BusinessHours";
 import { inMessagingWindow, validateTemplate } from "./Policy";
 import { lastInboundAt } from "./LastInbound";
+import { currentActorId } from "../../helpers/Actor";
 
 const context = new AsyncLocalStorage<number>();
 // Only errors that prove the provider did not accept the message are safe to retry.
@@ -26,6 +27,8 @@ export interface SendPolicy {
   optOutNotice?: boolean;
   outsideHoursNotice?: boolean;
   template?: { name: string; language: string; params: string[] } | null;
+  // who the send is for (default: the person of the request, or the creator of the campaign the worker is sending)
+  userId?: number | null;
 }
 
 export const deliver = async <T extends { id: any }>(ticket: Ticket, options: SendPolicy, send: () => Promise<T>): Promise<T> => {
@@ -82,7 +85,7 @@ export const deliver = async <T extends { id: any }>(ticket: Ticket, options: Se
       const spent = Number(await OutboundDelivery.sum("estimatedUsd", { where: { createdAt: { [Op.gte]: monthStart }, status: counted }, transaction }) || 0);
       if (spent + rate > Number(monthlyUsd)) throw new AppError("ERR_OUTBOUND_MONTH_BUDGET", 409);
     }
-    return OutboundDelivery.create({ key, ticketId: ticket.id, contactId: contact.id, whatsappId: whatsapp.id, channel, category, status: "sending", estimatedUsd: rate }, { transaction });
+    return OutboundDelivery.create({ key, ticketId: ticket.id, contactId: contact.id, whatsappId: whatsapp.id, channel, category, status: "sending", estimatedUsd: rate, userId: options.userId ?? currentActorId() } as any, { transaction });
   });
   try {
     const result = await context.run(ticket.id, send);

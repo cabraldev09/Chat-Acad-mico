@@ -14,6 +14,8 @@ export default class OutboundDelivery extends Model<OutboundDelivery> {
   @Column externalId: string;
   @Column(DataType.TEXT) error: string;
   @Column(DataType.DECIMAL(14, 8)) estimatedUsd: number;
+  // who caused the send (empty: automation)
+  @Column userId: number;
   @CreatedAt createdAt: Date;
   @UpdatedAt updatedAt: Date;
 }

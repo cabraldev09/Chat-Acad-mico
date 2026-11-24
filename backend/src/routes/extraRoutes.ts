@@ -1,4 +1,5 @@
 import * as Tutoria from "../controllers/TutoriaController";
+import * as SendReleases from "../controllers/SendReleaseController";
 import * as Notifications from "../controllers/NotificationController";
 import * as MetaCosts from "../controllers/MetaCostsController";
 import * as MetaTemplates from "../controllers/MetaTemplatesController";
@@ -458,6 +459,14 @@ const tutoriaStaff = (req: any, _res: any, next: any) => {
 };
 r.post("/tutoria/notices/preview", isAuth, tutoriaStaff, Tutoria.noticePreview);
 r.post("/tutoria/notices", isAuth, tutoriaStaff, Tutoria.noticeSend);
+// the quota of sends of the month: each person sees theirs and asks the management for more; the management decides and follows
+// what each person sent and spent (Meta + AI)
+r.get("/send-quota/me", isAuth, campaignStaff, SendReleases.myQuota);
+r.post("/send-releases", isAuth, campaignStaff, rateLimit({ windowMs: 60 * 60 * 1000, max: 10, key: req => `send-release:${req.user.id}` }), SendReleases.requestRelease);
+r.get("/send-releases", isAuth, isManager, SendReleases.listReleases);
+r.put("/send-releases/:id", isAuth, isManager, SendReleases.decideRelease);
+r.get("/operations/costs-by-user", isAuth, isManager, SendReleases.costsByUser);
+r.get("/operations/costs-by-user/:userId/sends", isAuth, isManager, SendReleases.sendsOfUser);
 r.get("/meta/costs", isAuth, isManager, MetaCosts.show);
 // the templates of the official WhatsApp account: list with status, create one (Utility only) and send the recommended pack
 r.get("/meta/templates", isAuth, isManager, MetaTemplates.index);

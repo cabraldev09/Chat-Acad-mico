@@ -33,7 +33,9 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState(null);
   const [courses, setCourses] = useState([]);
-  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "" });
+  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "", entryTerm: "" });
+  // the periods the student may be enrolled for: those offered by the CRM and those of the polo goals in force
+  const [terms, setTerms] = useState({ list: [], fallback: "" });
   // the print of the enrollment: read when attached (the RGM fills the field); kept with the enrollment for the management
   const [proof, setProof] = useState(null); // { id, preview, reading, readNote }
   const [reading, setReading] = useState(false);
@@ -58,14 +60,15 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
 
   useEffect(() => {
     if (!open) return;
-    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "" });
+    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "", entryTerm: "" });
+    api.get("/crm/options").then(({ data }) => setTerms({ list: [...new Set([...(data.goalTerms || []), ...(data.entryTerms || [])])].sort(), fallback: data.defaultEntryTerm || "" })).catch(() => setTerms({ list: [], fallback: "" }));
     setProof(null); setNoProof(false);
     api.get("/courses").then(({ data }) => setCourses(data.filter((c) => c.active))).catch(() => undefined);
     api.get("/polos").then(({ data }) => setPolos(data.filter((p) => p.active))).catch(toastError);
     // the board card is a summary: the CPF and polo come from the full record
     api.get(`/leads/${lead.id}`).then(({ data }) => {
       setDetail(data);
-      setV((cur) => ({ ...cur, poloId: cur.poloId || data.poloId || "", courseId: cur.courseId || (!additional && data.courseId) || "", rgm: cur.rgm || (!additional && data.rgm) || "" }));
+      setV((cur) => ({ ...cur, poloId: cur.poloId || data.poloId || "", courseId: cur.courseId || (!additional && data.courseId) || "", rgm: cur.rgm || (!additional && data.rgm) || "", entryTerm: cur.entryTerm || data.entryTerm || "" }));
     }).catch(() => setDetail(null));
   }, [open, lead, additional]);
 
@@ -97,6 +100,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
         additional: additional || undefined,
         courseId: v.courseId,
         rgm,
+        entryTerm: additional ? undefined : (v.entryTerm || terms.fallback || undefined),
         proofId: proof ? proof.id : undefined
       });
       toast.success(additional ? `Nova matrícula registrada (${data.number}ª). ${data.tutor ? `Tutor: ${data.tutor.name}.` : "Aguardando um tutor."}` : data.tutor ? `Matrícula confirmada. Tutor: ${data.tutor.name}.` : "Matrícula confirmada. Aguardando um tutor na fila.");
@@ -146,6 +150,12 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
           helperText={additional ? "O aluno continua com a primeira matrícula; esta conta como mais uma para você e para o polo." : "O curso em que o aluno se matriculou."}>
           {courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
         </TextField>
+        {!additional && (
+          <TextField select fullWidth variant="outlined" margin="dense" label="Período de entrada" value={v.entryTerm || terms.fallback || ""} onChange={(e) => setV({ ...v, entryTerm: e.target.value })}
+            helperText="O semestre da meta em que esta matrícula conta, mesmo feita depois do fim do período.">
+            {[...new Set([...terms.list, ...(v.entryTerm ? [v.entryTerm] : [])])].map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
+          </TextField>
+        )}
         <TextField fullWidth variant="outlined" margin="dense" label="RGM do aluno" required value={v.rgm} onChange={(e) => setV({ ...v, rgm: e.target.value })}
           error={!!v.rgm && !rgmOk} inputProps={{ maxLength: 40 }}
           helperText={v.rgm && !rgmOk ? "Use só letras, números e traços." : "O número de matrícula que a instituição gerou. Com ele o aluno já fica cadastrado no portal; o tutor só informa o e-mail de acesso."} />

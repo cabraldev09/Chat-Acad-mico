@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import AppError from "../errors/AppError";
 import { sessionUser } from "../helpers/SessionUser";
 import User from "../models/User";
+import { withActor } from "../helpers/Actor";
 
 // "Last access": any authenticated request counts, written at most once a minute per person (a request for each message of the chat must not become a write).
 const seen = new Map<number, number>();
@@ -17,6 +18,7 @@ const isAuth = async (req: Request, _res: Response, next: NextFunction): Promise
   if (!match) throw new AppError("ERR_SESSION_EXPIRED", 401);
   req.user = await sessionUser(match[1]);
   touchSeen(Number(req.user.id));
-  next();
+  // what this request sends or asks the AI is recorded as this person's (Estatísticas → Disparos)
+  withActor(Number(req.user.id), () => next());
 };
 export default isAuth;
