@@ -2373,6 +2373,52 @@ const postMeta = (id, payload, secret, badSig) => {
       // forgot password: same answer for everyone
       assert((await http.post("/portal/forgot", { login: "123456" })).data.ok === true && (await http.post("/portal/forgot", { login: "nao-existe" })).data.ok === true, "forgot answers differently");
     });
+    await test("an analysis goes into the record of the person and their tutor (or consultant) is told; the management sets the tutor when sending it", async () => {
+      const up = (route, bytes, fields = {}, who = token, name = "doc.pdf") => {
+        const f = new FormData();
+        f.append("file", bytes, { filename: name, contentType: "application/pdf" });
+        Object.entries(fields).forEach(([k, v]) => f.append(k, String(v)));
+        return http.post(route, f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${who}` } });
+      };
+      await http.post("/users", { name: "Tutora Registro", email: "tutora-registro@x.com", password: "senha123", role: "tutor" }, auth());
+      await http.post("/users", { name: "Consultor Registro", email: "consultor-registro@x.com", password: "senha123", role: "consultor" }, auth());
+      const tutorId = Number(sql(`SELECT id FROM Users WHERE email='tutora-registro@x.com'`));
+      const consId = Number(sql(`SELECT id FROM Users WHERE email='consultor-registro@x.com'`));
+      const tutorTk = (await http.post("/auth/login", { email: "tutora-registro@x.com", password: "senha123" })).data.token;
+      const notices = (uid, kind = "analysis_done") => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${uid} AND kind='${kind}'`));
+
+      // academic: a portal student of a lead, without a tutor; the admin sends the analysis and chooses the tutor on the way
+      const lead = (await http.post("/leads", { name: "Aluna Registro Teste", phone: "11 95555-0777", source: "WhatsApp", ownerId: consId }, auth())).data.lead;
+      const st = (await http.post("/students", { rgm: "770077", name: "Aluna Registro Teste", email: "aluna.registro@x.com", courseName: "Administracao" }, auth())).data;
+      sql(`UPDATE Students SET leadId=${lead.id}, responsibleUserId=NULL WHERE id=${st.id}`);
+      const before = notices(tutorId);
+      const made = await up("/analysis/academic", academicPdfJs("770077", "A CURSAR", "", "Aluna Registro Teste"), { studentId: st.id, tutorId });
+      assert(made.status === 201, `academic ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      assert(Number(sql(`SELECT responsibleUserId FROM Students WHERE id=${st.id}`)) === tutorId, "the tutor chosen while sending was not set");
+      assert(notices(tutorId) === before + 1, "the tutor was not told about the analysis");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lead.id} AND body LIKE 'Análise acadêmica registrada%'`)) === 1, "the analysis is not in the history of the lead");
+      assert(Number(sql(`SELECT leadId FROM AcademicAnalyses WHERE id=${made.data.id}`)) === lead.id, "the analysis was not tied to the lead");
+      const rec = (await http.get(`/leads/${lead.id}/analyses`, auth())).data;
+      assert(Array.isArray(rec) && rec.some(a => a.kind === "academic" && a.id === made.data.id), `the record does not list the analysis: ${JSON.stringify(rec).slice(0, 200)}`);
+      // the tutor opens it from the notice
+      assert((await http.get(`/analysis/academic/${made.data.id}`, asUser(tutorTk))).status === 200, "the tutor told about it cannot open it");
+
+      // curricular: the admin ties it to a lead that is still a candidate: the consultant who owns it is told and can read it, not change it
+      const polo = (await http.post("/polos", { name: "Polo do Registro", code: "REG1", state: "RO" }, auth())).data;
+      const consTk = (await http.post("/auth/login", { email: "consultor-registro@x.com", password: "senha123" })).data.token;
+      const beforeCons = notices(consId);
+      const cur = await up("/analysis/curricular", fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf")), { candidateName: "Aluna Registro Teste", poloId: polo.id, leadId: lead.id });
+      assert(cur.status === 201, `curricular ${cur.status} ${JSON.stringify(cur.data).slice(0, 200)}`);
+      assert(notices(consId) === beforeCons + 1, "the consultant of the candidate was not told");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lead.id} AND body LIKE 'Análise curricular registrada%'`)) === 1, "the curricular analysis is not in the history");
+      assert((await http.get(`/analysis/curricular/${cur.data.id}`, asUser(consTk))).status === 200, "the consultant told about it cannot open it");
+      assert((await http.delete(`/analysis/curricular/${cur.data.id}`, asUser(consTk))).status === 403, "the consultant who only reads it deleted it");
+      const both = (await http.get(`/leads/${lead.id}/analyses`, auth())).data;
+      assert(both.some(a => a.kind === "curricular") && both.some(a => a.kind === "academic"), "the record does not list both analyses");
+      // who did it is not told about their own analysis
+      const mine = notices(Number(sql(`SELECT id FROM Users WHERE email='admin@whaticket.com'`)));
+      assert(mine === 0, "the author was told about their own analysis");
+    });
     await test("academic analysis: a cancelled enrollment cannot add subjects nor graduate, and the period is only suggested when the checks disagree", async () => {
       const tk = (await http.post("/auth/login", { email: "tutora-portal@x.com", password: "senha123" })).data.token;
       const f = new FormData();

@@ -777,6 +777,7 @@ const messages = {
         ERR_INVALID_TICKET_STATUS: "Status de atendimento inválido.",
         ERR_NO_QUEUE_FOUND: "Setor não encontrado.",
         ERR_USER_NOT_IN_QUEUE: "Esse atendente não pertence ao setor escolhido.",
+        ERR_TUTOR_NEEDS_ENROLLMENT: "O tutor só pode ser definido para quem já é aluno (matrícula confirmada ou aluno do portal).",
         ERR_CHANNEL_MISMATCH:
           "Não é possível mudar para uma conexão de outro canal.",
         ERR_DUPLICATED_CONTACT: "Já existe um contato com este número.",

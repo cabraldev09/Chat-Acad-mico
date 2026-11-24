@@ -1,6 +1,8 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHistory, useParams } from "react-router-dom";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
+import { useTutors } from "../../components/TutorPicker";
 import { toast } from "react-toastify";
 import { ArrowDown, Check, ChevronDown, ClipboardCopy, HelpCircle, Loader2, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 
@@ -96,6 +98,29 @@ const UploadCard = ({ onCreated }) => {
   const [name, setName] = useState("");
   const [poloId, setPoloId] = useState("");
   const [polos, setPolos] = useState([]);
+  // the person of the CRM the analysis is about (optional): it goes into their record and their tutor (or consultant) is told
+  const { user } = useContext(AuthContext);
+  const [personQuery, setPersonQuery] = useState("");
+  const [people, setPeople] = useState([]);
+  const [person, setPerson] = useState(null);
+  const needsTutor = !!user && isManager(user) && !!person && !!person.enrolledAt && !person.onboardingTutorId;
+  const tutors = useTutors(person && person.poloId, needsTutor);
+  const [tutorPick, setTutorPick] = useState("");
+  useEffect(() => {
+    const q = personQuery.trim();
+    if (person || q.length < 3) { setPeople([]); return undefined; }
+    const t = setTimeout(() => {
+      api.get("/leads", { params: { search: q, limit: 6, historical: "1" } }).then(({ data }) => setPeople((data && data.leads) || [])).catch(() => setPeople([]));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [personQuery, person]);
+  const pickPerson = (l) => {
+    setPerson(l);
+    setPeople([]);
+    setPersonQuery(l.name);
+    if (!name.trim()) setName(l.name || "");
+    if (!poloId && l.poloId) setPoloId(String(l.poloId));
+  };
   const [busy, setBusy] = useState(false);
   const sec = useElapsed(busy);
 
@@ -119,6 +144,8 @@ const UploadCard = ({ onCreated }) => {
       form.append("startTerm", term);
       form.append("candidateName", name.trim());
       form.append("poloId", poloId);
+      if (person) form.append("leadId", person.id);
+      if (needsTutor && tutorPick) form.append("tutorId", tutorPick);
       const { data } = await api.post("/analysis/curricular", form);
       toast.success("Análise pronta.");
       onCreated(data);
@@ -141,6 +168,37 @@ const UploadCard = ({ onCreated }) => {
         <strong className="mt-3 max-w-full break-all text-base">{file ? file.name : "Envie o PDF da análise curricular"}</strong>
         {busy && <Reading sec={sec} />}
         {!busy && <span className="mt-1 text-sm text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB · clique para trocar` : `Arraste o documento para cá ou selecione um arquivo · até ${MAX_MB} MB`}</span>}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="relative min-w-0 text-xs font-semibold text-slate-600">
+          <label className="block">Pessoa no CRM (opcional)
+            <span className="relative mt-1.5 block">
+              <Input value={personQuery} onChange={(e) => { setPersonQuery(e.target.value); if (person) setPerson(null); }} placeholder="Buscar pelo nome, telefone ou e-mail" className="h-10 bg-white pr-10" aria-label="Pessoa no CRM" />
+              {person && <button type="button" aria-label="Tirar a pessoa" onClick={() => { setPerson(null); setPersonQuery(""); setTutorPick(""); }} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:text-slate-800"><X className="size-4" /></button>}
+            </span>
+          </label>
+          {people.length > 0 && (
+            <div role="listbox" className="absolute left-0 right-0 z-20 mt-1 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-card shadow-lg">
+              {people.map((l) => (
+                <button key={l.id} type="button" role="option" aria-selected="false" onClick={() => pickPerson(l)} className="block w-full px-3 py-2 text-left text-sm font-normal text-slate-800 hover:bg-muted">
+                  <span className="font-semibold">{l.name}</span>
+                  <span className="block text-xs text-slate-500">{[l.enrolledAt ? "Aluno" : "Lead", l.course && l.course.name, l.polo && l.polo.name].filter(Boolean).join(" · ")}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <span className="mt-1 block font-normal text-slate-500">{person ? (person.enrolledAt ? "A análise entra no registro do aluno e o tutor dele é avisado." : "A análise entra no registro do lead e o consultor dele é avisado.") : "Ligue a análise à pessoa para ela entrar no registro dela."}</span>
+        </div>
+        {needsTutor && (
+          <label className="block text-xs font-semibold text-slate-600">Tutor do aluno (opcional)
+            <span className="mt-1.5 block"><Select value={tutorPick} onChange={(e) => setTutorPick(e.target.value)} disabled={!tutors}>
+              <option value="">{tutors ? "Deixar sem tutor por enquanto" : "Carregando os tutores..."}</option>
+              <option value="auto">Escolher pelo rodízio da tutoria</option>
+              {(tutors || []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </Select></span>
+            <span className="mt-1 block font-normal text-slate-500">Este aluno ainda não tem tutor. O escolhido recebe o aviso e passa a acompanhar o aluno.</span>
+          </label>
+        )}
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block text-xs font-semibold text-slate-600">Nome do aluno

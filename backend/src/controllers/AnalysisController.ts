@@ -37,6 +37,8 @@ import {
 import { buildCommercialMessage, buildCommercialProposal, type CommercialProposalInput } from "../analysis/domain/commercial/proposal";
 import { analysisDocumentPath, removeAnalysisDocument } from "../analysis/Documents";
 import { ticketFromTarget } from "../helpers/ChatTarget";
+import Lead from "../models/Lead";
+import { assignTutor, recordAnalysis } from "../services/TutoriaServices/AnalysisRecord";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
@@ -116,10 +118,14 @@ export const rulesSave = async (req: Request, res: Response): Promise<Response> 
 
 // ------------------------------------------------------------------ curricular analysis
 
-const loadCurricular = async (req: Request): Promise<CurricularAnalysis> => {
+// who made it and the management change it; the tutor (or the consultant who owns the lead) of the person it is about may read it
+const loadCurricular = async (req: Request, readOnly = false): Promise<CurricularAnalysis> => {
   const row = await CurricularAnalysis.findByPk(req.params.id);
   if (!row) throw new AppError("Análise não encontrada.", 404);
-  if (!isManager(req) && row.userId !== me(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+  if (!isManager(req) && row.userId !== me(req)) {
+    const lead = readOnly && row.leadId ? await Lead.findByPk(row.leadId, { attributes: ["onboardingTutorId", "ownerId"] }) : null;
+    if (!lead || (lead.onboardingTutorId !== me(req) && lead.ownerId !== me(req))) throw new AppError("ERR_NO_PERMISSION", 403);
+  }
   return row;
 };
 
@@ -168,10 +174,14 @@ export const curricularStore = async (req: Request, res: Response): Promise<Resp
     contactId: num(b.contactId),
     candidateName: candidate
   });
+  if (row.leadId) {
+    if (isManager(req) && b.tutorId !== undefined && b.tutorId !== "") await assignTutor(me(req), { leadId: row.leadId, tutorId: b.tutorId === "auto" ? "auto" : Number(b.tutorId) || null });
+    await recordAnalysis({ kind: "curricular", id: row.id, actorId: me(req), leadId: row.leadId, who: candidate, course: row.courseName || null });
+  }
   return res.status(201).json(await viewOf(row));
 };
 
-export const curricularShow = async (req: Request, res: Response): Promise<Response> => res.json(await viewOf(await loadCurricular(req)));
+export const curricularShow = async (req: Request, res: Response): Promise<Response> => res.json(await viewOf(await loadCurricular(req, true)));
 
 export const curricularUpdate = async (req: Request, res: Response): Promise<Response> => {
   const row = await loadCurricular(req);
@@ -272,7 +282,7 @@ export const curricularSendProposal = async (req: Request, res: Response): Promi
   return res.json({ ok: true, ticketId });
 };
 
-export const curricularFile = async (req: Request, res: Response): Promise<void> => sendDocument(await loadCurricular(req), res);
+export const curricularFile = async (req: Request, res: Response): Promise<void> => sendDocument(await loadCurricular(req, true), res);
 
 export const academicFile = async (req: Request, res: Response): Promise<void> => sendDocument(await loadAcademic(req), res);
 
@@ -298,7 +308,8 @@ const loadAcademic = async (req: Request): Promise<AcademicAnalysis> => {
   if (!row) throw new AppError("Análise não encontrada.", 404);
   if (!isManager(req) && row.userId !== me(req)) {
     const student = row.studentId ? await Student.findByPk(row.studentId, { attributes: ["responsibleUserId"] }) : null;
-    if (!student || student.responsibleUserId !== me(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+    const lead = !student && row.leadId ? await Lead.findByPk(row.leadId, { attributes: ["onboardingTutorId"] }) : null;
+    if ((!student || student.responsibleUserId !== me(req)) && (!lead || lead.onboardingTutorId !== me(req))) throw new AppError("ERR_NO_PERMISSION", 403);
   }
   return row;
 };
@@ -326,7 +337,11 @@ export const academicStore = async (req: Request, res: Response): Promise<Respon
     if (!student) throw new AppError("Aluno não encontrado.", 404);
     if (!isManager(req) && student.responsibleUserId !== me(req)) throw new AppError("ERR_NO_PERMISSION", 403);
   }
-  const { analysis, reused } = await createAcademic(me(req), bytes, name, { student, origin: "STAFF_UPLOAD", leadId: num(b.leadId), contactId: num(b.contactId) });
+  const { analysis, reused } = await createAcademic(me(req), bytes, name, { student, origin: "STAFF_UPLOAD", leadId: num(b.leadId) || student?.leadId || undefined, contactId: num(b.contactId) });
+  if (!reused) {
+    if (isManager(req) && (student || num(b.leadId)) && b.tutorId !== undefined && b.tutorId !== "") await assignTutor(me(req), { leadId: num(b.leadId) || student?.leadId || null, studentId: student?.id || null, tutorId: b.tutorId === "auto" ? "auto" : Number(b.tutorId) || null });
+    await recordAnalysis({ kind: "academic", id: analysis.id, actorId: me(req), leadId: analysis.leadId || null, studentId: analysis.studentId || null, who: analysis.studentName || student?.name || null, course: analysis.courseName || null });
+  }
   return res.status(reused ? 200 : 201).json({ ...academicView(analysis), reused });
 };
 
@@ -467,3 +482,21 @@ export const studentUpload = async (req: Request, res: Response): Promise<Respon
 
 export const portalUrl = (_req: Request, res: Response): Response => res.json({ url: `${frontBase()}/portal/login`, backend: getPublicUrl() });
 void normalizeRgm;
+
+// the analyses of one person (the lead, and the portal student made from it), newest first: the record of the student shows them
+export const leadAnalyses = async (req: Request, res: Response): Promise<Response> => {
+  const leadId = Number(req.params.id) || 0;
+  const students = await Student.findAll({ where: { leadId } as any, attributes: ["id"] });
+  const academic = await AcademicAnalysis.findAll({
+    where: { isCurrent: true, [Op.or]: [{ leadId }, ...(students.length ? [{ studentId: { [Op.in]: students.map(x => x.id) } }] : [])] } as any,
+    attributes: ["id", "courseName", "status", "version", "createdAt", "userId"], order: [["createdAt", "DESC"]], limit: 20
+  });
+  const curricular = await CurricularAnalysis.findAll({ where: { leadId } as any, attributes: ["id", "courseName", "status", "createdAt", "userId"], order: [["createdAt", "DESC"]], limit: 20 });
+  const ids = [...new Set([...academic, ...curricular].map(a => a.userId).filter(Boolean))] as number[];
+  const users = ids.length ? await User.findAll({ where: { id: ids } as any, attributes: ["id", "name"] }) : [];
+  const by = (id: number | null) => users.find(u => u.id === id)?.name || null;
+  return res.json([
+    ...academic.map(a => ({ kind: "academic", id: a.id, title: "Análise acadêmica", course: a.courseName || null, status: a.status || null, version: a.version || null, createdAt: a.createdAt, by: by(a.userId) })),
+    ...curricular.map(c => ({ kind: "curricular", id: c.id, title: "Análise curricular", course: c.courseName || null, status: c.status || null, version: null, createdAt: c.createdAt, by: by(c.userId) }))
+  ].sort((x, y) => +new Date(y.createdAt) - +new Date(x.createdAt)));
+};

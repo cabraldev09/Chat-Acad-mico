@@ -1,4 +1,5 @@
 import * as Tutoria from "../controllers/TutoriaController";
+import * as AnalysisCtl from "../controllers/AnalysisController";
 import * as SendReleases from "../controllers/SendReleaseController";
 import * as Notifications from "../controllers/NotificationController";
 import * as MetaCosts from "../controllers/MetaCostsController";
@@ -421,6 +422,8 @@ r.delete("/leads/:id", isAuth, canAccessLead, isAdmin, Lead.remove);
 r.put("/leads/:id/stage", isAuth, canAccessLead, Lead.setStage);
 r.post("/leads/:id/relation", isAuth, canAccessLead, Lead.classify);
 r.get("/leads/:id/activities", isAuth, canAccessLead, Lead.activities);
+// the academic and curricular analyses of the person, for their record
+r.get("/leads/:id/analyses", isAuth, canAccessLead, AnalysisCtl.leadAnalyses);
 r.post("/leads/:id/activities", isAuth, canAccessLead, Lead.addNote);
 r.get("/leads/:id/tasks", isAuth, canAccessLead, Lead.leadTasks);
 r.post("/leads/:id/tasks", isAuth, canAccessLead, Lead.addTask);
