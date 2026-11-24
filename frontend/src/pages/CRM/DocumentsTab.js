@@ -4,6 +4,7 @@ import { Button, LinearProgress, Typography, makeStyles, CircularProgress } from
 import { CheckCircle2, Circle, MinusCircle, Send } from "lucide-react";
 
 import api from "../../services/api";
+import EnrollmentFormCard from "./EnrollmentFormCard";
 import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles((theme) => ({
@@ -46,6 +47,7 @@ const DocumentsTab = ({ lead, onChanged }) => {
 
   return (
     <div>
+      <EnrollmentFormCard lead={lead} onChanged={() => { load(); onChanged && onChanged(); }} />
       <Typography style={{ fontWeight: 600 }}>
         {s.total === 0 ? "Nenhum documento cadastrado" : s.complete ? "Documentos completos" : `${delivered} de ${s.total} documentos`}
       </Typography>

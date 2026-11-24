@@ -10,7 +10,7 @@ import Switch from "@material-ui/core/Switch";
 import FormControlLabel from "@material-ui/core/FormControlLabel";
 import { Autocomplete } from "@material-ui/lab";
 import { makeStyles } from "@material-ui/core/styles";
-import { AlignLeft, Camera, Folder, Image as ImageIcon, Plus, Trash2, UserCircle2, Zap } from "lucide-react";
+import { AlignLeft, Camera, ClipboardCopy, Folder, Image as ImageIcon, Plus, Trash2, UserCircle2, Zap } from "lucide-react";
 import { toast } from "react-toastify";
 
 import api from "../../services/api";
@@ -28,7 +28,8 @@ const useStyles = makeStyles((theme) => {
       borderRadius: 26,
       marginTop: -14,
       padding: "22px 18px 14px",
-      background: dark ? "#233138" : "#ffffff",
+      background: dark ? "#1f2c33" : "#ffffff",
+      border: dark ? "1px solid rgba(255,255,255,.08)" : "1px solid rgba(11,20,26,.06)",
       boxShadow: dark ? "0 10px 40px rgba(0,0,0,.55)" : "0 12px 40px rgba(11,20,26,.22), 0 1px 3px rgba(11,20,26,.1)",
       animation: "attachIn .18s cubic-bezier(.22,1,.36,1)",
       // the little tail pointing at the "+" button
@@ -40,16 +41,15 @@ const useStyles = makeStyles((theme) => {
     grid: { display: "grid", gridTemplateColumns: "repeat(4, 96px)", gap: "18px 8px", [theme.breakpoints.down("xs")]: { gridTemplateColumns: "repeat(3, 88px)" } },
     item: {
       display: "flex", flexDirection: "column", alignItems: "center", gap: 8, border: 0, background: "transparent", cursor: "pointer", color: c.text,
-      fontFamily: "inherit", fontSize: 13.5, textAlign: "center", padding: 0, lineHeight: 1.2,
+      fontFamily: "inherit", fontSize: 13.5, fontWeight: 500, textAlign: "center", padding: 0, lineHeight: 1.25,
       "&:hover $circle": { transform: "scale(1.07)", boxShadow: dark ? "0 4px 14px rgba(0,0,0,.5)" : "0 6px 16px rgba(11,20,26,.16)" },
       "&:active $circle": { transform: "scale(.96)" },
     },
     circle: {
-      width: 74, height: 74, borderRadius: "50%", display: "grid", placeItems: "center",
-      background: dark ? "#2a3942" : "#ffffff", border: dark ? "0" : "1px solid rgba(11,20,26,.07)",
-      boxShadow: dark ? "0 1px 6px rgba(0,0,0,.4)" : "0 2px 8px rgba(11,20,26,.10)", transition: "transform .15s, box-shadow .15s",
+      width: 60, height: 60, borderRadius: "50%", display: "grid", placeItems: "center", border: 0,
+      boxShadow: dark ? "0 2px 10px rgba(0,0,0,.45)" : "0 3px 10px rgba(11,20,26,.18)", transition: "transform .15s, box-shadow .15s",
     },
-    sign: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 14, paddingTop: 8, borderTop: `1px solid ${c.divider}`, fontSize: 13.5, color: c.textSecondary },
+    sign: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 14, paddingTop: 8, borderTop: `1px solid ${c.divider}`, fontSize: 13.5, fontWeight: 500, color: c.text },
     "@global": { "@keyframes attachIn": { from: { opacity: 0, transform: "translateY(8px) scale(.97)" }, to: { opacity: 1, transform: "none" } } },
   };
 });
@@ -107,19 +107,30 @@ const PollDialog = ({ open, ticketId, onClose }) => {
   );
 };
 
-const AttachMenu = ({ anchorEl, onClose, inputs, onQuick, signMessage, setSignMessage, ticketId, channel = "whatsapp" }) => {
+const AttachMenu = ({ anchorEl, onClose, inputs, onQuick, signMessage, setSignMessage, ticketId, channel = "whatsapp", isGroup = false }) => {
   const classes = useStyles();
   const [dialog, setDialog] = useState(null);
   const touch = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   const whatsapp = channel === "whatsapp";
+  // the personal link of the enrollment form goes in this conversation (the lead fills it in on the phone)
+  const sendEnrollmentForm = async () => {
+    try {
+      const { data } = await api.post(`/tickets/${ticketId}/enrollment-form`);
+      toast.success(data.progress > 0 ? `Link da ficha enviado. Ela está ${data.progress}% preenchida.` : "Link da ficha de matrícula enviado.");
+    } catch (err) {
+      toastError(err);
+    }
+  };
 
+  // each action has its own solid color with a white icon: readable in the light and in the dark theme
   const items = [
-    { label: "Arquivo", icon: <Folder size={32} color="#4d9ae0" fill="#4d9ae0" fillOpacity={0.25} />, run: () => inputs.doc.current && inputs.doc.current.click() },
-    { label: "Fotos e vídeos", icon: <ImageIcon size={32} color="#2f7cf6" fill="#2f7cf6" fillOpacity={0.2} />, run: () => inputs.media.current && inputs.media.current.click() },
-    ...(touch ? [{ label: "Câmera", icon: <Camera size={32} color="#ef4467" />, run: () => inputs.camera.current && inputs.camera.current.click() }] : []),
-    ...(whatsapp ? [{ label: "Contato", icon: <UserCircle2 size={34} color="#dc7a45" />, run: () => setDialog("contact") }] : []),
-    ...(whatsapp ? [{ label: "Enquete", icon: <AlignLeft size={34} color="#f2b440" strokeWidth={2.6} />, run: () => setDialog("poll") }] : []),
-    { label: "Respostas rápidas", icon: <Zap size={32} color="#00a884" fill="#00a884" fillOpacity={0.2} />, run: onQuick },
+    { label: "Arquivo", tone: "#6d5dfc", icon: <Folder size={26} color="#fff" />, run: () => inputs.doc.current && inputs.doc.current.click() },
+    { label: "Fotos e vídeos", tone: "#1f6fe5", icon: <ImageIcon size={26} color="#fff" />, run: () => inputs.media.current && inputs.media.current.click() },
+    ...(touch ? [{ label: "Câmera", tone: "#d92d5a", icon: <Camera size={26} color="#fff" />, run: () => inputs.camera.current && inputs.camera.current.click() }] : []),
+    ...(whatsapp ? [{ label: "Contato", tone: "#c8571e", icon: <UserCircle2 size={26} color="#fff" />, run: () => setDialog("contact") }] : []),
+    ...(whatsapp ? [{ label: "Enquete", tone: "#a86b00", icon: <AlignLeft size={26} color="#fff" strokeWidth={2.6} />, run: () => setDialog("poll") }] : []),
+    { label: "Respostas rápidas", tone: "#00806a", icon: <Zap size={26} color="#fff" />, run: onQuick },
+    ...(ticketId && !isGroup ? [{ label: "Ficha de matrícula", tone: "#0b4279", icon: <ClipboardCopy size={26} color="#fff" />, run: sendEnrollmentForm }] : []),
   ];
 
   return (
@@ -135,7 +146,7 @@ const AttachMenu = ({ anchorEl, onClose, inputs, onQuick, signMessage, setSignMe
         <div className={classes.grid}>
           {items.map((it) => (
             <button key={it.label} type="button" className={classes.item} onClick={() => { onClose(); it.run(); }}>
-              <span className={classes.circle}>{it.icon}</span>
+              <span className={classes.circle} style={{ background: it.tone }}>{it.icon}</span>
               {it.label}
             </button>
           ))}

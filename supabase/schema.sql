@@ -1743,6 +1743,48 @@ ALTER SEQUENCE public."CurricularAnalyses_id_seq" OWNED BY public."CurricularAna
 
 
 --
+-- Name: EnrollmentForms; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."EnrollmentForms" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    token character varying(64) NOT NULL,
+    data text,
+    files text,
+    progress integer DEFAULT 0 NOT NULL,
+    "consentAt" timestamp with time zone,
+    "submittedAt" timestamp with time zone,
+    "lastSavedAt" timestamp with time zone,
+    "sentAt" timestamp with time zone,
+    "expiresAt" timestamp with time zone,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: EnrollmentForms_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."EnrollmentForms_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: EnrollmentForms_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."EnrollmentForms_id_seq" OWNED BY public."EnrollmentForms".id;
+
+
+--
 -- Name: EnrollmentProofs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3542,7 +3584,9 @@ CREATE TABLE public."Tickets" (
     "slaEscalatedMessageId" character varying(255),
     "lastUserId" integer,
     "aiReturnUserId" integer,
-    "institutionId" integer
+    "institutionId" integer,
+    "replyDismissedMessageId" character varying(255),
+    "tutoringAuditedMessageId" character varying(255)
 );
 
 
@@ -3564,6 +3608,54 @@ CREATE SEQUENCE public."Tickets_id_seq"
 --
 
 ALTER SEQUENCE public."Tickets_id_seq" OWNED BY public."Tickets".id;
+
+
+--
+-- Name: TutoringIssues; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."TutoringIssues" (
+    id integer NOT NULL,
+    "ticketId" integer,
+    "leadId" integer,
+    "tutorId" integer,
+    "institutionId" integer,
+    kind character varying(20) DEFAULT 'outro'::character varying NOT NULL,
+    summary character varying(300) NOT NULL,
+    idea character varying(300),
+    "protocolNumber" character varying(60),
+    "protocolName" character varying(160),
+    status character varying(20) DEFAULT 'aberta'::character varying NOT NULL,
+    source character varying(10) DEFAULT 'ia'::character varying NOT NULL,
+    "detectedAt" timestamp with time zone NOT NULL,
+    "resolvedAt" timestamp with time zone,
+    "resolvedBy" integer,
+    "lastMessageId" character varying(255),
+    model character varying(60),
+    tokens integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: TutoringIssues_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."TutoringIssues_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: TutoringIssues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."TutoringIssues_id_seq" OWNED BY public."TutoringIssues".id;
 
 
 --
@@ -4085,6 +4177,13 @@ ALTER TABLE ONLY public."CurricularAnalyses" ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: EnrollmentForms id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EnrollmentForms" ALTER COLUMN id SET DEFAULT nextval('public."EnrollmentForms_id_seq"'::regclass);
+
+
+--
 -- Name: EnrollmentProofs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4369,6 +4468,13 @@ ALTER TABLE ONLY public."TicketEvents" ALTER COLUMN id SET DEFAULT nextval('publ
 --
 
 ALTER TABLE ONLY public."Tickets" ALTER COLUMN id SET DEFAULT nextval('public."Tickets_id_seq"'::regclass);
+
+
+--
+-- Name: TutoringIssues id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."TutoringIssues" ALTER COLUMN id SET DEFAULT nextval('public."TutoringIssues_id_seq"'::regclass);
 
 
 --
@@ -4796,6 +4902,22 @@ ALTER TABLE ONLY public."Courses"
 
 ALTER TABLE ONLY public."CurricularAnalyses"
     ADD CONSTRAINT "CurricularAnalyses_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: EnrollmentForms EnrollmentForms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EnrollmentForms"
+    ADD CONSTRAINT "EnrollmentForms_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: EnrollmentForms EnrollmentForms_token_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EnrollmentForms"
+    ADD CONSTRAINT "EnrollmentForms_token_key" UNIQUE (token);
 
 
 --
@@ -5268,6 +5390,14 @@ ALTER TABLE ONLY public."TicketTags"
 
 ALTER TABLE ONLY public."Tickets"
     ADD CONSTRAINT "Tickets_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: TutoringIssues TutoringIssues_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."TutoringIssues"
+    ADD CONSTRAINT "TutoringIssues_pkey" PRIMARY KEY (id);
 
 
 --
@@ -5767,6 +5897,13 @@ CREATE INDEX curricular_analyses_user_id_created_at ON public."CurricularAnalyse
 --
 
 CREATE INDEX curricular_followup_due_idx ON public."CurricularAnalyses" USING btree ("followUpDueAt") WHERE ("followUpDueAt" IS NOT NULL);
+
+
+--
+-- Name: enrollment_forms_lead; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX enrollment_forms_lead ON public."EnrollmentForms" USING btree ("leadId");
 
 
 --
@@ -6393,6 +6530,20 @@ CREATE INDEX tickets_whatsapp_contact_idx ON public."Tickets" USING btree ("what
 
 
 --
+-- Name: tutoring_issues_ticket; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tutoring_issues_ticket ON public."TutoringIssues" USING btree ("ticketId");
+
+
+--
+-- Name: tutoring_issues_tutor_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tutoring_issues_tutor_status ON public."TutoringIssues" USING btree ("tutorId", status);
+
+
+--
 -- Name: webhook_deliveries_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6802,6 +6953,14 @@ ALTER TABLE ONLY public."CourseRegulations"
 
 ALTER TABLE ONLY public."Courses"
     ADD CONSTRAINT "Courses_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: EnrollmentForms EnrollmentForms_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EnrollmentForms"
+    ADD CONSTRAINT "EnrollmentForms_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -7405,6 +7564,30 @@ ALTER TABLE ONLY public."Tickets"
 
 
 --
+-- Name: TutoringIssues TutoringIssues_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."TutoringIssues"
+    ADD CONSTRAINT "TutoringIssues_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: TutoringIssues TutoringIssues_ticketId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."TutoringIssues"
+    ADD CONSTRAINT "TutoringIssues_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: TutoringIssues TutoringIssues_tutorId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."TutoringIssues"
+    ADD CONSTRAINT "TutoringIssues_tutorId_fkey" FOREIGN KEY ("tutorId") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: Users Users_whatsappId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7871,10 +8054,12 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000008-tasks-and-notificatio
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000009-institutions.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000010-message-transcript.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-legacy-institution.js') ON CONFLICT DO NOTHING;
-INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-messages-created-at.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000002-messages-created-at.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261224000001-lead-polo-source.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261225000001-outbound-category.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261226000001-enrollment-forms.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000001-ticket-reply-dismissed.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000002-tutoring-issues.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

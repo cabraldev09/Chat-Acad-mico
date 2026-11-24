@@ -447,7 +447,7 @@ const OnboardingBoard = ({ embedded = false }) => {
           {mine && (
             <>
               <Typography variant="body2" color="textSecondary" gutterBottom>
-                O texto que aparece pronto na conversa do aluno recém-matriculado. Ele nunca sai sozinho: você confere e envia. Variáveis: {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"} e {"{{polo}}"}. Em branco, vale o texto da empresa.
+                O texto que aparece pronto na conversa do aluno recém-matriculado. Ele nunca sai sozinho: você confere e envia. Variáveis, preenchidas com os dados da matrícula: {"{{saudacao}}"}, {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"}, {"{{polo}}"}, {"{{curso}}"} e {"{{instituicao}}"}. O trecho entre [[ e ]] só aparece quando as variáveis dentro dele têm valor. Em branco, vale o texto da empresa.
               </Typography>
               <TextField fullWidth multiline minRows={5} variant="outlined" value={mine.text} placeholder={mine.company} onChange={(e) => setMine({ ...mine, text: e.target.value.slice(0, 1500) })} inputProps={{ "aria-label": "Meu texto de boas-vindas" }} />
               {!mine.text.trim() && mine.company && <Button size="small" style={{ marginTop: 8 }} onClick={() => setMine({ ...mine, text: mine.company })}>Começar do texto da empresa</Button>}

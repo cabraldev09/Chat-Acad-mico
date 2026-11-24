@@ -9,9 +9,9 @@ import openSocket from "../../services/socket-io";
 // The bell's "Avisos": what the system told this person (a task given to them, a lead the AI handed over, a proposal opened, a fee paid, a
 // number down...). They stay until read, so nothing is lost while the person is away from the screen. The server sends only the person's own.
 const LEVEL = {
-  urgent: { color: "#b91c1c", Icon: AlertTriangle },
-  warning: { color: "#b45309", Icon: BellRing },
-  info: { color: "var(--accent, #0B4279)", Icon: Info },
+  urgent: { color: "#dc2626", Icon: AlertTriangle },
+  warning: { color: "#d97706", Icon: BellRing },
+  info: { color: "#0b6bcb", Icon: Info },
 };
 // the kinds that already have their own pop-up elsewhere (no second pop-up for the same thing)
 const HAS_TOAST = new Set(["task_assigned", "ai_handoff", "budget", "onboarding_late"]);
@@ -66,7 +66,6 @@ export const useNotices = () => {
   return { ...state, reload: load, markRead, markAll };
 };
 
-const row = { display: "flex", gap: 10, alignItems: "flex-start", width: "100%", border: 0, borderBottom: "1px solid var(--line, #e5e7eb)", background: "transparent", padding: "10px 14px", textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit" };
 
 export const NoticeList = ({ notices, onNavigate }) => {
   const history = useHistory();
@@ -80,30 +79,36 @@ export const NoticeList = ({ notices, onNavigate }) => {
     );
   }
   if (!list.length) return <div style={{ padding: 16, fontSize: 13, color: "var(--text-2, #64748b)" }}>Nenhum aviso por enquanto. Tarefas novas, leads encaminhados, propostas abertas e alertas da equipe aparecem aqui.</div>;
+  // the cards of the Notification Center of the Mac: icon in a rounded square, title in bold with the time on the right, the text under it
   return (
     <div>
-      {unread > 0 && (
-        <div style={{ display: "flex", justifyContent: "flex-end", padding: "6px 14px", borderBottom: "1px solid var(--line, #e5e7eb)" }}>
-          <button type="button" onClick={markAll} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: 0, background: "none", color: "var(--accent, #0B4279)", font: "inherit", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-            <CheckCheck size={14} /> Marcar todos como lidos
+      <div className="mac-notes-head">
+        <b>Avisos</b>
+        {unread > 0 && (
+          <button type="button" className="mac-notes-clear" onClick={markAll}>
+            <CheckCheck size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Marcar todos como lidos
           </button>
-        </div>
-      )}
-      {list.map((n) => {
-        const { color, Icon } = LEVEL[n.level] || LEVEL.info;
-        return (
-          <button key={n.id} type="button" style={{ ...row, background: n.readAt ? "transparent" : "var(--surface-2, #f8fafc)" }}
-            onClick={() => { markRead(n); if (n.link) { history.push(n.link); if (onNavigate) onNavigate(); } }}>
-            <Icon size={16} style={{ color, flex: "none", marginTop: 2 }} />
-            <span style={{ minWidth: 0, flex: 1 }}>
-              <span style={{ display: "block", fontSize: 13, fontWeight: n.readAt ? 500 : 700, overflowWrap: "anywhere" }}>{n.title}</span>
-              {n.body && <span style={{ display: "block", fontSize: 12.5, color: "var(--text-2, #64748b)", overflowWrap: "anywhere" }}>{n.body}</span>}
-              <span style={{ display: "block", fontSize: 11.5, color: "var(--text-3, #94a3b8)", marginTop: 2 }}>{when(n.createdAt)}</span>
-            </span>
-            {!n.readAt && <span aria-label="Não lido" style={{ width: 8, height: 8, borderRadius: 99, background: color, flex: "none", marginTop: 6 }} />}
-          </button>
-        );
-      })}
+        )}
+      </div>
+      <div className="mac-notes">
+        {list.map((n) => {
+          const { color, Icon } = LEVEL[n.level] || LEVEL.info;
+          return (
+            <button key={n.id} type="button" className={`mac-note${n.readAt ? " is-read" : ""}`}
+              onClick={() => { markRead(n); if (n.link) { history.push(n.link); if (onNavigate) onNavigate(); } }}>
+              <span className="mac-note-icon" style={{ background: `linear-gradient(160deg, ${color}, ${color}cc)` }} aria-hidden="true"><Icon size={16} /></span>
+              <span className="mac-note-text">
+                <span className="mac-note-head">
+                  <span className="mac-note-title">{n.title}</span>
+                  <span className="mac-note-time">{when(n.createdAt)}</span>
+                  {!n.readAt && <span aria-label="Não lido" style={{ width: 8, height: 8, borderRadius: 99, background: color, flex: "none", alignSelf: "center" }} />}
+                </span>
+                {n.body && <span className="mac-note-body">{n.body}</span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 };

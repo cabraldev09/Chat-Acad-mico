@@ -87,6 +87,19 @@ export const openSecret = (stored: string): string => {
   }
 };
 
+// A file the system keeps for the team only (a picture of an ID): the same seal, in bytes (12 bytes of iv, 16 of tag, then the data)
+export const sealBytes = (plain: Buffer): Buffer => {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", sealKey(), iv);
+  const data = Buffer.concat([cipher.update(plain), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), data]);
+};
+export const openBytes = (sealed: Buffer): Buffer => {
+  const decipher = crypto.createDecipheriv("aes-256-gcm", sealKey(), sealed.subarray(0, 12));
+  decipher.setAuthTag(sealed.subarray(12, 28));
+  return Buffer.concat([decipher.update(sealed.subarray(28)), decipher.final()]);
+};
+
 // A token or secret pasted from a panel often carries spaces, line breaks, quotes or a "Bearer " in front; none of them is ever part of the
 // credential, and the provider refuses it ("Cannot parse access token"). A masked or already sealed value is left alone.
 // 32 letters and digits (hex) is the shape of the App Secret of a Meta app. A Meta access token starts with "EAA" and has more than 100 characters,

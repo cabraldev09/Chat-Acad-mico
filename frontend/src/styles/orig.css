@@ -12,6 +12,7 @@
 @source "../pages/CurricularAnalysis";
 @source "../pages/Grades";
 @source "../pages/Students";
+@source "../pages/CourseMaterials";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -241,6 +242,32 @@
   --color-cyan-100: #1a3347;
   --color-cyan-200: #23435c;
   --color-cyan-800: #9fd3f5;
+  /* sky, blue, rose and emerald follow the same rule: the soft backgrounds become tinted dark, the strong text becomes light */
+  --color-sky-50: #13283a;
+  --color-sky-100: #1a3347;
+  --color-sky-200: #23435c;
+  --color-sky-300: #2f5878;
+  --color-sky-700: #8cc8f0;
+  --color-sky-800: #a9d6f4;
+  --color-sky-900: #c4e3f8;
+  --color-blue-50: #15233a;
+  --color-blue-100: #1b2d4a;
+  --color-blue-200: #253c60;
+  --color-blue-700: #93bdf5;
+  --color-blue-800: #aecdf7;
+  --color-blue-900: #c7ddfa;
+  --color-rose-50: rgba(242, 134, 122, 0.12);
+  --color-rose-100: rgba(242, 134, 122, 0.18);
+  --color-rose-200: rgba(242, 134, 122, 0.3);
+  --color-rose-700: #f5a59c;
+  --color-rose-800: #f7b8b0;
+  --color-rose-900: #f9cbc5;
+  --color-emerald-50: rgba(62, 207, 142, 0.12);
+  --color-emerald-100: rgba(62, 207, 142, 0.18);
+  --color-emerald-200: rgba(62, 207, 142, 0.3);
+  --color-emerald-700: #7fe0b5;
+  --color-emerald-800: #9fe8c7;
+  --color-emerald-900: #bff0d9;
   color-scheme: dark;
 }
 @layer base {
@@ -249,6 +276,15 @@
   :root[data-theme="dark"] .orig .from-white { --tw-gradient-from: var(--card) !important; }
   :root[data-theme="dark"] .orig .via-white { --tw-gradient-via: var(--card) !important; }
   :root[data-theme="dark"] .orig .to-white { --tw-gradient-to: var(--card) !important; }
+  /* the translucent whites (bg-white/75...) and the variants (hover:, sm:) are not the plain class: they turn dark too */
+  :root[data-theme="dark"] .orig :is(.bg-white\/60, .bg-white\/70, .bg-white\/75, .bg-white\/80, .bg-white\/85, .bg-white\/90, .bg-white\/95, [class*=":bg-white "], [class$=":bg-white"]) { background-color: var(--card) !important; }
+  :root[data-theme="dark"] .orig [class*=":from-white"] { --tw-gradient-from: var(--card) !important; }
+  :root[data-theme="dark"] .orig [class*=":to-white"] { --tw-gradient-to: var(--card) !important; }
+  :root[data-theme="dark"] .orig .academic-report-page { border-color: var(--border); background: radial-gradient(ellipse at 8% 0%, rgba(14, 165, 233, 0.08), transparent 34%), var(--background); }
+  :root[data-theme="dark"] .orig .academic-analysis-shell [data-slot="card"]:not([class*="bg-status-"]):not([class*="bg-orange-"]):not([class*="bg-brand-"]),
+  :root[data-theme="dark"] .orig .academic-report-page [data-slot="card"]:not([class*="bg-status-"]):not([class*="bg-orange-"]):not([class*="bg-brand-"]) { border-color: var(--border); background: var(--card); box-shadow: none; }
+  :root[data-theme="dark"] .orig .app-canvas { background: var(--background); }
+  :root[data-theme="dark"] .portal-dashboard > header { background: rgb(17 18 18 / .9); }
   /* the navy gradient titles become light blue */
   :root[data-theme="dark"] .orig .bg-clip-text { background-image: linear-gradient(90deg, #d6ebfb, #6db3ea) !important; }
 }

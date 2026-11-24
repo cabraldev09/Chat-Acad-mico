@@ -79,3 +79,62 @@ export const ensureVerifyToken = async (whatsapp: Whatsapp): Promise<void> => {
   if (getConfig(whatsapp).verifyToken) return;
   await saveConfig(whatsapp, { verifyToken: `chat-${randomBytes(12).toString("hex")}` });
 };
+
+// ---------------------------------------------------------------- an official number that does not go down
+// Two official numbers of the same company on the Meta (Atendimento and Tutoria) can use the same access: the token of a system user,
+// or of the person who manages the WhatsApp account, reaches every number of the account. So a number whose token expired or was revoked
+// is brought back with the token of another official number, when the Meta says that token can read this number. And a number saved
+// without the App ID / App Secret gets the ones of another number of the same app, so its token is renewed before it ends.
+// Nothing here shows or logs a token: only the names of the connections.
+
+const canRead = async (phoneNumberId: string, token: string): Promise<boolean> => {
+  try {
+    const { data } = await axios.get(`${GRAPH}/${phoneNumberId}`, { params: { access_token: token, fields: "display_phone_number" }, timeout: 15000 });
+    return !!data?.display_phone_number;
+  } catch (e) { return false; }
+};
+
+export const borrowSiblingToken = async (whatsapp: Whatsapp): Promise<Whatsapp | null> => {
+  const { phoneNumberId, accessToken } = getConfig(whatsapp);
+  if (!phoneNumberId) return null;
+  const siblings = await Whatsapp.findAll({ where: { channel: "whatsapp_cloud" } as any, order: [["id", "ASC"]] });
+  for (const s of siblings) {
+    if (s.id === whatsapp.id || s.status !== "CONNECTED") continue;
+    const sc = getConfig(s);
+    if (!sc.accessToken || sc.accessToken === accessToken) continue;
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await canRead(String(phoneNumberId), sc.accessToken))) continue;
+    const mine = getConfig(whatsapp);
+    await saveConfig(whatsapp, {
+      accessToken: sc.accessToken,
+      tokenExpiresAt: sc.tokenExpiresAt || null,
+      tokenExtendError: null,
+      tokenFrom: s.id,
+      // the app of the token comes with it, so the renewal works here too
+      ...(!mine.appId || !mine.appSecret ? { appId: sc.appId || mine.appId, appSecret: sc.appSecret || mine.appSecret } : {})
+    });
+    logger.info(`WhatsApp Cloud ${whatsapp.id}: reconectado com o acesso da conexão ${s.id}`);
+    return s;
+  }
+  return null;
+};
+
+// a number without the App ID / App Secret: the ones of another official number whose app issued this token
+export const adoptSiblingApp = async (whatsapp: Whatsapp): Promise<boolean> => {
+  const mine = getConfig(whatsapp);
+  if (!mine.accessToken || (mine.appId && mine.appSecret)) return false;
+  const siblings = await Whatsapp.findAll({ where: { channel: "whatsapp_cloud" } as any, order: [["id", "ASC"]] });
+  for (const s of siblings) {
+    const sc = getConfig(s);
+    if (s.id === whatsapp.id || !sc.appId || !sc.appSecret) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const { data } = await axios.get(`${GRAPH}/debug_token`, { params: { input_token: mine.accessToken, access_token: `${String(sc.appId).trim()}|${sc.appSecret}` }, timeout: 15000 });
+      if (data?.data?.is_valid !== false && String(data?.data?.app_id || "") === String(sc.appId).trim()) {
+        await saveConfig(whatsapp, { appId: sc.appId, appSecret: sc.appSecret });
+        return true;
+      }
+    } catch (e) { /* another app: try the next one */ }
+  }
+  return false;
+};

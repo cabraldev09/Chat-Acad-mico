@@ -80,6 +80,8 @@ import AffiliateAudience from "../models/AffiliateAudience";
 import AffiliateClick from "../models/AffiliateClick";
 import LeadReminderLog from "../models/LeadReminderLog";
 import LeadDocument from "../models/LeadDocument";
+import EnrollmentForm from "../models/EnrollmentForm";
+import TutoringIssue from "../models/TutoringIssue";
 import NpsSurvey from "../models/NpsSurvey";
 import RetentionMessage from "../models/RetentionMessage";
 import AffiliateBonus from "../models/AffiliateBonus";
@@ -186,6 +188,8 @@ const models = [
   AffiliateClick,
   LeadReminderLog,
   LeadDocument,
+  EnrollmentForm,
+  TutoringIssue,
   NpsSurvey,
   RetentionMessage,
   AffiliateBonus

@@ -103,7 +103,7 @@ const UploadForm = ({ onCreated }) => {
         onDragOver={(e) => { e.preventDefault(); if (!sending) setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files.length !== 1) toast.error("Envie apenas 1 documento."); else choose(e.dataTransfer.files[0]); }}
-        className={cn("flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center shadow-inner transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan focus-visible:ring-offset-2 motion-reduce:transition-none sm:min-h-64 sm:p-10", dragging ? "scale-[1.01] border-brand-cyan bg-gradient-to-br from-brand-cyan-50 to-white" : "border-slate-300 bg-gradient-to-br from-white via-slate-50 to-cyan-50/70 hover:border-brand-cyan/70 hover:from-white hover:to-cyan-50")}
+        className={cn("flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center shadow-inner transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan focus-visible:ring-offset-2 motion-reduce:transition-none sm:min-h-64 sm:p-10", dragging ? "scale-[1.01] border-brand-cyan bg-gradient-to-br from-brand-cyan-50 to-white" : "border-slate-300 bg-gradient-to-br from-white via-slate-50 to-cyan-50/70 hover:border-brand-cyan/70 hover:to-cyan-50")}
       >
         <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => { if (e.target.files.length !== 1) toast.error("Envie apenas 1 documento."); else choose(e.target.files[0]); }} />
         <span className="rounded-lg border bg-brand-navy-50 px-3 py-1 text-xs font-bold tracking-[0.16em] text-brand-navy">PDF</span>
@@ -130,7 +130,7 @@ const UploadForm = ({ onCreated }) => {
           <span className="mt-1 block text-xs font-normal text-slate-500">Ligando a um aluno, a análise entra no histórico dele e aparece no Portal do Aluno.</span>
         </label>
       )}
-      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-sky-200 bg-sky-50/80 p-4 text-sm leading-5 text-slate-700">
+      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm leading-5 text-slate-700">
         <input type="checkbox" checked={confirmed} disabled={!file || sending} onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-[#003B71]" style={{ appearance: "auto" }} />
         <span>
           <span className="font-semibold text-slate-900">Confirmação necessária</span>
@@ -173,14 +173,14 @@ const List = () => {
         <UploadForm onCreated={(a) => history.push(`/analise-academica/${a.id}`)} />
       </section>
 
-      <details open className="rounded-2xl border border-slate-300/70 bg-white/75 p-4 shadow-[0_18px_45px_-40px_rgba(15,42,66,0.55)] backdrop-blur-sm sm:p-5">
+      <details open className="rounded-2xl border border-slate-200 bg-card p-4 shadow-[0_18px_45px_-40px_rgba(15,42,66,0.55)] sm:p-5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-2 py-1 [&::-webkit-details-marker]:hidden">
           <span><span className="block text-lg font-semibold tracking-tight text-slate-900">Histórico de análises</span><span className="mt-0.5 block text-sm text-slate-600">Os dados e correções ficam vinculados ao responsável pela análise.</span></span>
           <span className="shrink-0 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700">{filtered.length} {filtered.length === 1 ? "registro" : "registros"}</span>
         </summary>
         <section className="mt-4 border-t border-slate-200/80 pt-4">
-          <form onSubmit={(e) => { e.preventDefault(); setApplied(query); }} className="mb-5 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50/90 via-white to-slate-50 p-3 sm:p-4">
-            <div className="grid gap-3 sm:grid-cols-[minmax(240px,1.6fr)_minmax(175px,.8fr)_minmax(205px,1fr)_auto]">
+          <form onSubmit={(e) => { e.preventDefault(); setApplied(query); }} className="mb-5 rounded-2xl border border-slate-200 bg-muted p-3 sm:p-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,.8fr)_minmax(0,1fr)_auto]">
               <label className="block min-w-0 text-xs font-semibold text-slate-600">Buscar aluno
                 <span className="relative mt-1.5 block"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nome, RGM ou curso" className="h-10 border-slate-200 bg-white pl-9" /></span>
               </label>
@@ -205,7 +205,7 @@ const List = () => {
                 return (
                   <Card key={r.id} className={cn("group relative h-full overflow-hidden rounded-2xl border border-slate-200 border-l-4 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-t-sky-200 hover:shadow-lg", accent)}>
                     <CardContent className="flex h-full flex-col p-4 sm:p-5">
-                      <button type="button" onClick={() => history.push(`/analise-academica/${r.id}`)} className="group/link min-w-0 flex-1 rounded-lg text-left focus:outline-none focus:ring-2 focus:ring-ring">
+                      <button type="button" onClick={() => history.push(`/analise-academica/${r.id}`)} className="group/link min-w-0 flex-1 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         <div className="truncate font-semibold text-slate-900 group-hover/link:text-brand-navy">{r.studentName || "Aluno sem nome"}</div>
                         <div className="mt-1 truncate text-sm text-slate-600">{r.courseName || "Curso não identificado"}{r.rgm ? ` · RGM ${r.rgm}` : ""}</div>
                         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -221,7 +221,7 @@ const List = () => {
               })}
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-8 text-center">
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-muted p-8 text-center">
               <p className="font-medium text-slate-800">{hasFilters ? "Nenhum aluno encontrado com esses filtros." : "Nenhuma análise acadêmica registrada ainda."}</p>
               {hasFilters && <p className="mt-1 text-sm text-slate-500">Experimente buscar pelo nome completo, RGM ou limpar os filtros.</p>}
             </div>
@@ -362,11 +362,11 @@ const Detail = ({ id }) => {
             <h1 className="mt-1 break-words text-2xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-3xl">{a.studentName || "Análise do extrato"}</h1>
             <p className="mt-2 break-words text-sm font-medium text-slate-600 sm:text-base">{a.courseName || "Curso não identificado"}</p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
-              {a.rgm && <span className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-1">RGM {a.rgm}</span>}
-              {a.originalName && <span className="max-w-full truncate rounded-md border border-slate-200 bg-white/80 px-2.5 py-1" title={a.originalName}>{a.originalName}</span>}
-              {a.hasDocument ? <button type="button" onClick={openDocument} className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-1 font-semibold text-brand-navy underline">Abrir o documento (PDF) para conferir</button> : <span className="rounded-md border border-dashed border-slate-300 px-2.5 py-1">Documento não guardado (análise antiga)</span>}
-              <span className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-1">Análise de {formatDate(a.createdAt)}</span>
-              {a.studentId && <span className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-1">Portal · versão {a.version}{a.isCurrent ? " (atual)" : ""}</span>}
+              {a.rgm && <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1">RGM {a.rgm}</span>}
+              {a.originalName && <span className="max-w-full truncate rounded-md border border-slate-200 bg-white px-2.5 py-1" title={a.originalName}>{a.originalName}</span>}
+              {a.hasDocument ? <button type="button" onClick={openDocument} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 font-semibold text-brand-navy underline">Abrir o documento (PDF) para conferir</button> : <span className="rounded-md border border-dashed border-slate-300 px-2.5 py-1">Documento não guardado (análise antiga)</span>}
+              <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1">Análise de {formatDate(a.createdAt)}</span>
+              {a.studentId && <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1">Portal · versão {a.version}{a.isCurrent ? " (atual)" : ""}</span>}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -509,8 +509,8 @@ const Detail = ({ id }) => {
         </Card>
 
         <div className="shine-border w-full rounded-2xl">
-          <section className="relative overflow-hidden rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 shadow-[0_18px_44px_-38px_rgba(15,42,66,0.65)]" aria-labelledby="student-message-title">
-            <div className="flex flex-col gap-4 border-b border-sky-100 bg-sky-100/55 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <section className="relative overflow-hidden rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-cyan-50 shadow-[0_18px_44px_-38px_rgba(15,42,66,0.65)]" aria-labelledby="student-message-title">
+            <div className="flex flex-col gap-4 border-b border-cyan-100 bg-cyan-50 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.13em] text-brand-cyan-700">Comunicação · acompanha o extrato escolar</p>
                 <h2 id="student-message-title" className="mt-1 text-lg font-semibold text-slate-900">Resumo da análise para o aluno</h2>
@@ -524,7 +524,7 @@ const Detail = ({ id }) => {
             </div>
             <div className="p-4 sm:p-5">
               {editingMessage ? (
-                <div className="rounded-xl border border-sky-100 bg-white p-4 shadow-sm sm:p-5"><textarea value={message} onChange={(e) => setMessageOverride(e.target.value)} rows={8} className="min-h-40 w-full resize-y border-0 bg-transparent p-0 leading-6 outline-none" aria-label="Editar mensagem para o aluno" /></div>
+                <div className="rounded-xl border border-cyan-100 bg-white p-4 shadow-sm sm:p-5"><textarea value={message} onChange={(e) => setMessageOverride(e.target.value)} rows={8} className="min-h-40 w-full resize-y border-0 bg-transparent p-0 leading-6 outline-none" aria-label="Editar mensagem para o aluno" /></div>
               ) : <StudentMessagePreview message={message} />}
             </div>
           </section>

@@ -193,3 +193,51 @@
    crisp border, so every screen of the area reads the same */
 :root { --card-bg: #ffffff; --card-line: #dfe3ea; --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.04); }
 :root[data-theme="dark"] { --card-bg: #1b1d1f; --card-line: rgba(255, 255, 255, 0.1); --card-shadow: none; }
+
+/* a click (mouse or touch) never leaves a frame around what was clicked: the focus ring shows only while moving with the keyboard */
+:focus:not(:focus-visible) { outline: none; }
+
+/* Touch screens (iPhone and Android): every control at least 40 px, the size of a fingertip; a chip or a link inside a text keeps
+   its size. A field with letters under 16 px makes the iPhone zoom in on tap (and the page stays zoomed): 16 px on touch screens. */
+@media (pointer: coarse), (max-width: 599px) {
+  button:not(.MuiChip-root):not(.MuiChip-deleteIcon):not([data-compact]),
+  [role="button"]:not(.MuiChip-root):not(.MuiSelect-root):not([data-compact]),
+  [role="tab"], .ui-seg-btn, .ui-tabs__btn, .MuiIconButton-root:not(.MuiChip-deleteIcon), .MuiButton-root, a.MuiButtonBase-root {
+    min-height: 40px;
+  }
+  .MuiIconButton-root:not(.MuiChip-deleteIcon):not(.MuiCheckbox-root):not(.MuiRadio-root):not(.MuiSwitch-switchBase) { min-width: 40px; }
+  button:not(.MuiChip-root):not([data-compact]) { min-width: 32px; }
+  .MuiChip-clickable { min-height: 32px; }
+  .react-flow__controls-button { min-width: 40px; min-height: 40px; }
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea, .MuiInputBase-input, .MuiSelect-root { font-size: 16px !important; }
+}
+
+/* Moving with the keyboard (Tab), wherever the focus is, a clear ring around it; a click or a tap shows nothing (rule above) */
+:focus-visible, .MuiButtonBase-root.Mui-focusVisible {
+  outline: 2px solid var(--brand-cerulean, #0693e3);
+  outline-offset: 2px;
+}
+/* No ring where it would be a second frame or where nobody chose the focus (Safari draws it in both cases):
+   - text fields: their own border already shows the focus (and a field focused when a screen opens looked like a stray blue box);
+   - what receives the focus only by code: a dialog, a drawer, a panel (tabindex -1), and the page root. */
+input:not([type=checkbox]):not([type=radio]):not([type=range]):focus-visible, textarea:focus-visible, select:focus-visible,
+[contenteditable]:focus-visible, .MuiInputBase-input:focus-visible, .MuiSelect-root:focus-visible,
+[tabindex="-1"]:focus-visible, .MuiDialog-container:focus-visible, .MuiPaper-root[role=dialog]:focus-visible, .MuiDrawer-paper:focus-visible, .MuiPopover-paper:focus-visible, .MuiMenu-list:focus-visible, .MuiList-root:focus-visible {
+  outline: none;
+}
+
+/* The loading mark of the whole system: instead of the spinning ring, a spark of eight points (the long and the short ones
+   alternating) that turns and breathes, in the color the spinner had. Only the waiting ones change: a progress with a value stays a ring. */
+.MuiCircularProgress-indeterminate { position: relative; animation: none !important; }
+.MuiCircularProgress-indeterminate > svg { opacity: 0; }
+.MuiCircularProgress-indeterminate::before {
+  content: ""; position: absolute; inset: 0; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2212.00%22%20y1%3D%229.40%22%20x2%3D%2212.00%22%20y2%3D%221.60%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2213.84%22%20y1%3D%2210.16%22%20x2%3D%2217.09%22%20y2%3D%226.91%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%2214.60%22%20y1%3D%2212.00%22%20x2%3D%2222.40%22%20y2%3D%2212.00%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2213.84%22%20y1%3D%2213.84%22%20x2%3D%2217.09%22%20y2%3D%2217.09%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%2212.00%22%20y1%3D%2214.60%22%20x2%3D%2212.00%22%20y2%3D%2222.40%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2210.16%22%20y1%3D%2213.84%22%20x2%3D%226.91%22%20y2%3D%2217.09%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%229.40%22%20y1%3D%2212.00%22%20x2%3D%221.60%22%20y2%3D%2212.00%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2210.16%22%20y1%3D%2210.16%22%20x2%3D%226.91%22%20y2%3D%226.91%22%20stroke-width%3D%222.3%22/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23000%22%20stroke-linecap%3D%22round%22%3E%3Cline%20x1%3D%2212.00%22%20y1%3D%229.40%22%20x2%3D%2212.00%22%20y2%3D%221.60%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2213.84%22%20y1%3D%2210.16%22%20x2%3D%2217.09%22%20y2%3D%226.91%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%2214.60%22%20y1%3D%2212.00%22%20x2%3D%2222.40%22%20y2%3D%2212.00%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2213.84%22%20y1%3D%2213.84%22%20x2%3D%2217.09%22%20y2%3D%2217.09%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%2212.00%22%20y1%3D%2214.60%22%20x2%3D%2212.00%22%20y2%3D%2222.40%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2210.16%22%20y1%3D%2213.84%22%20x2%3D%226.91%22%20y2%3D%2217.09%22%20stroke-width%3D%222.3%22/%3E%3Cline%20x1%3D%229.40%22%20y1%3D%2212.00%22%20x2%3D%221.60%22%20y2%3D%2212.00%22%20stroke-width%3D%222.7%22/%3E%3Cline%20x1%3D%2210.16%22%20y1%3D%2210.16%22%20x2%3D%226.91%22%20y2%3D%226.91%22%20stroke-width%3D%222.3%22/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: spark-load 1.5s cubic-bezier(.55, .05, .3, 1) infinite;
+}
+@keyframes spark-load {
+  0% { transform: rotate(0deg) scale(.78); opacity: .75; }
+  45% { transform: rotate(135deg) scale(1); opacity: 1; }
+  100% { transform: rotate(360deg) scale(.78); opacity: .75; }
+}
+@media (prefers-reduced-motion: reduce) { .MuiCircularProgress-indeterminate::before { animation-duration: 3s; } }

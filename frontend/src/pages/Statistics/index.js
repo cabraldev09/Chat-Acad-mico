@@ -9,7 +9,7 @@ import toastError from "../../errors/toastError";
 import StatsHubBar from "../../components/StatsHub";
 import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num, fmt, minutesText } from "../../components/analytics/kit";
 import Drawer from "@material-ui/core/Drawer";
-import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, rankRows, CountStat, BoardHead, MetricAreaCard, Person, EmptyNote } from "../../components/peak";
+import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, rankRows, CountStat, BoardHead, MetricAreaCard, Person, EmptyNote, rangeText, rangeDates } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
@@ -47,7 +47,7 @@ const Results = ({ params, period }) => {
   if (error && !data) return <Failed onRetry={reload} />;
   const wait = loading && !data;
   const t = (data && data.totals) || {};
-  const badge = period.cycle ? "Ciclo" : PERIOD_LABEL[period.range] || "Período";
+  const badge = rangeText(period);
   const won = Number(t.enrollments) || 0;
   // the conversion of each number into enrollments, in the period on screen
   const rates = {
@@ -273,13 +273,11 @@ const Consultants = ({ params }) => {
 // what the screen of the conversations understands as the period: a number of days ending on a day (today when empty)
 const conversationRange = (period) => {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
-  if (period.range === "week") return { days: 7, date: "" };
-  if (period.range === "month") return { days: Math.max(1, Number(today.slice(-2))), date: "" };
-  if (period.range === "custom" && period.from && period.to) {
-    const days = Math.floor((Date.parse(`${period.to}T00:00:00Z`) - Date.parse(`${period.from}T00:00:00Z`)) / 86400000) + 1;
-    return { days: Math.min(31, Math.max(1, days)), date: period.to >= today ? "" : period.to };
-  }
-  return { days: 1, date: "" };
+  if (period.range === "today") return { days: 1, date: "" };
+  // the week, the month, the cycle or the dates chosen: the days of the range, ending on its last day (at most 31)
+  const d = rangeDates(period);
+  const days = Math.floor((Date.parse(`${d.to}T00:00:00Z`) - Date.parse(`${d.from}T00:00:00Z`)) / 86400000) + 1;
+  return { days: Math.min(31, Math.max(1, days)), date: d.to >= today ? "" : d.to };
 };
 
 const Section = ({ title, sub, children }) => (

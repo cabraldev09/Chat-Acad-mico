@@ -112,7 +112,7 @@ const Students = () => {
         <Button size="lg" className="h-10 px-4" onClick={() => setOpen(true)}><UserPlus className="mr-2 size-4" />Novo aluno</Button>
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); setApplied(query); }} className="mb-4 flex flex-col gap-2 rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-50/90 via-white to-slate-50 p-3 sm:flex-row sm:items-end sm:p-4">
+      <form onSubmit={(e) => { e.preventDefault(); setApplied(query); }} className="mb-4 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-muted p-3 sm:flex-row sm:items-end sm:p-4">
         <label className="block min-w-0 flex-1 text-xs font-semibold text-slate-600">Buscar aluno
           <span className="relative mt-1.5 block"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nome, RGM ou e-mail" className="h-10 border-slate-200 bg-white pl-9" /></span>
         </label>

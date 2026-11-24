@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useContext, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { format, parseISO } from "date-fns";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, RefreshCw, X } from "lucide-react";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { clearFollowUp, closeTicket, dismissInsight, dismissReply, finishTask } from "../../utils/quickActions";
 
 import { PeriodPicker, fmt, minutesText, num, periodParams, useAnalytics, useKit } from "../../components/analytics/kit";
-import { BoardHead, CompareStat, CountStat, EmptyNote, Funnel, GlowPanel, GlowStat, Person, PriorityList, SectionTitle } from "../../components/peak";
+import { BoardHead, CompareStat, CountStat, EmptyNote, Funnel, GlowPanel, GlowStat, Person, PriorityList, SectionTitle, rangeText } from "../../components/peak";
 import { PaceRing } from "../../components/analytics/PoloProgress";
 import "../../styles/dash.css";
 
@@ -13,7 +15,6 @@ import "../../styles/dash.css";
 // the orientation from the daily review. The management has Estatísticas with the whole team.
 
 const when = (v) => { try { return format(parseISO(v), "dd/MM HH:mm"); } catch (e) { return ""; } };
-const PERIOD_LABEL = { today: "Hoje", week: "Últimos 7 dias", month: "Este mês", custom: "Período" };
 // change against the period before, in percent (points for a rate); null when there is nothing to compare
 const change = (now, before, points) => {
   if (before === null || before === undefined || now === null || now === undefined) return null;
@@ -51,6 +52,16 @@ const MyPerformance = () => {
   const ready = period.range !== "custom" || (period.from && period.to);
   const { data, loading, error, reload } = useAnalytics("/analytics/me/overview", params, !!ready);
   const go = (link) => history.push(link);
+  const { user } = useContext(AuthContext);
+  // what was concluded or cleared here leaves the list at once (the counts come back from the server right after)
+  const [gone, setGone] = useState(() => new Set());
+  const hide = (key, on) => setGone((g) => { const n = new Set(g); if (on) n.add(key); else n.delete(key); return n; });
+  const act = async (key, action) => {
+    hide(key, true);
+    const ok = await action(() => { hide(key, false); reload(); });
+    if (!ok) hide(key, false);
+    else reload();
+  };
   const head = (
     <div style={{ marginBottom: 20 }}>
       <BoardHead title="Meu desempenho" sub="Os seus resultados, a sua meta, o que fazer agora e os seus leads. Só você vê estes números.">
@@ -86,7 +97,7 @@ const MyPerformance = () => {
   const todo = data.insights || [];
   const coaching = data.coaching;
   const series = data.series || [];
-  const badge = period.cycle ? "Ciclo" : PERIOD_LABEL[period.range] || "Período";
+  const badge = rangeText(period);
   // what was done today is the last day of the series, when the period reaches today
   const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
   const today = series.find((d) => d.day === todayKey);
@@ -96,9 +107,12 @@ const MyPerformance = () => {
   const stages = leads.stages || [];
   const funnel = stages.map((s, i) => ({ key: s.id ?? s.name, name: s.name, value: Number(s.n) || 0, reach: stages.slice(i).reduce((a, x) => a + (Number(x.n) || 0), 0) }));
   const dayGoal = (done, target) => (target > 0 ? `${num(done)} de ${num(target)} da meta do dia` : undefined);
-  const waitingReply = data.focus.conversations || [];
-  const dueToday = [...(data.focus.tasks || []).map((k) => ({ key: `t${k.id}`, title: k.title, sub: k.leadName, right: k.overdue ? "atrasada" : when(k.dueAt).slice(-5), bad: k.overdue, link: k.link })),
-    ...(data.focus.followUps || []).map((l) => ({ key: `f${l.leadId}`, title: l.name, sub: "Retorno marcado", right: when(l.at), link: l.link }))];
+  const waitingReply = (data.focus.conversations || []).filter((v) => !gone.has(`r${v.ticketId}`));
+  const dueToday = [...(data.focus.tasks || []).map((k) => ({ key: `t${k.id}`, title: k.title, sub: k.leadName, right: k.overdue ? "atrasada" : when(k.dueAt).slice(-5), bad: k.overdue, link: k.link,
+      done: k.leadId ? () => act(`t${k.id}`, (undone) => finishTask(k.leadId, k.id, undone)) : null, doneLabel: "Concluir" })),
+    ...(data.focus.followUps || []).map((l) => ({ key: `f${l.leadId}`, title: l.name, sub: "Retorno marcado", right: when(l.at), link: l.link,
+      done: () => act(`f${l.leadId}`, (undone) => clearFollowUp(l.leadId, l.at, undone)), doneLabel: "Limpar" }))].filter((k) => !gone.has(k.key));
+  const todoShown = todo.filter((it) => !gone.has(`i${it.key}`));
 
   return (
     <div className={`${c.page} dash-scope gv-plain`} style={{ opacity: loading ? 0.75 : 1, transition: "opacity .2s ease" }}>
@@ -148,17 +162,24 @@ const MyPerformance = () => {
       <Section title="O que fazer agora" hint="Os pontos que dependem de você, do mais urgente ao menos.">
         <div className="pk-grid-wide">
           <GlowPanel id="todo" title="Prioridades">
-            {todo.length ? <PriorityList items={todo.map((it) => ({ key: it.key, tone: it.tone, title: it.title, detail: it.detail, onClick: it.link ? () => go(it.link) : undefined }))} /> : <EmptyNote>Tudo em dia. Nenhum ponto pedindo atenção agora.</EmptyNote>}
+            {todoShown.length ? <PriorityList items={todoShown.map((it) => ({ key: it.key, tone: it.tone, title: it.title, detail: it.detail, onClick: it.link ? () => go(it.link) : undefined,
+              onDismiss: () => act(`i${it.key}`, (undone) => dismissInsight(it.key, undone)) }))} /> : <EmptyNote>Tudo em dia. Nenhum ponto pedindo atenção agora.</EmptyNote>}
           </GlowPanel>
-          <GlowPanel id="reply" title={`Responder agora (${num(data.metrics.pendingReply)})`} sub="Conversas suas em que o cliente falou por último. As mais antigas primeiro.">
+          <GlowPanel id="reply" title={`Responder agora (${num(Math.max(0, Number(data.metrics.pendingReply || 0) - (data.focus.conversations || []).filter((v) => gone.has(`r${v.ticketId}`)).length))})`} sub="Conversas suas em que o cliente falou por último. As mais antigas primeiro.">
             {waitingReply.length === 0 ? <EmptyNote>Ninguém esperando resposta sua.</EmptyNote> : (
               <div className="gv-rowlist">
                 {waitingReply.slice(0, 5).map((v) => (
-                  <button key={v.ticketId} type="button" className="gv-item gv-item-btn" onClick={() => go(v.link)}>
-                    <Person name={v.name} size={32} />
-                    <span className="gv-item-main"><b>{v.name}</b>{v.lastMessage ? <small className="gv-clip">{v.lastMessage}</small> : null}</span>
-                    <span className="gv-cap">{when(v.at)}</span>
-                  </button>
+                  <div key={v.ticketId} className="gv-act-row">
+                    <button type="button" className="gv-item gv-item-btn" onClick={() => go(v.link)}>
+                      <Person name={v.name} size={32} />
+                      <span className="gv-item-main"><b>{v.name}</b>{v.lastMessage ? <small className="gv-clip">{v.lastMessage}</small> : null}</span>
+                      <span className="gv-cap">{when(v.at)}</span>
+                    </button>
+                    <span className="gv-acts">
+                      <button type="button" className="gv-act" title="Não precisa responder (um ok, um obrigado). Volta se o cliente escrever de novo." onClick={() => act(`r${v.ticketId}`, (undone) => dismissReply(v.ticketId, undone))}><Check size={14} />Já resolvido</button>
+                      <button type="button" className="gv-act" title="Encerra o atendimento. Se o cliente escrever de novo, a conversa reabre." onClick={() => act(`r${v.ticketId}`, (undone) => closeTicket(v.ticketId, user && user.id, undone))}><X size={14} />Finalizar</button>
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
@@ -167,10 +188,13 @@ const MyPerformance = () => {
             {dueToday.length === 0 ? <EmptyNote>Nada vencendo hoje.</EmptyNote> : (
               <div className="gv-rowlist">
                 {dueToday.slice(0, 8).map((k) => (
-                  <button key={k.key} type="button" className="gv-item gv-item-btn" onClick={() => go(k.link)}>
-                    <span className="gv-item-main"><b>{k.title}</b>{k.sub ? <small>{k.sub}</small> : null}</span>
-                    {k.bad ? <span className="gv-tag" data-tone="bad">atrasada</span> : <span className="gv-cap">{k.right}</span>}
-                  </button>
+                  <div key={k.key} className="gv-act-row">
+                    <button type="button" className="gv-item gv-item-btn" onClick={() => go(k.link)}>
+                      <span className="gv-item-main"><b>{k.title}</b>{k.sub ? <small>{k.sub}</small> : null}</span>
+                      {k.bad ? <span className="gv-tag" data-tone="bad">atrasada</span> : <span className="gv-cap">{k.right}</span>}
+                    </button>
+                    {k.done && <span className="gv-acts"><button type="button" className="gv-act" onClick={k.done}><CheckCircle2 size={14} />{k.doneLabel}</button></span>}
+                  </div>
                 ))}
               </div>
             )}

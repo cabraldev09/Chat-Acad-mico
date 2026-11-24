@@ -244,7 +244,7 @@ const List = () => {
                     const enr = r.enrollment || { status: "PENDING" };
                     const rel = r.result && RELIABILITY[r.result.reliability];
                     return (
-                      <tr key={r.id} onClick={() => history.push(`/analise-curricular/${r.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
+                      <tr key={r.id} onClick={() => history.push(`/analise-curricular/${r.id}`)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); history.push(`/analise-curricular/${r.id}`); } }} className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan border-b last:border-0 hover:bg-muted/50">
                         <td className="px-4 py-3 font-medium text-slate-900">{r.candidateName || "Aluno sem nome"}</td>
                         <td className="px-4 py-3 text-slate-600">{r.poloName || "—"}</td>
                         <td className="px-4 py-3 text-slate-600">{r.requesterName || "—"}</td>

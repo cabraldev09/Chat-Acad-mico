@@ -160,15 +160,17 @@ export const counts = async (req: Request, res: Response): Promise<Response> => 
   return res.json(result);
 };
 
-// "Enviar boas-vindas" (tutor): the text the administration wrote, ready to be edited and sent by the tutor. Shown only
-// while nobody has answered the student yet.
+// The first approach of the tutor: the text, ready to be edited and sent by the tutor, and what the enrollment says about the person
+// (course, polo, RGM, consultant, the consultant's note). Shown only while nobody has answered yet. A contact the system has no enrollment
+// of gets a neutral text (who the tutor is and the RGM), never the greeting of a new student.
 export const welcome = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await Ticket.findByPk(req.params.ticketId);
   if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
   const show = ticket.segment === "onboarding" && ticket.status !== "closed" && !ticket.firstResponseAt && !ticket.isGroup;
-  if (!show) return res.json({ show: false, text: "" });
+  if (!show) return res.json({ show: false, text: "", enrolled: false, facts: null });
   const { renderWelcome } = await import("../helpers/OnboardingWelcome");
-  return res.json({ show: true, text: await renderWelcome(ticket, Number(req.user.id)) });
+  const { text, facts } = await renderWelcome(ticket, Number(req.user.id));
+  return res.json({ show: true, text, enrolled: facts.enrolled, facts });
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
@@ -237,6 +239,8 @@ export const ai = async (req: Request, res: Response): Promise<Response> => {
   const active = req.body?.active !== false;
   let ticket = await ShowTicketService(String(ticketId));
   if (ticket.isGroup) throw new AppError("ERR_AI_AGENT_NOT_AVAILABLE", 400);
+  // the tutoring talks to enrolled students: no AI qualifies or sells there (the AI of the tutoring only audits what was left pending)
+  if (active && sideOfSegment(ticket.segment) === "tutoria") throw new AppError("ERR_AI_NOT_ON_TUTORING", 400);
   const actor = await User.findByPk(Number(req.user.id), { attributes: ["name"] });
   const emit = async (): Promise<void> => {
     const fresh = await ShowTicketService(String(ticketId));
@@ -540,4 +544,15 @@ export const teamHandoff = async (req: Request, res: Response): Promise<Response
   const other = side === "tutoria" ? "atendimento" : side === "atendimento" ? "tutoria" : null;
   const number = other ? await connectionOfTeam(other) : null;
   return res.json({ side, canCall: other && number && number.id !== ticket.whatsappId ? other : null, last: await lastHandoffIn(ticket.id), window: await windowOf(ticket as any) });
+};
+
+// "Já resolvido" in Responder agora: the last message of the client needs no answer (an "ok", a thank you). The conversation stays as it
+// is; it only leaves the list and the count of what waits for an answer, and comes back by itself when the client writes again.
+export const dismissReply = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await Ticket.findByPk(Number(req.params.ticketId), { attributes: ["id", "lastMessageId", "lastMessageFromMe", "replyDismissedMessageId"] });
+  if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  const undo = req.body?.undo === true;
+  ticket.set({ replyDismissedMessageId: undo ? null : ticket.lastMessageId || null } as any);
+  await ticket.save({ silent: true } as any);
+  return res.json({ ticketId: ticket.id, dismissed: !undo });
 };

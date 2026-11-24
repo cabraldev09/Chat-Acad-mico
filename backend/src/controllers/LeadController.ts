@@ -7,7 +7,7 @@ import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
 import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes, standardWeek } from "../helpers/BusinessTime";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
-import { withLeadScope, isAdminReq, reqRole } from "../middleware/scope";
+import { withLeadScope, withOnboardingScope, isAdminReq, reqRole } from "../middleware/scope";
 import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
 import { Op, literal } from "sequelize";
 import { randomBytes } from "crypto";
@@ -732,14 +732,13 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
 };
 
 
-// whose leads a panel may be narrowed to: a consultant always sees their own; the management picks anyone; every other profile
-// sees the whole picture or its own leads, never the numbers of one chosen colleague
+// whose leads a panel may be narrowed to: the management sees everybody or picks one person; every other profile (consultant,
+// tutor, academic, relationship) only ever sees its own leads: a tutor who received nothing sees nothing, never the team's numbers
 const ownerFilter = (req: Request): number | null => {
   const self = Number(req.user.id);
-  if (reqRole(req) === "consultor") return self;
+  if (!isManagerRole(reqRole(req))) return self;
   const asked = req.query.ownerId ? Number(req.query.ownerId) : null;
-  if (!asked || !Number.isInteger(asked)) return null;
-  return isManagerRole(reqRole(req)) || asked === self ? asked : null;
+  return asked && Number.isInteger(asked) ? asked : null;
 };
 // ------------------------------------------------------------------ triage ("novos para conferir")
 // New people nobody answered yet, each one to its OWNER: a consultant only sees (and answers for) their own; the management sees everybody or one person
@@ -1204,7 +1203,7 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
 // how many students wait for the first contact of the person (the badge of the menu)
 export const onboardingPending = async (req: Request, res: Response): Promise<Response> => {
   const mine = reqRole(req) === "consultor" ? { ownerId: uid(req) } : reqRole(req) === "tutor" ? { onboardingTutorId: uid(req) } : {};
-  const total = await Lead.count({ where: await withLeadScope(req, { onboardingStatus: "pending", ...mine }) });
+  const total = await Lead.count({ where: await withOnboardingScope(req, { onboardingStatus: "pending", ...mine }) });
   return res.json({ pending: total });
 };
 
@@ -1218,7 +1217,7 @@ export const onboardingList = async (req: Request, res: Response): Promise<Respo
   const { parseChecklist } = await import("../services/CrmServices/EnrollLead");
   const rows = await Lead.findAll({
     // a consultant sees only the students THEY sent to the ambientação; tutors see theirs (and the polo's queue), the management everyone
-    where: await withLeadScope(req, { onboardingStatus: { [Op.ne]: "none" }, ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}) }),
+    where: await withOnboardingScope(req, { onboardingStatus: { [Op.ne]: "none" }, ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}) }),
     include: leadInclude as any,
     order: [["enrolledAt", "DESC"]],
     limit: 300

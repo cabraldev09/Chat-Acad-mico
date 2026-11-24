@@ -594,6 +594,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
               setSignMessage={setSignMessage}
               ticketId={ticketId}
               channel={channel}
+              isGroup={!!isGroup}
             />
             <input ref={docInput} hidden multiple type="file" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             <input ref={mediaInput} hidden multiple type="file" accept="image/*,video/*" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
