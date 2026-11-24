@@ -241,7 +241,7 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
 
   // the situation right now
   (await rows(`SELECT t.userId, COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND ${VALID_TICKET} GROUP BY t.userId`, rep)).forEach(r => set(r, "inProgress"));
-  (await rows(`SELECT t.userId, COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND ${VALID_TICKET} GROUP BY t.userId`, rep)).forEach(r => set(r, "pendingReply"));
+  (await rows(`SELECT t.userId, COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND ${VALID_TICKET} GROUP BY t.userId`, rep)).forEach(r => set(r, "pendingReply"));
 
   // tasks and follow-ups
   (await rows(`SELECT userId, COUNT(*) AS n FROM LeadTasks WHERE userId IN (:ids) AND doneAt IS NULL GROUP BY userId`, rep)).forEach(r => set(r, "tasksOpen"));
