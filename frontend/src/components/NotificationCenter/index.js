@@ -120,8 +120,8 @@ export const NoticeList = ({ notices, onNavigate }) => {
           <button type="button" onClick={() => setOnlyUnread(true)} aria-pressed={onlyUnread} style={pill(onlyUnread)}>Não lidos{unread ? ` ${unread}` : ""}</button>
         </span>
         {unread > 0 && (
-          <button type="button" className="mac-notes-clear" onClick={markAll} title="Marcar todos como lidos" aria-label="Marcar todos como lidos">
-            <CheckCheck size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Marcar lidos
+          <button type="button" className="mac-notes-clear" onClick={markAll}>
+            <CheckCheck size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Marcar todos como lidos
           </button>
         )}
       </div>
