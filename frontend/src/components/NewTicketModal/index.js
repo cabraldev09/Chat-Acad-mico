@@ -37,7 +37,6 @@ const useStyles = makeStyles((theme) => {
       backgroundColor: c.panel,
       border: "2px solid transparent",
       transition: "border-color .15s, box-shadow .15s",
-      "&:focus-within": { borderColor: "#7bc89a", boxShadow: "0 0 0 3px rgba(37,211,102,.18)" },
       "& svg": { color: c.textSecondary },
     },
     input: { flex: 1, fontSize: 16, color: c.text },

@@ -51,9 +51,8 @@ const useStyles = makeStyles(theme => {
     row: { display: "grid", gridTemplateColumns: "1fr 140px", gap: 8, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr 1fr" } },
     field: {
       height: 42, padding: "0 12px", borderRadius: 10, border: `1px solid ${line}`, fontSize: 14, colorScheme: dark ? "dark" : "light",
-      "&.Mui-focused": { borderColor: theme.palette.primary.main },
     },
-    area: { padding: "10px 12px", borderRadius: 10, border: `1px solid ${line}`, fontSize: 14, lineHeight: 1.5, alignItems: "flex-start", "&.Mui-focused": { borderColor: theme.palette.primary.main } },
+    area: { padding: "10px 12px", borderRadius: 10, border: `1px solid ${line}`, fontSize: 14, lineHeight: 1.5, alignItems: "flex-start" },
     when: { marginTop: 8, fontSize: 12.5, color: theme.palette.text.secondary },
     whenBad: { color: theme.palette.error.main },
     meta: { display: "flex", justifyContent: "flex-end", fontSize: 12, color: theme.palette.text.secondary, marginTop: 4 },

@@ -20,7 +20,7 @@ const useStyles = makeStyles(theme => {
     sub: { margin: "2px 0 0", fontSize: 13, color: theme.palette.text.secondary },
     close: { marginLeft: "auto", border: 0, background: "transparent", color: theme.palette.text.secondary, width: 36, height: 36, borderRadius: 10, cursor: "pointer", display: "grid", placeItems: "center", "&:hover": { background: theme.palette.action.hover } },
     body: { padding: "4px 20px 12px", overflow: "visible" },
-    search: { display: "flex", alignItems: "center", gap: 8, height: 40, padding: "0 12px", marginBottom: 12, borderRadius: 10, border: `1px solid ${line}`, color: theme.palette.text.secondary, "&:focus-within": { borderColor: theme.palette.primary.main } },
+    search: { display: "flex", alignItems: "center", gap: 8, height: 40, padding: "0 12px", marginBottom: 12, borderRadius: 10, border: `1px solid ${line}`, color: theme.palette.text.secondary },
     list: { display: "flex", flexWrap: "wrap", gap: 8, maxHeight: "min(320px, 50vh)", overflowY: "auto", padding: 2 },
     pill: {
       display: "inline-flex", alignItems: "center", gap: 8, minHeight: 36, padding: "0 14px 0 10px", borderRadius: 999, cursor: "pointer",

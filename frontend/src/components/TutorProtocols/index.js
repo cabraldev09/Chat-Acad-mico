@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, TextField, makeStyles } from "@material-ui/core";
+import { Autocomplete } from "@material-ui/lab";
 import { Check, ClipboardList, Plus } from "lucide-react";
 import { toast } from "react-toastify";
 
@@ -19,21 +20,33 @@ const useStyles = makeStyles((theme) => ({
   fields: { display: "grid", gap: 12 },
 }));
 
-export const ProtocolDialog = ({ open, onClose, ticketId, issue, onDone }) => {
+// pickStudent: a new protocol from the list of protocols (Meus alunos), for one of the tutor's students, with or without a conversation
+export const ProtocolDialog = ({ open, onClose, ticketId, issue, onDone, pickStudent = false }) => {
   const [number, setNumber] = useState("");
   const [subject, setSubject] = useState("");
   const [tell, setTell] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [students, setStudents] = useState(null);
+  const [student, setStudent] = useState(null);
   useEffect(() => {
     if (!open) return;
     setNumber((issue && issue.protocolNumber) || "");
     setSubject((issue && issue.protocolName) || "");
     setTell(true);
-  }, [open, issue]);
+    setStudent(null);
+    if (pickStudent && students === null) {
+      api.get("/tutoria/students").then(({ data }) => setStudents((data.students || []).filter((s) => s.leadId))).catch((e) => { setStudents([]); toastError(e); });
+    }
+  }, [open, issue, pickStudent, students]);
+  // the student has no conversation with the tutoring yet: the protocol is registered, the notice waits for the student to write
+  const noConversation = pickStudent && student && !student.ticketId;
   const save = async () => {
     setBusy(true);
     try {
-      const { data } = await api.post("/tutoria/protocols", { ticketId, issueId: issue ? issue.id : undefined, protocolNumber: number, protocolName: subject, notifyStudent: tell });
+      const { data } = await api.post("/tutoria/protocols", {
+        ...(pickStudent ? { leadId: student && student.leadId } : { ticketId, issueId: issue ? issue.id : undefined }),
+        protocolNumber: number, protocolName: subject, notifyStudent: tell && !noConversation
+      });
       if (data.warning) toast.warn(data.warning);
       else toast.success(tell ? "Protocolo registrado e aluno avisado." : "Protocolo registrado no histórico do aluno.");
       onDone && onDone();
@@ -47,14 +60,30 @@ export const ProtocolDialog = ({ open, onClose, ticketId, issue, onDone }) => {
       <DialogContent>
         {issue && issue.summary && <p style={{ margin: "0 0 12px", fontSize: 13.5, lineHeight: 1.5, opacity: 0.8 }}>{issue.summary}</p>}
         <div style={{ display: "grid", gap: 12 }}>
-          <TextField autoFocus size="small" variant="outlined" label="Número do protocolo" InputLabelProps={{ shrink: true }} value={number} onChange={(e) => setNumber(e.target.value)} inputProps={{ maxLength: 60 }} />
+          {pickStudent && (
+            <Autocomplete
+              options={students || []}
+              loading={students === null}
+              loadingText="Carregando seus alunos..."
+              noOptionsText="Nenhum aluno encontrado."
+              value={student}
+              onChange={(_e, v) => setStudent(v)}
+              getOptionLabel={(o) => o.name || ""}
+              getOptionSelected={(o, v) => o.leadId === v.leadId}
+              renderOption={(o) => (<div style={{ minWidth: 0 }}><div style={{ fontWeight: 600 }}>{o.name}</div><div style={{ fontSize: 12, opacity: 0.7 }}>{[o.course, o.polo].filter(Boolean).join(" · ")}</div></div>)}
+              renderInput={(params) => <TextField {...params} autoFocus size="small" variant="outlined" label="Aluno" InputLabelProps={{ ...params.InputLabelProps, shrink: true }} placeholder="Busque pelo nome" />}
+            />
+          )}
+          <TextField autoFocus={!pickStudent} size="small" variant="outlined" label="Número do protocolo" InputLabelProps={{ shrink: true }} value={number} onChange={(e) => setNumber(e.target.value)} inputProps={{ maxLength: 60 }} />
           <TextField size="small" variant="outlined" label="Assunto" InputLabelProps={{ shrink: true }} placeholder="Ex.: acesso ao AVA, nota da prova" value={subject} onChange={(e) => setSubject(e.target.value)} inputProps={{ maxLength: 160 }} />
-          <FormControlLabel control={<Checkbox color="primary" checked={tell} onChange={(e) => setTell(e.target.checked)} />} label="Avisar o aluno nesta conversa" />
+          {noConversation
+            ? <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, opacity: 0.8 }}>Este aluno ainda não conversou com a tutoria. O protocolo fica registrado no histórico dele; avise quando ele chamar.</p>
+            : <FormControlLabel control={<Checkbox color="primary" checked={tell} onChange={(e) => setTell(e.target.checked)} />} label={pickStudent ? "Avisar o aluno pela conversa da tutoria" : "Avisar o aluno nesta conversa"} />}
         </div>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancelar</Button>
-        <Button variant="contained" color="primary" disableElevation disabled={busy || !number.trim() || !subject.trim()} onClick={save}>{busy ? "Registrando..." : "Registrar"}</Button>
+        <Button variant="contained" color="primary" disableElevation disabled={busy || !number.trim() || !subject.trim() || (pickStudent && !student)} onClick={save}>{busy ? "Registrando..." : "Registrar"}</Button>
       </DialogActions>
     </Dialog>
   );

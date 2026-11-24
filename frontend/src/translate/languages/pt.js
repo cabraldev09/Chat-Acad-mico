@@ -703,6 +703,8 @@ const messages = {
         ERR_PROTOCOL_NOT_TUTORING: "O protocolo é registrado numa conversa da tutoria.",
         ERR_PROTOCOL_NUMBER: "Informe o número do protocolo.",
         ERR_PROTOCOL_SUBJECT: "Informe o assunto do protocolo.",
+        ERR_PROTOCOL_STUDENT: "Escolha o aluno do protocolo.",
+        ERR_PROTOCOL_EXISTS: "Este protocolo já está registrado para este aluno.",
         ERR_TUTORING_ISSUE_SUMMARY: "Escreva o que está pendente.",
         ERR_TUTORING_ISSUE_STATUS: "Situação inválida para a pendência.",
         ERR_FORM_NOT_FOUND: "Este link de ficha não existe. Peça um novo ao seu consultor.",
