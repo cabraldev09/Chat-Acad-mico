@@ -362,7 +362,9 @@ button.gv-frow:hover .gv-fbar { background: color-mix(in srgb, var(--c-brand) 86
 .gv-step { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--text-1); cursor: pointer; }
 .gv-step:hover:not(:disabled) { background: var(--surface); }
 .gv-step:disabled { opacity: 0.35; cursor: default; }
-.gv-step:focus-visible, .gv-which-select:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
+.gv-step:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
+/* a list shows its focus on itself (a soft ring of shadow), never a second frame around it (the screen sweep checks it) */
+.gv-which-select:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--c-leads); }
 .gv-head .gv-which { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.18); }
 .gv-head .gv-which-text, .gv-head .gv-step { color: #fff; }
 .gv-head .gv-step:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
