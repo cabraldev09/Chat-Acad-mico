@@ -1,5 +1,6 @@
 import { AuthContext } from "../../context/Auth/AuthContext";
 import React, { useState, useCallback, useContext, useEffect } from "react";
+import { Redirect } from "react-router-dom";
 import openSocket from "../../services/socket-io";
 import ChannelIcon from "../../components/ChannelIcon";
 import { toast } from "react-toastify";
@@ -44,7 +45,7 @@ import QrcodeModal from "../../components/QrcodeModal";
 import { i18n } from "../../translate/i18n";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
 import toastError from "../../errors/toastError";
-import { canOperateRetention, isManager } from "../../utils/access";
+import { canOperateRetention, isManager, isOwnQrNumber } from "../../utils/access";
 
 const useStyles = makeStyles(theme => ({
 	tiles: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", padding: theme.spacing(0, 2, 1.5) },
@@ -109,12 +110,13 @@ const CustomToolTip = ({ title, content, children }) => {
 const Connections = () => {
 	const classes = useStyles();
 
-	const { whatsApps, loading } = useContext(WhatsAppsContext);
-	// connecting and removing numbers is for the administrator; everyone else only sees the status
+	const { whatsApps: allWhatsApps, loading } = useContext(WhatsAppsContext);
+	// adding, editing and removing connections is for the management; a consultant or tutor only sees the QR Code number the
+	// management gave them, to read the QR Code with their own phone and keep it connected
 	const { user } = useContext(AuthContext);
 	const isAdmin = isManager(user);
-	// administrators manage everything; anyone else manages the number they connected themselves
-	const canManage = w => isAdmin || (w.ownerId && user && w.ownerId === user.id && (!w.channel || w.channel === "whatsapp" || w.channel === "instagram"));
+	const whatsApps = isAdmin ? allWhatsApps : (allWhatsApps || []).filter(w => isOwnQrNumber(user, w));
+	const canManage = w => isAdmin || isOwnQrNumber(user, w);
 	// an Instagram connected by the login (not by pasted keys): when its access expires, the person enters again
 	const igLogin = w => {
 		if (!w || w.channel !== "instagram") return null;
@@ -394,6 +396,9 @@ const Connections = () => {
 		);
 	};
 
+	// a consultant or tutor without a QR Code number of their own has nothing to do here
+	if (!isAdmin && !loading && whatsApps.length === 0) return <Redirect to="/tickets" />;
+
 	return (
 		<MainContainer>
 			<ConfirmationModal
@@ -413,7 +418,6 @@ const Connections = () => {
 				open={myDialog.open}
 				whatsApp={myDialog.whatsApp}
 				onClose={() => setMyDialog({ open: false, whatsApp: null })}
-				onCreated={w => handleOpenQrModal(w)}
 			/>
 			<InstagramDialog
 				open={igDialog.open}
@@ -430,25 +434,29 @@ const Connections = () => {
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
 			</MainHeader>
-			<div className={classes.tiles} role="group" aria-label="Conectar um canal">
-				{/* for now the team works only through the official number (API of the Meta): the administrator adds connections */}
-				{isAdmin && (
-					<button type="button" className={classes.tile} onClick={() => handleOpenWhatsAppModal()}>
-						<ChannelIcon channel="whatsapp" size={30} />
-						<span className={classes.tileText}><b>Adicionar WhatsApp</b><small>Número oficial (API da Meta) ou QR Code</small></span>
-					</button>
-				)}
-				<button type="button" className={classes.tile} onClick={() => setIgDialog({ open: true, whatsApp: null })}>
-					<ChannelIcon channel="instagram" size={30} />
-					<span className={classes.tileText}><b>Conectar Instagram</b><small>Entre com a conta profissional e pronto</small></span>
-				</button>
-				{isAdmin && (
-					<button type="button" className={classes.tile} onClick={handleOpenWhatsAppModal}>
-						<ChannelIcon channel="webchat" size={30} />
-						<span className={classes.tileText}><b>Outros canais</b><small>Messenger, Telegram, WhatsApp Cloud API e chat do site</small></span>
-					</button>
-				)}
-			</div>
+			{isAdmin && (
+				<div className={classes.tiles} role="group" aria-label="Conectar um canal">
+					{/* for now the team works only through the official number (API of the Meta): the administrator adds connections */}
+					{isAdmin && (
+						<button type="button" className={classes.tile} onClick={() => handleOpenWhatsAppModal()}>
+							<ChannelIcon channel="whatsapp" size={30} />
+							<span className={classes.tileText}><b>Adicionar WhatsApp</b><small>Número oficial (API da Meta) ou QR Code</small></span>
+						</button>
+					)}
+					{isAdmin && (
+						<button type="button" className={classes.tile} onClick={() => setIgDialog({ open: true, whatsApp: null })}>
+							<ChannelIcon channel="instagram" size={30} />
+							<span className={classes.tileText}><b>Conectar Instagram</b><small>Entre com a conta profissional e pronto</small></span>
+						</button>
+					)}
+					{isAdmin && (
+						<button type="button" className={classes.tile} onClick={handleOpenWhatsAppModal}>
+							<ChannelIcon channel="webchat" size={30} />
+							<span className={classes.tileText}><b>Outros canais</b><small>Messenger, Telegram, WhatsApp Cloud API e chat do site</small></span>
+						</button>
+					)}
+				</div>
+			)}
 			<Typography variant="caption" color="textSecondary" component="div" style={{ padding: "0 16px 10px" }}>
 				Dica: o WhatsApp desconecta os aparelhos vinculados quando o celular fica cerca de 14 dias sem internet. Abra o WhatsApp no celular pelo menos uma vez por semana. Se desconectar, as mensagens que já chegaram continuam guardadas aqui, e as que chegaram enquanto estava desconectado são recuperadas depois que você ler o QR Code de novo.
 			</Typography>

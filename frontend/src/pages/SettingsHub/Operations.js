@@ -19,8 +19,13 @@ const LIMIT_FIELDS = [
   ["ai_daily_usd_cap", "Orçamento diário estimado da IA em US$ (0 sem limite)"],
   ["outbound_daily_messages", "Máximo de envios por dia (0 sem limite)"],
   ["outbound_daily_usd", "Orçamento diário estimado da Meta em US$ (0 sem limite)"],
-  ["outbound_meta_service_usd", "Estimativa em US$ por mensagem de atendimento Meta"],
-  ["outbound_meta_template_usd", "Estimativa em US$ por template Meta"]
+];
+// the cap of the month of the official WhatsApp and the prices that replace the reference table (blank uses the table)
+const MONTH_FIELDS = [
+  ["outbound_monthly_usd", "Teto do mês do WhatsApp oficial em US$ (0 sem teto)"],
+  ["outbound_usd_brl", "Cotação do dólar para mostrar em reais"],
+  ["outbound_meta_template_usd", "Preço em US$ do modelo de Utilidade (vazio usa a tabela)"],
+  ["outbound_meta_service_usd", "Preço em US$ da resposta acima das 1.000 grátis (vazio usa o da Utilidade)"]
 ];
 export default function Operations({ part = "atendimento" }) {
   const [settings, setSettings] = useState(null);
@@ -68,6 +73,17 @@ export default function Operations({ part = "atendimento" }) {
       <Typography variant="caption" color="textSecondary">Os valores em dólares são estimativas configuradas, não a fatura. Limites de IA reservam margem antes de cada chamada; testes também consomem o orçamento.</Typography>
       {saveBtn}
     </Paper>
+    {settings.outbound_monthly_usd !== undefined && <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 14 }}>
+      <Typography variant="h6">Teto do mês do WhatsApp oficial</Typography>
+      <Typography variant="body2" color="textSecondary">
+        Soma o custo estimado de cada mensagem do mês pela categoria do modelo. Campanha que passaria do teto não começa, e ao chegar nele os envios pagos param até o mês seguinte. Em 80% a gestão recebe um aviso.
+        {Number(settings.outbound_monthly_usd) > 0 && Number(settings.outbound_usd_brl) > 0 ? ` Hoje o teto equivale a cerca de ${(Number(settings.outbound_monthly_usd) * Number(settings.outbound_usd_brl)).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}.` : ""}
+      </Typography>
+      {numbers(MONTH_FIELDS)}
+      <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={settings.outbound_allow_marketing === "true"} onChange={e => setSettings({ ...settings, outbound_allow_marketing: String(e.target.checked) })} />}
+        label="Permitir modelos de Marketing em campanhas (cerca de 9 vezes o preço de Utilidade)" />
+      {saveBtn}
+    </Paper>}
     {spend && <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 4 }}>
       <Typography variant="h6">Consumo de hoje</Typography>
       <Typography variant="body2">IA estimada: US$ {spend.aiEstimatedUsd.toFixed(4)} · {spend.aiUnpricedCalls} chamadas sem preço cadastrado · {spend.aiReservedTokens} tokens reservados.</Typography>

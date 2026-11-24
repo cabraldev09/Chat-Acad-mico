@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory, useLocation } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import { Button, CircularProgress, MenuItem, TextField } from "@material-ui/core";
-import { MessageSquare, MonitorCheck, RefreshCw, Upload, Megaphone } from "lucide-react";
+import { MessageSquare, MonitorCheck, RefreshCw, Upload, Megaphone, BellRing } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -13,6 +13,7 @@ import toastError from "../../errors/toastError";
 import Onboarding from "../Onboarding";
 import { ErrorState } from "../../components/ui";
 import ImportWizard from "../../components/ImportWizard";
+import NoticeDialog from "./NoticeDialog";
 
 // the columns of the spreadsheet of students the tutor brings (the management also says whose they are)
 const STUDENT_COLUMNS = [
@@ -76,6 +77,7 @@ export default function Tutoria() {
   const [poloId, setPoloId] = useState("");
   const [busy, setBusy] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [noticing, setNoticing] = useState(false);
   // a failed load says so (with "try again"), instead of looking like an empty tutoring
   const [failed, setFailed] = useState(false);
 
@@ -121,9 +123,11 @@ export default function Tutoria() {
         </div>
         <span style={{ marginLeft: "auto" }} />
         <Button size="small" variant="outlined" startIcon={<Upload size={15} />} onClick={() => setImporting(true)}>{manager ? "Importar alunos" : "Subir meus alunos"}</Button>
+        <Button size="small" variant="contained" color="primary" disableElevation startIcon={<BellRing size={15} />} onClick={() => setNoticing(true)}>Enviar aviso</Button>
         <Button size="small" variant="outlined" startIcon={<Megaphone size={15} />} onClick={() => history.push("/campaigns")}>Disparo para {manager ? "alunos" : "meus alunos"}</Button>
         {manager && <button type="button" onClick={() => history.push("/estatisticas/tutoria")} style={{ border: "1px solid var(--line-strong)", background: "var(--surface)", borderRadius: 8, padding: "6px 12px", font: "inherit", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Desempenho por tutor</button>}
       </MainHeader>
+      <NoticeDialog open={noticing} onClose={() => setNoticing(false)} manager={manager} students={data?.students || []} tutors={lists.tutors} polos={lists.polos} />
       <ImportWizard
         open={importing}
         onClose={() => setImporting(false)}

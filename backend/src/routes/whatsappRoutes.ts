@@ -1,6 +1,7 @@
 import express from "express";
 import isAuth from "../middleware/isAuth";
 import canManageWhatsapp from "../middleware/canManageWhatsapp";
+import isManager from "../middleware/isManager";
 
 import * as WhatsAppController from "../controllers/WhatsAppController";
 import * as ImportController from "../controllers/ImportPhoneContactsController";
@@ -10,17 +11,19 @@ const whatsappRoutes = express.Router();
 whatsappRoutes.get("/whatsapp/", isAuth, WhatsAppController.index);
 whatsappRoutes.get("/whatsapp-health", isAuth, WhatsAppController.health);
 
-// anyone may connect their own QR Code number (the controller limits what they can set)
-whatsappRoutes.post("/whatsapp/", isAuth, WhatsAppController.store);
+// only the management (admin, coordination) adds connections; a QR Code number may be given to a consultant or tutor, who reads
+// the QR Code on their own phone (see whatsappSessionRoutes)
+whatsappRoutes.post("/whatsapp/", isAuth, isManager, WhatsAppController.store);
 
 whatsappRoutes.get("/whatsapp/:whatsappId", isAuth, WhatsAppController.show);
 
+// the owner of a QR Code number only chooses which of its groups become conversations; everything else is the management's
 whatsappRoutes.put("/whatsapp/:whatsappId", isAuth, canManageWhatsapp, WhatsAppController.update);
 
 whatsappRoutes.delete(
   "/whatsapp/:whatsappId",
   isAuth,
-  canManageWhatsapp,
+  isManager,
   WhatsAppController.remove
 );
 

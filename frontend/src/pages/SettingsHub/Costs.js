@@ -24,7 +24,7 @@ export default function Costs() {
           <button key={k} type="button" role="tab" aria-selected={tab === k} className={`ui-tabs__btn${tab === k ? " is-on" : ""}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
-      {tab === "meta" && <MetaCosts />}
+      {tab === "meta" && <MetaCosts onLimits={() => setTab("limites")} />}
       {tab === "ia" && <AiCosts />}
       {tab === "limites" && <Operations part="limites" />}
       {tab === "dicas" && (

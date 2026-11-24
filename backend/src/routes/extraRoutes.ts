@@ -6,6 +6,7 @@ import isRetentionOperator from "../middleware/isRetentionOperator";
 import express from "express";
 import multer from "multer";
 import AppError from "../errors/AppError";
+import { roleOf } from "../helpers/Roles";
 import * as Materials from "../controllers/CourseMaterialController";
 
 import isAuth from "../middleware/isAuth";
@@ -319,7 +320,8 @@ r.get("/stats/overview", isAuth, Stats.overview);
 r.get("/channels", isAuth, Channel.index);
 // Instagram login: the app of Meta is set once (managers); anyone signed in connects their own account
 r.get("/channels/instagram/status", isAuth, ChannelOAuth.status);
-r.get("/channels/instagram/authorize", isAuth, ChannelOAuth.authorize);
+// only the management connects an Instagram account (Conexões)
+r.get("/channels/instagram/authorize", isAuth, isManager, ChannelOAuth.authorize);
 r.get("/channels/instagram/app", isAuth, isManager, ChannelOAuth.getApp);
 r.put("/channels/instagram/app", isAuth, isManager, ChannelOAuth.putApp);
 r.get("/channels/:whatsappId/info", isAuth, isManager, Channel.info);
@@ -423,6 +425,13 @@ r.get("/onboarding/rules", isAuth, Lead.onboardingRules);
 r.get("/tutoria/students", isAuth, Tutoria.students);
 r.get("/tutoria/panel", isAuth, Tutoria.panel);
 r.post("/tutoria/students/import", isAuth, Tutoria.importStudents);
+// Avisos da tutoria: only the tutor (their own students), the coordination and the admin
+const tutoriaStaff = (req: any, _res: any, next: any) => {
+  if (!["admin", "coordenacao", "tutor"].includes(roleOf(req.user || {}))) throw new AppError("ERR_NO_PERMISSION", 403);
+  next();
+};
+r.post("/tutoria/notices/preview", isAuth, tutoriaStaff, Tutoria.noticePreview);
+r.post("/tutoria/notices", isAuth, tutoriaStaff, Tutoria.noticeSend);
 r.get("/meta/costs", isAuth, isManager, MetaCosts.show);
 // the templates of the official WhatsApp account: list with status, create one (Utility only) and send the recommended pack
 r.get("/meta/templates", isAuth, isManager, MetaTemplates.index);

@@ -19,8 +19,38 @@ const PERIODS = [
 const card = { border: "1px solid var(--line-strong)", borderRadius: 12, background: "var(--surface)", padding: 16, boxShadow: "var(--shadow-card)", minWidth: 0 };
 const cell = { padding: "8px 10px", borderBottom: "1px solid var(--line)", fontSize: 13, textAlign: "left", fontVariantNumeric: "tabular-nums" };
 const th = { ...cell, fontSize: 12, fontWeight: 700, color: "var(--text-2)", background: "var(--surface-2)" };
+const CATEGORY = { MARKETING: "Marketing", UTILITY: "Utilidade", AUTHENTICATION: "Autenticação", SERVICE: "Respostas (24 h)", SEM_CATEGORIA: "Antes da separação por categoria" };
+const reais = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export default function MetaCosts() {
+// the estimate of the month against the cap of the month (Operação e custos), always this month whatever the period chosen
+function MonthCap({ month, onLimits }) {
+  const pct = month.pct === null ? null : Math.min(100, month.pct);
+  const tone = month.pct >= 100 ? "#b91c1c" : month.pct >= 80 ? "#b45309" : "var(--accent)";
+  return (
+    <div style={{ ...card, display: "grid", gap: 8 }} aria-label="Teto do mês">
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>Este mês no WhatsApp oficial</div>
+        <span style={{ flex: 1 }} />
+        {onLimits && <button type="button" onClick={onLimits} style={{ border: 0, background: "transparent", padding: 0, color: "var(--accent)", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Ajustar o teto</button>}
+      </div>
+      <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
+        {reais(month.spentUsd * month.usdBrl)}
+        <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-2)" }}>{month.capUsd ? ` de ${reais(month.capUsd * month.usdBrl)} do teto` : " (sem teto definido)"}</span>
+      </div>
+      {pct !== null && (
+        <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Uso do teto do mês" style={{ height: 8, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, height: "100%", background: tone, borderRadius: 999 }} />
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12.5, color: "var(--text-2)" }}>
+        {month.byCategory.length ? month.byCategory.map((c) => <span key={c.category}>{CATEGORY[c.category] || c.category}: {c.messages.toLocaleString("pt-BR")} · {reais(c.usd * month.usdBrl)}</span>) : <span>Nenhum envio pago neste mês.</span>}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-2)" }}>Estimativa do sistema pela categoria de cada modelo, com o dólar a {reais(month.usdBrl)}. Cada número oficial tem 1.000 respostas grátis por mês.</div>
+    </div>
+  );
+}
+
+export default function MetaCosts({ onLimits }) {
   const [period, setPeriod] = useState("mes");
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -54,6 +84,8 @@ export default function MetaCosts() {
           <span><b>{a.connections.join(", ")}</b>: {a.error} <Link to="/connections">Abrir Conexões</Link></span>
         </div>
       ))}
+
+      {data?.month && <MonthCap month={data.month} onLimits={onLimits} />}
 
       {!data ? <div style={{ color: "var(--text-2)", fontSize: 13 }}>Consultando a Meta…</div> : !data.accounts.length ? (
         <div style={{ ...card, color: "var(--text-2)", fontSize: 13.5 }}>Nenhuma conexão da API oficial. Os custos aparecem aqui quando houver um número da Meta em Conexões.</div>
@@ -131,7 +163,7 @@ export default function MetaCosts() {
             ))}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-            Contas lidas: {data.accounts.filter((a) => a.ok).map((a) => `${a.name || a.wabaId} (${a.connections.join(", ")})`).join(" · ") || "nenhuma"}. As mensagens de atendimento dentro da janela de 24 h são gratuitas; modelos de marketing, utilidade e autenticação são cobrados por mensagem entregue.
+            Contas lidas: {data.accounts.filter((a) => a.ok).map((a) => `${a.name || a.wabaId} (${a.connections.join(", ")})`).join(" · ") || "nenhuma"}. Cada número tem 1.000 respostas grátis por mês dentro da janela de 24 h; modelos de marketing, utilidade e autenticação são cobrados por mensagem entregue.
           </div>
         </>
       )}

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import { AlertTriangle, Wifi, WifiOff, Settings2, Target, Users, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Wifi, WifiOff, Settings2, Target, Users, X } from "lucide-react";
+import { colorOf, initialsOf } from "../../utils/avatar";
+import "../../styles/peak.css";
 
 import Tooltip from "@material-ui/core/Tooltip";
 import Drawer from "@material-ui/core/Drawer";
@@ -280,38 +282,48 @@ const Alerts = ({ alerts, onOpen, history }) => {
     else if (a.code === "whatsapp_offline") history.push("/connections");
     else onOpen(a.userId);
   };
+  const TONE = { high: "bad", medium: "warn", low: "info" };
   return (
     <div className={c.panel}>
-      <BlockTitle icon={<AlertTriangle size={16} />} title="Alertas e oportunidades" help="Uma linha por pessoa, com o problema mais grave primeiro." />
-      <div style={{ marginTop: 8 }}>
-        {people.length === 0 && <div className={c.sub} style={{ padding: "14px 0" }}>Nada pedindo atenção agora. Tudo em dia.</div>}
-        {people.slice(0, 6).map((g) => {
-          const [head, ...rest] = g.items;
-          return (
-            <div key={g.userId} style={{ display: "flex", gap: 12, padding: "12px 0", borderTop: `1px solid rgba(127,140,160,.22)`, alignItems: "flex-start" }}>
-              <span style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: LEVEL[head.level], flex: "none" }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-                  <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</b>
-                  <button type="button" className={c.btn} style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => onOpen(g.userId)}>Ver detalhe</button>
-                </div>
-                <Tooltip title={WHY[head.code] || ""} enterDelay={0} placement="top" arrow>
-                  <button type="button" onClick={() => open(head)} style={{ display: "block", textAlign: "left", border: 0, background: "none", font: "inherit", color: "inherit", padding: 0, marginTop: 2, cursor: "pointer", lineHeight: 1.4 }}>{head.text}</button>
-                </Tooltip>
-                {rest.length > 0 && (
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                    {rest.map((a) => (
-                      <Tooltip key={a.code} title={WHY[a.code] || ""} enterDelay={0} placement="top" arrow>
-                        <button type="button" onClick={() => open(a)} style={{ border: 0, cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 999, background: `${LEVEL[a.level]}1f`, color: "inherit" }}>{a.text}</button>
-                      </Tooltip>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div className="mx-head">
+        <span className="mx-ico" data-tone={people.length ? TONE[people[0].items[0].level] : "good"} aria-hidden="true"><AlertTriangle size={17} /></span>
+        <div style={{ minWidth: 0 }}>
+          <h3 className="mx-title">Alertas e oportunidades</h3>
+          <div className="mx-sub">Uma linha por pessoa, com o problema mais grave primeiro.</div>
+        </div>
       </div>
+      {people.length === 0 ? (
+        <div className="mx-empty"><span className="mx-ico" data-tone="good" aria-hidden="true"><CheckCircle2 size={17} /></span><div><b>Tudo em dia</b><span>Nada pedindo atenção agora.</span></div></div>
+      ) : (
+        <div className="mx-list">
+          {people.slice(0, 6).map((g) => {
+            const [head, ...rest] = g.items;
+            return (
+              <div key={g.userId} className="mx-item" style={{ alignItems: "flex-start", borderLeft: `3px solid ${LEVEL[head.level]}` }}>
+                <span className="mx-avatar" style={{ background: colorOf(g.name) }} aria-hidden="true">{initialsOf(g.name)}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                    <b className="mx-name" style={{ fontSize: 13.5 }}>{g.name}</b>
+                    <button type="button" className="mx-go" style={{ border: 0, background: "none", cursor: "pointer", padding: "6px 0", font: "inherit", fontSize: 12.5, fontWeight: 650, color: "var(--c-brand)" }} onClick={() => onOpen(g.userId)}>Ver detalhe <ChevronRight size={15} aria-hidden="true" /></button>
+                  </div>
+                  <Tooltip title={WHY[head.code] || ""} enterDelay={0} placement="top" arrow>
+                    <button type="button" onClick={() => open(head)} style={{ display: "block", textAlign: "left", border: 0, background: "none", font: "inherit", fontSize: 13.5, color: "inherit", padding: 0, cursor: "pointer", lineHeight: 1.45 }}>{head.text}</button>
+                  </Tooltip>
+                  {rest.length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                      {rest.map((a) => (
+                        <Tooltip key={a.code} title={WHY[a.code] || ""} enterDelay={0} placement="top" arrow>
+                          <button type="button" className="mx-pill" data-tone={TONE[a.level]} onClick={() => open(a)} style={{ border: 0, cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 650 }}>{a.text}</button>
+                        </Tooltip>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

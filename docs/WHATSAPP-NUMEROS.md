@@ -9,6 +9,24 @@
   - O consultor assina as mensagens com o próprio nome. A opção "Assinar" do campo de mensagem vem ligada.
 - **O WhatsApp corporativo do consultor (QR code)** fica só para quem ainda não migrou. É uma conexão não oficial e corre risco de banimento, principalmente com contatos frios e envios em volume.
 
+## Quem cria e quem vê as conexões
+- **Só a gestão** (`admin` e `coordenacao`) adiciona, edita e apaga conexões, incluindo o Instagram. Consultores e tutores não criam
+  número próprio.
+- **Número QR Code de uma pessoa:** ao criar um WhatsApp por QR Code, a gestão escolhe em **"Responsável pelo número"** o consultor
+  ou tutor. O número vira dele:
+  - as conversas que chegam nele vão para ele;
+  - vira o número de envio dele.
+
+  A gestão pode trocar o responsável ou devolver o número à empresa depois.
+- **Conexões para quem não é da gestão:** o item aparece no menu só para quem tem um número QR Code próprio.
+  - A tela mostra só esse número. A pessoa lê o QR Code com o celular, reconecta, desconecta e escolhe quais grupos viram conversas.
+  - Os números da empresa, o Instagram e os botões de adicionar, editar e apagar não aparecem.
+  - Sem número próprio, o endereço `/connections` leva para Conversas.
+- **No servidor:**
+  - `POST /whatsapp`, `DELETE /whatsapp/:id` e `/channels/instagram/authorize` são só da gestão;
+  - as rotas de sessão (`/whatsappsession/:id`) e `PUT /whatsapp/:id` aceitam a gestão e o dono do número QR (`canManageWhatsapp`);
+  - no `PUT`, o dono só muda os grupos (`groupsMode` e `allowedGroups`).
+
 ## Como a carteira funciona
 - **Dono do cliente**: é o **responsável no CRM**, se ele já conversou com o cliente. Se não, é **quem atendeu por último**.
 - **Quando o cliente escreve de novo** num número compartilhado (sem dono), a conversa vai direto para esse consultor: sem robô, sem fluxo e sem rodízio.
@@ -46,10 +64,40 @@
 3. Deixe o QR conectado só para responder durante a transição. Depois, desconecte.
 
 ## Custos
-- A Meta cobra por conversa ou mensagem, de acordo com a categoria: serviço, marketing ou utilidade.
-- As respostas do consultor a uma mensagem do cliente (serviço) dentro da janela costumam ser gratuitas ou baratas.
-- Disparos de marketing custam mais.
-- As estimativas e os limites diários do sistema ficam em Configurações → Custos (aba Limites de gasto).
+- A Meta cobra por mensagem entregue, pela categoria do modelo. No Brasil (tabela de 2026-11): Utilidade cerca de US$ 0,0068
+  e Marketing cerca de US$ 0,0625, umas 9 vezes mais.
+- Respostas livres dentro das 24 h (serviço): cada número oficial tem 1.000 grátis por mês; acima disso, cada uma é cobrada.
+- O custo é por mensagem, não por número: um número a mais não encarece e traz mais 1.000 respostas grátis.
+- QR Code não paga a Meta, mas disparo em massa por QR derruba o número. O sistema limita o QR a poucos contatos frios por dia.
+
+Como o sistema controla:
+- Cada envio guarda a categoria (`OutboundDeliveries.category`) e o custo estimado pela tabela `ChannelServices/MetaRates.ts`
+  (`estimateSendUsd`). A categoria de cada modelo vem da Meta e é guardada quando os modelos são lidos ou quando a Meta avisa que
+  mudou (`template_category_update`). Modelo de categoria desconhecida conta como Marketing.
+- **Teto do mês** (`outbound_monthly_usd`, padrão US$ 148, cerca de R$ 800): campanha que passaria dele não começa; ao chegar nele
+  os envios pagos param e a campanha pausa (`ERR_OUTBOUND_MONTH_BUDGET`). Em 80% e 100% a gestão recebe aviso.
+- **Marketing em campanhas** fica desligado (`outbound_allow_marketing`): um modelo que a Meta classificou como Marketing não começa.
+- Tudo isso fica em Configurações → Custos: a aba WhatsApp oficial mostra o mês contra o teto, a aba Limites de gasto tem o teto,
+  a cotação do dólar e os preços digitados (vazio usa a tabela).
+
+## Estratégia para os 8 polos (fase 1)
+
+| Uso | Canal | Por quê |
+|---|---|---|
+| Avisos da tutoria (atividades e provas) | Número oficial da Tutoria, um para os 8 polos | Aviso é Utilidade (barato). Em massa por QR perderia o número. |
+| Dúvidas dos alunos e secretaria | O mesmo número da Tutoria | O aluno guarda um número só; 1.000 respostas grátis por mês. |
+| Leads que chegam e IA | O número oficial atual (Atendimento) | Já existe; 1.000 respostas grátis por mês. |
+| Consultor chamando indicação | Número próprio (QR) de cada consultor, 1 a 1 | Sem custo; volume baixo, dentro dos limites do QR. |
+| Retomar lead frio pelo oficial | Só modelo aprovado, dentro do teto | Marketing é a mensagem cara. |
+
+**Avisos da tutoria** (tela Alunos da tutoria, botão Enviar aviso; tutor, coordenação e admin): dois por aluno por mês em vez de
+quatro, o resumo das atividades (`aviso_atividades_mes`) e o lembrete na semana da prova (`lembrete_prova`), ambos de Utilidade.
+A tela mostra quantos recebem, o custo e o que bloqueia antes de enviar, e pede confirmação. O envio usa a fila de campanhas pelo
+número da Tutoria (`TutoriaServices/Notices.ts`). O tutor só alcança os próprios alunos. Para 1.600 alunos, 3.200 avisos ficam
+perto de US$ 22 (cerca de R$ 120) por mês.
+
+Para ligar: conectar o número oficial da Tutoria (Função do número = Tutoria), mandar o pacote de modelos para aprovação em
+Modelos da Meta e autorizar o envio com modelos.
 
 ## Fora do escopo por enquanto
 - **Coexistência:** o consultor usar o app WhatsApp Business no mesmo número oficial. Só faz sentido se cada consultor tiver um número oficial próprio.

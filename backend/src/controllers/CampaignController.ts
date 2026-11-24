@@ -25,6 +25,7 @@ import AppError from "../errors/AppError";
 import { getIO } from "../libs/socket";
 import makeCrud from "./crudFactory";
 import { assertOwnList, tutorIdOf, tutoriaConnectionId } from "../services/CampaignServices/Access";
+import { assertCampaignCost, campaignCost } from "../services/CampaignServices/CostGate";
 import { CampaignStep, MAX_CAMPAIGN_STEPS, cleanSteps, stepsOf } from "../helpers/CampaignText";
 import { legacyInstitutionId } from "../helpers/Institution";
 
@@ -220,6 +221,8 @@ export const start = async (req: Request, res: Response): Promise<Response> => {
 
   // the recipients are copied from the list the first time the campaign starts
   await ensureShippings(campaign);
+  // a Marketing template only with permission, and never past the cap of the month of the Meta
+  await assertCampaignCost(campaign, await connectionOf(campaign), await CampaignShipping.count({ where: { campaignId: campaign.id, status: "pending" } }));
 
   const now = req.body?.now === true || req.body?.now === "true";
   const future = !now && campaign.scheduledAt && campaign.scheduledAt.getTime() > Date.now();
@@ -424,9 +427,14 @@ const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => 
   if (safety && safety.dailyLimit !== null && canReceive > Math.max(0, safety.dailyLimit - (safety.sentToday || 0))) {
     warnings.push(`Esta conexão envia até ${safety.dailyLimit} por dia em campanhas (hoje já foram ${safety.sentToday}): o envio continua nos dias seguintes.`);
   }
+  // what the Meta is estimated to charge (official API with a template) and whether it fits the cap of the month
+  const cost = await campaignCost(campaign, whatsapp, canReceive);
+  if (cost.category === "MARKETING" && cost.categoryKnown) warnings.push(cost.marketingAllowed ? "O modelo escolhido é de Marketing: cada envio custa cerca de 9 vezes um modelo de Utilidade." : "O modelo escolhido é de Marketing (cerca de 9 vezes o preço de Utilidade) e o uso de Marketing em campanhas está desligado em Operação e custos.");
+  if (!cost.fitsMonth) warnings.push("Esta campanha passaria do teto do mês do WhatsApp oficial (Operação e custos): ela não começa.");
   return {
     total,
     canReceive,
+    cost,
     blocked: { optedOut, cold, noConsent },
     noConsent,
     messagesPerPerson,

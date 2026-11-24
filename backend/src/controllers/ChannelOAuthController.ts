@@ -4,7 +4,6 @@ import axios from "axios";
 import AppError from "../errors/AppError";
 import Whatsapp from "../models/Whatsapp";
 import User from "../models/User";
-import { getSetting } from "../helpers/AppSettings";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { maskSecret, isMasked, sealConfig } from "../helpers/Secrets";
 import { getConfig } from "../channels/types";
@@ -75,10 +74,6 @@ export const authorize = async (req: Request, res: Response): Promise<Response> 
   if (whatsappId) {
     const w = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId", "channel"] });
     if (!w || w.channel !== "instagram") throw new AppError("ERR_NO_WAPP_FOUND", 404);
-    if (!isManagerReq(req) && w.ownerId !== me) throw new AppError("ERR_NO_PERMISSION", 403);
-  } else if (!isManagerReq(req)) {
-    const limit = Number(await getSetting("max_connections_per_user", "1")) || 1;
-    if ((await Whatsapp.count({ where: { ownerId: me, channel: "instagram" } as any })) >= limit) throw new AppError("ERR_CONNECTION_LIMIT", 400);
   }
 
   const params = new URLSearchParams({
