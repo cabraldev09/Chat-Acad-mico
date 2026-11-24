@@ -1743,6 +1743,48 @@ ALTER SEQUENCE public."CurricularAnalyses_id_seq" OWNED BY public."CurricularAna
 
 
 --
+-- Name: EnrollmentForms; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."EnrollmentForms" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    token character varying(64) NOT NULL,
+    data text,
+    files text,
+    progress integer DEFAULT 0 NOT NULL,
+    "consentAt" timestamp with time zone,
+    "submittedAt" timestamp with time zone,
+    "lastSavedAt" timestamp with time zone,
+    "sentAt" timestamp with time zone,
+    "expiresAt" timestamp with time zone,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: EnrollmentForms_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."EnrollmentForms_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: EnrollmentForms_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."EnrollmentForms_id_seq" OWNED BY public."EnrollmentForms".id;
+
+
+--
 -- Name: EnrollmentProofs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4085,6 +4127,13 @@ ALTER TABLE ONLY public."CurricularAnalyses" ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: EnrollmentForms id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EnrollmentForms" ALTER COLUMN id SET DEFAULT nextval('public."EnrollmentForms_id_seq"'::regclass);
+
+
+--
 -- Name: EnrollmentProofs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4796,6 +4845,22 @@ ALTER TABLE ONLY public."Courses"
 
 ALTER TABLE ONLY public."CurricularAnalyses"
     ADD CONSTRAINT "CurricularAnalyses_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: EnrollmentForms EnrollmentForms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EnrollmentForms"
+    ADD CONSTRAINT "EnrollmentForms_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: EnrollmentForms EnrollmentForms_token_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EnrollmentForms"
+    ADD CONSTRAINT "EnrollmentForms_token_key" UNIQUE (token);
 
 
 --
@@ -5767,6 +5832,13 @@ CREATE INDEX curricular_analyses_user_id_created_at ON public."CurricularAnalyse
 --
 
 CREATE INDEX curricular_followup_due_idx ON public."CurricularAnalyses" USING btree ("followUpDueAt") WHERE ("followUpDueAt" IS NOT NULL);
+
+
+--
+-- Name: enrollment_forms_lead; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX enrollment_forms_lead ON public."EnrollmentForms" USING btree ("leadId");
 
 
 --
@@ -6802,6 +6874,14 @@ ALTER TABLE ONLY public."CourseRegulations"
 
 ALTER TABLE ONLY public."Courses"
     ADD CONSTRAINT "Courses_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: EnrollmentForms EnrollmentForms_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EnrollmentForms"
+    ADD CONSTRAINT "EnrollmentForms_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -7871,10 +7951,10 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000008-tasks-and-notificatio
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000009-institutions.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000010-message-transcript.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-legacy-institution.js') ON CONFLICT DO NOTHING;
-INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-messages-created-at.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000002-messages-created-at.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261224000001-lead-polo-source.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261225000001-outbound-category.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261226000001-enrollment-forms.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

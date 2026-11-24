@@ -1,16 +1,6 @@
-# Rotas da API (560)
+# Rotas da API (573)
 
-Públicas: 35 · logado (qualquer perfil): 303 · gestão: 178 · admin: 36
-
-## Quem vê quais leads (CRM)
-
-Regra em `backend/src/middleware/scope.ts` (`leadScopeWhere`), usada no funil, na lista, nas propostas, nos pagamentos e nas campanhas:
-
-- **Admin e coordenação:** todos.
-- **Consultor:** só os leads em que é o responsável. Os leads sem responsável são distribuídos pela gestão.
-- **Tutor:** os leads em que é o responsável e os alunos dados a ele. Os alunos do polo ainda sem tutor aparecem na tela Alunos da
-  tutoria, não no CRM.
-- **Relacionamento:** os alunos matriculados.
+Públicas: 40 · logado (qualquer perfil): 310 · gestão: 178 · admin: 37
 
 ## Públicas (sem login)
 
@@ -32,6 +22,11 @@ Regra em `backend/src/middleware/scope.ts` (`leadScopeWhere`), usada no funil, n
 - POST /efi/:secret/pix (efiWebhookRoutes.ts)
 - POST /efi/:secret/billet (efiWebhookRoutes.ts)
 - POST /efi/:secret (efiWebhookRoutes.ts)
+- GET /:token (enrollmentFormPublicRoutes.ts)
+- PUT /:token (enrollmentFormPublicRoutes.ts)
+- POST /:token/files/:kind (enrollmentFormPublicRoutes.ts)
+- DELETE /:token/files/:kind (enrollmentFormPublicRoutes.ts)
+- POST /:token/submit (enrollmentFormPublicRoutes.ts)
 - GET /_aluna.webp (leadFormRoutes.ts)
 - GET /:token (leadFormRoutes.ts)
 - GET /:token/u/:slug (leadFormRoutes.ts)
@@ -156,19 +151,24 @@ Regra em `backend/src/middleware/scope.ts` (`leadScopeWhere`), usada no funil, n
 - POST /retention/run → isRetentionOperator
 - PUT /leads/:id/documents/:docId → canAccessLead
 - POST /leads/:id/documents/remind → canAccessLead
+- POST /leads/:id/enrollment-form → canAccessLead
+- POST /leads/:id/enrollment-form/send → canAccessLead
+- POST /tickets/:ticketId/enrollment-form → canWriteTicket
 - PUT /leads/:id → canAccessLead
 - PUT /leads/:id/stage → canAccessLead
 - POST /leads/:id/relation → canAccessLead
 - POST /leads/:id/activities → canAccessLead
 - POST /leads/:id/tasks → canAccessLead
 - POST /leads/:id/open-ticket → canAccessLead
-- PUT /leads/:id/onboarding/access → canAccessLead
-- POST /leads/:id/onboarding/access/send → canAccessLead
-- PUT /leads/:id/onboarding/checklist → canAccessLead
+- POST /tutoria/notices/preview → tutoriaStaff
+- POST /tutoria/notices → tutoriaStaff
+- PUT /leads/:id/onboarding/access → canAccessOnboarding
+- POST /leads/:id/onboarding/access/send → canAccessOnboarding
+- PUT /leads/:id/onboarding/checklist → canAccessOnboarding
 - POST /leads/:id/enrollment-proof → canAccessLead
 - POST /leads/:id/enroll → canAccessLead
-- POST /leads/:id/onboarding → canAccessLead
-- PUT /leads/:id/onboarding → canAccessLead
+- POST /leads/:id/onboarding → canAccessOnboarding
+- PUT /leads/:id/onboarding → canAccessOnboarding
 - PUT /leads/:id/tasks/:taskId → canAccessLead
 - POST /leads/:id/tasks/:taskId/toggle → canAccessLead
 - PUT /leads/:id/tasks/:taskId/done → canAccessLead

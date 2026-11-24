@@ -29,8 +29,12 @@ export default function TeamBar({ ticket }) {
 
   const load = useCallback(() => {
     if (!show) return;
-    api.get(`/tickets/${ticket.id}/team-handoff`).then(({ data }) => setInfo(data)).catch(() => setInfo(null));
-  }, [ticket.id, show]);
+    api.get(`/tickets/${ticket.id}/team-handoff`).then(({ data }) => {
+      setInfo(data);
+      // the header's menu offers "Chamar a tutoria / o consultor" to whoever holds the conversation
+      window.dispatchEvent(new CustomEvent("teamHandoffInfo", { detail: { ticketId: ticket.id, canCall: ticket.userId && data ? data.canCall || null : null } }));
+    }).catch(() => setInfo(null));
+  }, [ticket.id, ticket.userId, show]);
   useEffect(() => {
     load();
     try { setHidden(window.localStorage.getItem(seenKey(ticket.id))); } catch (e) { setHidden(null); }
@@ -47,7 +51,7 @@ export default function TeamBar({ ticket }) {
   const last = info.last && String(info.last.id) !== hidden ? info.last : null;
   const win = info.window || {};
   const closedWindow = win.official && !win.open;
-  if (!last && !(info.canCall && mine) && !(closedWindow && mine)) return null;
+  if (!last && !(closedWindow && mine) && !dialog) return null;
 
   const call = async () => {
     setBusy(true);
@@ -70,13 +74,12 @@ export default function TeamBar({ ticket }) {
       <div className={c.note}>{last.note}</div>
       <Button size="small" className={c.button} startIcon={<X size={13} />} onClick={dismiss}>Dispensar</Button>
     </div>}
-    {mine && (info.canCall || closedWindow) && <div className={c.bar}>
+    {mine && closedWindow && <div className={c.bar}>
       {closedWindow && <span className={c.muted} style={{ flex: "1 1 260px" }}>
         {win.never
           ? "Esta pessoa ainda não escreveu para este número oficial. No WhatsApp oficial a conversa começa quando ela mandar a primeira mensagem; a partir daí você tem 24 horas para responder."
           : "Passaram 24 horas desde a última mensagem desta pessoa neste número oficial. A conversa volta ao normal quando ela escrever de novo."}
       </span>}
-      {!closedWindow && <span style={{ flex: 1 }} />}
       {info.canCall && <Button size="small" className={c.button} disabled={busy} startIcon={<Shuffle size={13} />} onClick={() => setDialog(true)}>{LABEL[info.canCall]}</Button>}
     </div>}
     <Dialog open={dialog} onClose={() => setDialog(false)} fullWidth maxWidth="sm">

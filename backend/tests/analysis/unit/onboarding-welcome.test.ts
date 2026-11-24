@@ -20,7 +20,7 @@ const full = { saudacao: "Olá, Gabriela, que bom que você chamou!", primeiro_n
 describe("primeira abordagem do tutor", () => {
   it("o texto padrão responde ao aluno, se apresenta, traz o curso e o polo da matrícula e termina com uma pergunta só", () => {
     const text = fillWelcome(DEFAULT_WELCOME, full);
-    expect(text.startsWith("Olá, Gabriela, que bom que você chamou! Eu sou João Vitor, tutor(a) da Cruzeiro do Sul Virtual no polo Porto Velho, e vou acompanhar você no curso de Pedagogia.")).toBe(true);
+    expect(text.startsWith("Olá, Gabriela, que bom que você chamou!\n\nEu sou João Vitor, tutor(a) da Cruzeiro do Sul Virtual no polo Porto Velho, e vou acompanhar você no curso de Pedagogia.")).toBe(true);
     expect(text).toContain("ambientação");
     expect(text.match(/\?/g)).toHaveLength(1);
     expect(text).not.toMatch(/\{\{|\[\[|\]\]/);
@@ -30,7 +30,7 @@ describe("primeira abordagem do tutor", () => {
     const noPolo = fillWelcome(DEFAULT_WELCOME, { ...full, polo: "" });
     expect(noPolo).toContain("tutor(a) da Cruzeiro do Sul Virtual, e vou acompanhar você no curso de Pedagogia.");
     const none = fillWelcome(DEFAULT_WELCOME, { ...full, polo: "", curso: "  " });
-    expect(none).toContain("tutor(a) da Cruzeiro do Sul Virtual, e vou acompanhar você. O primeiro passo");
+    expect(none).toContain("tutor(a) da Cruzeiro do Sul Virtual, e vou acompanhar você.\n\nO primeiro passo");
     expect(none).not.toMatch(/ {2}| \.| ,/);
   });
 
@@ -45,6 +45,14 @@ describe("primeira abordagem do tutor", () => {
     const text = fillWelcome(DEFAULT_UNKNOWN, full);
     expect(text).toBe("Olá, Gabriela, que bom que você chamou! Eu sou João Vitor, da tutoria da Cruzeiro do Sul Virtual. Para eu localizar o seu cadastro, você pode me informar o seu RGM?");
     expect(text).not.toMatch(/matr[ií]cula|ambienta/i);
+  });
+
+  it("o texto padrão vem em três parágrafos curtos: saudação, quem é o tutor, o primeiro passo", () => {
+    expect(fillWelcome(DEFAULT_WELCOME, full).split("\n\n")).toHaveLength(3);
+  });
+
+  it("um texto salvo com emoji sai sem emoji e sem espaço sobrando", () => {
+    expect(fillWelcome("Olá, {{primeiro_nome}}! Parabéns pela matrícula! 🎓 Eu sou {{tutor}}. 👋🏽", full)).toBe("Olá, Gabriela! Parabéns pela matrícula! Eu sou João Vitor.");
   });
 
   it("os textos padrão não têm emoji", () => {

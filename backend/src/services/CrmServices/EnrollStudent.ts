@@ -63,3 +63,33 @@ export const handoverNote = async (input: { lead: Lead; rgm: string; courseName:
   ];
   return lines.join("\n").slice(0, 1800);
 };
+
+// The portal at the enrollment: the e-mail the student typed in the enrollment form (else the lead's) goes to the lead, the contact and the
+// student of the portal, and the student gets the invitation to create the password (they enter with the RGM). Never blocks the enrollment.
+export const portalAccessAtEnrollment = async (lead: Lead, student: Student, warnings: string[]): Promise<void> => {
+  try {
+    const { formEmailOf } = await import("./EnrollmentForm");
+    const fromForm = await formEmailOf(lead.id);
+    const email = fromForm || (lead.email ? String(lead.email).trim().toLowerCase() : "") || null;
+    if (fromForm && lead.email !== fromForm) {
+      lead.set({ email: fromForm } as any);
+      await lead.save();
+    }
+    // without an e-mail (or without the e-mail of the system) the invitation is sent later from the student's screen
+    if (!email) return;
+    if (student.email !== email && !student.activatedAt) {
+      student.set({ email } as any);
+      await student.save();
+    }
+    if (student.activatedAt || student.blockedAt || !student.email) return;
+    const { mailConfigured, sendMail } = await import("../MailServices/SendMail");
+    if (!(await mailConfigured())) return;
+    const { issueToken } = await import("../../analysis/Store");
+    const { studentLinkMail } = await import("../MailServices/Templates");
+    const { frontBase } = await import("../MailServices/Notify");
+    const token = await issueToken(student, "invite");
+    await sendMail({ to: student.email, ...studentLinkMail("invite", student.name, `${frontBase()}/portal/ativar/${token}`, "7 dias"), idempotencyKey: `student-invite/${student.id}/${token.slice(0, 16)}`, leadId: lead.id });
+  } catch (err) {
+    warnings.push(`O convite do Portal do Aluno não foi enviado (${(err as Error).message}). Envie pela tela do aluno.`);
+  }
+};

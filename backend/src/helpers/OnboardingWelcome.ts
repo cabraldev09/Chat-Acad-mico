@@ -19,7 +19,7 @@ import User from "../models/User";
 // [[ and ]] is kept only when every variable inside it has a value, so a student with no polo or no course yet reads clean, with no hole.
 // {{saudacao}} answers the student who wrote first ("Olá, Ana, que bom que você chamou!"), else it only greets ("Olá, Ana!").
 export const DEFAULT_WELCOME =
-  "{{saudacao}} Eu sou {{tutor}}, tutor(a) da {{instituicao}}[[ no polo {{polo}}]], e vou acompanhar você[[ no curso de {{curso}}]]. O primeiro passo é a sua ambientação, a apresentação da plataforma de estudos. Qual o melhor dia e horário para falarmos?";
+  "{{saudacao}}\n\nEu sou {{tutor}}, tutor(a) da {{instituicao}}[[ no polo {{polo}}]], e vou acompanhar você[[ no curso de {{curso}}]].\n\nO primeiro passo é a sua ambientação, a apresentação da plataforma de estudos. Qual o melhor dia e horário para falarmos?";
 
 // someone wrote to the tutoring number and the system has no enrollment of theirs: no talk of enrollment or onboarding, only who the
 // tutor is and the one thing needed to find the student (the RGM)
@@ -55,7 +55,12 @@ export const fillWelcome = (template: string, table: Record<string, string>): st
   });
   return withParts
     .replace(VARIABLE, (whole, key: string) => (value(key) !== undefined ? String(value(key)) : whole))
+    // the messages of the team to students carry no emoji, even in a text typed with one in Configurações
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}\u{200D}\u{20E3}]/gu, "")
     .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([.,!?])/g, "$1")
+    .replace(/[ \t]*\n[ \t]*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 };
 

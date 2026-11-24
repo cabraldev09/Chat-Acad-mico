@@ -42,6 +42,7 @@ import { courseLabel, inventedCourse } from "../CommercialServices/InventedCours
 import { todayLine } from "../CommercialServices/Hours";
 import { maskNamedPerson, maskPii } from "./ChatExport";
 import { sameAgentInstitution } from "../FlowServices/AgentInstitution";
+import { TUTORIA_SEGMENTS } from "../ChannelServices/ConnectionTeam";
 
 export const HANDOFF_MARKER = "[HANDOFF]";
 // the agent found nothing about a fact of the institution: the question is kept for the owner to teach
@@ -76,6 +77,10 @@ export const findAgentForTicket = async (ticket: Ticket): Promise<AiAgent | null
   // most specific match first: queue, then connection, then global
   const byQueue = agents.find(a => a.queueId && ticket.queueId && a.queueId === ticket.queueId);
   const byConn = agents.find(a => !a.queueId && connectionsOf(a).includes(ticket.whatsappId));
+  // the tutoring talks to enrolled students: the agent that serves every number (the commercial one) never answers there, only an agent
+  // given to the tutoring number or queue on purpose
+  const tutoring = TUTORIA_SEGMENTS.includes(String(ticket.segment || ""));
+  if (tutoring) return byQueue || byConn || null;
   const global = agents.find(a => !a.queueId && !connectionsOf(a).length);
   if (byQueue || byConn || global) return byQueue || byConn || global || null;
   // a consultant handed this conversation to the AI to qualify: the commercial agent takes it even on a connection it does not serve
