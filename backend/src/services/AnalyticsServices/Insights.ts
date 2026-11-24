@@ -1,4 +1,4 @@
-import { rows, VALID_TICKET, visibleConsultantIds, LEAD_IN_INSTITUTION } from "./AnalyticsService";
+import { rows, VALID_TICKET, REPLY_PENDING, visibleConsultantIds, LEAD_IN_INSTITUTION } from "./AnalyticsService";
 import { isManagerRole, roleOf } from "../../helpers/Roles";
 import { logger } from "../../utils/logger";
 import { getAppTz } from "../../helpers/AppTime";
@@ -33,7 +33,7 @@ const safe = async <T>(name: string, fn: () => Promise<T>): Promise<T | null> =>
 };
 
 // selfOnly: the person's own leads and conversations, even for a manager (the "Meu desempenho" screen)
-export const insightsFor = async (user: any, now: Date = new Date(), opts: { selfOnly?: boolean } = {}): Promise<Insight[]> => {
+const insightsAll = async (user: any, now: Date = new Date(), opts: { selfOnly?: boolean } = {}): Promise<Insight[]> => {
   const manager = !opts.selfOnly && isManagerRole(roleOf(user));
   const ids = manager ? await visibleConsultantIds(user) : [Number(user.id)];
   if (!ids.length) return [];
@@ -52,7 +52,7 @@ export const insightsFor = async (user: any, now: Date = new Date(), opts: { sel
   });
 
   await safe("pendingReply", async () => {
-    const [r] = await rows(`SELECT COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND t.updatedAt < :hourAgo AND ${VALID_TICKET}`, rep);
+    const [r] = await rows(`SELECT COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND t.updatedAt < :hourAgo AND ${REPLY_PENDING} AND ${VALID_TICKET}`, rep);
     const n = Number(r?.n || 0);
     if (n) out.push({ key: "pending_reply", tone: n >= 5 ? "danger" : "warn", title: `${plural(n, "conversa espera", "conversas esperam")} resposta há mais de 1 hora`, detail: "A última mensagem é do cliente. Responda antes que ele esfrie.", link: "/tickets" });
   });
@@ -138,4 +138,19 @@ export const insightsFor = async (user: any, now: Date = new Date(), opts: { sel
 
   const order = { danger: 0, warn: 1, good: 2, info: 3 } as const;
   return out.sort((a, b) => order[a.tone] - order[b.tone]).slice(0, 10);
+};
+
+// the priorities of the person, without the ones the person dismissed today ("Dispensar até amanhã")
+export const insightsFor = async (user: any, now: Date = new Date(), opts: { selfOnly?: boolean } = {}): Promise<Insight[]> => {
+  const all = await insightsAll(user, now, opts);
+  try {
+    const { default: User } = await import("../../models/User");
+    const { todayInAppTz } = await import("../../helpers/AppTime");
+    const row = await User.findByPk(Number(user.id), { attributes: ["id", "preferences"] });
+    const dismissed = row && row.preferences ? (JSON.parse(row.preferences) || {}).dismissedInsights || {} : {};
+    const today = todayInAppTz();
+    return all.filter(i => dismissed[i.key] !== today);
+  } catch (e) {
+    return all;
+  }
 };

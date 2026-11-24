@@ -19,7 +19,8 @@ const linkLabels = (root) => {
 
 const apply = (root) => {
   linkLabels(root);
-  root.querySelectorAll('button[aria-label]:not([title]), [role="button"][aria-label]:not([title])').forEach((el) => {
+  // the items of the folded menu already show their own name beside the icon (the dock label): a native tooltip would be a second one
+  root.querySelectorAll('button[aria-label]:not([title]):not([data-dock]), [role="button"][aria-label]:not([title]):not([data-dock])').forEach((el) => {
     const text = label(el);
     if (text) el.setAttribute("title", text);
   });

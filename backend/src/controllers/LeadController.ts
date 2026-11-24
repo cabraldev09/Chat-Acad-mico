@@ -732,14 +732,13 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
 };
 
 
-// whose leads a panel may be narrowed to: a consultant always sees their own; the management picks anyone; every other profile
-// sees the whole picture or its own leads, never the numbers of one chosen colleague
+// whose leads a panel may be narrowed to: the management sees everybody or picks one person; every other profile (consultant,
+// tutor, academic, relationship) only ever sees its own leads: a tutor who received nothing sees nothing, never the team's numbers
 const ownerFilter = (req: Request): number | null => {
   const self = Number(req.user.id);
-  if (reqRole(req) === "consultor") return self;
+  if (!isManagerRole(reqRole(req))) return self;
   const asked = req.query.ownerId ? Number(req.query.ownerId) : null;
-  if (!asked || !Number.isInteger(asked)) return null;
-  return isManagerRole(reqRole(req)) || asked === self ? asked : null;
+  return asked && Number.isInteger(asked) ? asked : null;
 };
 // ------------------------------------------------------------------ triage ("novos para conferir")
 // New people nobody answered yet, each one to its OWNER: a consultant only sees (and answers for) their own; the management sees everybody or one person

@@ -191,6 +191,14 @@ class Ticket extends Model<Ticket> {
   @Column
   lastMessageFromMe: boolean;
 
+  // the last message of the client marked "Já resolvido" (no answer needed): out of Responder agora until a new message arrives
+  @Column
+  replyDismissedMessageId: string;
+
+  // the last message the cheap audit of the tutoring already read: the conversation is read again only when something new arrives
+  @Column
+  tutoringAuditedMessageId: string;
+
   @Default(0)
   @Column
   lastMessageAck: number;

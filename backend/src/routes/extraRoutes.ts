@@ -20,6 +20,7 @@ import isManager from "../middleware/isManager";
 import { canReadTicket, canWriteTicket } from "../middleware/canAccessTicket";
 import { canAccessLead, canAccessOnboarding, canAccessProposal, canAccessPayment } from "../middleware/scope";
 import * as EnrollmentForm from "../controllers/EnrollmentFormController";
+import * as TutoringIssue from "../controllers/TutoringIssueController";
 import uploadConfig from "../config/upload";
 
 import * as Tag from "../controllers/TagController";
@@ -133,6 +134,8 @@ r.post("/analytics/coaching/run", isAuth, isAdmin, Analytics.coachingRun);
 // the tutoring: the management sees every tutor, a tutor only their own students (decided in the controller)
 r.get("/analytics/tutoria", isAuth, analyticsInstitution, Analytics.tutoria);
 r.get("/analytics/insights", isAuth, analyticsInstitution, Analytics.insights);
+// "Dispensar até amanhã": one priority leaves the person's own list for the rest of the day (kept in the person's preferences)
+r.post("/analytics/insights/dismiss", isAuth, Analytics.dismissInsight);
 r.get("/analytics/online", isAuth, isManager, Analytics.online);
 
 r.get("/dashboard/management", isAuth, isManager, DashboardMgmt.management);
@@ -430,6 +433,14 @@ r.get("/lead-tasks/counts", isAuth, Lead.tasksCounts);
 r.post("/lead-tasks/release-unreachable", isAuth, isManager, Lead.releaseUnreachable);
 r.get("/onboarding", isAuth, Lead.onboardingList);
 r.get("/onboarding/rules", isAuth, Lead.onboardingRules);
+// the audit of the tutoring (pending cases, protocols): only the administration and the academic coordination, never the tutor
+r.get("/tutoria/issues", isAuth, TutoringIssue.academicManagement, TutoringIssue.index);
+r.get("/tutoria/issues/count", isAuth, TutoringIssue.academicManagement, TutoringIssue.count);
+r.post("/tutoria/issues", isAuth, TutoringIssue.academicManagement, TutoringIssue.store);
+r.put("/tutoria/issues/:id", isAuth, TutoringIssue.academicManagement, TutoringIssue.update);
+r.get("/tutoria/audit/settings", isAuth, TutoringIssue.academicManagement, TutoringIssue.settings);
+r.put("/tutoria/audit/settings", isAuth, TutoringIssue.academicManagement, TutoringIssue.saveSettings);
+r.post("/tutoria/audit/run", isAuth, TutoringIssue.academicManagement, TutoringIssue.runNow);
 r.get("/tutoria/students", isAuth, Tutoria.students);
 r.get("/tutoria/panel", isAuth, Tutoria.panel);
 r.post("/tutoria/students/import", isAuth, Tutoria.importStudents);

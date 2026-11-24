@@ -133,6 +133,13 @@ const startTelegramMock = () => {
 };
 
 // Anthropic Messages API: answers by what the last user message says, and asks for tools when the scenario needs them
+// the audit of the tutoring: a case opened (protocol) is pending; a later message saying it was solved closes the open one
+const auditAnswer = (text) => {
+  const open = (String(text).match(/#(\d+) \(/) || [])[1];
+  if (/resolvid|resolveu|já foi liberad/i.test(String(text)) && open) return { pendencias: [], resolvidas: [Number(open)], ideia: "" };
+  if (/protocolo|chamado|CAA/i.test(String(text))) return { pendencias: [{ tipo: "protocolo", resumo: "Tutor abriu chamado sobre o acesso à plataforma e prometeu retorno ao aluno" }], resolvidas: [], ideia: "Cobrar a resposta do setor em até 48 horas" };
+  return { pendencias: [], resolvidas: [], ideia: "" };
+};
 const startAnthropicMock = () => {
   const app = express();
   app.use(express.json({ limit: "5mb" }));
@@ -145,6 +152,11 @@ const startAnthropicMock = () => {
   // the OpenAI format, used only by the daily review of the consultants' conversations (it answers the codes of one review)
   app.post("/v1/chat/completions", (req, res) => {
     anthropic.openai = [...(anthropic.openai || []), req.body];
+    const sys = (req.body.messages || []).find(m => m.role === "system");
+    if (sys && /Você audita, para a coordenação acadêmica/.test(String(sys.content))) {
+      anthropic.audits = (anthropic.audits || 0) + 1;
+      return res.json({ choices: [{ message: { content: JSON.stringify(auditAnswer(req.body.messages[req.body.messages.length - 1].content)) } }], usage: { prompt_tokens: 200, completion_tokens: 40, total_tokens: 240 } });
+    }
     res.json({ choices: [{ message: { content: JSON.stringify({ objections: [{ type: "preco", handled: false }], difficulties: ["bolsa"], skipped: ["grade"], note: "Explicar a bolsa antes da proposta" }) } }], usage: { prompt_tokens: 200, completion_tokens: 40, total_tokens: 240 } });
   });
   app.post("/v1/messages", (req, res) => {
@@ -152,6 +164,11 @@ const startAnthropicMock = () => {
     const usage = { input_tokens: 120, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
     const last = req.body.messages[req.body.messages.length - 1];
     const text = t => res.json({ content: [{ type: "text", text: t }], stop_reason: "end_turn", usage });
+    if (typeof req.body.system === "string" && /Você audita, para a coordenação acadêmica/.test(req.body.system)) {
+      anthropic.audits = (anthropic.audits || 0) + 1;
+      anthropic.auditModels = [...(anthropic.auditModels || []), req.body.model];
+      return text(JSON.stringify(auditAnswer(typeof last.content === "string" ? last.content : JSON.stringify(last.content))));
+    }
     const tool = (name, input) => res.json({ content: [{ type: "tool_use", id: `toolu_${anthropic.requests.length}`, name, input }], stop_reason: "tool_use", usage });
     // the print of a course: the model reads the approved text and the share of presential classes
     if (Array.isArray(req.body.tools) && req.body.tools.some(t => t.name === "registrar_print_curso")) {
@@ -1118,6 +1135,30 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`UPDATE Tickets SET lastMessageId='rn-in-1', lastMessageFromMe=false, lastMessageAt=NOW() WHERE id=${opened.data.id}`);
       const after = (await http.get("/analytics/me", auth())).data;
       assert((after.focus.conversations || []).some(c => c.ticketId === opened.data.id), "the person answered and is not in Responder agora");
+      // "Já resolvido": an "ok" that needs no answer leaves the list and the count, and comes back when the person writes again
+      const pendingBefore = Number(after.metrics.pendingReply);
+      assert((await http.post(`/tickets/${opened.data.id}/reply-dismiss`, {}, auth())).status === 200, "reply-dismiss");
+      const dismissed = (await http.get("/analytics/me", auth())).data;
+      assert(!(dismissed.focus.conversations || []).some(c => c.ticketId === opened.data.id) && Number(dismissed.metrics.pendingReply) === pendingBefore - 1, "the conversation marked as resolved is still waiting");
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('rn-in-2', ${opened.data.id}, 'mais uma dúvida', false, false, 'chat', 0, NOW(), NOW())`);
+      sql(`UPDATE Tickets SET lastMessageId='rn-in-2', lastMessageFromMe=false, lastMessageAt=NOW() WHERE id=${opened.data.id}`);
+      assert(((await http.get("/analytics/me", auth())).data.focus.conversations || []).some(c => c.ticketId === opened.data.id), "the new message of the person did not bring the conversation back");
+      // the undo
+      await http.post(`/tickets/${opened.data.id}/reply-dismiss`, {}, auth());
+      await http.post(`/tickets/${opened.data.id}/reply-dismiss`, { undo: true }, auth());
+      assert(((await http.get("/analytics/me", auth())).data.focus.conversations || []).some(c => c.ticketId === opened.data.id), "the undo did not bring the conversation back");
+      // "Dispensar até amanhã": the priority leaves only this person's list
+      const items = async (tok) => (await http.get("/analytics/insights", tok)).data.items.map(i => i.key);
+      await new Promise(r => setTimeout(r, 10500)); // the list of priorities is cached for 10 seconds
+      const keys = await items(auth());
+      if (keys.length) {
+        const k = keys[0];
+        assert((await http.post("/analytics/insights/dismiss", { key: k }, auth())).status === 200, "dismiss");
+        await new Promise(r => setTimeout(r, 10500));
+        assert(!(await items(auth())).includes(k), `the dismissed priority ${k} is still there`);
+        await http.post("/analytics/insights/dismiss", { key: k, undo: true }, auth());
+      }
+      assert((await http.post("/analytics/insights/dismiss", { key: "x'; DROP" }, auth())).status === 400, "a bad key was accepted");
       await http.put(`/tickets/${opened.data.id}`, { status: "closed" }, auth());
     });
     await test("Cloud API campaign sends the approved template, not free text", async () => {
@@ -6964,6 +7005,20 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(one.length === 2 && one[1].includes("5511977779991"), `search gave ${one.length} lines`);
       assert((await http.get("/contacts/export.csv", { params: { searchParam: "5511977779991" }, ...asUser(cons) })).status === 200, "a consultant cannot download");
     });
+    await test("Painel do CRM: quem não é da gestão (tutora) vê só os próprios leads, nunca os da equipe", async () => {
+      await http.post("/users", { name: "Tutora Sem Leads", email: "tutora-sem-leads@x.com", password: "senha123", role: "tutor" }, auth());
+      const tok = (await http.post("/auth/login", { email: "tutora-sem-leads@x.com", password: "senha123" })).data.token;
+      const team = (await http.get("/crm/metrics", { params: { now: 1 }, ...auth() })).data;
+      const open = d => d.funnel.filter(f => f.type === "open").reduce((a, f) => a + Number(f.total), 0);
+      assert(open(team) > 0, "the team has no open lead to compare");
+      const mine = await http.get("/crm/metrics", { params: { now: 1 }, ...asUser(tok) });
+      assert(mine.status === 200 && open(mine.data) === 0 && Number(mine.data.attention.waitingFirstContact) === 0, `the tutor saw the team: ${open(mine.data)} open, ${mine.data.attention && mine.data.attention.waitingFirstContact} waiting`);
+      // asking for someone else changes nothing
+      const adminId = sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1");
+      assert(open((await http.get("/crm/metrics", { params: { now: 1, ownerId: adminId }, ...asUser(tok) })).data) === 0, "the tutor read the numbers of the administrator");
+      const triage = (await http.get("/crm/triage", asUser(tok))).data;
+      assert(triage.total === 0, `the tutor saw the team's new leads: ${triage.total}`);
+    });
     await test("amigos e equipe: saem do funil e das estatísticas, não viram lead de novo e dá para desfazer", async () => {
       const metrics = async () => (await http.get("/crm/metrics", auth())).data;
       const before = await metrics();
@@ -7520,6 +7575,55 @@ const postMeta = (id, payload, secret, badSig) => {
           await TicketTag.destroy({where:{tagId:tag.id}});await Ticket.destroy({where:{contactId:contact.id}});
           await require("./dist/models/Lead").default.destroy({where:{contactId:contact.id}});await tutoring.destroy();await tag.destroy();await global.destroy();await contact.destroy();
         }`);
+    });
+    await test("tutoring audit: the AI reads the tutors' conversations cheaply, tells the academic management what is pending, the management writes the protocol and closes it; the tutor never sees it and the AI never sells there", async () => {
+      const tutorUser = (await http.post("/users", { name: "Tutora Auditada", email: "tutora-auditada@x.com", password: "senha123", role: "tutor" }, auth())).data;
+      const tutorTok = (await http.post("/auth/login", { email: "tutora-auditada@x.com", password: "senha123" })).data.token;
+      const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Aluna Pendente Silva', '5569944443333', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${tutorUser.id}, 0, false, 'onboarding', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const say = (id, fromMe, body, minutesAgo) => sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticketId}, ${contactId}, '${body}', ${fromMe}, true, 'chat', 1, NOW() - INTERVAL '${minutesAgo} minutes', NOW())`);
+      say(`aud-${ticketId}-1`, false, "Não consigo entrar na plataforma, meu RGM 12345678", 120);
+      say(`aud-${ticketId}-2`, true, "Abri um chamado no CAA, protocolo 2026112400123, e te dou retorno", 100);
+      sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-2', lastMessageFromMe=true, lastMessageAt=NOW() - INTERVAL '100 minutes' WHERE id=${ticketId}`);
+      // the AI does not qualify nor sell on the tutoring
+      assert((await http.post(`/tickets/${ticketId}/ai`, { active: true }, auth())).data.error === "ERR_AI_NOT_ON_TUTORING", "the AI was handed a tutoring conversation");
+      // the tutor does not reach the audit
+      assert((await http.get("/tutoria/issues", asUser(tutorTok))).status === 403, "the tutor saw the audit");
+      const audits = anthropic.audits || 0;
+      const run = (await http.post("/tutoria/audit/run", {}, auth())).data;
+      assert(run.read >= 1 && run.found >= 1, `audit run ${JSON.stringify(run)}`);
+      // the text sent to the model is masked: no protocol number, no RGM, no name
+      const sentText = JSON.stringify(anthropic.requests.slice(-5).concat((anthropic.openai || []).slice(-5)));
+      assert(!sentText.includes("2026112400123") && !sentText.includes("12345678") && !/Pendente Silva/.test(sentText), "the audit sent personal data or the protocol to the model");
+      assert((anthropic.auditModels || []).slice(-1)[0] === undefined || /haiku|mini/.test((anthropic.auditModels || []).slice(-1)[0]), `the audit did not use the cheap model: ${(anthropic.auditModels || []).slice(-1)[0]}`);
+      const list = (await http.get("/tutoria/issues", auth())).data;
+      const issue = list.items.find(i => i.ticketId === Number(ticketId));
+      assert(issue && issue.kind === "protocolo" && issue.status === "aberta" && issue.idea && issue.tutor === "Tutora Auditada", `issue ${JSON.stringify(issue)}`);
+      // the academic management was told (the administrator is part of it)
+      const adminId = sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1");
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${adminId} AND kind='tutoring_issue'`)) >= 1, "the management was not told");
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${tutorUser.id} AND kind='tutoring_issue'`)) === 0, "the tutor got the audit notice");
+      // nothing new in the conversation: it is not read again
+      const before = anthropic.audits || 0;
+      await http.post("/tutoria/audit/run", {}, auth());
+      assert((anthropic.audits || 0) === before, "a conversation with nothing new was read again");
+      assert(before > audits, "the model was not called");
+      // the management writes the protocol and its name
+      const reg = await http.put(`/tutoria/issues/${issue.id}`, { protocolNumber: "2026112400123", protocolName: "Acesso ao AVA" }, auth());
+      assert(reg.status === 200 && reg.data.status === "registrada", `register ${JSON.stringify(reg.data)}`);
+      // the student says it was solved: the next reading closes it
+      say(`aud-${ticketId}-3`, false, "Já foi liberado, resolveu, obrigada", 60);
+      say(`aud-${ticketId}-4`, true, "Que bom! Qualquer coisa me chama", 59);
+      sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-4', lastMessageAt=NOW() - INTERVAL '59 minutes' WHERE id=${ticketId}`);
+      await http.post("/tutoria/audit/run", {}, auth());
+      const after = (await http.get("/tutoria/issues", { params: { status: "resolvida" }, ...auth() })).data.items.find(i => i.id === issue.id);
+      assert(after && after.status === "resolvida" && after.protocolNumber === "2026112400123", `resolved ${JSON.stringify(after)}`);
+      // a case written by hand, and the switch
+      const manual = await http.post("/tutoria/issues", { kind: "documento", summary: "Histórico do ensino médio pedido ao aluno" }, auth());
+      assert(manual.status === 201 && manual.data.status === "aberta", "manual issue");
+      assert((await http.post("/tutoria/issues", { summary: " " }, auth())).status === 400, "an empty issue was accepted");
+      assert((await http.put("/tutoria/audit/settings", { enabled: false, maxPerDay: 5 }, auth())).data.maxPerDay === 5, "settings");
+      await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 40 }, auth());
     });
     await test("the daily review: the AI reads a consultant's conversation without CPF, phone or names, keeps only codes, and the management sees the training needed", async () => {
       const u = (await http.post("/users", { name: "Consultora Revisada", email: "review-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;

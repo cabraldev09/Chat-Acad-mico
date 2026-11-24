@@ -7,7 +7,7 @@ import { logger } from "../../utils/logger";
 
 // The automatic tasks close by themselves when what they ask for happens: nobody has to tick "Atender lead encaminhado pelo agente de IA"
 // after answering, nor "Pedir o histórico" after the PDF arrived. A closed task keeps the reason (closedReason).
-const ONBOARDING = ["onboarding", "onboarding_late", "upsell", "nps", "retention", "referral"];
+const ONBOARDING = ["onboarding", "onboarding_late", "upsell", "nps", "retention", "referral", "tutoria_pendencia"];
 
 export const closeTasksFor = async (leadId: number, kinds: string[] | null, reason: string, opts: { exceptKinds?: string[] } = {}): Promise<number> => {
   try {
