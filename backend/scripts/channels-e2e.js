@@ -6665,6 +6665,36 @@ const postMeta = (id, payload, secret, badSig) => {
       // the team goals list does not show the polo semester
       assert(!(await http.get("/goals", auth())).data.some(g => g.id === goal.id), "polo goal leaked into the team goals");
     });
+    await test("goals per polo: an enrollment counts in the semester of the student's entry term, and the screen opens on the semester that started last", async () => {
+      const iso = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho" }).format(new Date(Date.now() + n * 86400000));
+      const polo = (await http.post("/polos", { name: "Polo do Período", code: "9002", state: "RO" }, auth())).data;
+      // the old semester ended yesterday, the new one is in course; both contain the last month
+      const old = (await http.post("/goals", { kind: "polo", title: "Graduação 2º semestre de 2091", startsOn: iso(-120), endsOn: iso(5), members: [] }, auth())).data;
+      const neu = (await http.post("/goals", { kind: "polo", title: "Graduação 1º semestre de 2092", startsOn: iso(-3), endsOn: iso(100), members: [] }, auth())).data;
+      assert(old.id && neu.id, "semesters not created");
+      assert(sql(`SELECT entryTerm FROM Goals WHERE id=${old.id}`) === "2091/2" && sql(`SELECT entryTerm FROM Goals WHERE id=${neu.id}`) === "2092/1", "the entry term did not come from the title");
+      const mk = async (phone, term) => {
+        const lead = (await http.post("/leads", { name: "Aluno do Período", phone, source: "Site" }, auth())).data.lead;
+        sql(`UPDATE Leads SET wonAt=NOW(), poloId=${polo.id}, entryTerm=${term ? `'${term}'` : "NULL"} WHERE id=${lead.id}`);
+        return lead.id;
+      };
+      const late = await mk("5569955520001", "2091/2"); // a student of the old semester enrolled today
+      await mk("5569955520002", "2092/1");
+      await mk("5569955520003", null); // without a term: by the day, so it counts in both (both contain today)
+      const rowOf = async (gid) => (await http.get("/goals/polos", { params: { goalId: gid }, ...auth() })).data.rows.find(r => r.poloId === polo.id);
+      const a = await rowOf(old.id), b = await rowOf(neu.id);
+      assert(a && a.auto === 2 && b && b.auto === 2, `by the entry term ${JSON.stringify([a && a.auto, b && b.auto])}`);
+      assert(a.months.reduce((t, m) => t + m.done, 0) === a.auto, `the months do not add up to the total ${JSON.stringify(a.months.map(m => m.done))}`);
+      // the screen opens on the semester that started last, not the longest
+      const dflt = (await http.get("/goals/polos", auth())).data;
+      assert(dflt.goal && dflt.goal.id === neu.id && dflt.goal.entryTerm === "2092/1", `default semester ${dflt.goal && dflt.goal.id}`);
+      // the term can be changed on the semester; the lead's term moves it with the enrollment
+      assert((await http.put(`/goals/${old.id}`, { entryTerm: "2091.2" }, auth())).status === 200 && sql(`SELECT entryTerm FROM Goals WHERE id=${old.id}`) === "2091/2", "entry term edit");
+      sql(`UPDATE Leads SET entryTerm='2092/1' WHERE id=${late}`);
+      assert((await rowOf(old.id)).auto === 1 && (await rowOf(neu.id)).auto === 3, "changing the lead's term did not move the enrollment");
+      sql(`UPDATE Leads SET wonAt=NULL, poloId=NULL WHERE poloId=${polo.id}`);
+      for (const g of [old, neu]) assert((await http.delete(`/goals/${g.id}`, auth())).status < 300, "the test semester was not removed");
+    });
     await test("a confirmed enrollment can be edited: step back, swap the tutor, no message goes out", async () => {
       const row = sql(`SELECT id||'|'||poloId||'|'||COALESCE(onboardingTutorId,0) FROM Leads WHERE onboardingStatus='pending' AND poloId IS NOT NULL ORDER BY id DESC LIMIT 1`);
       assert(row, "no enrolled lead to edit");

@@ -81,5 +81,11 @@ const q = async (title, sql) => {
     WHERE e."enrolledAt" >= '2026-11-01T04:00:00Z' AND e."enrolledAt" < '2026-12-01T04:00:00Z' ORDER BY e."enrolledAt"`);
   // Análise acadêmica: a matriz do curso de Serviço Social no catálogo de grades (a análise passa a usá-la para a série de cada disciplina)
   await q("grades de Serviço Social no catálogo", `SELECT id, "courseName", modality, "updatedAt" FROM "CommercialGrades" WHERE "courseName" ILIKE '%servi%o social%' ORDER BY id`);
+  // Metas: o período de entrada dos leads matriculados (a meta passa a contar pelo período de entrada) — só ids
+  await q("matriculados por mês e período de entrada", `SELECT to_char(l."wonAt" AT TIME ZONE 'America/Porto_Velho', 'YYYY-MM') AS mes, COALESCE(l."entryTerm", '(sem)') AS periodo, COUNT(*) AS n
+    FROM "Leads" l WHERE l."wonAt" IS NOT NULL AND l."isHistorical" = false GROUP BY 1, 2 ORDER BY 1, 2`);
+  await q("lead 2 (matrícula de 23/11)", `SELECT id, "poloId", "entryTerm", "entrySemester", to_char("wonAt" AT TIME ZONE 'America/Porto_Velho', 'DD/MM HH24:MI') AS ganho FROM "Leads" WHERE id = 2`);
+  await q("metas de polo (período no título)", `SELECT id, title, status, "startsOn", "endsOn" FROM "Goals" WHERE kind = 'polo' ORDER BY "startsOn"`);
+  await q("períodos de entrada configurados", `SELECT key, value FROM "Settings" WHERE key IN ('crm_entry_terms', 'crm_default_entry_term', 'entryTerms', 'defaultEntryTerm')`);
   process.exit(0);
 })().catch(e => { console.error(e.message); process.exit(1); });

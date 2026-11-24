@@ -1957,7 +1957,8 @@ CREATE TABLE public."Goals" (
     "updatedAt" timestamp with time zone NOT NULL,
     "workDays" integer DEFAULT 5 NOT NULL,
     kind character varying(255) DEFAULT 'team'::character varying NOT NULL,
-    "extraHolidays" text
+    "extraHolidays" text,
+    "entryTerm" character varying(7)
 );
 
 
@@ -8062,6 +8063,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000008-tasks-and-notificatio
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000009-institutions.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000010-message-transcript.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-legacy-institution.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000001-messages-created-at.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261223000002-messages-created-at.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261224000001-lead-polo-source.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261225000001-outbound-category.js') ON CONFLICT DO NOTHING;
@@ -8070,6 +8072,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000001-ticket-reply-dismisse
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000002-tutoring-issues.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261228000001-one-conversation-per-number.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-course-aliases.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

@@ -8,12 +8,16 @@ const getBrowser = () => {
   if (!browserPromise) {
     const executablePath = process.env.CHROME_BIN;
     if (!executablePath) throw new AppError("ERR_PDF_UNAVAILABLE");
-    browserPromise = puppeteer
-      .launch({
-        executablePath,
-        headless: true,
-        args: (process.env.CHROME_ARGS || "--no-sandbox --disable-setuid-sandbox").split(" ")
-      } as any)
+    // The first start of Chrome reads it from a cold disk: on a busy server it can pass puppeteer's 30 s default (the proposal PDF
+    // then failed with "Timed out ... waiting for the WS endpoint"). It gets 90 s, and a start that timed out is tried once more.
+    const launch = () => puppeteer.launch({
+      executablePath,
+      headless: true,
+      timeout: Number(process.env.CHROME_LAUNCH_TIMEOUT_MS) || 90000,
+      args: (process.env.CHROME_ARGS || "--no-sandbox --disable-setuid-sandbox").split(" ")
+    } as any);
+    browserPromise = launch()
+      .catch((err: Error) => (err && err.name === "TimeoutError" ? launch() : Promise.reject(err)))
       .catch((err: Error) => {
         browserPromise = null;
         throw err;

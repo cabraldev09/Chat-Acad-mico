@@ -668,7 +668,13 @@ export const loadDefaultCourses = async (req: Request, res: Response): Promise<R
 
 export const options = async (_req: Request, res: Response): Promise<Response> => {
   const { terms, defaultTerm } = await getEntryTerms();
-  return res.json({ ...CRM_OPTIONS, entryTerms: terms, defaultEntryTerm: defaultTerm });
+  // the periods of the polo goals in force: the team may record a student in one of them (a late enrollment of the previous semester)
+  // even when it is no longer offered to new leads (entryTerms, what the AI and the forms offer)
+  const { default: Goal } = await import("../models/Goal");
+  const { goalTerm } = await import("../helpers/EntryTerm");
+  const goals = await Goal.findAll({ where: { kind: "polo", status: "active" }, attributes: ["entryTerm", "title"] });
+  const goalTerms = [...new Set(goals.map(g => goalTerm(g)).filter(Boolean) as string[])].sort();
+  return res.json({ ...CRM_OPTIONS, entryTerms: terms, defaultEntryTerm: defaultTerm, goalTerms });
 };
 
 export const getSettings = async (_req: Request, res: Response): Promise<Response> =>
@@ -1008,7 +1014,8 @@ export const enroll = async (req: Request, res: Response): Promise<Response> => 
       additional: req.body.additional === true,
       courseId: req.body.courseId ? Number(req.body.courseId) : null,
       courseName: req.body.courseName || null,
-      rgm: req.body.rgm || null
+      rgm: req.body.rgm || null,
+      entryTerm: req.body.entryTerm || null
     });
   // the print attached in the dialog becomes the proof of this enrollment (the first one, or the extra course)
   if (req.body.proofId && !result.repeated) {

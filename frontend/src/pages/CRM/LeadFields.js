@@ -41,7 +41,8 @@ const LeadFields = ({ lead, onChange, options, courses, users, tags }) => {
   const cpfBad = onlyDigits(lead.cpf).length === 11 && !isValidCpf(lead.cpf);
 
   // intake periods: the administrator's list, plus whatever this lead already has
-  const terms = [...new Set([...(options.entryTerms || []), ...(lead.entryTerm ? [lead.entryTerm] : [])])];
+  // the periods offered by the CRM and those of the polo goals in force (a late enrollment of the previous semester)
+  const terms = [...new Set([...(options.goalTerms || []), ...(options.entryTerms || []), ...(lead.entryTerm ? [lead.entryTerm] : [])])].sort();
 
   return (
     <div>
