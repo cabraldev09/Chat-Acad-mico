@@ -20,7 +20,7 @@ export const warnUnassigned = async (): Promise<number> => {
   const [row] = (await sequelize.query(`SELECT
       (SELECT COUNT(*) FROM "LeadTasks" WHERE "userId" IS NULL AND "doneAt" IS NULL AND "createdAt" < NOW() - INTERVAL '30 minutes') AS tasks,
       (SELECT COUNT(*) FROM "Tickets" WHERE status = 'pending' AND "userId" IS NULL AND "aiActive" IS NOT TRUE AND "isGroup" = false AND "isHistorical" = false
-         AND "archivedAt" IS NULL AND "lastMessageFromMe" = false AND COALESCE("lastMessageAt", "updatedAt") < NOW() - INTERVAL '30 minutes') AS tickets`, { type: QueryTypes.SELECT })) as any[];
+         AND "archivedAt" IS NULL AND "lastMessageFromMe" = false AND "lastMessageId" IS NOT NULL AND COALESCE("lastMessageAt", "updatedAt") < NOW() - INTERVAL '30 minutes') AS tickets`, { type: QueryTypes.SELECT })) as any[];
   const tasks = Number(row?.tasks || 0);
   const tickets = Number(row?.tickets || 0);
   if (!tasks && !tickets) return 0;
