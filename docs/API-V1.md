@@ -23,9 +23,9 @@ Rotas em `/api/v1` (`backend/src/routes/apiV1Routes.ts`), autenticadas por token
 | Rota | Escopo | Com polos no token |
 |---|---|---|
 | `GET /leads` | `leads:read` | só leads desses polos |
-| `POST /leads` | `leads:write` | cria; a resposta traz só `id`, `stageId` e `poloId` |
+| `POST /leads` | `leads:write` | o lead fica num dos polos do token (`poloId` no corpo; obrigatório se o token tem mais de um polo, `422 ERR_API_TOKEN_POLO_REQUIRED`; fora dos polos `403`); a mesma pessoa já cadastrada em outro polo (ou sem polo) recebe `403` e nada é gravado nela; `stageId` só de etapa aberta (`422 ERR_API_STAGE_NOT_ALLOWED`) e `ownerId` só de quem está nos polos do token (`422 ERR_API_OWNER_NOT_ALLOWED`). A resposta traz só `id`, `stageId` e `poloId` |
 | `GET /contacts` | `contacts:read` | só contatos que são lead desses polos |
-| `POST /contacts` | `contacts:write` | não altera contato que é lead de outro polo (`403 ERR_API_TOKEN_POLO`); a resposta traz só `id` e `created` |
+| `POST /contacts` | `contacts:write` | cria contato novo; só altera contato que é lead dos polos do token (de outro polo, ou que não é lead deles: `403 ERR_API_TOKEN_POLO`); a resposta traz só `id` e `created` |
 | `GET /tickets` | `tickets:read` | só conversas das filas desses polos; sem o texto das mensagens |
 | `GET /connections` | `connections:read` | todas (sem dado pessoal) |
 | `POST /messages/send` | `messages:send` | só para número de lead desses polos (`403 ERR_API_TOKEN_POLO`) |

@@ -72,11 +72,13 @@ export const upsertContact = async (req: Request, res: Response): Promise<Respon
   const existing = await Contact.findOne({ where: { number: digits } });
   const polos = polosOf(req);
   if (existing) {
-    // a token of some polos does not change a person who is a lead of another polo
+    // a token of some polos changes only a person who is a lead of one of them (never one of another polo, nor one it cannot see)
     if (polos) {
       const { default: Lead } = await import("../models/Lead");
+      const inPolos = { poloId: { [Op.in]: polos.length ? polos : [0] } };
       const outside = await Lead.count({ where: { contactId: existing.id, [Op.or]: [{ poloId: null }, { poloId: { [Op.notIn]: polos.length ? polos : [0] } }] } as any });
-      if (outside) throw new AppError("ERR_API_TOKEN_POLO", 403);
+      const mine = await Lead.count({ where: { contactId: existing.id, ...inPolos } as any });
+      if (outside || !mine) throw new AppError("ERR_API_TOKEN_POLO", 403);
     }
     await existing.update({ name: name || existing.name, email: email || existing.email });
     return res.json({ id: existing.id, created: false });
@@ -117,8 +119,39 @@ export const createLead = async (req: Request, res: Response): Promise<Response>
     throw new AppError("ERR_LEAD_NEEDS_PHONE_OR_EMAIL");
   }
   // an integration creates leads from its own data: it never chooses the contact it attaches to nor the affiliate that earns the bonus
-  const { contactId: _contact, affiliateId: _affiliate, ...safe } = b;
+  const { contactId: _contact, affiliateId: _affiliate, poloId: askedPolo, ...safe } = b;
+  // a token of some polos: the lead is of one of its polos, never touches a lead of another polo, and the stage and the owner are of its scope
+  const polos = polosOf(req);
+  let polo: number | null = null;
+  if (polos) {
+    polo = askedPolo !== undefined && askedPolo !== null && askedPolo !== "" ? Number(askedPolo) : polos.length === 1 ? polos[0] : NaN;
+    if (!Number.isInteger(polo)) throw new AppError("ERR_API_TOKEN_POLO_REQUIRED", 422);
+    if (!polos.includes(polo as number)) throw new AppError("ERR_API_TOKEN_POLO", 403);
+    const { default: LeadStage } = await import("../models/LeadStage");
+    const { default: PoloMember } = await import("../models/PoloMember");
+    const { findDuplicate } = await import("../services/CrmServices/LeadCore");
+    const { normalizeCpf } = await import("../helpers/Cpf");
+    if (b.stageId !== undefined && b.stageId !== null && b.stageId !== "") {
+      const stage = await LeadStage.findByPk(Number(b.stageId), { attributes: ["id", "type"] });
+      // a new lead enters an open stage: never straight into Matriculado or Perdido
+      if (!stage || stage.type !== "open") throw new AppError("ERR_API_STAGE_NOT_ALLOWED", 422);
+    }
+    if (b.ownerId !== undefined && b.ownerId !== null && b.ownerId !== "") {
+      const member = await PoloMember.count({ where: { userId: Number(b.ownerId), poloId: { [Op.in]: polos } } as any });
+      if (!member) throw new AppError("ERR_API_OWNER_NOT_ALLOWED", 422);
+    }
+    // the same person already in the CRM: only a lead of the token's polos is enriched (nothing is written on a lead of another polo)
+    const phone = normalizePhone(b.phone);
+    const contact = phone ? await Contact.findOne({ where: { number: { [Op.in]: brPhoneVariants(phone) } }, attributes: ["id"], order: [["id", "ASC"]] }) : null;
+    const twin = await findDuplicate(phone, normalizeEmail(b.email), contact ? contact.id : null, normalizeCpf(b.cpf), b.institutionId);
+    if (twin && !polos.includes(Number(twin.poloId))) throw new AppError("ERR_API_TOKEN_POLO", 403);
+  }
   const { lead, created } = await upsertLead({ ...safe, name: b.name, source: b.source || "API" });
+  // the lead created by a token of some polos stays in the polo it asked for (the city would otherwise decide it)
+  if (polo !== null && created && lead.poloId !== polo) {
+    lead.set({ poloId: polo, poloSource: "flow" } as any);
+    await lead.update({ poloId: polo, poloSource: "flow" } as any);
+  }
   // the answer: what the lead is now in the funnel, not the whole record (a lead that already existed is not read back through here)
   return res.status(created ? 201 : 200).json({ created, lead: { id: lead.id, stageId: lead.stageId, poloId: lead.poloId ?? null } });
 };
