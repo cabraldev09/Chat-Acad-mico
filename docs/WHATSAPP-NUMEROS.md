@@ -85,6 +85,9 @@
 - Respostas livres dentro das 24 h (serviço): cada número oficial tem 1.000 grátis por mês; acima disso, cada uma é cobrada.
 - O custo é por mensagem, não por número: um número a mais não encarece e traz mais 1.000 respostas grátis.
 - QR Code não paga a Meta, mas disparo em massa por QR derruba o número. O sistema limita o QR a poucos contatos frios por dia.
+- Transcrição dos áudios das conversas da equipe (oficial e QR): não é cobrança da Meta, é da OpenAI. Estimativa: cerca de
+  US$ 0,006 por minuto de áudio; com o teto padrão de 120 minutos por dia, no máximo cerca de US$ 0,72 por dia. Regras em
+  `IA-E-CONVERSAS.md` (Retomada, passagem para a equipe e áudio).
 
 Como o sistema controla:
 - Cada envio guarda a categoria (`OutboundDeliveries.category`) e o custo estimado pela tabela `ChannelServices/MetaRates.ts`

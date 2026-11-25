@@ -518,7 +518,7 @@ export const quality = async (req: Request, res: Response): Promise<Response> =>
 
 // ------------------------------------------------------------------ who takes the conversation (the handoff to people)
 
-const KEYS = { fallback: "crm_fallback_queue", sla: "crm_handoff_sla_minutes", stale: "ai_stale_run_days", transcribe: "ai_transcribe_audio" };
+const KEYS = { fallback: "crm_fallback_queue", sla: "crm_handoff_sla_minutes", stale: "ai_stale_run_days", transcribe: "ai_transcribe_audio", transcribeHuman: "ai_transcribe_human", humanMinutes: "ai_transcribe_human_daily_minutes" };
 
 // the settings of the handoff and, polo by polo, whether somebody would really answer ("ready to attend")
 const handoffData = async () => {
@@ -544,7 +544,10 @@ const handoffData = async () => {
       fallbackQueueId: fallbackId || null,
       slaMinutes: Number(await getSetting(KEYS.sla, "15")),
       staleDays: Number(await getSetting(KEYS.stale, "7")),
-      transcribe: (await getSetting(KEYS.transcribe, "1")) !== "0"
+      transcribe: (await getSetting(KEYS.transcribe, "1")) !== "0",
+      // the voice notes of the conversations between people (AiServices/HumanTranscription): off by default, with its own daily cap
+      transcribeHuman: (await getSetting(KEYS.transcribeHuman, "0")) === "1",
+      humanMinutes: Number(await getSetting(KEYS.humanMinutes, "120"))
     },
     openaiKey: !!(await getSecretSetting("ai_openai_key")),
     reserve: reserve ? { id: reserve.id, name: reserve.name, people: ((reserve as any).users || []).length } : null,
@@ -566,6 +569,8 @@ export const handoffSave = async (req: Request, res: Response): Promise<Response
   if (b.slaMinutes !== undefined) await setSetting(KEYS.sla, num(b.slaMinutes, 0, 480));
   if (b.staleDays !== undefined) await setSetting(KEYS.stale, num(b.staleDays, 0, 90));
   if (b.transcribe !== undefined) await setSetting(KEYS.transcribe, b.transcribe ? "1" : "0");
+  if (b.transcribeHuman !== undefined) await setSetting(KEYS.transcribeHuman, b.transcribeHuman ? "1" : "0");
+  if (b.humanMinutes !== undefined) await setSetting(KEYS.humanMinutes, num(b.humanMinutes, 0, 1440));
   return handoffShow(req, res);
 };
 

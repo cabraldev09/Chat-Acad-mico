@@ -197,6 +197,8 @@ const useStyles = makeStyles((theme) => {
     quoteName: { display: "block", fontSize: 12.5, fontWeight: 700, color: c.quoteName, marginBottom: 1 },
     text: { whiteSpace: "pre-wrap", overflowWrap: "anywhere", "& p": { margin: 0 } },
     deleted: { fontStyle: "italic", color: c.textSecondary, display: "flex", alignItems: "center", gap: 6 },
+    transcript: { fontSize: 13.5, lineHeight: "19px", margin: "6px 2px 2px", maxWidth: 320, overflowWrap: "anywhere", whiteSpace: "pre-wrap" },
+    transcriptLabel: { display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: c.textSecondary, marginBottom: 2 },
     meta: {
       float: "right",
       display: "inline-flex",
@@ -664,7 +666,20 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         </div>
       );
     }
-    if (m.mediaType === "audio") return <Audio url={m.mediaUrl} />;
+    // the text of the voice note (written down once by the transcription), for whoever can already read this conversation
+    if (m.mediaType === "audio") {
+      return (
+        <>
+          <Audio url={m.mediaUrl} />
+          {m.transcript && (
+            <div className={classes.transcript}>
+              <span className={classes.transcriptLabel}>Transcrição</span>
+              {m.transcript}
+            </div>
+          )}
+        </>
+      );
+    }
     if (m.mediaType === "video") {
       return (
         <div className={classes.media}>
