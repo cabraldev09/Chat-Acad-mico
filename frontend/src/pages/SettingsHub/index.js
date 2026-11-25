@@ -3,13 +3,14 @@ import Operations from "./Operations";
 import Costs from "./Costs";
 import MetaTemplates from "./MetaTemplates";
 import Readiness from "./Readiness";
+import DataRetention from "./DataRetention";
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link, useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles, useMediaQuery } from "@material-ui/core";
 import {
   ArrowUpRight, BellRing, Bot, Building2, Clock, CreditCard, Eye, EyeOff, FileInput, GraduationCap, KeyRound, ListTree, Plug, Search,
-  Settings2, Tags, Users, Workflow, Zap, FileText, ListChecks, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator, CircleDollarSign,
+  Settings2, Tags, Users, Workflow, Zap, FileText, ListChecks, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator, CircleDollarSign, Archive,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -47,6 +48,7 @@ const GROUPS = [
   { id: "regras", section: "Matrícula", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true, keywords: "vagas semestres previsão análise curricular regras" },
   { id: "email", section: "Sistema", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true, system: true, keywords: "email e-mail envio smtp resend modelo pendências diário" },
   { id: "entregas", section: "Sistema", label: "Entregas e arquivos", icon: SlidersHorizontal, hint: "Mensagens interrompidas e acesso a arquivos", keywords: "entrega mensagem interrompida conferir reenviar arquivo revogar link operação" },
+  { id: "retencao", section: "Sistema", label: "Retenção de dados", icon: Archive, hint: "Prazo para apagar conversas e áudios antigos", admin: true, system: true, keywords: "retenção lgpd apagar conversas áudios prazo dias expurgo simulação privacidade" },
   { id: "erros", section: "Sistema", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true, keywords: "erro falha tela navegador" },
 ];
 const plainText = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -725,6 +727,7 @@ const SettingsHub = () => {
                 {current.id === "cadastros" && <Cadastros admin={admin} system={system} />}
                 {current.id === "regras" && admin && <RegrasAcademicas />}
                 {current.id === "email" && system && <><Email /><EmailModels /></>}
+                {current.id === "retencao" && system && <DataRetention />}
                 {current.id === "erros" && admin && <ErrosDeTela />}
               </SectionBoundary>
             )}
