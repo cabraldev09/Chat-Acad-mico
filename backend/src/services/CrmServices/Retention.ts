@@ -1,3 +1,4 @@
+import { poloSql } from "../../helpers/PoloScope";
 import { getIO } from "../../libs/socket";
 import { QueryTypes } from "sequelize";
 
@@ -63,6 +64,8 @@ export const readRetentionConfig = async (): Promise<RetentionConfig> => {
 export interface Scope {
   // a tutor sees only the students they follow; the management sees everyone
   tutorId?: number | null;
+  // the polos the person sees (the coordination: its polos, see middleware/scope); null/undefined = every polo
+  poloIds?: number[] | null;
 }
 
 const addDays = (ymd: string, days: number): string => {
@@ -86,7 +89,7 @@ export const riskStudents = async (scope: Scope = {}, limit = 200) => {
        LEFT JOIN "Users" u ON u.id = l."onboardingTutorId" LEFT JOIN "Polos" p ON p.id = l."poloId"
       WHERE l."enrolledAt" IS NOT NULL AND l."isHistorical" = false AND s.type <> 'lost' AND COALESCE(l."onboardingStatus", 'none') <> 'none'
         AND GREATEST(COALESCE(l."lastInboundAt", 'epoch'), COALESCE(l."onboardingDoneAt", 'epoch'), l."enrolledAt") < now() - make_interval(days => :days)
-        ${scope.tutorId ? `AND l."onboardingTutorId" = :tutor` : ""}
+        ${scope.tutorId ? `AND l."onboardingTutorId" = :tutor` : ""} ${poloSql(scope.poloIds ?? null, 'l."poloId"')}
       ORDER BY days DESC LIMIT :limit`,
     { replacements: { days: riskDays, tutor: scope.tutorId || 0, limit }, type: QueryTypes.SELECT }
   )) as Array<{ id: number; name: string; tutorId: number | null; tutor: string | null; poloId: number | null; polo: string | null; ticketId: number | null; messagedAt: Date | null; total: string | number; last: Date; days: number }>;
@@ -174,7 +177,7 @@ export const rematriculaList = async (scope: Scope = {}, full = false) => {
        FROM "Leads" l JOIN "LeadStages" s ON s.id = l."stageId"
        LEFT JOIN "Users" u ON u.id = l."onboardingTutorId" LEFT JOIN "Polos" p ON p.id = l."poloId"
       WHERE l."enrolledAt" IS NOT NULL AND l."isHistorical" = false AND s.type <> 'lost' AND COALESCE(l."onboardingStatus", 'none') <> 'none'
-        ${scope.tutorId ? `AND l."onboardingTutorId" = :tutor` : ""}
+        ${scope.tutorId ? `AND l."onboardingTutorId" = :tutor` : ""} ${poloSql(scope.poloIds ?? null, 'l."poloId"')}
       ORDER BY l.name LIMIT 1000`,
     { replacements: { tutor: scope.tutorId || 0 }, type: QueryTypes.SELECT }
   )) as Array<{ id: number; name: string; doneTerm: string | null; doneAt: Date | null; tutor: string | null; polo: string | null; tutorId: number | null; poloId: number | null; ticketId: number | null }>;

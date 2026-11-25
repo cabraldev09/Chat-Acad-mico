@@ -7,7 +7,7 @@ import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
 import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes, standardWeek } from "../helpers/BusinessTime";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
-import { withLeadScope, withOnboardingScope, isAdminReq, reqRole } from "../middleware/scope";
+import { withLeadScope, withOnboardingScope, isAdminReq, reqRole, crmPolosOf, poloSql } from "../middleware/scope";
 import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
 import { Op, literal } from "sequelize";
 import { randomBytes } from "crypto";
@@ -447,13 +447,18 @@ export const removeTask = async (req: Request, res: Response): Promise<Response>
 export const releaseUnreachable = async (_req: Request, res: Response): Promise<Response> => res.json(await runTaskSweep());
 
 // the filter of the list: overdue (due already), today (still to come today), upcoming (after today), open (all not done), done
-const taskWhere = (req: Request, status: string): any => {
+const taskWhere = async (req: Request, status: string): Promise<any> => {
   const where: any = {};
   const { scope = "mine" } = req.query as any;
   if (scope === "mine" || !isAdminReq(req)) where.userId = uid(req);
   // a manager looking at one person's tasks: the person is filtered here (a filter on the screen came after the 300-row limit)
   else if ((req.query as any).userId === "0") where.userId = { [Op.is]: null };
   else if (Number((req.query as any).userId)) where.userId = Number((req.query as any).userId);
+  // the coordination looking at the team: only the tasks of the leads of its polos (its own tasks stay whole)
+  if (scope !== "mine" && isAdminReq(req)) {
+    const polos = await crmPolosOf(req);
+    if (polos) where.leadId = { [Op.in]: literal(`(SELECT l.id FROM "Leads" l WHERE true ${poloSql(polos, 'l."poloId"')})`) };
+  }
   const now = new Date();
   const { end } = dayBounds();
   if (status === "done") where.doneAt = { [Op.not]: null };
@@ -468,7 +473,7 @@ const taskWhere = (req: Request, status: string): any => {
 export const tasksIndex = async (req: Request, res: Response): Promise<Response> => {
   const status = String((req.query as any).status || "open");
   const rows = await LeadTask.findAll({
-    where: taskWhere(req, status),
+    where: await taskWhere(req, status),
     include: [
       { model: Lead, as: "lead", attributes: ["id", "name", "phone", "stageId", "contactId"], include: [{ model: LeadStage, as: "stage", attributes: ["name", "color"] }] },
       { model: User, as: "user", attributes: ["id", "name"] },
@@ -483,7 +488,7 @@ export const tasksIndex = async (req: Request, res: Response): Promise<Response>
 
 // the numbers of the tabs, of the menu badge and of the strip on top, in one request
 export const tasksCounts = async (req: Request, res: Response): Promise<Response> => {
-  const [overdue, today, upcoming] = await Promise.all(["overdue", "today", "upcoming"].map(st => LeadTask.count({ where: taskWhere(req, st) })));
+  const [overdue, today, upcoming] = await Promise.all(["overdue", "today", "upcoming"].map(async st => LeadTask.count({ where: await taskWhere(req, st) })));
   return res.json({ overdue, today, upcoming, open: overdue + today + upcoming });
 };
 
@@ -776,6 +781,8 @@ export const triageList = async (req: Request, res: Response): Promise<Response>
   const sequelize = (await import("../database")).default;
   const { QueryTypes } = await import("sequelize");
   const ownerId = ownerFilter(req);
+  // the coordination sees the new people of its polos only
+  const polos = poloSql(await crmPolosOf(req));
   const todayStart = dayBounds(undefined).start;
   const rows = (await sequelize.query(
     portable(`
@@ -784,7 +791,7 @@ export const triageList = async (req: Request, res: Response): Promise<Response>
     LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.contactId = l.contactId AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
     LEFT JOIN Users u ON u.id = COALESCE(t.userId, l.ownerId)
     WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL AND l.isHistorical = false
-      AND (:ownerId IS NULL OR COALESCE(t.userId, l.ownerId) = :ownerId)
+      AND (:ownerId IS NULL OR COALESCE(t.userId, l.ownerId) = :ownerId) ${polos}
     ORDER BY l.createdAt ASC LIMIT 200`),
     { replacements: { ownerId }, type: QueryTypes.SELECT }
   )) as any[];
@@ -847,7 +854,9 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   const courseId = req.query.courseId ? Number(req.query.courseId) : null;
   const rep = { from, to, ownerId, courseId, feeTag: FEE_PENDING_TAG.name, docsTag: DOCS_PENDING_LABEL.name };
   // "of a person" = the lead that person ANSWERS (owner of its open conversation, or of the lead while nobody has it): the same rule of the list of new leads
-  const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR COALESCE((SELECT t9.userId FROM Tickets t9 WHERE t9.contactId = l.contactId AND t9.status <> 'closed' ORDER BY t9.id DESC LIMIT 1), l.ownerId) = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
+  // the coordination: only the leads of its polos (the same rule of the lists, see middleware/scope)
+  const polos = poloSql(await crmPolosOf(req));
+  const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR COALESCE((SELECT t9.userId FROM Tickets t9 WHERE t9.contactId = l.contactId AND t9.status <> 'closed' ORDER BY t9.id DESC LIMIT 1), l.ownerId) = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId) ${polos}`;
   const lane = await affiliateStageId();
   const q = async (sql: string): Promise<any[]> =>
     (await sequelize.query(portable(sql), { replacements: rep, type: QueryTypes.SELECT })) as any[];
@@ -1180,8 +1189,9 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
   if (!manager && !["tutor", "academico"].includes(role)) throw new AppError("ERR_NO_PERMISSION", 403);
   const { since: periodSince, until: periodUntil = Number.MAX_SAFE_INTEGER, label: periodLabel } = await periodStart(String(req.query.period || ""), req.query.from ? String(req.query.from) : undefined, req.query.to ? String(req.query.to) : undefined);
   const slaHours = Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24);
+  const polos = manager ? await crmPolosOf(req) : null;
   const rows = await Lead.findAll({
-    where: { onboardingStatus: { [Op.ne]: "none" }, enrolledAt: { [Op.ne]: null }, ...(manager ? {} : { onboardingTutorId: uid(req) }) } as any,
+    where: { onboardingStatus: { [Op.ne]: "none" }, enrolledAt: { [Op.ne]: null }, ...(manager ? {} : { onboardingTutorId: uid(req) }), ...(polos ? { poloId: { [Op.in]: polos.length ? polos : [0] } } : {}) } as any,
     attributes: ["id", "onboardingStatus", "onboardingTutorId", "enrolledAt", "onboardingStartedAt", "onboardingDoneAt"],
     order: [["enrolledAt", "DESC"]],
     limit: 5000
