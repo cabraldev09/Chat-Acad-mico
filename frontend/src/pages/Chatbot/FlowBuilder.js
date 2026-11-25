@@ -16,6 +16,7 @@ import Inspector from "./Inspector";
 import Simulator from "./Simulator";
 import { BLOCKS, defaultData, newId, nodeTypes, paletteFor } from "./nodes";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const useStyles = makeStyles((theme) => ({
   // fills what is left of the screen under the top bar (the layout makes the page a column, see .page-fill)
@@ -110,7 +111,7 @@ const VersionsDialog = ({ open, onClose, flowId, onRestored }) => {
     api.get(`/flows/${flowId}/versions`).then(({ data }) => setRows(data)).catch((e) => { toastError(e); setRows([]); });
   }, [open, flowId]);
   const restore = async (v) => {
-    if (!window.confirm(`Trazer a versão ${v.version} de volta como rascunho? O rascunho atual será substituído; nada muda para as pessoas até você publicar.`)) return;
+    if (!(await confirmDialog({ title: `Trazer a versão ${v.version} de volta?`, message: "Ela vira o rascunho e o rascunho atual é substituído. Nada muda para as pessoas até você publicar.", confirmText: "Trazer de volta" }))) return;
     try { const { data } = await api.post(`/flows/${flowId}/versions/${v.id}/restore`, {}); toast.success(`Versão ${v.version} restaurada como rascunho.`); onRestored(data); } catch (e) { toastError(e); }
   };
   return (
@@ -293,7 +294,7 @@ const Builder = () => {
   const kind = flow ? flow.kind || "flow" : "flow";
   const palette = paletteFor(kind);
   const agentOf = flow && flow.agentId ? lists.agents.find((a) => a.id === flow.agentId) : null;
-  const back = () => { if (dirty && !window.confirm("Há alterações que não foram salvas. Sair mesmo assim?")) return; history.push(kind === "agent" ? "/ai-agents" : "/chatbot"); };
+  const back = async () => { if (dirty && !(await confirmDialog({ title: "Sair sem salvar?", message: "Há alterações que não foram salvas.", confirmText: "Sair sem salvar", tone: "danger" }))) return; history.push(kind === "agent" ? "/ai-agents" : "/chatbot"); };
 
   if (!flow) return <div style={{ padding: 24 }}>Carregando o fluxo...</div>;
   const sideVisible = !narrow || sideOpen;

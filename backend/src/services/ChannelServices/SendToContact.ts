@@ -8,6 +8,7 @@ import Message from "../../models/Message";
 import Whatsapp from "../../models/Whatsapp";
 import AppError from "../../errors/AppError";
 import { mimeFromName } from "../../helpers/MimeFromName";
+import { safeStoredName } from "../../helpers/SafeFile";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
@@ -28,6 +29,8 @@ interface Input {
   body: string;
   idempotencyKey?: string;
   mediaUrl?: string | null;
+  // the name the person sees for the file ("Proposta - Laura.pdf"); without it, the stored name
+  mediaName?: string | null;
   template?: { name: string; language: string; params: string[] } | null;
   // keep the conversation open (assigned) instead of closing a ticket we created
   keepOpen?: { userId: number } | null;
@@ -48,6 +51,7 @@ const SendToContact = async ({
   whatsapp,
   body,
   mediaUrl,
+  mediaName,
   template,
   keepOpen,
   idempotencyKey,
@@ -102,17 +106,19 @@ const SendToContact = async ({
     const source = publicFile(mediaUrl);
     if (!fs.existsSync(source)) throw new AppError("ERR_MEDIA_NOT_FOUND");
     // SendWhatsAppMedia consumes (deletes) the file it sends, so hand it a copy
-    const copyName = `send-${Date.now()}-${Math.random().toString(36).slice(2, 6)}${path.extname(mediaUrl)}`;
+    // with a name for the person, the copy carries it ("Proposta - Laura~k3F9a.pdf"): the conversation shows the name, not a code
+    const copyName = mediaName ? safeStoredName(mediaName, mimeFromName(mediaUrl)) : `send-${Date.now()}-${Math.random().toString(36).slice(2, 6)}${path.extname(mediaUrl)}`;
     fs.copyFileSync(source, path.join(PUBLIC_DIR, copyName));
     const sent = await SendWhatsAppMedia({
       media: {
         filename: copyName,
-        originalname: mediaUrl,
+        originalname: mediaName || mediaUrl,
         mimetype: mimeFromName(mediaUrl),
         path: path.join(PUBLIC_DIR, copyName)
       } as Express.Multer.File,
       ticket,
       body,
+      ...(mediaName ? { displayName: mediaName } : {}),
       automated: !keepOpen && !byPerson
     });
     externalId = String(sent.id);

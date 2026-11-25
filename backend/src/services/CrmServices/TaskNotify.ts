@@ -32,6 +32,15 @@ export const notifyOnboarding = async (lead: Lead, kind: "assigned" | "done" | "
     const payload = { leadId: lead.id, leadName: lead.name, tutorId: lead.onboardingTutorId || null, ownerId: lead.ownerId || null, poloName: polo || null, kind };
     if (lead.onboardingTutorId && kind !== "done") io.to(`user:${lead.onboardingTutorId}`).emit("onboardingAssigned", { ...payload, userId: lead.onboardingTutorId });
     if (lead.ownerId && lead.ownerId !== lead.onboardingTutorId && kind !== "tutor") io.to(`user:${lead.ownerId}`).emit("onboardingAssigned", { ...payload, userId: lead.ownerId });
+    // nobody took the student yet: the tutors of the polo hear it (the bell), so the student never waits unseen
+    if (kind === "assigned" && !lead.onboardingTutorId && lead.poloId) {
+      const { tutorsOfPolo } = await import("../PoloServices/TutorsOfPolo");
+      const ids = (await tutorsOfPolo(lead.poloId)).map(t => t.id).filter(Boolean);
+      if (ids.length) {
+        const { notify } = await import("../NotificationServices/Notify");
+        void notify(ids, { kind: "onboarding_unassigned", level: "warning", title: `Aluno sem tutor: ${String(lead.name || "").split(" ")[0] || "novo aluno"}`, body: `${polo ? `Polo ${polo}. ` : ""}Assuma a ambientação em Meus alunos.`, link: "/meus-alunos?aba=ambientacao", dedupeKey: `onboarding-unassigned:${lead.id}` });
+      }
+    }
   } catch (err) {
     // same: only a notice
   }

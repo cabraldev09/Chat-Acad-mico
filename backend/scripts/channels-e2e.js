@@ -1116,6 +1116,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT status FROM LeadDocuments WHERE leadId=${leadId} AND name='RG ou CNH'`) === "received", "the ID did not count as delivered");
       const staff = (await http.get(`/leads/${leadId}/enrollment-form`, auth())).data;
       assert(staff.progress === 100 && staff.data.cpf === "74682489070" && staff.consentAt && staff.submittedAt, `staff view ${JSON.stringify(staff).slice(0, 200)}`);
+      // the form sent by a lead not enrolled yet: the consultant gets the task of checking it and confirming the enrollment
+      const ownerOfForm = sql(`SELECT COALESCE(ownerId::text,'') FROM Leads WHERE id=${leadId}`);
+      if (ownerOfForm) assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId} AND automationKey='enroll-after-form:${leadId}' AND doneAt IS NULL`) === "1", "the received form did not create the task of confirming the enrollment");
       // an enrolled student also gets the form, fills it and sends it; the tutor is told along with the consultant
       const tutorF = (await http.post("/users", { name: "Tutora Ficha", email: "ficha-tutora@x.com", password: "senha123", role: "tutor" }, auth())).data;
       sql(`UPDATE Leads SET enrolledAt=NOW(), onboardingTutorId=${tutorF.id} WHERE id=${leadId}`);
@@ -1127,6 +1130,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const resent = await http.post(`/ficha-publica/${token}/submit`);
       assert(resent.status === 200 && sql(`SELECT city FROM Leads WHERE id=${leadId}`) === "Campinas", `an enrolled student could not send the form ${resent.status}`);
       assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${tutorF.id} AND kind='enrollment_form'`)) === 1, "the tutor was not told about the form");
+      // taking an enrolled student back to an open column asks first, then undoes the enrollment
+      const openStage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
+      const asked = await http.put(`/leads/${leadId}/stage`, { stageId: Number(openStage) }, auth());
+      assert(asked.status === 409 && asked.data.error === "ERR_ENROLL_UNDO_CONFIRM", `an enrolled lead went back without asking ${asked.status}`);
+      assert(sql(`SELECT enrolledAt IS NOT NULL FROM Leads WHERE id=${leadId}`) === "1", "the enrollment was undone without the confirmation");
+      const undone = await http.put(`/leads/${leadId}/stage`, { stageId: Number(openStage), undoEnroll: true }, auth());
+      assert(undone.status === 200 && sql(`SELECT COALESCE(enrolledAt::text,'') FROM Leads WHERE id=${leadId}`) === "", `undo the enrollment ${undone.status}`);
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Matrícula desfeita%'`) === "1", "the undoing is not in the history");
       // erasing on request of the person (LGPD): only the management, and the pictures go
       assert((await http.delete(`/leads/${leadId}/enrollment-form`, asUser(other))).status === 403, "a consultant erased the form");
       assert((await http.delete(`/leads/${leadId}/enrollment-form`, auth())).status === 200, "erase");
@@ -1469,6 +1480,41 @@ const postMeta = (id, payload, secret, badSig) => {
       const bad = p => http.post("/proposals/preview", { leadId: plead.id, params: p }, auth());
       assert((await bad({ gross: 0, firstMonthly: 100 })).status === 400, "zero gross accepted");
       assert((await bad({ gross: 500, firstMonthly: 900 })).status === 400, "first monthly above gross accepted");
+      assert((await bad({ gross: 500, monthly: 200, firstMonthly: -1 })).data.error === "ERR_PROPOSAL_FIRST_PAYMENT", "a negative 1st installment accepted");
+    });
+    await test("the 1st installment: the same as the others by default, its own value, or waived (R$ 0) without touching the rest", async () => {
+      const prev = p => http.post("/proposals/preview", { leadId: plead.id, params: { gross: 954.8, monthly: 220, enrollmentFee: 99, semesters: 8, startYear: 2027, startSemester: 1, firstDueDate: "2027-02-01", ...p } }, auth());
+      const same = await prev({});
+      assert(same.status === 200 && same.data.result.tiers.onTime === 220 && /Primeira Mensalidade:<\/b> R\$\s?220,00/.test(same.data.html), `default 1st ${same.status} ${JSON.stringify(same.data).slice(0, 200)}`);
+      const exempt = await prev({ firstExempt: true });
+      assert(exempt.status === 200, `exempt ${exempt.status} ${JSON.stringify(exempt.data).slice(0, 200)}`);
+      assert(exempt.data.result.tiers.onTime === 220 && exempt.data.result.bolsaApplied === same.data.result.bolsaApplied, "the waived 1st changed the others");
+      assert(/isenta \(R\$\s?0,00\)/.test(exempt.data.html) && /vencimento 01\/02\/2027/.test(exempt.data.html) && /Valor total do pedido<\/span><span>R\$\s?0,00/.test(exempt.data.html), "the PDF of a waived 1st installment");
+      const zero = await prev({ firstMonthly: 0 });
+      assert(zero.status === 200 && /isenta \(R\$\s?0,00\)/.test(zero.data.html), "R$ 0 typed should mean waived");
+      const own = await prev({ firstMonthly: 150 });
+      assert(own.status === 200 && /Primeira Mensalidade:<\/b> R\$\s?150,00/.test(own.data.html) && own.data.result.tiers.onTime === 220, "a 1st installment with its own value");
+      // the brand's logo on a Cruzeiro do Sul university without an uploaded logo
+      assert(/<img src="data:image\/svg\+xml;base64,/.test(same.data.html) || !/cruzeiro do sul/i.test(same.data.html), "the proposal of a Cruzeiro do Sul university has no logo");
+    });
+    await test("proposal models: an inactive one is not offered, the default stays active, a copy is a new model", async () => {
+      const made = await http.post("/proposal-templates", { name: "Modelo Inativo Teste", enrollmentFee: 50, dueDay: 10, installments: 6, bolsaFirst: 30, bolsaNext: 30, active: true }, auth());
+      assert(made.status === 201 && made.data.active === true, `template ${made.status}`);
+      const off = await http.put(`/proposal-templates/${made.data.id}`, { active: false }, auth());
+      assert(off.status === 200 && off.data.active === false, "deactivate a model");
+      const def = (await http.get("/proposal-templates", auth())).data;
+      const list = Array.isArray(def) ? def : def.rows || def.items || [];
+      const dflt = list.find(t => t.isDefault);
+      if (dflt) {
+        const refused = await http.put(`/proposal-templates/${dflt.id}`, { active: false }, auth());
+        assert(refused.status === 400 && refused.data.error === "ERR_PROPOSAL_TEMPLATE_DEFAULT_ACTIVE", `the default model was deactivated ${refused.status}`);
+        // the default is the one picked when the inactive model would otherwise come first
+        const d = await http.get(`/proposals/defaults?leadId=${plead.id}`, auth());
+        assert(d.status !== 200 || d.data.templateId !== made.data.id, "an inactive model was offered");
+      }
+      // turning it on again
+      assert((await http.put(`/proposal-templates/${made.data.id}`, { active: true }, auth())).data.active === true, "reactivate");
+      await http.delete(`/proposal-templates/${made.data.id}`, auth());
     });
     let prop, propCourse;
     await test("a draft saves without the base data, but the PDF and the sending ask for the admission, the course and the deadline", async () => {
@@ -1506,7 +1552,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const doc = graph.sent.slice(before).find(x => x.body && x.body.type === "document");
       assert(doc && doc.body.document.filename && doc.body.document.filename.endsWith(".pdf"), "document message payload");
       assert(sql(`SELECT status FROM Proposals WHERE id=${prop.id}`) === "sent", "status");
-      assert(/proposta/i.test(stageName(lid)), `stage ${stageName(lid)}`);
+      // the column of the proposal itself, never "Pronto para proposta"
+      assert(/proposta/i.test(stageName(lid)) && !/pronto/i.test(stageName(lid)), `stage ${stageName(lid)}`);
       assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lid} AND body LIKE 'Proposta #${prop.id} enviada%'`) === "1", "activity");
       const pub = await http.get(`/p/${prop.token}`);
       assert(pub.status === 200 && String(pub.data).includes("Projeção por semestre"), "public link");
@@ -1700,6 +1747,24 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: pay.txid }] });
       await sleep(1500);
       assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${paying.id} AND body LIKE 'Taxa de matrícula paga%'`) === "1", "duplicate activity");
+    });
+    await test("a paid fee never enrolls by itself: with the setting pointing to Matriculado the lead stays and the consultant gets the task", async () => {
+      const won = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`);
+      await http.put("/payments/efi/settings", { moveStageId: Number(won) }, auth());
+      const me = sql(`SELECT id FROM Users WHERE email='admin@whaticket.com'`);
+      const l = await mkLead("Aluno Taxa Sem Matricula", "5511955550011");
+      await http.put(`/leads/${l.id}`, { cpf: "529.982.247-25" }, auth());
+      sql(`UPDATE Leads SET ownerId=${me} WHERE id=${l.id}`);
+      const p = (await http.post(`/leads/${l.id}/payments`, { amount: "99,00", method: "pix" }, auth())).data;
+      efi.charges[p.txid].status = "CONCLUIDA";
+      efi.charges[p.txid].pix = [{ endToEndId: "E2026WON", txid: p.txid, valor: "99.00", horario: new Date().toISOString() }];
+      const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
+      await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: p.txid }] });
+      await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${p.id}`) === "paid", 8000, "payment paid");
+      await http.put("/payments/efi/settings", { moveStageId: null }, auth());
+      assert(sql(`SELECT COALESCE(enrolledAt::text,'') FROM Leads WHERE id=${l.id}`) === "", "a payment enrolled the lead");
+      assert(sql(`SELECT s.type FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.id=${l.id}`) === "open", `a payment moved the lead to ${stageName(l.id)}`);
+      await waitFor(() => sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${l.id} AND automationKey='enroll-after-fee:${l.id}' AND doneAt IS NULL`) === "1", 8000, "the task of confirming the enrollment");
     });
     await test("without a webhook (localhost) the poller still detects the payment", async () => {
       const l = await mkLead("Aluno Poller", "5511955550002");
@@ -2614,7 +2679,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sent.status === 200, `send ${sent.status} ${JSON.stringify(sent.data)}`);
       const out = tg.sent.slice(before);
       // one message: the PDF with the summary as its description (as when a document is attached with a caption)
-      assert(out.length === 1 && out[0].method === "sendDocument" && /Cst em Marketing/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
+      // the course is the name of the file; the caption starts with the duration and does not repeat the course
+      assert(out.length === 1 && out[0].method === "sendDocument" && !/Matriz curricular:/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
       assert((await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket), summary: false, pdf: false }, auth())).status === 400, "nothing to send accepted");
       // the contact can be chosen instead of a conversation: its open conversation is used
       const tgTicketData = (await http.get(`/tickets/${tgTicket}`, auth())).data;
@@ -3429,6 +3495,30 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT monthlyFee FROM Courses WHERE name='Administração' AND modality='EAD'`) === "1073.80", "force did not restore the price");
       const cid = (await http.post("/auth/login", { email: "admin@whaticket.com", password: "admin" })).data.token;
       assert((await http.post("/courses/load-default", {}, { headers: { Authorization: `Bearer ${cid}` } })).status === 200, "admin load");
+    });
+    await test("a consultant or tutor connects their own WhatsApp by QR Code: one per person, theirs only, strict protection", async () => {
+      const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const c = await mk("Carla Própria", "qr-propria@x.com", "consultor");
+      await mk("Tito Tutor", "qr-tutor@x.com", "tutor");
+      const tc = (await http.post("/auth/login", { email: "qr-propria@x.com", password: "senha123" })).data.token;
+      const tt = (await http.post("/auth/login", { email: "qr-tutor@x.com", password: "senha123" })).data.token;
+      const qrs = Number(sql("SELECT COUNT(*) FROM Whatsapps WHERE channel='whatsapp'"));
+      const mine = await http.post("/whatsapp/mine", {}, asUser(tc));
+      assert(mine.status === 200 && mine.data.channel === "whatsapp" && mine.data.ownerId === c.id && mine.data.isDefault === false, `own QR ${mine.status} ${JSON.stringify(mine.data).slice(0, 200)} (QR numbers before: ${qrs})`);
+      assert(/^WhatsApp de Carla/.test(mine.data.name), `name ${mine.data.name}`);
+      assert(sql(`SELECT riskMode FROM Whatsapps WHERE id=${mine.data.id}`) === "strict", "the own number starts in strict protection");
+      assert(sql(`SELECT whatsappId FROM Users WHERE id=${c.id}`) === String(mine.data.id), "the own number becomes the person's sending number");
+      const again = await http.post("/whatsapp/mine", {}, asUser(tc));
+      assert(again.status === 409 && again.data.error === "ERR_QR_ALREADY_HAS", `a second own number ${again.status}`);
+      // the owner keeps it connected; another person cannot touch it
+      assert((await http.post(`/whatsappsession/${mine.data.id}`, {}, asUser(tc))).status === 200, "the owner cannot start the session");
+      assert((await http.post(`/whatsappsession/${mine.data.id}`, {}, asUser(tt))).status === 403, "someone else started it");
+      assert(!(await http.get("/whatsapp", asUser(tt))).data.some(w => w.id === mine.data.id), "someone else lists it");
+      const tutors = await http.post("/whatsapp/mine", {}, asUser(tt));
+      assert(tutors.status === 200 && /^WhatsApp de Tito/.test(tutors.data.name), `the tutor's own number ${tutors.status}`);
+      // the management still adds any connection through the usual route; a consultant still cannot
+      assert((await http.post("/whatsapp", { name: "x" }, asUser(tc))).status === 403, "a consultant used the management's route");
+      for (const id of [mine.data.id, tutors.data.id]) await http.delete(`/whatsapp/${id}`, auth());
     });
     await test("a QR Code number given to a person by the management: only its owner sees it in Conexões, reads its QR Code and picks its groups", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
@@ -4627,7 +4717,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const llmMa2 = anthropic.requests.length;
       out = await say(MA, "wamid.ma-5", "Sim, pode continuar", t => t.some(x => /Você tem alguma dúvida sobre o curso ou o formato\?/.test(x)), "MA grade, tutoring and internship");
       const ma5 = out.join("\n");
-      assert(/\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
+      // with the PDF the file carries the course's name and the caption does not repeat it; without the PDF the summary has the title
+      const maDoc = graph.sent.filter(x => x.body && x.body.type === "document" && String(x.body.to || "").endsWith(MA.slice(-8))).pop();
+      if (maDoc) assert(/^Biomedicina/.test(maDoc.body.document.filename) && !/Matriz curricular:/.test(maDoc.body.document.caption || ""), `MA grade file: ${JSON.stringify(maDoc.body.document).slice(0, 200)}`);
+      assert((maDoc || /\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5)) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
       assert(/Sobre a tutoria, esse é um diferencial importante/.test(ma5) && /começa no 6º semestre e soma 640 horas/.test(ma5) && /convênios com órgãos públicos/.test(ma5), `MA tutoring and internship: ${ma5}`);
       assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
       out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /simular as bolsas disponíveis para você, pode me informar o seu nome completo e CPF/.test(x)), "MA name and CPF asked");
@@ -4635,6 +4728,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/^\W*Para o consultor do seu polo simular as bolsas/.test(out[out.length - 1]), `MA bolsa: ${out}`);
       // the copilot follows the conversation: the name and the CPF were just asked, so it does not suggest asking again; it says it waits and
       // offers a short reminder (never the same message, never "Caso não tenha" out of place)
+      // the agent of this course does not speak of the faculty: before it, the step "Corpo docente" is the next one; the consultant marks it
+      const beforeFaculty = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
+      assert(beforeFaculty.current === "docentes", `the faculty step: ${beforeFaculty.current}`);
+      await http.put(`/tickets/${ticketOf(MA)}/copilot/progress`, { key: "docentes", done: true }, auth());
       const copWait = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(copWait.current === "bolsa" && copWait.suggestion.kind === "waiting" && /Você já pediu o nome completo e o CPF/.test(copWait.suggestion.note), `copilot while waiting: ${JSON.stringify(copWait.suggestion)}`);
       assert(/conseguiu ver a minha mensagem/.test(copWait.suggestion.text) && !/Caso não tenha/.test(copWait.suggestion.text), `copilot reminder: ${copWait.suggestion.text}`);
@@ -4646,7 +4743,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // the copilot of the consultant reads the same conversation: everything up to the name and CPF is done, the proposal is next, with no model call
       const cop = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(cop.hasLead && cop.current === "proposal", `copilot step: ${JSON.stringify(cop.steps)}`);
-      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,grade,doubts,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
+      // the simple process (11 steps): the tutoring and the faculty count when the agent told them
+      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,tutoria,grade,docentes,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
       assert(cop.suggestion && cop.suggestion.action === "proposal" && /proposta da sua bolsa/.test(cop.suggestion.text) && !emoji.test(cop.suggestion.text), `copilot text: ${JSON.stringify(cop.suggestion)}`);
       assert(anthropic.requests.length === llmMa2, "the copilot called the model");
       assert(cop.course && cop.course.semPratica === false && /Semipresencial: 30% de prática presencial/.test(cop.course.resumo), `copilot course rule: ${JSON.stringify(cop.course)}`);
@@ -4658,21 +4756,28 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/tickets/${tMA}/take`, {}, auth())).status === 200, "the consultant takes the conversation");
       const copNow = async () => (await http.get(`/tickets/${tMA}/copilot`, auth())).data;
       const consultantSays = async text => { const r = await http.post(`/messages/${tMA}`, { body: text }, auth()); assert(r.status === 200, `consultant message ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`); };
-      assert((await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.some(x => x.key === "objective" && x.optional), "the objective is an optional step");
+      const simple = (await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.map(x => x.key).join(",");
+      assert(simple === "course,entry,city,format,tutoria,grade,docentes,bolsa,proposal,ficha,enroll", `the simple process of 11 steps: ${simple}`);
       await consultantSays("Maira, segue a proposta da sua bolsa para o curso de Biomedicina.");
       let cp = await copNow();
+      // the sentence alone is not a proposal: the step waits for a proposal really sent (the PDF)
+      assert(cp.current === "proposal", `a sentence counted as the proposal: ${cp.current}`);
+      const maLead = sql(`SELECT l.id FROM Leads l JOIN Tickets t ON t.contactId=l.contactId WHERE t.id=${tMA} LIMIT 1`);
+      sql(`INSERT INTO Proposals (leadId, token, status, courseName, grossFee, firstMonthly, bolsaPct, params, sentAt, createdAt, updatedAt) VALUES (${maLead}, 'tok-ma-${Date.now()}', 'sent', 'Biomedicina', 500, 250, 50, '{}', NOW(), NOW(), NOW())`);
+      cp = await copNow();
       // the form goes as the lead's personal link (the lead fills it in on the phone, with the picture of the ID)
       assert(cp.current === "ficha" && /ficha de matrícula/.test(cp.suggestion.text) && /\/ficha\/[a-f0-9]{48}/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `after the proposal: ${cp.current} ${JSON.stringify(cp.suggestion)}`);
       await consultantSays(cp.suggestion.text);
       cp = await copNow();
-      assert(cp.current === "taxa" && /boleto da taxa de matrícula/.test(cp.suggestion.text) && /comprovante/.test(cp.suggestion.text), `after the form: ${cp.current}`);
-      await consultantSays(cp.suggestion.text);
-      cp = await copNow();
-      assert(cp.current === "comprovante", `after the fee: ${cp.current}`);
-      await inboundCloud(MA, "wamid.ma-pix", "Pix feito, segue o comprovante");
-      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the proof of payment moved the process to the enrollment");
+      // asked is not sent: the step waits for the form (by the link) or the documents in the conversation, with a reminder meanwhile
+      assert(cp.current === "ficha" && cp.suggestion.kind === "waiting", `the form counted as sent when it was only asked: ${cp.current} ${cp.suggestion && cp.suggestion.kind}`);
+      await inboundCloud(MA, "wamid.ma-ficha", "Segue o meu RG e o nome da mãe é Maria");
+      // the fee and its proof are part of the enrollment step (no steps of their own any more)
+      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the documents in the conversation completed the form step");
       cp = await copNow();
       assert(cp.suggestion.action === "enroll" && /matrícula/.test(cp.suggestion.text) && /Biomedicina/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `enrollment step: ${JSON.stringify(cp.suggestion)}`);
+      // before it is registered in the CRM, the lead is never told the enrollment is confirmed
+      assert(!/foi confirmada|confirmada com sucesso|parab[eé]ns/i.test(cp.suggestion.text), `the copilot congratulated an enrollment not registered: ${cp.suggestion.text}`);
       assert(anthropic.requests.length === llmMa2, "the steps after the proposal called the model");
       // EA) a course the Portaria does not restrict (a tecnólogo of management) is EAD with no practical classes: the agent says the duration and the format, as the team does
       if (sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
@@ -7559,7 +7664,7 @@ const postMeta = (id, payload, secret, badSig) => {
       { const off = (await http.get("/copilot/settings", auth())).data; off.aiEnabled = false; await http.put("/copilot/settings", off, auth()); }
       const before = anthropic.requests.length;
       let view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
-      assert(view.enabled && !view.hasLead && view.steps.length === 15 && view.current === "course", "no process for unlinked contact");
+      assert(view.enabled && !view.hasLead && view.steps.length === 11 && view.current === "course", "no process for unlinked contact");
       assert(!view.aiAvailable && anthropic.requests.length === before, "process used paid generation");
       assert((await http.post(`/tickets/${tid}/suggest-reply`, {}, auth())).status === 403, "AI opt-in ignored");
       assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"course",done:true}, auth())).data.current === "entry", "step not saved");

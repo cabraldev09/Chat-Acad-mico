@@ -57,6 +57,10 @@ export const chooseGrade = <G extends GradeLike>(all: G[], course: { name: strin
 
 // The text under the PDF: the summary written for WhatsApp (it already lists the internships) when it fits, else a short one built from the
 // matrix. Always the internships, because that is what the person asked about; at most 1000 characters (the limit of a caption is 1024).
+// the text that goes WITH the PDF: the course is already the name of the file, so the title line ("Matriz curricular: …") is left out
+export const withoutGradeTitle = (text: string): string =>
+  String(text || "").replace(/^\s*\*?Matriz curricular:[^\n]*\n+/i, "").trim();
+
 export const gradeCaption = (grade: { courseName: string; whatsappSummary?: string | null; totalInternshipHours?: number | null }, internships: Array<{ semester: number; discipline: string; hours: number | null }>): string => {
   const summary = String(grade.whatsappSummary || "").trim();
   const usable = summary && !summary.includes("{{");

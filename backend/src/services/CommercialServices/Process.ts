@@ -7,6 +7,7 @@ import { completionOf, CopilotConfig } from "../CopilotServices/Policy";
 import Lead from "../../models/Lead";
 import Message from "../../models/Message";
 import Proposal from "../../models/Proposal";
+import EnrollmentForm from "../../models/EnrollmentForm";
 import Ticket from "../../models/Ticket";
 import { bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
 import { detectFromText } from "./Detect";
@@ -20,7 +21,7 @@ import { hydrate, loadState, Slots } from "./Slots";
 // The state is read from the conversation itself (what the lead said, what the consultant already sent), so it keeps up after the handover, when the
 // state saved by the agent no longer changes. Nothing here writes to the lead or sends anything: it only says where the process is and what to say next.
 
-export type StepKey = "entry" | "objective" | "course" | "city" | "format" | "grade" | "doubts" | "bolsa" | "proposal" | "ficha" | "taxa" | "comprovante" | "enroll" | "comunidade" | "afiliado";
+export type StepKey = "entry" | "objective" | "course" | "city" | "format" | "tutoria" | "grade" | "docentes" | "doubts" | "bolsa" | "proposal" | "ficha" | "taxa" | "comprovante" | "enroll" | "comunidade" | "afiliado";
 
 export interface CopilotStep {
   key: string;
@@ -52,8 +53,10 @@ export const STEP_LABEL: Record<StepKey, string> = {
   entry: "Já tem graduação? (forma de ingresso)",
   course: "O que procura (curso)",
   city: "Cidade e polo",
-  format: "Formato e mudanças do MEC explicados",
-  grade: "Grade, tutoria e estágio",
+  format: "Formato e duração do curso",
+  tutoria: "Tutoria",
+  grade: "Grade do curso",
+  docentes: "Corpo docente",
   doubts: "Dúvidas esclarecidas",
   bolsa: "Nome completo e CPF para simular a bolsa",
   proposal: "Proposta enviada",
@@ -94,6 +97,9 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
       if (/reside em qual cidade|qual (e )?a sua cidade|mora em qual cidade/.test(t)) sent("city", at);
       if (/ate aqui voce (compreendeu|conseguiu compreender)|ficou claro como funciona/.test(t)) sent("format", at);
       if (/alguma duvida|tem algo que eu posso/.test(t)) sent("doubts", at);
+      // the tutoring and the faculty, as the consultant (or the agent) tells them
+      if (/\btutoria\b/.test(t) && /acompanha|auxilia|primeiro acesso|desde a matricula|nao fica sozinho/.test(t)) out.tutoringTold = true;
+      if (/mestres e doutores|corpo docente/.test(t)) out.facultyTold = true;
       if (/nome completo e (o )?cpf|falta so o seu (cpf|nome completo)/.test(t)) sent("bolsa", at);
       if (/ficha de matricula|nome completo da mae/.test(t)) sent("ficha", at);
       if (/\b(pix|boleto)\b/.test(t) && /taxa|matricula|copia e cola/.test(t)) sent("taxa", at);
@@ -101,7 +107,8 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
       if (/matriz curricular|grade do curso|grade curricular/.test(t) || (m.mediaType === "document" && /(?:matriz|grade)[^\n]*\.pdf/.test(t))) out.gradeSent = true;
       if (/alguma duvida|tem algo que eu posso/.test(t)) asked.add("doubts");
       if (/nome completo e cpf|nome completo e o cpf/.test(t)) asked.add("bolsa");
-      if (/\bproposta\b/.test(t) && (/(encaminhando|segue|enviei|anexo|valor de)/.test(t) || /\.pdf/.test(t) || m.mediaType === "document")) proposalSent = true;
+      // a proposal counts when a document went with it (the PDF); the copilot's own sentence "estou te encaminhando a proposta" alone is not one
+      if (/\bproposta\b/.test(t) && (/\.pdf/.test(t) || m.mediaType === "document")) proposalSent = true;
       // the steps after the proposal, as the consultant does them
       if (/\bobjetivo\b|concurso publico|prestar concurso|formacao superior rapida/.test(t) && /\?/.test(text)) asked.add("objective");
       if (/ficha de matricula|nome completo da mae/.test(t)) asked.add("ficha");
@@ -167,6 +174,8 @@ const textFor = async (key: StepKey, s: Slots, leadName: string, ficha?: FichaLi
     case "grade":
       // "Enviar" sends this line and the grade of the course right after it; the tutoring comes in the next step, on its own
       return { text: "Vou te enviar a *grade do curso* para você visualizar melhor as disciplinas e a estrutura da formação.", action: "send_grade" };
+    case "tutoria": return { text: TUTORING_PITCH, action: null };
+    case "docentes": return { text: "O nosso corpo docente é formado por professores mestres e doutores.", action: null };
     case "doubts": return { text: `${TUTORING_PITCH}\n\n${DOUBTS_QUESTION}`, action: null };
     case "bolsa": return { text: bolsaRequestFor({ name: !s.fullName, cpf: !s.cpfGiven }), action: null };
     case "proposal": {
@@ -180,7 +189,8 @@ const textFor = async (key: StepKey, s: Slots, leadName: string, ficha?: FichaLi
       return { text: "Perfeito! Para dar andamento à matrícula, preciso da foto do seu RG ou CNH (frente e verso) e que você preencha os dados abaixo.\n\nFicha de matrícula (fotos ou PDFs legíveis)\n\n* Nome completo:\n* Data de nascimento:\n* CPF:\n* RG (nº, órgão emissor, UF):\n* Nome completo da mãe:\n* Endereço completo (rua, nº, bairro, cidade, CEP):\n* Telefone celular atualizado:\n* E-mail pessoal:\n* Histórico do Ensino Médio (caso já tenha em mãos)", action: null };
     case "taxa": return { text: "Vou te enviar agora o boleto da taxa de matrícula e o código Pix copia e cola. Assim que você realizar o pagamento, me envia o comprovante para eu dar baixa junto ao setor financeiro, por gentileza.", action: null };
     case "comprovante": return { text: "Recebi, obrigado! Estou prosseguindo com a sua matrícula e já te aviso assim que ela for confirmada.", action: null };
-    case "enroll": return { text: `${first(s.fullName || leadName) ? `${first(s.fullName || leadName)}, s` : "S"}ua matrícula${s.courseName ? ` em *${s.courseName}*` : ""} foi confirmada com sucesso! Parabéns por essa nova etapa. Seja muito bem-vindo(a) à ${institutionName()}!`, action: "enroll" };
+    // before the enrollment is registered in the CRM the lead is never told it is confirmed: the step is to register it (the button)
+    case "enroll": return { text: `${first(s.fullName || leadName) ? `${first(s.fullName || leadName)}, e` : "E"}stou finalizando a sua matrícula${s.courseName ? ` em *${s.courseName}*` : ""} junto à ${institutionName()} e te aviso assim que ela for confirmada.`, action: "enroll" };
     case "comunidade": return { text: "Agora a tutoria vai entrar em contato com você para auxiliar no primeiro acesso, na ambientação da plataforma e no início das disciplinas. Você também já pode entrar na Comunidade dos Alunos, onde enviamos os principais avisos e orientações durante a formação.", action: null };
     case "afiliado": return { text: "Se você conhece alguém que também queira estudar, pode participar do nosso programa de afiliados: quando a pessoa indicada realizar a matrícula e pagar a primeira mensalidade, você recebe uma comissão. Posso te explicar como funciona?", action: null };
     default: return null;
@@ -241,6 +251,7 @@ export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise
   const progress = await CopilotProgress.findByPk(ticket.id);
   const overrides = progress?.overrides || {};
   const proposals = lead ? await Proposal.count({ where: { leadId: lead.id, sentAt: { [Op.ne]: null } } as any }) : 0;
+  const fichaSent = lead ? !!(await EnrollmentForm.count({ where: { leadId: lead.id, submittedAt: { [Op.ne]: null } } as any })) : false;
   const enrolled = !!lead?.enrolledAt;
   const done: Record<StepKey, boolean> = {
     entry: !!slots.entryType && slots.entryType !== "unknown",
@@ -248,16 +259,20 @@ export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise
     course: !!(slots.courseName || slots.courseId),
     city: !!(slots.city || slots.poloId),
     format: !!(slots.modalityExplained || slots.mecExplained),
+    tutoria: !!(slots as any).tutoringTold,
     grade: !!slots.gradeSent,
+    docentes: !!(slots as any).facultyTold,
     doubts: !!(slots.doubtsOver || asked.has("bolsa") || (slots.fullName && slots.cpfGiven)),
     bolsa: !!(slots.fullName && slots.cpfGiven),
     proposal: proposals > 0 || proposalSent,
     // the steps after the proposal are the consultant's: the form asked, the fee sent, the proof received, the enrollment confirmed (always by the CRM), the tutoring and the community told
-    ficha: enrolled || asked.has("ficha"),
+    // the form is done when the lead sends it (by the link, or the documents in the conversation), not when it is asked
+    ficha: enrolled || fichaSent || got.has("ficha"),
     taxa: enrolled || asked.has("taxa"),
     comprovante: enrolled || got.has("comprovante"),
     enroll: enrolled,
-    comunidade: asked.has("comunidade"),
+    // the tutoring's contact goes to the student by itself when the enrollment is registered
+    comunidade: enrolled || asked.has("comunidade"),
     afiliado: asked.has("afiliado")
   };
   const steps: CopilotStep[] = settings.steps.map(s => ({ key: s.key, label: s.label, instruction: s.instruction, done: completionOf(s.key, !!done[s.key as StepKey], overrides), manual: Object.prototype.hasOwnProperty.call(overrides, s.key), optional: !!s.optional }));

@@ -235,6 +235,7 @@ todos os contatos. Isso fica para um PR próprio; até lá, este isolamento vale
 - POST /tickets/:ticketId/typing → canWriteTicket
 - PUT /tickets/:ticketId → canWriteTicket
 - PUT /users/:userId → canEditUser
+- POST /whatsapp/mine → canConnectOwnQr
 - PUT /whatsapp/:whatsappId → canManageWhatsapp
 - POST /whatsapp/:whatsappId/import-history → canManageWhatsapp
 - POST /whatsappsession/:whatsappId → canManageWhatsapp
