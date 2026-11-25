@@ -248,6 +248,16 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
 
   // 0) the opening: a greeting (or nobody wrote yet) is answered by the system, with the next question, without the model
   const lastBot = [...(d.history || [])].reverse().find(h => h.role === "assistant")?.content || "";
+  // the agent's whole last reply: its bubbles can be stored one by one (a slower server keeps them apart), and "nessa área" refers to the
+  // bubble that named the area, not only to the last one ("Qual deles te interessa?")
+  const lastBotTurn = (() => {
+    const h = d.history || [];
+    let i = h.length - 1;
+    while (i >= 0 && h[i].role !== "assistant") i -= 1;
+    const parts: string[] = [];
+    while (i >= 0 && h[i].role === "assistant") { parts.unshift(String(h[i].content || "")); i -= 1; }
+    return parts.join("\n");
+  })();
   const fresh = !state.slots.lastOutboundAt || returningSince(state.slots.lastOutboundAt);
   // the question of the course was already asked and nothing came of it: the areas are offered instead of the same question again
   const courseAskOrHelp = async (next: string | null): Promise<string | null> => {
@@ -414,7 +424,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   }
 
   // "cursos na área da saúde", "gestão ou educação?": the courses of the catalogue of those areas (the model never lists from memory)
-  const areaCtx = d.input !== null && wrote && !named && !heardNow.courseName && !state.slots.enrolledStudent ? areaInContext(lastText, lastBot) : null;
+  const areaCtx = d.input !== null && wrote && !named && !heardNow.courseName && !state.slots.enrolledStudent ? areaInContext(lastText, lastBotTurn) : null;
   const areas = areasNow.length && !heardNow.courseName ? areasNow : areaCtx ? [areaCtx] : [];
   if (areas.length && !named) {
     const list = await offeredCourses();

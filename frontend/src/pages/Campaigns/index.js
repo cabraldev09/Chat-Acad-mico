@@ -47,6 +47,7 @@ import { downloadFile } from "../../utils/saveBlob";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
 import SendReleaseDialog, { QuotaLine } from "../../components/SendRelease";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const useStyles = makeStyles((theme) => ({
   body: { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 },
@@ -247,7 +248,7 @@ const ReportDialog = ({ campaignId, onClose, onChanged }) => {
   const retry = async () => {
     // the ones to "check the delivery" may have arrived: they only go back when the person agrees (a resend can duplicate)
     const uncertain = (c && c.counters.uncertain) || 0;
-    const includeUncertain = uncertain > 0 && window.confirm(`Há ${uncertain} envio(s) com entrega a conferir: podem ter chegado. Reenviar também esses? (pode duplicar a mensagem para alguns)`);
+    const includeUncertain = uncertain > 0 && (await confirmDialog({ title: "Reenviar também os envios a conferir?", message: `Há ${uncertain} envio(s) com entrega a conferir: podem ter chegado. Reenviar pode duplicar a mensagem para algumas pessoas.`, confirmText: "Reenviar também", cancelText: "Só os que falharam" }));
     setBusy(true);
     try {
       const { data: r } = await api.post(`/campaigns/${campaignId}/retry-failed`, { includeUncertain });

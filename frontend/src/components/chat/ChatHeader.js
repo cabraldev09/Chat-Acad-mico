@@ -30,6 +30,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { wa } from "./chatTheme";
 import { typingText } from "../../utils/typingStore";
 import { SOUND_CHOICES, getContactSound, setContactSound, getSoundMode, onSoundPrefsChange } from "../../utils/soundPrefs";
+import { confirmDialog } from "../ConfirmDialog";
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
@@ -250,7 +251,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
 
   // the management takes a conversation from its attendant on purpose (it is registered who took it from whom)
   const takeOver = async () => {
-    if (!window.confirm(`Assumir esta conversa de ${ticket.user?.name || "outro atendente"}? Ela passa a ser sua e ${ticket.user?.name || "o atendente"} deixa de responder.`)) return;
+    if (!(await confirmDialog({ title: "Assumir esta conversa?", message: `Ela passa a ser sua e ${ticket.user?.name || "o atendente"} deixa de responder.`, confirmText: "Assumir" }))) return;
     setLoading(true);
     try {
       await api.post(`/tickets/${ticket.id}/take`);

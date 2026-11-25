@@ -5,6 +5,7 @@ import { CheckCircle2, AlertTriangle, AlertCircle, RefreshCw, ArrowRight, Chevro
 import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 // Configurações → Prontidão do sistema: what is still missing before the team works on the system, each item saying where to fix it
 const card = { border: "1px solid var(--line-strong)", borderRadius: 12, background: "var(--surface)", padding: 16, boxShadow: "var(--shadow-card)", minWidth: 0 };
@@ -41,7 +42,7 @@ export default function Readiness() {
   useEffect(() => { load(); }, [load]);
   // the affiliates that entered the funnel as leads go out of it (never a student or a lead with a paid charge)
   const cleanAffiliateLeads = async () => {
-    if (!window.confirm("Tirar do funil os afiliados que entraram como lead? Só saem os que não têm matrícula nem pagamento; as conversas continuam.")) return;
+    if (!(await confirmDialog({ title: "Tirar os afiliados do funil?", message: "Só saem os que não têm matrícula nem pagamento. As conversas continuam.", confirmText: "Tirar do funil" }))) return;
     try { const { data } = await api.post("/system/affiliate-leads/clean"); toast.success(`${data.removed} afiliado(s) saíram do funil.`); load(); } catch (err) { toastError(err); }
   };
   if (!items) return <div style={{ fontSize: 13, color: "var(--text-2)" }}>Conferindo...</div>;

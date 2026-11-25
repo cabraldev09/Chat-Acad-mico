@@ -11,8 +11,10 @@ export const canOperateRetention = (user) => accessLevel(user) === "admin" || (!
 export const isStrictAdmin = (user) => accessLevel(user) === "admin";
 // a QR Code number the management gave to this person (they read its QR Code on their own phone)
 export const isOwnQrNumber = (user, w) => !!user && !!w && w.ownerId === user.id && (w.channel || "whatsapp") === "whatsapp";
-// Conexões: the management, or whoever has a QR Code number of their own to keep connected
-export const canSeeConnections = (user, whatsApps) => isManager(user) || (whatsApps || []).some((w) => isOwnQrNumber(user, w));
+// who may connect a WhatsApp of their own by QR Code (the server checks the same: canConnectOwnQr)
+export const canConnectOwnQr = (user) => !!user && ["consultor", "tutor", "academico", "relacionamento"].includes(user.role);
+// Conexões: the management, whoever has a QR Code number of their own, and whoever may connect one
+export const canSeeConnections = (user, whatsApps) => isManager(user) || canConnectOwnQr(user) || (whatsApps || []).some((w) => isOwnQrNumber(user, w));
 
 export const COORD_AREA_LABEL = { comercial: "Coordenação comercial", academica: "Coordenação acadêmica" };
 export const roleLabel = (u) =>
