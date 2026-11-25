@@ -89,7 +89,8 @@ export const buildIndicators = async (query: IndicatorQuery, now: Date = new Dat
   // only the reviews of the leads of the polos asked (plus the ones with no lead, for a token of every polo)
   const leadsOfPolos = literal(`(SELECT l.id FROM "Leads" l WHERE ${portable(inPolos)})`);
   const reviews = await ConsultantReview.findAll({
-    where: { day: { [Op.between]: [query.from, query.to] }, [Op.or]: [{ leadId: { [Op.in]: leadsOfPolos } }, ...(withNone ? [{ leadId: { [Op.is]: null } }] : [])] } as any,
+    // (a token of every polo reads them all: no filter to pay for)
+    where: { day: { [Op.between]: [query.from, query.to] }, ...(wanted ? { leadId: { [Op.in]: leadsOfPolos } } : {}) } as any,
     attributes: ["userId", "leadId", "objections", "difficulties", "skipped"]
   });
   const reviewPolo = new Map<number, any>();
