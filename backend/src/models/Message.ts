@@ -50,6 +50,14 @@ class Message extends Model<Message> {
   @Column
   mediaType: string;
 
+  // the retention policy deleted the file of this message (the transcript of a voice note stays): see SystemServices/ContentRetention
+  @Column(DataType.DATE)
+  mediaPurgedAt: Date;
+
+  // the retention policy deleted the text, the transcript and the file of this message (the record of the message stays)
+  @Column(DataType.DATE)
+  bodyPurgedAt: Date;
+
   @Default(false)
   @Column
   isDeleted: boolean;

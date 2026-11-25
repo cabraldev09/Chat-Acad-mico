@@ -106,9 +106,10 @@ import CopilotSnapshot from "../models/CopilotSnapshot";
 import AiBudgetReservation from "../models/AiBudgetReservation";
 import EnrollmentProof from "../models/EnrollmentProof";
 import GoalChange from "../models/GoalChange";
+import DataPurgeRun from "../models/DataPurgeRun";
 
 const models = [
-  CopilotRequest, CopilotProgress, CopilotSnapshot, OutboundDelivery, MetaWebhookEvent, Notification, PoloInstitution, InstitutionSetting, ConsultantReview, AiBudgetReservation, EnrollmentProof, GoalChange,
+  CopilotRequest, CopilotProgress, CopilotSnapshot, OutboundDelivery, MetaWebhookEvent, Notification, PoloInstitution, InstitutionSetting, ConsultantReview, AiBudgetReservation, EnrollmentProof, GoalChange, DataPurgeRun,
   WebhookDelivery,
   User,
   Contact,

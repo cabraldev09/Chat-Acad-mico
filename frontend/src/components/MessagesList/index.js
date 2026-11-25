@@ -615,6 +615,15 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
 
   // ---------------------------------------------------------------- rendering
   const renderMedia = (m) => {
+    // the retention policy deleted the file on purpose (Configurações > Retenção de dados): nothing to bring back from the phone
+    if (!m.mediaUrl && m.mediaPurgedAt) {
+      return (
+        <div className={classes.deleted}>
+          <Block style={{ fontSize: 16 }} />
+          {m.mediaType === "audio" ? "Áudio apagado pela política de retenção" : "Arquivo apagado pela política de retenção"}
+        </div>
+      );
+    }
     if (needsMedia(m)) return <MediaPlaceholder message={m} />;
     if (m.mediaType === "location" && (m.body || "").split("|").length >= 2) {
       const [image, link, description] = m.body.split("|");
@@ -730,9 +739,10 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     const mine = m.fromMe;
     // stickers (webp) show alone, without a bubble, like on WhatsApp
     const isSticker = m.mediaType === "image" && /\.webp(\?|$)/i.test(m.mediaUrl || "");
-    const hasMedia = m.mediaUrl || needsMedia(m) || m.mediaType === "location" || m.mediaType === "vcard";
+    const filePurged = !m.mediaUrl && !!m.mediaPurgedAt;
+    const hasMedia = m.mediaUrl || filePurged || needsMedia(m) || m.mediaType === "location" || m.mediaType === "vcard";
     const mediaOnly = hasMedia && (m.mediaType === "image" || m.mediaType === "video") && isOnlyFileName(m);
-    const showText = !m.isDeleted && !(hasMedia && (isOnlyFileName(m) || m.mediaType === "vcard" || m.mediaType === "location" || m.mediaType === "audio"));
+    const showText = !m.isDeleted && !m.bodyPurgedAt && !(hasMedia && (isOnlyFileName(m) || filePurged || m.mediaType === "vcard" || m.mediaType === "location" || m.mediaType === "audio"));
     const rx = reactionsOf(m);
     const isMatch = matchIds.includes(m.id);
     const isActive = isMatch && matchIds[matchIndex] === m.id;
@@ -783,6 +793,12 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
             <div className={classes.deleted}>
               <Block style={{ fontSize: 16 }} />
               Mensagem apagada
+              <span className={classes.meta}>{clock(m.createdAt)}</span>
+            </div>
+          ) : m.bodyPurgedAt ? (
+            <div className={classes.deleted}>
+              <Block style={{ fontSize: 16 }} />
+              Conteúdo apagado pela política de retenção
               <span className={classes.meta}>{clock(m.createdAt)}</span>
             </div>
           ) : (

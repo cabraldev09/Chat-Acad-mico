@@ -11,8 +11,9 @@ import toastError from "../../errors/toastError";
 const LABEL_RE = /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u;
 const KINDS = ["image", "video", "audio", "document"];
 
+// a file deleted by the retention policy is gone on purpose: never offered again
 export const needsMedia = (m) =>
-  !m.isDeleted && !m.mediaUrl && (KINDS.includes(m.mediaType) || (m.mediaType === "chat" && LABEL_RE.test(m.body || "")));
+  !m.isDeleted && !m.mediaUrl && !m.mediaPurgedAt && !m.bodyPurgedAt && (KINDS.includes(m.mediaType) || (m.mediaType === "chat" && LABEL_RE.test(m.body || "")));
 
 const guess = (m) => {
   if (m.mediaType !== "chat") return m.mediaType;

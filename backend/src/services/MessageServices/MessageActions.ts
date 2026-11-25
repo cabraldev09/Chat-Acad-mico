@@ -317,6 +317,8 @@ export const loadMessageMedia = async (id: string): Promise<Message> => {
   const message = await loadFull(id);
   if (!message) throw new AppError("ERR_NO_MESSAGE_FOUND", 404);
   if (message.getDataValue("mediaUrl")) return message;
+  // the retention policy deleted this file on purpose: it is not brought back from the phone
+  if (message.mediaPurgedAt || message.bodyPurgedAt) throw new AppError("ERR_MEDIA_PURGED", 410);
   const { ticket } = message;
   if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp" || !whatsappProvider.downloadMessageMedia) {
     throw new AppError("ERR_MEDIA_NOT_AVAILABLE", 400);

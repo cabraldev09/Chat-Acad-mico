@@ -101,6 +101,12 @@ Além de submenu, texto, fila, atendente, IA e encerrar, há passos que **seguem
 * **Listas e permissões**: cada pessoa vê as próprias conversas e as que aguardam atendimento nas suas filas. Consultor e tutor
   não veem as conversas um do outro, nem na lista.
 
+* **Retenção de dados** (desligada por padrão): o administrador pode definir em **Configurações > Retenção de dados** depois de
+  quantos dias o arquivo dos áudios já transcritos de conversas encerradas é apagado (a transcrição fica; áudio sem transcrição não
+  é apagado) e depois de quantos dias o conteúdo das conversas encerradas e paradas é apagado. Conversa aberta, de contato com outro
+  atendimento aberto ou de lead com matrícula esperando confirmação nunca é tocada. Ligar exige uma simulação recente. A conversa mostra "Conteúdo apagado pela política de retenção" no lugar. Regras e proteções em
+  `BANCO-DE-DADOS.md` (Backup, teste de restauração e limpeza).
+
 ### "Digitando…" e reações por canal
 | Canal | Atendente → contato: digitando | Contato → atendente: digitando | Reações (enviar) | Reações (receber) |
 |---|---|---|---|---|
