@@ -545,8 +545,8 @@ const handoffData = async () => {
       slaMinutes: Number(await getSetting(KEYS.sla, "15")),
       staleDays: Number(await getSetting(KEYS.stale, "7")),
       transcribe: (await getSetting(KEYS.transcribe, "1")) !== "0",
-      // the voice notes of the conversations between people (AiServices/HumanTranscription): on by default, with its own daily cap
-      transcribeHuman: (await getSetting(KEYS.transcribeHuman, "1")) !== "0",
+      // the voice notes of the conversations between people (AiServices/HumanTranscription): off by default, with its own daily cap
+      transcribeHuman: (await getSetting(KEYS.transcribeHuman, "0")) === "1",
       humanMinutes: Number(await getSetting(KEYS.humanMinutes, "120"))
     },
     openaiKey: !!(await getSecretSetting("ai_openai_key")),

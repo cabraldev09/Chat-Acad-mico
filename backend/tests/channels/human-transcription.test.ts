@@ -74,8 +74,10 @@ const voice = (id: string, bytes = 10000) => {
   st.pending.push({ id, ticketId: 7, mediaUrl: `${id}.ogg` });
 };
 
+const ON = { ai_transcribe_human: "1" };
+
 beforeEach(() => {
-  st.settings = {};
+  st.settings = { ...ON };
   st.pending = [];
   st.tried = new Set();
   st.queries = [];
@@ -114,19 +116,19 @@ describe("transcrição dos áudios das conversas entre pessoas", () => {
 
   it("teto diário de gasto da IA (dólares ou tokens) atingido: não transcreve", async () => {
     voice("wamid.voz3");
-    st.settings = { ai_daily_usd_cap: "1" };
+    st.settings = { ...ON, ai_daily_usd_cap: "1" };
     st.spentUsd = 1;
     expect((await transcribePending()).stopped).toBe("usd_cap");
-    st.settings = { ai_daily_token_cap: "1000" };
+    st.settings = { ...ON, ai_daily_token_cap: "1000" };
     st.spentUsd = 0;
     st.tokens = 1000;
     expect((await transcribePending()).stopped).toBe("token_cap");
     expect(st.openai).toBe(0);
   });
 
-  it("configuração desligada (a própria ou a geral de áudios) não transcreve nem procura áudios", async () => {
+  it("configuração desligada (a própria, que vem desligada por padrão, ou a geral de áudios) não transcreve nem procura áudios", async () => {
     voice("wamid.voz4");
-    for (const settings of [{ ai_transcribe_human: "0" }, { ai_transcribe_audio: "0" }]) {
+    for (const settings of [{}, { ai_transcribe_human: "0" }, { ...ON, ai_transcribe_audio: "0" }]) {
       st.settings = settings;
       // eslint-disable-next-line no-await-in-loop
       expect((await transcribePending()).stopped).toBe("off");

@@ -881,6 +881,10 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
         assert((await http.put("/ai-settings", { openai: "sk-openai-test" }, as(admin))).status === 200, "openai key");
         const lead = conversation(cloud), team = conversation(qr), group = conversation(cloud, { group: true }), telegram = conversation(connectionId);
         files.push(voice(lead, "lead"), voice(team, "team", { fromMe: true }), voice(group, "group"), voice(telegram, "telegram"), voice(lead, "fresh", { minutesAgo: 0 }));
+        // off by default (the owner turns it on after telling the team and the leads): nothing is sent
+        assert((await http.get("/ai-handoff", as(admin))).data.settings.transcribeHuman === false, "the transcription of the team should start off");
+        assert((await run()).stopped === "off" && aiMock.transcriptions === 0, "transcribed while off by default");
+        assert((await http.put("/ai-handoff", { transcribeHuman: true }, as(admin))).data.settings.transcribeHuman === true, "turn on");
         const first = await run();
         assert(first.transcribed === 2 && first.failed === 0, `first run ${JSON.stringify(first)}`);
         assert(aiMock.transcriptions === 2, `the OpenAI was called ${aiMock.transcriptions} times`);

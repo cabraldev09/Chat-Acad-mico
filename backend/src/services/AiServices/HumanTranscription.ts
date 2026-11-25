@@ -18,7 +18,7 @@ import { priceOf } from "./Usage";
 // read what was said. It runs in the background (workers/HumanTranscription), a few audios at a time, never in the path that receives the
 // message. Each voice note is sent once (Messages.transcribeTriedAt), also when it had no speech or failed.
 // It needs: the transcription on (ai_transcribe_audio, the same switch of the agents) and the OpenAI key; its own switch
-// (ai_transcribe_human, on by default); and room in the spending caps: the daily caps of the whole AI (ai_daily_token_cap,
+// (ai_transcribe_human, OFF by default: turned on by the owner after telling the team and the leads); and room in the spending caps: the daily caps of the whole AI (ai_daily_token_cap,
 // ai_daily_usd_cap) and its own cap of minutes per day (ai_transcribe_human_daily_minutes, 120 by default). A voice note longer than
 // ai_transcribe_human_max_minutes (10 by default) or bigger than 12 MB is not sent.
 
@@ -32,7 +32,8 @@ const MIN_AGE_MS = 2 * 60000;
 const MAX_AGE_MS = 48 * 3600000;
 const BATCH = 10;
 
-export const humanTranscriptionOn = async (): Promise<boolean> => (await getSetting(HUMAN_KEYS.on, "1")) !== "0" && (await transcriptionEnabled());
+// OFF until the owner turns it on, after the team and the leads are told that the voice notes are transcribed (LGPD)
+export const humanTranscriptionOn = async (): Promise<boolean> => (await getSetting(HUMAN_KEYS.on, "0")) === "1" && (await transcriptionEnabled());
 
 const numberSetting = async (key: string, fallback: number): Promise<number> => {
   const n = Number(await getSetting(key, String(fallback)));

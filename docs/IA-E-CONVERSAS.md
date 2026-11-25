@@ -95,7 +95,7 @@ Referências: [instruções e contexto na OpenAI](https://developers.openai.com/
       que é mais antigo.
     - **Uma vez por mensagem** (`Messages.transcribeTriedAt`, também quando não havia fala ou deu erro): o mesmo áudio nunca é pago
       duas vezes. O agente de IA marca o mesmo campo.
-    - **Interruptores:** precisa de `ai_transcribe_audio` e da chave da OpenAI, e do próprio `ai_transcribe_human` (ligado por padrão).
+    - **Interruptores:** precisa de `ai_transcribe_audio` e da chave da OpenAI, e do próprio `ai_transcribe_human`, **desligado por padrão**: o dono liga depois do aviso à equipe e aos leads (LGPD).
       Ficam em **Agentes de IA > Passagem para a equipe > Mensagens de voz** (gestão).
     - **Limites:** os limites diários de gasto da IA (`ai_daily_token_cap`, `ai_daily_usd_cap`) e um teto próprio de minutos por dia
       (`ai_transcribe_human_daily_minutes`, 120; zero para). Áudio com mais de `ai_transcribe_human_max_minutes` (10) ou mais de
@@ -106,6 +106,9 @@ Referências: [instruções e contexto na OpenAI](https://developers.openai.com/
     - **Na conversa:** o texto aparece embaixo do áudio, com o rótulo "Transcrição", para quem já pode ver a conversa (a mesma
       permissão das mensagens; a conversa aberta recebe o texto na hora).
     - **LGPD:** o áudio vai para a OpenAI só para virar texto. A equipe e os leads devem saber que as conversas são analisadas.
+      Na revisão diária o texto é **pseudonimizado, não anonimizado**: CPF, telefone, e-mail, números longos e os nomes da conversa
+      (lead e consultor) viram marcadores, mas nomes de terceiros (parentes, empregador), endereços e números falados por extenso
+      podem passar.
 
 ## Chatbot de menus
 Além de submenu, texto, fila, atendente, IA e encerrar, há passos que **seguem o fluxo**: *perguntar e guardar a resposta*,

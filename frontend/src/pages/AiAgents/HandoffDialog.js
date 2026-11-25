@@ -94,7 +94,7 @@ const HandoffDialog = ({ open, onClose }) => {
             <FormControlLabel control={<Switch color="primary" checked={!!v.transcribeHuman} disabled={!d.openaiKey || !v.transcribe} onChange={(e) => setV({ ...v, transcribeHuman: e.target.checked })} />} label="Também nas conversas da equipe (lead, consultor e tutor no WhatsApp)" />
             <NumberField size="small" variant="outlined" label="Limite por dia (minutos de áudio)" InputLabelProps={{ shrink: true }} value={v.humanMinutes} disabled={!d.openaiKey || !v.transcribe || !v.transcribeHuman} onChange={(n) => setV({ ...v, humanMinutes: n })} style={{ maxWidth: 260, marginTop: 8 }} />
             <Typography className={classes.hint} display="block">
-              O texto aparece embaixo do áudio, para quem já pode ver a conversa, e entra na revisão diária dos consultores. Cada áudio é transcrito uma vez, em segundo plano. Custo estimado: US$ 0,006 por minuto de áudio; com 120 minutos por dia, no máximo cerca de US$ 0,72 por dia. Os limites diários de gasto da IA também valem. Zero minutos para.
+              O texto aparece embaixo do áudio, para quem já pode ver a conversa, e entra na revisão diária dos consultores. Cada áudio é transcrito uma vez, em segundo plano. Custo estimado: US$ 0,006 por minuto de áudio; com 120 minutos por dia, no máximo cerca de US$ 0,72 por dia. Os limites diários de gasto da IA também valem. Zero minutos para. Vem desligado: ligue depois de avisar a equipe e os leads de que os áudios são transcritos e analisados (LGPD).
             </Typography>
           </>
         )}
