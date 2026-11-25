@@ -1,0 +1,88 @@
+name: Reiniciar a API
+
+# Destrava a API da VPS quando ela fica doente (por exemplo, sem conseguir criar processos: "pthread_create", "Cannot fork") e uma
+# atualização presa segura o bloqueio /var/lock/chat-academico-update.lock (as outras desistem depois de 15 minutos).
+# Duas etapas: com `executar = nao` só mostra quem segura o bloqueio e quantos processos há (nada é alterado); com `executar = sim`
+# encerra as atualizações presas há mais de 20 minutos e reinicia só o contêiner da API (parada normal: as sessões do WhatsApp
+# fecham direito). A API fica fora por 1 a 2 minutos. Não mexe no banco, nas sessões salvas nem no .env.
+# Depois, rode "Atualizar a VPS" para publicar o que estava esperando.
+on:
+  workflow_dispatch:
+    inputs:
+      executar:
+        description: "nao = só mostrar; sim = encerrar as atualizações presas e reiniciar a API"
+        required: true
+        default: "nao"
+        type: choice
+        options: ["nao", "sim"]
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  reiniciar:
+    runs-on: ubuntu-latest
+    env:
+      VPS_KNOWN_HOSTS: deploy/vps/known_hosts
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepara o SSH e confere a identidade do servidor
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          VPS_HOST=$(grep -v '^#' "$VPS_KNOWN_HOSTS" | awk 'NF{print $1; exit}'); echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
+          install -m 700 -d ~/.ssh
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
+          want=$(awk '{print $3}' ~/.ssh/known_hosts)
+          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '$2=="ssh-ed25519"{print $3}')
+          [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere"; exit 1; }
+      - name: Mostra e, se pedido, reinicia
+        env:
+          EXECUTAR: ${{ inputs.executar }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 root@"$VPS_HOST" "EXECUTAR='$EXECUTAR' bash -s" <<'REMOTE'
+          set -uo pipefail
+          LOCK=/var/lock/chat-academico-update.lock
+          API=chat-academico-api-1
+          # only process ids, elapsed times and command names (never arguments, which could carry a token)
+          holders() { fuser "$LOCK" 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$' || true; }
+          show() {
+            echo "== quem segura o bloqueio da atualização =="
+            h=$(holders)
+            if [ -z "$h" ]; then echo "(ninguém)"; else for p in $h; do ps -o pid=,etimes=,comm= -p "$p" 2>/dev/null; done; fi
+            echo "== estado do contêiner da API =="; docker inspect -f '{{.State.Status}} {{.State.Health.Status}} desde {{.State.StartedAt}}' "$API" 2>&1
+            cid=$(docker inspect -f '{{.Id}}' "$API" 2>/dev/null)
+            f=$(ls /sys/fs/cgroup/system.slice/docker-"$cid".scope/pids.current /sys/fs/cgroup/pids/docker/"$cid"/pids.current 2>/dev/null | head -1)
+            [ -n "$f" ] && echo "processos e threads no contêiner: $(cat "$f") (limite $(cat "$(dirname "$f")/pids.max"))"
+            echo "processos chromium no servidor: $(pgrep -c chromium || echo 0)"
+          }
+          show
+          if [ "$EXECUTAR" != "sim" ]; then echo; echo "Só conferência: nada foi alterado. Rode de novo com executar = sim para reiniciar."; exit 0; fi
+
+          echo; echo "== encerrando as atualizações presas há mais de 20 minutos =="
+          for p in $(holders); do
+            age=$(ps -o etimes= -p "$p" 2>/dev/null | tr -d ' ')
+            name=$(ps -o comm= -p "$p" 2>/dev/null)
+            if [ -n "$age" ] && [ "$age" -gt 1200 ]; then echo "encerrando $p ($name, há ${age}s)"; kill "$p" 2>/dev/null; else echo "mantendo $p ($name, há ${age:-?}s)"; fi
+          done
+          sleep 5
+          for p in $(holders); do
+            age=$(ps -o etimes= -p "$p" 2>/dev/null | tr -d ' ')
+            [ -n "$age" ] && [ "$age" -gt 1200 ] && { echo "forçando $p"; kill -9 "$p" 2>/dev/null; }
+          done
+
+          echo; echo "== reiniciando o contêiner da API (parada normal, até 60 s) =="
+          docker restart -t 60 "$API"
+          for i in $(seq 1 90); do
+            s=$(docker inspect -f '{{.State.Health.Status}}' "$API" 2>/dev/null || echo "?")
+            [ "$s" = "healthy" ] && break
+            sleep 2
+          done
+          echo; show
+          [ "$(docker inspect -f '{{.State.Health.Status}}' "$API" 2>/dev/null)" = "healthy" ] || { echo "::error::A API não ficou saudável depois do reinício (veja o Diagnóstico da VPS)"; exit 1; }
+          echo; echo "API saudável. Agora rode \"Atualizar a VPS\" para publicar o que estava esperando."
+          REMOTE
