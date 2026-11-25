@@ -3239,11 +3239,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const empty = await http.put("/affiliate-rules", { faq: [] }, auth());
       assert(empty.data.faq.length >= 3, "default FAQ not restored");
     });
-    await test("managers see every conversation of every attendant in one place, filter by attendant and connection; others do not", async () => {
+    await test("managers see every conversation of their polos in one place, filter by attendant and connection; others do not", async () => {
       const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const a1 = await mk("Atendente Um", "att1@x.com", "consultor"), a2 = await mk("Atendente Dois", "att2@x.com", "consultor");
-      await mk("Coord Central", "coord-central@x.com", "coordenacao");
-      const q = (await http.get("/queue", auth())).data[0];
+      const cc = await mk("Coord Central", "coord-central@x.com", "coordenacao");
+      // the coordination sees the conversations of its polos (helpers/TicketPoloScope): a queue of the polo, and the coordinator in it
+      const polo = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('CENT', 'Polo Central', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const q = { id: sql(`INSERT INTO Queues (name, color, poloId, createdAt, updatedAt) VALUES ('Comercial Central', '#0a0b0c', ${polo}, NOW(), NOW()) RETURNING id`).split("\n")[0] };
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${polo}, ${cc.id}, 'coordenacao', NOW(), NOW())`);
       const mkTicket = (name, number, user) => {
         const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
         return sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, queueId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${c}, ${tgId}, ${user}, ${q.id}, 2, false, 'sales', false, 'oi', 'cent-${number}', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
@@ -6806,12 +6809,17 @@ const postMeta = (id, payload, secret, badSig) => {
       const consId = sql(`SELECT id FROM Users WHERE email = 'do-coord@x.com'`);
       const tgContactId = (await http.get(`/tickets/${tgTicket}`, auth())).data.contactId;
       sql(`UPDATE Whatsapps SET ownerId = ${consId} WHERE id = ${tgId}`);
+      // (the coordination writes only to people of its polos: this contact is a lead of the coordinator's polo here)
+      const coordPoloId = sql(`SELECT poloId FROM PoloMembers WHERE userId = (SELECT id FROM Users WHERE email = 'coord-c@x.com') ORDER BY id LIMIT 1`);
+      const openStage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const scopedLead = sql(`INSERT INTO Leads (name, source, stageId, poloId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Lead do polo da coordenação', 'Teste', ${openStage}, ${coordPoloId}, ${tgContactId}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const when = new Date(Date.now() + 3600000).toISOString();
       const own = await http.post("/schedules", { body: "lembrete", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, as);
       assert(own.status === 200 || own.status === 201, `coordinator cannot use someone else's number ${own.status} ${JSON.stringify(own.data).slice(0, 120)}`);
       const other = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
       assert((await http.post("/schedules", { body: "x", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, asUser(other))).status === 403, "a consultant used another person's number");
       sql(`UPDATE Whatsapps SET ownerId = NULL WHERE id = ${tgId}`);
+      sql(`DELETE FROM Leads WHERE id = ${scopedLead}`);
 
       // a scheduled message can be a short sequence: the worker sends one, waits, then the next, and marks it sent at the end
       const seqBefore = tg.sent.length;
@@ -7298,6 +7306,14 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(team.status === 200, `team user ${team.status} ${JSON.stringify(team.data).slice(0, 160)}`);
       assert(sql(`SELECT COUNT(*) FROM UserQueues uq JOIN Queues q ON q.id=uq.queueId WHERE uq.userId=${team.data.id} AND q.role='relacionamento'`) === "1", "the new member is not in the queue");
       const anaTok = (await http.post("/auth/login", { email: "ana@rel.test", password: "senha123" })).data.token;
+      // the relationship team follows the students of its polos (helpers/TicketPoloScope): with no polo, none; in Rita's polo, hers
+      assert((await http.get(`/tickets/${ritaTicket}`, asUser(anaTok))).status === 403, "the relationship team with no polo opened a student's conversation");
+      let ritaPolo = sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id=${rita.leadId}`);
+      if (!ritaPolo) {
+        ritaPolo = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('RELR', 'Polo da Rita', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+        sql(`UPDATE Leads SET poloId=${ritaPolo} WHERE id=${rita.leadId}`);
+      }
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${ritaPolo}, ${team.data.id}, 'relacionamento', NOW(), NOW())`);
       assert((await http.get(`/tickets/${ritaTicket}`, asUser(anaTok))).status === 200, "the team cannot open its own conversation");
       assert((await http.get(`/tickets/${ticketOf(rita.from) === String(ritaTicket) ? 1 : ticketOf(rita.from)}`, asUser(anaTok))).status === 403, "the team opened a conversation of another department");
       assert((await http.get("/retention/summary", asUser(anaTok))).status === 403, "the relationship team opened the retention area (it only attends the conversations)");

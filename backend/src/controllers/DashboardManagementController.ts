@@ -7,6 +7,8 @@ import { dayBounds, getAppTz, shiftDays } from "../helpers/AppTime";
 import { getSetting } from "../helpers/AppSettings";
 import { businessMinutes, getBusinessConfig } from "../helpers/BusinessTime";
 import { isManagerRole, roleOf } from "../helpers/Roles";
+import { ticketPoloSql } from "../helpers/TicketPoloScope";
+import { crmPolosOf } from "../middleware/scope";
 import { remember } from "../helpers/TtlCache";
 import { buildInsights, human, pairGaps, summarize } from "../helpers/ResponseTimes";
 import { buildPoloBoard, progressForUser } from "./GoalController";
@@ -62,8 +64,12 @@ const period = (req: Request, maxDays = 31) => {
 const hourOf = (d: Date, tz: string): number =>
   Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(d));
 
-const buildManagement = async (p: ReturnType<typeof period>): Promise<any> => {
+// polos = the coordination's polos (null = the administration: every polo). Only the conversations, enrollments, people and polos of
+// those polos enter the numbers (helpers/TicketPoloScope): another polo's attendants are not shown to this coordination.
+const buildManagement = async (p: ReturnType<typeof period>, scopePolos: number[] | null = null): Promise<any> => {
   const rep = { from: p.from, to: p.to, prevFrom: p.prevFrom, prevTo: p.prevTo };
+  const ids = scopePolos ? (scopePolos.length ? scopePolos.map(Number).join(",") : "0") : "";
+  const SCOPE = scopePolos ? ` AND ${ticketPoloSql(scopePolos, false, "t", true)}` : "";
   const business = await getBusinessConfig();
   const sla = Math.min(1440, Math.max(1, Number(await getSetting("response_sla_minutes", "15")) || 15));
 
@@ -72,23 +78,23 @@ const buildManagement = async (p: ReturnType<typeof period>): Promise<any> => {
       `SELECT t.id, COALESCE(t.segment, 'sales') AS segment, t.userId, qu.poloId, t.firstResponseAt, t.createdAt AS ticketCreatedAt,
               SUM(CASE WHEN m.fromMe = false THEN 1 ELSE 0 END) AS received, SUM(CASE WHEN m.fromMe = true THEN 1 ELSE 0 END) AS sent
        FROM Messages m JOIN Tickets t ON t.id = m.ticketId LEFT JOIN Queues qu ON qu.id = t.queueId
-       WHERE m.createdAt BETWEEN :from AND :to AND m.isDeleted = false AND ${BASE}
+       WHERE m.createdAt BETWEEN :from AND :to AND m.isDeleted = false AND ${BASE}${SCOPE}
        GROUP BY t.id, t.segment, t.userId, qu.poloId, t.firstResponseAt, t.createdAt
        HAVING SUM(CASE WHEN m.fromMe = false THEN 1 ELSE 0 END) > 0 OR (SUM(CASE WHEN m.fromMe = true THEN 1 ELSE 0 END) > 0 AND t.userId IS NOT NULL)
        LIMIT 6000`,
       rep
     ),
-    q(`SELECT m.ticketId, m.fromMe, m.createdAt FROM Messages m JOIN Tickets t ON t.id = m.ticketId WHERE m.createdAt BETWEEN :from AND :to AND m.isDeleted = false AND ${BASE} ORDER BY m.ticketId, m.createdAt LIMIT 60000`, rep),
-    q(`SELECT m.ticketId, m.fromMe, m.createdAt FROM Messages m JOIN Tickets t ON t.id = m.ticketId WHERE m.createdAt BETWEEN :prevFrom AND :prevTo AND m.isDeleted = false AND ${BASE} ORDER BY m.ticketId, m.createdAt LIMIT 60000`, rep),
+    q(`SELECT m.ticketId, m.fromMe, m.createdAt FROM Messages m JOIN Tickets t ON t.id = m.ticketId WHERE m.createdAt BETWEEN :from AND :to AND m.isDeleted = false AND ${BASE}${SCOPE} ORDER BY m.ticketId, m.createdAt LIMIT 60000`, rep),
+    q(`SELECT m.ticketId, m.fromMe, m.createdAt FROM Messages m JOIN Tickets t ON t.id = m.ticketId WHERE m.createdAt BETWEEN :prevFrom AND :prevTo AND m.isDeleted = false AND ${BASE}${SCOPE} ORDER BY m.ticketId, m.createdAt LIMIT 60000`, rep),
     q(
       `SELECT t.id, COALESCE(t.segment, 'sales') AS segment, t.userId, qu.poloId, t.status, t.lastMessageFromMe, t.lastMessageId, t.lastMessageType, COALESCE(t.lastMessageAt, t.updatedAt) AS at, c.noReply, c.name
        FROM Tickets t JOIN Contacts c ON c.id = t.contactId LEFT JOIN Queues qu ON qu.id = t.queueId
-       WHERE t.status IN ('open', 'pending') AND t.archivedAt IS NULL AND ${BASE}`,
+       WHERE t.status IN ('open', 'pending') AND t.archivedAt IS NULL AND ${BASE}${SCOPE}`,
       rep
     ),
-    q(`SELECT ownerId, poloId, COUNT(*) AS n FROM (SELECT l.ownerId, l.poloId FROM Leads l WHERE l.isHistorical = false AND l.wonAt BETWEEN :from AND :to UNION ALL SELECT e.ownerId, e.poloId FROM LeadEnrollments e WHERE e.enrolledAt BETWEEN :from AND :to) w GROUP BY ownerId, poloId`, rep),
-    q(`SELECT id, name, role, profile FROM Users`, {}),
-    q(`SELECT id, name FROM Polos WHERE active = true`, {})
+    q(`SELECT ownerId, poloId, COUNT(*) AS n FROM (SELECT l.ownerId, l.poloId FROM Leads l WHERE l.isHistorical = false AND l.wonAt BETWEEN :from AND :to UNION ALL SELECT e.ownerId, e.poloId FROM LeadEnrollments e WHERE e.enrolledAt BETWEEN :from AND :to) w${scopePolos ? ` WHERE poloId IN (${ids})` : ""} GROUP BY ownerId, poloId`, rep),
+    q(`SELECT id, name, role, profile FROM Users u${scopePolos ? ` WHERE EXISTS (SELECT 1 FROM PoloMembers pm WHERE pm.userId = u.id AND pm.poloId IN (${ids}))` : ""}`, {}),
+    q(`SELECT id, name FROM Polos WHERE active = true${scopePolos ? ` AND id IN (${ids})` : ""}`, {})
   ]);
 
   const meta = new Map<number, any>();
@@ -213,8 +219,9 @@ const buildManagement = async (p: ReturnType<typeof period>): Promise<any> => {
 export const management = async (req: Request, res: Response): Promise<Response> => {
   if (!isManagerRole(roleOf(req.user))) return res.status(403).json({ error: "ERR_NO_PERMISSION" });
   const p = period(req, 186);
-  const key = `dash-mgmt:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
-  return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagement(p)));
+  const polos = await crmPolosOf(req);
+  const key = `dash-mgmt:${polos ? polos.slice().sort((a, b) => a - b).join(",") || "none" : "all"}:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
+  return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagement(p, polos)));
 };
 
 // On-demand, aggregated management feedback. Only numeric polo metrics leave the server.
@@ -222,8 +229,10 @@ export const managementFeedback = async (req: Request, res: Response): Promise<R
   if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
 
   const p = period(req);
-  const dashboardKey = `dash-mgmt:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
-  const dashboard = await remember(dashboardKey, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagement(p));
+  // the coordination asks about its polos only (the same numbers of its management view)
+  const scopePolos = await crmPolosOf(req);
+  const dashboardKey = `dash-mgmt:${scopePolos ? scopePolos.slice().sort((a, b) => a - b).join(",") || "none" : "all"}:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
+  const dashboard = await remember(dashboardKey, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagement(p, scopePolos));
   const base = (dashboard.polos as any[]).map(po => ({
     poloId: Number(po.id),
     polo: String(po.name || "Polo"),
@@ -377,20 +386,25 @@ export const myDay = async (req: Request, res: Response): Promise<Response> => {
 // period in four numbers. Administration and coordination only.
 type Alert = { key: string; label: string; count: number; tone: "danger" | "warn"; to: string };
 
-const buildManagerOverview = async (p: ReturnType<typeof period>): Promise<any> => {
+// scopePolos = the coordination's polos (null = every polo). The goals of every polo stay visible to everybody (decision of 25/11/2026);
+// what is stuck (people waiting, leads, tasks, students) counts only the polos the person may see.
+const buildManagerOverview = async (p: ReturnType<typeof period>, scopePolos: number[] | null = null): Promise<any> => {
   const onboardingHours = Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24);
   const rep = { from: p.from, to: p.to, fee: FEE_PENDING_TAG.name, hours: onboardingHours };
-  const [mgmt, board, risk] = await Promise.all([buildManagement(p), buildPoloBoard(), riskStudents({}, 1000)]);
+  const inScope = (poloId: any) => !scopePolos || scopePolos.includes(Number(poloId));
+  const LP = scopePolos ? ` AND l.poloId IN (${scopePolos.length ? scopePolos.map(Number).join(",") : "0"})` : "";
+  const [mgmt, board, riskAll] = await Promise.all([buildManagement(p, scopePolos), buildPoloBoard(), riskStudents({}, 1000)]);
+  const risk = { ...riskAll, students: riskAll.students.filter((st: any) => inScope(st.poloId)) };
 
   const one = async (sql: string): Promise<number> => num(((await q(sql, rep))[0] || {}).n);
   const [waitingFirstContact, overdueTasks, onboardingLate, feePending, connectionsDown, paymentErrors] = await Promise.all([
     one(`SELECT COUNT(*) AS n FROM Leads l JOIN LeadStages s ON s.id = l.stageId
-         WHERE s.type = 'open' AND l.isHistorical = false AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, "HOUR")}`),
+         WHERE s.type = 'open' AND l.isHistorical = false AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, "HOUR")}${LP}`),
     one(`SELECT COUNT(*) AS n FROM LeadTasks t JOIN Leads l ON l.id = t.leadId
-         WHERE t.doneAt IS NULL AND t.dueAt < ${nowSql()} AND l.isHistorical = false`),
-    one(`SELECT COUNT(*) AS n FROM Leads l WHERE l.isHistorical = false AND l.onboardingStatus = 'pending' AND l.enrolledAt < ${nowMinus(onboardingHours, "HOUR")}`),
+         WHERE t.doneAt IS NULL AND t.dueAt < ${nowSql()} AND l.isHistorical = false${LP}`),
+    one(`SELECT COUNT(*) AS n FROM Leads l WHERE l.isHistorical = false AND l.onboardingStatus = 'pending' AND l.enrolledAt < ${nowMinus(onboardingHours, "HOUR")}${LP}`),
     one(`SELECT COUNT(DISTINCT l.id) AS n FROM Leads l JOIN LeadTags lt ON lt.leadId = l.id JOIN Tags tg ON tg.id = lt.tagId
-         WHERE tg.name = :fee AND l.isHistorical = false`),
+         WHERE tg.name = :fee AND l.isHistorical = false${LP}`),
     one(`SELECT COUNT(*) AS n FROM Whatsapps w WHERE w.status IN ('qrcode', 'PAIRING', 'DISCONNECTED', 'TIMEOUT')`),
     one(`SELECT COUNT(*) AS n FROM Payments x WHERE x.status = 'pending' AND x.lastError IS NOT NULL`)
   ]);
@@ -410,7 +424,7 @@ const buildManagerOverview = async (p: ReturnType<typeof period>): Promise<any> 
   const riskBy = new Map<number, number>();
   risk.students.forEach(s => s.poloId && riskBy.set(Number(s.poloId), (riskBy.get(Number(s.poloId)) || 0) + 1));
   const lateRows = await q(`SELECT l.poloId AS id, COUNT(*) AS n FROM Leads l WHERE l.isHistorical = false AND l.onboardingStatus = 'pending'
-                            AND l.enrolledAt < ${nowMinus(onboardingHours, "HOUR")} AND l.poloId IS NOT NULL GROUP BY l.poloId`, rep);
+                            AND l.enrolledAt < ${nowMinus(onboardingHours, "HOUR")} AND l.poloId IS NOT NULL${LP} GROUP BY l.poloId`, rep);
   const lateBy = new Map<number, number>(lateRows.map(r => [Number(r.id), num(r.n)]));
   const live = new Map<number, any>((mgmt.polos as any[]).map(x => [Number(x.id), x]));
   const stuck = (id: number) => ({ unanswered: num(live.get(id)?.unansweredNow), onboardingLate: lateBy.get(id) || 0, atRisk: riskBy.get(id) || 0 });
@@ -433,13 +447,13 @@ const buildManagerOverview = async (p: ReturnType<typeof period>): Promise<any> 
   const known = new Set(polos.map(x => Number(x.poloId)));
   const names = new Map<number, string>((await q(`SELECT id, name FROM Polos WHERE active = true`, {})).map(r => [Number(r.id), r.name]));
   names.forEach((name, id) => {
-    if (known.has(id)) return;
+    if (known.has(id) || !inScope(id)) return;
     const st = stuck(id);
     if (st.unanswered || st.onboardingLate || st.atRisk) polos.push({ poloId: id, name, code: null, target: null, done: 0, pct: null, status: "none", missing: null, perDay: null, expectedPct: null, forecast: null, ...st });
   });
 
   let unassignedWon = 0;
-  if (board.goal) {
+  if (board.goal && !scopePolos) {
     const gs = dayBounds(board.goal.startsOn).start;
     const ge = dayBounds(board.goal.endsOn).end;
     unassignedWon = num(((await q(`SELECT COUNT(*) AS n FROM Leads l WHERE l.isHistorical = false AND l.poloId IS NULL AND l.wonAt BETWEEN :gs AND :ge`, { gs, ge }))[0] || {}).n);
@@ -448,7 +462,7 @@ const buildManagerOverview = async (p: ReturnType<typeof period>): Promise<any> 
   const daily = await q(
     `SELECT ${dayOf("m.createdAt")} AS day, COUNT(DISTINCT t.id) AS total
        FROM Messages m JOIN Tickets t ON t.id = m.ticketId
-      WHERE m.createdAt BETWEEN :from AND :to AND m.isDeleted = false AND ${BASE}
+      WHERE m.createdAt BETWEEN :from AND :to AND m.isDeleted = false AND ${BASE}${scopePolos ? ` AND ${ticketPoloSql(scopePolos, false, "t", true)}` : ""}
       GROUP BY ${dayOf("m.createdAt")} ORDER BY day`,
     rep
   );
@@ -475,8 +489,9 @@ const buildManagerOverview = async (p: ReturnType<typeof period>): Promise<any> 
 export const managerOverview = async (req: Request, res: Response): Promise<Response> => {
   if (!isManagerRole(roleOf(req.user))) return res.status(403).json({ error: "ERR_NO_PERMISSION" });
   const p = period(req, 186);
-  const key = `dash-manager:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
-  return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagerOverview(p)));
+  const scopePolos = await crmPolosOf(req);
+  const key = `dash-manager:${scopePolos ? scopePolos.slice().sort((a, b) => a - b).join(",") || "none" : "all"}:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
+  return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagerOverview(p, scopePolos)));
 };
 
 // The goals of every polo in the current semester, for everyone who works on the enrollments (the consultant sees how their polo and the

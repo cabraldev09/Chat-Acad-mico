@@ -5,7 +5,7 @@ As definições de cada indicador estão em `definitions.ts` e saem em `GET /ana
 
 | Ambiente | Tela | API | Quem acessa |
 |---|---|---|---|
-| Estatísticas (gestão) | `/estatisticas` com as abas Visão geral, Consultores, Polos e metas e Treinamento (`?aba=`), mais Captação, Atendimento e Tutoria | `GET /analytics/team`, `/analytics/commercial`, `/analytics/process`, `/analytics/consultant/:id`, `/analytics/team/export.csv`, `GET/PUT /analytics/config`, `GET /dashboard` e `GET /stats/overview` (o período de atendimento) | administração (todos) e coordenação (consultores dos seus polos; sem polo vinculado, todos) |
+| Estatísticas (gestão) | `/estatisticas` com as abas Visão geral, Consultores, Polos e metas e Treinamento (`?aba=`), mais Captação, Atendimento e Tutoria | `GET /analytics/team`, `/analytics/commercial`, `/analytics/process`, `/analytics/consultant/:id`, `/analytics/team/export.csv`, `GET/PUT /analytics/config`, `GET /dashboard` e `GET /stats/overview` (o período de atendimento) | administração (todos) e coordenação (consultores dos seus polos; sem polo vinculado, nenhum) |
 | Meu desempenho (consultor) | `/meu-desempenho` | `GET /analytics/me`, `/analytics/me/overview` | cada consultor, **somente os próprios números** (a rota ignora `userId` em URL, query ou cabeçalho) |
 | Metas dos polos | Visão geral, Polos e metas e Meu desempenho | `GET /dashboard/polos-progress` | todos os logados: só meta, feito e ritmo de cada polo, sem pessoas; marca os polos de quem vê |
 

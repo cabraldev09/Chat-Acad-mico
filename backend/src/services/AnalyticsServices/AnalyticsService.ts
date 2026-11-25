@@ -131,14 +131,15 @@ export const unassignedTasks = async (): Promise<{ open: number; overdue: number
 // An administrator who owns a WhatsApp number or works leads sells like any consultant, so they are on the list too.
 export const consultantWhere = `((u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')) OR (u.profile = 'admin' AND (EXISTS (SELECT 1 FROM Whatsapps ow WHERE ow.channel = 'whatsapp' AND ow.ownerId = u.id) OR EXISTS (SELECT 1 FROM Leads ol WHERE ol.ownerId = u.id AND ol.isHistorical = false))))`;
 
-// Consultants the requester may see: administration sees all; coordination sees the consultants of its polos (all, when it has no polo yet).
+// Consultants the requester may see: administration sees all; coordination sees the consultants of its polos (none, when it has no polo
+// yet: the same rule of the CRM, middleware/scope.ts).
 // A consultant sees nobody here: their own numbers come from /analytics/me.
 export const visibleConsultantIds = async (user: any): Promise<number[]> => {
   if (!isManagerRole(roleOf(user))) return [];
   const all = (await rows(`SELECT u.id FROM Users u WHERE ${consultantWhere} ORDER BY u.name`, {})).map(r => Number(r.id));
   if (user.profile === "admin" || roleOf(user) === "admin") return all;
   const mine = (await PoloMember.findAll({ where: { userId: Number(user.id) }, attributes: ["poloId"] })).map(m => m.poloId);
-  if (!mine.length) return all;
+  if (!mine.length) return [];
   const inPolos = (await PoloMember.findAll({ where: { poloId: mine }, attributes: ["userId"] })).map(m => m.userId);
   const allowed = new Set(inPolos);
   return all.filter(id => allowed.has(id));
@@ -169,10 +170,9 @@ export const teamPresence = async (viewer: any): Promise<TeamMember[]> => {
   let people: any[] = await rows(`SELECT u.id, u.name, u.role, u.profile FROM Users u WHERE ${teamWhere} ORDER BY u.name`, {});
   if (!(viewer.profile === "admin" || roleOf(viewer) === "admin")) {
     const mine = (await PoloMember.findAll({ where: { userId: Number(viewer.id) }, attributes: ["poloId"] })).map(m => m.poloId);
-    if (mine.length) {
-      const allowed = new Set((await PoloMember.findAll({ where: { poloId: mine }, attributes: ["userId"] })).map(m => m.userId));
-      people = people.filter(p => allowed.has(Number(p.id)) || Number(p.id) === Number(viewer.id));
-    }
+    // the team of its polos (with no polo, only the person)
+    const allowed = new Set(mine.length ? (await PoloMember.findAll({ where: { poloId: mine }, attributes: ["userId"] })).map(m => m.userId) : []);
+    people = people.filter(p => allowed.has(Number(p.id)) || Number(p.id) === Number(viewer.id));
   }
   const ids = people.map(p => Number(p.id));
   if (!ids.length) return [];

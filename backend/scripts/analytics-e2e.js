@@ -213,6 +213,8 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const salesQueue = (polo.data.queues || []).find(q => q.role === "comercial");
       assert(salesQueue, "test polo has no sales queue");
       aiMock.poloId = Number(polo.data.id);
+      // the coordination asks about its own polos only: this coordinator belongs to the polo of the sample
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${aiMock.poloId}, ${ids.coord}, 'coordenacao', NOW(), NOW())`);
       sql("UPDATE AiAgents SET active=false");
       const agent = await http.post("/ai-agents", { name: "Supervisor QA", provider: "openai", model: "gpt-4o-mini", apiKey: "sk-test-only", active: true, dailyTokenCap: 100000 }, as(admin));
       assert(agent.status === 201, `create test AI agent ${agent.status} ${JSON.stringify(agent.data)}`);
@@ -267,12 +269,13 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
         const seen = (await A(admin, `/analytics/consultant/${ids.joao}?range=${range}`)).data;
         const team = (await A(admin, `/analytics/team?range=${range}`)).data;
         const inTeam = team.consultants.find(c => c.user.id === ids.joao);
-        const coordTeam = (await A(coord, `/analytics/team?range=${range}`)).data.consultants.find(c => c.user.id === ids.joao);
-        assert(mine.metrics && seen.metrics && inTeam && coordTeam, "a door answered without João");
+        // a coordinator with no polo yet sees no consultant (the same rule of the CRM); the polo comes in the test below
+        const coordTeam = (await A(coord, `/analytics/team?range=${range}`)).data.consultants;
+        assert(coordTeam.length === 0, `coordination with no polo sees ${coordTeam.length} consultants`);
+        assert(mine.metrics && seen.metrics && inTeam, "a door answered without João");
         for (const k of KPIS) {
           assert(mine.metrics[k] === seen.metrics[k], `${k}: me=${mine.metrics[k]} manager=${seen.metrics[k]}`);
           assert(mine.metrics[k] === inTeam.metrics[k], `${k}: me=${mine.metrics[k]} team=${inTeam.metrics[k]}`);
-          assert(mine.metrics[k] === coordTeam.metrics[k], `${k}: me=${mine.metrics[k]} coordination=${coordTeam.metrics[k]}`);
         }
         assert(JSON.stringify(mine.series) === JSON.stringify(seen.series) && JSON.stringify(mine.series) === JSON.stringify(inTeam.series), "history differs");
         assert(JSON.stringify(mine.goals) === JSON.stringify(seen.goals), "goals differ");
@@ -920,6 +923,106 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(sql(`SELECT name FROM Polos WHERE id=${poloB}`) === "Polo Escopo B" && Number(sql(`SELECT COUNT(*) FROM PoloCoverages WHERE poloId=${poloB}`)) === 0, "polo B changed");
       assert((await http.put(`/polos/${poloA}/coverage`, { cities: ["Cidade Escopo - RO"] }, as(coordA))).status === 200, "coordination A cannot set the cities of its polo");
       void enrolledA;
+    });
+    // Conversations, contacts, goals and panels by polo (helpers/TicketPoloScope): the coordination reads and changes only the conversations
+    // of its polos (a queue of the polo or a contact who is a lead there) and the ones given to it; the relationship team only its enrolled
+    // students; a conversation with no polo is the administration's. Everybody reads the goals of every polo; the coordination changes only
+    // the lines of its polos.
+    await test("conversations, contacts, goals and panels by polo: another polo's data is refused in the backend", async () => {
+      const pA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('CVA', 'Polo Conversa A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const pB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('CVB', 'Polo Conversa B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cA = await mkUser("Coordenação Conversa A", "coord-cva@x.com", "coordenacao");
+      const cNone = await mkUser("Coordenação Conversa sem polo", "coord-cvn@x.com", "coordenacao");
+      const rA = await mkUser("Relacionamento Conversa A", "rel-cva@x.com", "relacionamento");
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${pA}, ${userId("coord-cva@x.com")}, 'coordenacao', NOW(), NOW()), (${pA}, ${userId("rel-cva@x.com")}, 'comercial', NOW(), NOW())`);
+      let qn = 0;
+      const queue = (name, polo) => sql(`INSERT INTO Queues (name, color, poloId, createdAt, updatedAt) VALUES ('${name}', '#12345${(qn += 1)}', ${polo || "NULL"}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const qA = queue("Fila Conversa A", pA), qB = queue("Fila Conversa B", pB), q0 = queue("Fila Conversa sem polo", null);
+      // the relationship team works in a queue with no polo (as the real Relacionamento queue): only the polo of the student separates them
+      sql(`INSERT INTO UserQueues (userId, queueId, createdAt, updatedAt) VALUES (${userId("rel-cva@x.com")}, ${q0}, NOW(), NOW())`);
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      let n = 0;
+      const person = (name, polo, enrolled) => {
+        n += 1;
+        const number = `55699${String(77700000 + n)}`;
+        const contact = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        if (polo) sql(`INSERT INTO Leads (name, phone, source, stageId, poloId, contactId, isHistorical, ${enrolled ? "enrolledAt, wonAt, " : ""}createdAt, updatedAt) VALUES ('${name}', '${number}', 'Escopo', ${open}, ${polo}, ${contact}, false, ${enrolled ? "NOW(), NOW(), " : ""}NOW(), NOW())`);
+        return { contact, number };
+      };
+      const ticket = (who, q, segment) => {
+        const t = sql(`INSERT INTO Tickets (status, contactId, queueId, userId, unreadMessages, isGroup, segment, lastMessageAt, createdAt, updatedAt) VALUES ('pending', ${who.contact}, ${q}, NULL, 1, false, '${segment || "sales"}', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
+        sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('cv-${t}', ${t}, ${who.contact}, 'Oi CONVERSAESC', false, false, 'chat', 0, NOW(), NOW())`);
+        return t;
+      };
+      const a = person("CONVERSAESC A", pA), b = person("CONVERSAESC B", pB), none = person("CONVERSAESC sem polo", null);
+      const leadOfA = person("CONVERSAESC lead A fila geral", pA);
+      const stA = person("CONVERSAESC aluno A", pA, true), stB = person("CONVERSAESC aluno B", pB, true);
+      const tA = ticket(a, qA), tB = ticket(b, qB), t0 = ticket(none, q0), tLeadA = ticket(leadOfA, q0);
+      const tStA = ticket(stA, q0, "relationship"), tStB = ticket(stB, q0, "relationship");
+      const listed = async (token, extra = "") => ((await A(token, `/tickets?searchParam=CONVERSAESC&showAll=true&allQueues=true&status=pending${extra}`)).data.tickets || []).map(t => Number(t.id)).sort((x, y) => x - y);
+      const sorted = arr => arr.map(Number).sort((x, y) => x - y);
+
+      // the list (and the search inside it) and the counts
+      assert(JSON.stringify(await listed(cA)) === JSON.stringify(sorted([tA, tLeadA, tStA])), `coordination A list: ${JSON.stringify(await listed(cA))}`);
+      assert((await listed(cNone)).length === 0, "a coordination with no polo listed conversations");
+      const adminList = await listed(admin);
+      assert([tA, tB, t0, tLeadA, tStA, tStB].every(t => adminList.includes(Number(t))), "the administration misses a conversation");
+      // one conversation, its messages, changing it, deleting it
+      assert((await A(cA, `/tickets/${tA}`)).status === 200 && (await A(cA, `/messages/${tA}`)).status === 200, "coordination A cannot read its polo");
+      for (const t of [tB, t0, tStB]) {
+        assert((await A(cA, `/tickets/${t}`)).status === 403, `coordination A opened conversation ${t}`);
+        assert((await A(cA, `/messages/${t}`)).status === 403, `coordination A read the messages of ${t}`);
+      }
+      assert((await http.put(`/tickets/${tB}`, { status: "open" }, as(cA))).status === 403, "coordination A changed a conversation of polo B");
+      assert((await http.delete(`/tickets/${tB}`, as(cA))).status === 403, "coordination A deleted a conversation of polo B");
+      assert(sql(`SELECT status FROM Tickets WHERE id=${tB}`) === "pending", "the conversation of polo B changed");
+      assert((await A(admin, `/tickets/${t0}`)).status === 200, "the administration cannot read a conversation with no polo");
+      // the relationship team: its enrolled students only
+      assert((await A(rA, `/tickets/${tStA}`)).status === 200, "relationship A cannot read its student");
+      assert((await A(rA, `/tickets/${tStB}`)).status === 403 && (await A(rA, `/messages/${tStB}`)).status === 403, "relationship A read a student of polo B");
+      // (the screen sends the person's queues)
+      const relList = await listed(rA, `&queueIds=${encodeURIComponent(JSON.stringify([Number(q0)]))}`);
+      assert(relList.includes(Number(tStA)) && !relList.includes(Number(tStB)), `relationship A list: ${JSON.stringify(relList)}`);
+
+      // contacts: list, spreadsheet, record, lookup by number, deleting
+      const contactNames = async token => ((await A(token, "/contacts?searchParam=CONVERSAESC")).data.contacts || []).map(c => c.name);
+      const seen = await contactNames(cA);
+      assert(seen.includes("CONVERSAESC A") && seen.includes("CONVERSAESC lead A fila geral") && !seen.some(x => / B$|sem polo/.test(x)), `coordination A contacts: ${JSON.stringify(seen)}`);
+      assert((await contactNames(cNone)).length === 0, "a coordination with no polo listed contacts");
+      const csv = String((await http.get("/contacts/export.csv?searchParam=CONVERSAESC", { ...as(cA), responseType: "text" })).data);
+      assert(csv.includes("CONVERSAESC A") && !csv.includes("CONVERSAESC B") && !csv.includes("CONVERSAESC sem polo"), `coordination A spreadsheet: ${csv.slice(0, 300)}`);
+      assert((await A(cA, `/contacts/${b.contact}`)).status === 403, "coordination A opened a contact of polo B");
+      assert((await A(cA, `/contacts/${a.contact}`)).status === 200, "coordination A cannot open a contact of its polo");
+      assert((await http.post("/contact", { number: b.number }, as(cA))).status === 403, "coordination A looked up a contact of polo B by number");
+      assert((await http.delete(`/contacts/${b.contact}`, as(cA))).status === 403, "coordination A deleted a contact of polo B");
+      assert(Number(sql(`SELECT COUNT(*) FROM Contacts WHERE id=${b.contact}`)) === 1, "the contact of polo B is gone");
+      assert((await contactNames(admin)).length >= 6, "the administration misses contacts");
+
+      // goals: everybody reads every polo; the coordination changes only the lines of its polos
+      const today = new Date();
+      const d = days => new Date(today.getTime() + days * 864e5).toISOString().slice(0, 10);
+      const goal = sql(`INSERT INTO Goals (title, startsOn, endsOn, status, kind, workDays, createdAt, updatedAt) VALUES ('Meta escopo', '${d(-3)}', '${d(30)}', 'active', 'polo', 5, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO GoalPolos (goalId, poloId, target, manualCount, canceled, createdAt, updatedAt) VALUES (${goal}, ${pA}, 10, 0, 0, NOW(), NOW()), (${goal}, ${pB}, 10, 0, 0, NOW(), NOW())`);
+      assert((await A(cA, `/goals/polos?goalId=${goal}`)).status === 200, "coordination A cannot read the goals");
+      assert((await http.put(`/goals/${goal}/polos/${pB}`, { target: 99 }, as(cA))).status === 403, "coordination A changed the goal of polo B");
+      assert((await http.put(`/goals/${goal}/polos/${pA}`, { target: 12 }, as(cA))).status === 200, "coordination A cannot change the goal of its polo");
+      assert((await http.put(`/goals/${goal}/polos`, { rows: [{ poloId: pB, target: 1 }] }, as(cA))).status === 403, "coordination A replaced the lines of polo B");
+      assert((await http.put(`/goals/${goal}/polos`, { workDays: 6 }, as(cA))).status === 403, "coordination A changed the working days of every polo");
+      assert((await http.post(`/goals/${goal}/postpone`, { endsOn: d(40), reason: "teste" }, as(cA))).status === 403, "coordination A postponed the goal of every polo");
+      assert(sql(`SELECT target FROM GoalPolos WHERE goalId=${goal} AND poloId=${pB}`) === "10" && sql(`SELECT target FROM GoalPolos WHERE goalId=${goal} AND poloId=${pA}`) === "12", "goal lines");
+      const imp = (await http.post(`/goals/${goal}/polos/import`, { items: [{ code: "CVB", name: "Polo Conversa B", target: 50 }], dryRun: false }, as(cA))).data;
+      assert(imp.errors === 1 && sql(`SELECT target FROM GoalPolos WHERE goalId=${goal} AND poloId=${pB}`) === "10", `coordination A imported over polo B: ${JSON.stringify(imp).slice(0, 200)}`);
+
+      // panels: nothing of polo B (nor with no polo) reaches the coordination of A
+      // (/dashboard/manager also carries the goals of every polo, which everybody reads: there only people and conversations are checked)
+      for (const path of ["/dashboard", "/dashboard/management", "/dashboard/manager"]) {
+        const body = JSON.stringify((await A(cA, path)).data);
+        assert(!body.includes("CONVERSAESC B") && !body.includes("CONVERSAESC sem polo") && (path === "/dashboard/manager" || !body.includes("Polo Conversa B")), `${path} of coordination A shows another polo: ${body.slice(0, 300)}`);
+      }
+      const mgr = (await A(cA, "/dashboard/manager")).data;
+      const lineB = (mgr.polos || []).find(x => Number(x.poloId) === Number(pB));
+      assert(!lineB || (!lineB.unanswered && !lineB.onboardingLate && !lineB.atRisk), `the manager overview counts what is stuck in polo B: ${JSON.stringify(lineB)}`);
+      void cNone;
     });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);

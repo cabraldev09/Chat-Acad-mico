@@ -168,7 +168,8 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
     await test("a colleague or the coordination only looking at someone's conversation changes nothing", async () => {
       const t = mkTicket({ owner: ids.gabrielli, unread: 2 });
       assert((await http.get(`/messages/${t.ticketId}`, as(admin))).status === 200, "admin read");
-      assert((await http.get(`/messages/${t.ticketId}`, as(coord))).status === 200 || true, "coord read");
+      // a coordination with no polo does not read a conversation of a queue with no polo (the administration's; helpers/TicketPoloScope)
+      assert((await http.get(`/messages/${t.ticketId}`, as(coord))).status === 403, "a coordination with no polo read the conversation");
       const r = row(t.ticketId);
       assert(r.userId === ids.gabrielli && r.status === "open" && r.unread === 2, `changed: ${JSON.stringify(r)}`);
     });
