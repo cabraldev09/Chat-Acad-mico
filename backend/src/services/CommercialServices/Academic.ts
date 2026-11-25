@@ -6,8 +6,9 @@ import path from "path";
 import { Op } from "sequelize";
 
 import { gradePath } from "../../analysis/Grades";
-import { chooseGrade, gradeCaption, internshipPitch } from "./GradeChoice";
+import { chooseGrade, gradeCaption, internshipPitch, withoutGradeTitle } from "./GradeChoice";
 import { gradeSummaryOf } from "../../analysis/services/commercial-grades/reader";
+import { safeStoredName } from "../../helpers/SafeFile";
 import { createCurricular } from "../../analysis/Store";
 import { PUBLIC_DIR } from "../../config/paths";
 import CommercialGrade from "../../models/CommercialGrade";
@@ -443,13 +444,15 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
         return { enviado: false, erro: "O PDF desta grade não está disponível. Diga que a equipe envia." };
       }
       try {
-        const copyName = `grade-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.pdf`;
+        // the copy carries the course's name (the lead and the conversation see the course, not a code)
+        const copyName = safeStoredName(`${grade.courseName || "Grade do curso"}.pdf`, "application/pdf");
         fs.copyFileSync(source, path.join(PUBLIC_DIR, copyName));
         const display = `${grade.courseName}.pdf`.replace(/[\\/:*?"<>|]/g, "_");
         await SendWhatsAppMedia({
           media: { filename: copyName, originalname: display, mimetype: "application/pdf", path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
           ticket: ctx.ticket,
-          body: caption,
+          // the course is the name of the file: the caption does not repeat it
+          body: withoutGradeTitle(caption),
           displayName: display,
           automated: true
         } as any);

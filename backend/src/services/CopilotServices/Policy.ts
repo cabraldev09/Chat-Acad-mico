@@ -20,9 +20,14 @@ export const DEFAULT_STEPS = [
 // message a manager wrote for a step that stays is kept. A process the manager changed in another way is kept as it is.
 export const OLD_DEFAULT_ORDER = ["entry", "objective", "course", "city", "format", "grade", "doubts", "bolsa", "proposal", "ficha", "taxa", "comprovante", "enroll", "comunidade", "afiliado"];
 export const FIFTEEN_STEP_ORDER = ["course", "entry", "city", "objective", "format", "grade", "doubts", "bolsa", "proposal", "ficha", "taxa", "comprovante", "enroll", "comunidade", "afiliado"];
+// a process made only of the steps of the old processes (the 15 of the default, or some of them, like a process of 13 the team trimmed)
+// moves to the simple one; a process with a step the manager created stays as it is
+const OLD_KEYS = new Set([...OLD_DEFAULT_ORDER, ...FIFTEEN_STEP_ORDER]);
+const RETIRED = ["objective", "doubts", "taxa", "comprovante", "comunidade", "afiliado"];
 export const upgradeSteps = (steps: ProcessStep[]): ProcessStep[] => {
-  const order = steps.map(s => s.key).join(",");
-  if (order !== OLD_DEFAULT_ORDER.join(",") && order !== FIFTEEN_STEP_ORDER.join(",")) return steps;
+  const keys = steps.map(s => s.key);
+  const onlyOld = keys.every(k => OLD_KEYS.has(k));
+  if (!onlyOld || !keys.some(k => RETIRED.includes(k))) return steps;
   const byKey = new Map(steps.map(s => [s.key, s]));
   return DEFAULT_STEPS.map(d => {
     const saved = byKey.get(d.key);

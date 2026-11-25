@@ -4710,7 +4710,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const llmMa2 = anthropic.requests.length;
       out = await say(MA, "wamid.ma-5", "Sim, pode continuar", t => t.some(x => /Você tem alguma dúvida sobre o curso ou o formato\?/.test(x)), "MA grade, tutoring and internship");
       const ma5 = out.join("\n");
-      assert(/\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
+      // with the PDF the file carries the course's name and the caption does not repeat it; without the PDF the summary has the title
+      const maDoc = graph.sent.filter(x => x.body && x.body.type === "document" && String(x.body.to || "").endsWith(MA.slice(-8))).pop();
+      if (maDoc) assert(/^Biomedicina/.test(maDoc.body.document.filename) && !/Matriz curricular:/.test(maDoc.body.document.caption || ""), `MA grade file: ${JSON.stringify(maDoc.body.document).slice(0, 200)}`);
+      assert((maDoc || /\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5)) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
       assert(/Sobre a tutoria, esse é um diferencial importante/.test(ma5) && /começa no 6º semestre e soma 640 horas/.test(ma5) && /convênios com órgãos públicos/.test(ma5), `MA tutoring and internship: ${ma5}`);
       assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
       out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /simular as bolsas disponíveis para você, pode me informar o seu nome completo e CPF/.test(x)), "MA name and CPF asked");
