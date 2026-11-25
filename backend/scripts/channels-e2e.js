@@ -2679,7 +2679,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sent.status === 200, `send ${sent.status} ${JSON.stringify(sent.data)}`);
       const out = tg.sent.slice(before);
       // one message: the PDF with the summary as its description (as when a document is attached with a caption)
-      assert(out.length === 1 && out[0].method === "sendDocument" && /Cst em Marketing/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
+      // the course is the name of the file; the caption starts with the duration and does not repeat the course
+      assert(out.length === 1 && out[0].method === "sendDocument" && !/Matriz curricular:/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
       assert((await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket), summary: false, pdf: false }, auth())).status === 400, "nothing to send accepted");
       // the contact can be chosen instead of a conversation: its open conversation is used
       const tgTicketData = (await http.get(`/tickets/${tgTicket}`, auth())).data;
@@ -4721,6 +4722,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/^\W*Para o consultor do seu polo simular as bolsas/.test(out[out.length - 1]), `MA bolsa: ${out}`);
       // the copilot follows the conversation: the name and the CPF were just asked, so it does not suggest asking again; it says it waits and
       // offers a short reminder (never the same message, never "Caso não tenha" out of place)
+      // the agent of this course does not speak of the faculty: before it, the step "Corpo docente" is the next one; the consultant marks it
+      const beforeFaculty = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
+      assert(beforeFaculty.current === "docentes", `the faculty step: ${beforeFaculty.current}`);
+      await http.put(`/tickets/${ticketOf(MA)}/copilot/progress`, { key: "docentes", done: true }, auth());
       const copWait = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(copWait.current === "bolsa" && copWait.suggestion.kind === "waiting" && /Você já pediu o nome completo e o CPF/.test(copWait.suggestion.note), `copilot while waiting: ${JSON.stringify(copWait.suggestion)}`);
       assert(/conseguiu ver a minha mensagem/.test(copWait.suggestion.text) && !/Caso não tenha/.test(copWait.suggestion.text), `copilot reminder: ${copWait.suggestion.text}`);
