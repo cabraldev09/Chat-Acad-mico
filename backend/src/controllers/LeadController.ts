@@ -606,11 +606,14 @@ export const stages = {
 
 export const courses = makeCrud(Course, {
   event: "course",
-  fields: ["name", "level", "modality", "category", "semesters", "institutionId", "monthlyFee", "active"],
+  fields: ["name", "level", "modality", "category", "semesters", "institutionId", "monthlyFee", "active", "durationMonths", "installmentsTotal", "enrollmentFee", "certificationFee", "singlePayment"],
   required: ["name"],
   order: [["name", "ASC"]],
   beforeSave: data => {
     if (data.monthlyFee === "" || data.monthlyFee === undefined) data.monthlyFee = null;
+    // optional numbers of a course in installments: empty means "not set"
+    ["durationMonths", "installmentsTotal", "enrollmentFee", "certificationFee"].forEach(k => { if (data[k] === "") data[k] = null; });
+    if (data.semesters === "" || data.semesters === null) delete data.semesters;
     if (data.institutionId === "" || data.institutionId === 0) data.institutionId = null;
     return data;
   }
@@ -627,7 +630,21 @@ const yes = (v: any, fallback = true): boolean => {
 };
 
 
-// body: { items: [{ name, category, level, modality, monthlyFee, semesters, active, institution }], institutionId, dryRun }
+// a money cell of the sheet: "1.073,80", "1073,80", "R$ 99" or a number; empty is null, anything else NaN
+const moneyCell = (v: any): number | null => {
+  if (v === undefined || v === null || String(v).trim() === "") return null;
+  if (typeof v === "number") return v;
+  return Number(String(v).replace(/[^\d.,-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+};
+// a whole number cell (months, installments): empty is null
+const countCell = (v: any): number | null => {
+  if (v === undefined || v === null || String(v).trim() === "") return null;
+  const n = Number(String(v).replace(/[^\d]/g, ""));
+  return Number.isFinite(n) ? n : NaN;
+};
+
+// body: { items: [{ name, category, level, modality, monthlyFee, semesters, active, institution, durationMonths, installmentsTotal,
+//   enrollmentFee, certificationFee, singlePayment }], institutionId, dryRun }
 // Returns one row per line (new | update | error) so the wizard can show a preview.
 export const importCourses = async (req: Request, res: Response): Promise<Response> => {
   const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 3000) : [];
@@ -650,6 +667,14 @@ export const importCourses = async (req: Request, res: Response): Promise<Respon
     if (fee !== null && (Number.isNaN(fee) || fee < 0)) { rows.push({ line, status: "error", error: "Mensalidade inválida", name }); continue; }
     const semesters = it.semesters === undefined || it.semesters === "" ? 8 : Number(it.semesters);
     if (!Number.isInteger(semesters) || semesters < 1 || semesters > 20) { rows.push({ line, status: "error", error: "Semestres deve ser um número de 1 a 20", name }); continue; }
+    // courses in installments (post-graduate, technical, short courses)
+    const durationMonths = countCell(it.durationMonths);
+    if (durationMonths !== null && (!(durationMonths >= 1) || durationMonths > 120)) { rows.push({ line, status: "error", error: "Duração em meses deve ser de 1 a 120", name }); continue; }
+    const installmentsTotal = countCell(it.installmentsTotal);
+    if (installmentsTotal !== null && (!(installmentsTotal >= 1) || installmentsTotal > 120)) { rows.push({ line, status: "error", error: "Parcelas deve ser um número de 1 a 120", name }); continue; }
+    const enrollmentFee = moneyCell(it.enrollmentFee);
+    const certificationFee = moneyCell(it.certificationFee);
+    if ([enrollmentFee, certificationFee].some(v => v !== null && (Number.isNaN(v) || (v as number) < 0))) { rows.push({ line, status: "error", error: "Taxa inválida", name }); continue; }
     let institutionId = req.body.institutionId ? Number(req.body.institutionId) : null;
     if (it.institution) {
       const inst = institutions.find(x => x.name.toLowerCase() === String(it.institution).trim().toLowerCase());
@@ -658,7 +683,8 @@ export const importCourses = async (req: Request, res: Response): Promise<Respon
     }
     const data: any = {
       name, category: String(it.category || "").trim() || null, level: String(it.level || "").trim() || null,
-      modality: normalizeModality(it.modality), monthlyFee: fee, semesters, institutionId, active: yes(it.active)
+      modality: normalizeModality(it.modality), monthlyFee: fee, semesters, institutionId, active: yes(it.active),
+      durationMonths, installmentsTotal, enrollmentFee, certificationFee, singlePayment: yes(it.singlePayment, false)
     };
     // the same course of two universities is two courses (one line per university)
     // eslint-disable-next-line no-await-in-loop

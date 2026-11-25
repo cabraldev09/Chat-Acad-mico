@@ -34,6 +34,49 @@ const fmtDate = (d: Date) => fmtDateTime(d);
 const proposalLogo = (inst: RenderInput["institution"]): string | null =>
   logoDataUri(inst?.logoFile) || (/cruzeiro do sul/i.test(String(inst?.name || "")) ? brandLogoDataUri() : null);
 
+
+// a proposal in installments (post-graduate, technical, short courses): fixed installments, the fees, and the ways of paying it at once
+const installmentsHtml = (p: ProposalParams, r: ProposalResult, i: RenderInput, firstDue: string | null, secondDue: string | null): string => {
+  const plan = r.plan as NonNullable<ProposalResult["plan"]>;
+  const enrollment = p.enrollmentExempt || !(Number(p.enrollmentFee) > 0) ? "isenta" : `${brl(p.enrollmentFee)} <span class="muted">(no ato da inscrição)</span>`;
+  const cert =
+    p.certification === "charge" && Number(p.certificationFee) > 0
+      ? `<div class="kv"><b>Taxa de certificação:</b> ${brl(Number(p.certificationFee))} <span class="muted">(paga ao concluir o curso)</span></div>`
+      : p.certification === "exempt"
+      ? `<div class="kv"><b>Taxa de certificação:</b> isenta</div>`
+      : "";
+  const single = plan.single;
+  const firstLine = plan.installments > 1 && Math.abs(plan.first - plan.monthly) >= 0.01
+    ? `<div class="kv"><b>1ª parcela:</b> ${plan.first === 0 ? `isenta (${brl(0)})` : brl(plan.first)}${firstDue ? ` <span class="muted">(vencimento ${firstDue})</span>` : ""}</div>`
+    : firstDue ? `<div class="kv"><b>1ª parcela vence em:</b> ${firstDue}</div>` : "";
+  const parcels = single
+    ? `<div class="kv"><b>Valor do curso:</b> ${brl(single.value)} <span class="muted">(parcela única)</span></div>${firstDue ? `<div class="kv"><b>Vencimento:</b> ${firstDue}</div>` : ""}`
+    : `<div class="kv"><b>Parcelas:</b> ${plan.installments} de ${brl(plan.monthly)} <span class="muted">(valor fixo, sem reajuste)</span></div>${firstLine}
+<div class="kv"><b>Demais parcelas:</b> todo dia ${p.dueDay}${secondDue && plan.first === 0 ? ` <span class="muted">(a 2ª vence em ${secondDue})</span>` : ""}</div>`;
+  const ways = single
+    ? `<h2>Formas de pagamento</h2>
+<ul>
+<li><b>Boleto:</b> ${brl(single.value)}</li>
+${single.pixPct > 0 ? `<li><b>Pix:</b> ${brl(single.pix)} <span class="muted">(${pct1(single.pixPct)} de desconto)</span></li>` : ""}
+${single.card ? `<li><b>Cartão de crédito:</b> ${single.card.installments}x de ${brl(single.card.installment)}${single.card.installments > 1 ? (single.card.passInterest && single.card.ratePct > 0 ? ` <span class="muted">(com juros de ${pct2(single.card.ratePct)} ao mês; total ${brl(single.card.total)})</span>` : ` <span class="muted">(sem juros; total ${brl(single.card.total)})</span>`) : ""}</li>` : ""}
+</ul>`
+    : "";
+  const total = single ? single.value : plan.total;
+  return `${single ? "" : `<div class="kv"><b>Mensalidade cheia:</b> ${brl(p.gross)}</div>`}
+${r.bolsaApplied > 0.004 && !single ? `<div class="kv"><b>Bolsa aplicada:</b> ${pct2(r.bolsaApplied)}${i.texts.bolsaNote ? ` <span class="muted">(${esc(i.texts.bolsaNote)})</span>` : ""}</div>` : ""}
+${parcels}
+<div class="kv" style="margin-top:8px"><b>Taxa de matrícula:</b> ${enrollment}</div>
+${cert}
+${i.texts.observation ? `<div class="obs">Observação: ${esc(i.texts.observation)}</div>` : ""}
+${ways}
+<h2>Produtos ou serviços</h2>
+<table class="prod"><thead><tr><th>Produto</th><th>Condição</th><th class="r">Valor</th></tr></thead>
+<tbody><tr><td><b>${esc(i.title)}</b>${i.modalityLabel ? `<div class="muted">${esc(i.modalityLabel)}</div>` : ""}</td>
+<td>${single ? "Parcela única" : `${plan.installments} parcelas`}</td><td class="r">${brl(total)}</td></tr></tbody></table>
+<div class="total"><span>Valor total do curso</span><span>${brl(total)}</span></div>
+`;
+};
+
 export const renderProposalHtml = (i: RenderInput): string => {
   const { params: p, result: r } = i;
   const logo = proposalLogo(i.institution);
@@ -63,6 +106,37 @@ export const renderProposalHtml = (i: RenderInput): string => {
 <td>${row.diff ? brl(row.diff) : "-"}</td></tr>`
     )
     .join("");
+
+  const semestralHtml = (): string => `<div class="kv"><b>Mensalidade bruta atual:</b> ${brl(p.gross)}</div>
+<div class="kv"><b>Bolsa aplicada:</b> ${pct2(r.bolsaApplied)}${i.texts.bolsaNote ? ` <span class="muted">(${esc(i.texts.bolsaNote)})</span>` : ""}</div>
+<div class="kv"><b>Primeira Mensalidade:</b> ${p.firstExempt ? `isenta (${brl(0)})` : brl(first)}${firstDue ? ` <span class="muted">(vencimento ${firstDue})</span>` : ""}${p.firstExempt && secondDue ? ` <span class="muted">(a 2ª mensalidade vence em ${secondDue})</span>` : ""}</div>
+<div class="kv" style="margin-top:8px"><b>Taxa de matrícula:</b> ${brl(p.enrollmentFee)} <span class="muted">(no ato da inscrição)</span></div>
+<div class="kv"><b>Demais mensalidades:</b> todo dia ${p.dueDay}</div>
+<div class="kv"><b>Quantidade de parcelas desse semestre:</b> ${p.installments}</div>
+${p.entryTurma ? `<div class="kv"><b>Turma de ingresso:</b> ${esc(p.entryTurma)} de ${p.startYear}/${p.startSemester}${release ? ` <span class="muted">(disciplinas liberadas no AVA até ${release})</span>` : ""}</div>` : ""}
+${rules.map(t => `<div class="kv muted">${esc(t)}</div>`).join("")}
+
+<h2>2ª mensalidade em diante. (Pontualidade já inclusa de ${p.punctualityPct}%).</h2>
+<ul>
+<li><b>Até o dia ${p.dueDay}:</b> ${brl(r.tiers.onTime)} <span class="muted">(com desconto de pontualidade de ${p.punctualityPct}%)</span></li>
+<li><b>Dias ${p.dueDay + 1} a 25:</b> ${brl(r.tiers.mid)} <span class="muted">(Perde desconto de pontualidade de ${p.lateFee1Pct}%.)</span></li>
+<li><b>Após o vencimento:</b> ${brl(r.tiers.late)} <span class="muted">(Perde desconto de pontualidade de ${p.lateFee2Pct}%.)</span></li>
+</ul>
+${i.texts.observation ? `<div class="obs">Observação: ${esc(i.texts.observation)}</div>` : ""}
+
+<h2>Projeção por semestre</h2>
+${i.texts.disclaimer ? `<div class="note">${esc(i.texts.disclaimer)}</div>` : ""}
+<table class="proj"><thead><tr>
+<th>Sem.</th><th>Período</th><th>Bolsa</th><th>Ajuste bolsa</th><th>Reajuste semestral</th><th>Anual ${Number(p.annualMin)}%</th><th>Ajustes totais ${Number(p.annualMin)}%</th><th>Mensalidade ${Number(p.annualMin)}%</th><th>Anual ${Number(p.annualMax)}%</th><th>Ajustes totais ${Number(p.annualMax)}%</th><th>Mensalidade ${Number(p.annualMax)}%</th><th>Diferença/ mês</th>
+</tr></thead><tbody>${rows}</tbody></table>
+
+<h2>Produtos ou serviços</h2>
+<table class="prod"><thead><tr><th>Produto</th><th>Preço</th><th>Desconto</th><th class="r">Sub-total</th></tr></thead>
+<tbody><tr><td><b>${esc(i.title)}</b>${i.modalityLabel ? `<div class="muted">${esc(i.modalityLabel)}</div>` : ""}</td>
+<td>${brl(p.gross)}</td><td>${pct2(firstDiscount)}</td><td class="r">${brl(first)}</td></tr></tbody></table>
+<div class="total"><span>Valor total do pedido</span><span>${brl(first)}</span></div>
+
+`;
 
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -104,42 +178,16 @@ ${brand ? `.proj th{color:${brand}}.proj td.m{color:${brand}}h1{color:${brand}}`
 </div>
 <h1>Proposta de Bolsa - ${esc(i.title)}</h1>
 <div class="muted">${
-  (p.entrySemester || 1) > 1
+  p.planType === "parcelado"
+    ? (p.durationMonths ? `Duração: ${p.durationMonths} meses` : "")
+    : (p.entrySemester || 1) > 1
     ? `Ingresso no ${p.entrySemester}º semestre${p.admissionType ? ` (${esc(p.admissionType)})` : ""} · ${p.semesters} semestre${p.semesters > 1 ? "s" : ""} a cursar${p.extraSemesters ? ` (inclui ${p.extraSemesters} de adaptação)` : ""}`
     : `Semestres: ${p.semesters}${p.extraSemesters ? ` (inclui ${p.extraSemesters} de adaptação)` : ""}`
-}${i.modalityLabel ? ` · ${esc(i.modalityLabel)}` : ""}</div>
+}${i.modalityLabel ? `${p.planType === "parcelado" && !p.durationMonths ? "" : " · "}${esc(i.modalityLabel)}` : ""}</div>
 <div class="muted" style="margin-top:6px">Proposta destinada a <b style="color:#1f2937">${esc(i.leadName)}</b></div>
 <div class="muted" style="margin:8px 0 10px">Documento gerado em ${esc(fmtDate(i.generatedAt))}</div>
 
-<div class="kv"><b>Mensalidade bruta atual:</b> ${brl(p.gross)}</div>
-<div class="kv"><b>Bolsa aplicada:</b> ${pct2(r.bolsaApplied)}${i.texts.bolsaNote ? ` <span class="muted">(${esc(i.texts.bolsaNote)})</span>` : ""}</div>
-<div class="kv"><b>Primeira Mensalidade:</b> ${p.firstExempt ? `isenta (${brl(0)})` : brl(first)}${firstDue ? ` <span class="muted">(vencimento ${firstDue})</span>` : ""}${p.firstExempt && secondDue ? ` <span class="muted">(a 2ª mensalidade vence em ${secondDue})</span>` : ""}</div>
-<div class="kv" style="margin-top:8px"><b>Taxa de matrícula:</b> ${brl(p.enrollmentFee)} <span class="muted">(no ato da inscrição)</span></div>
-<div class="kv"><b>Demais mensalidades:</b> todo dia ${p.dueDay}</div>
-<div class="kv"><b>Quantidade de parcelas desse semestre:</b> ${p.installments}</div>
-${p.entryTurma ? `<div class="kv"><b>Turma de ingresso:</b> ${esc(p.entryTurma)} de ${p.startYear}/${p.startSemester}${release ? ` <span class="muted">(disciplinas liberadas no AVA até ${release})</span>` : ""}</div>` : ""}
-${rules.map(t => `<div class="kv muted">${esc(t)}</div>`).join("")}
-
-<h2>2ª mensalidade em diante. (Pontualidade já inclusa de ${p.punctualityPct}%).</h2>
-<ul>
-<li><b>Até o dia ${p.dueDay}:</b> ${brl(r.tiers.onTime)} <span class="muted">(com desconto de pontualidade de ${p.punctualityPct}%)</span></li>
-<li><b>Dias ${p.dueDay + 1} a 25:</b> ${brl(r.tiers.mid)} <span class="muted">(Perde desconto de pontualidade de ${p.lateFee1Pct}%.)</span></li>
-<li><b>Após o vencimento:</b> ${brl(r.tiers.late)} <span class="muted">(Perde desconto de pontualidade de ${p.lateFee2Pct}%.)</span></li>
-</ul>
-${i.texts.observation ? `<div class="obs">Observação: ${esc(i.texts.observation)}</div>` : ""}
-
-<h2>Projeção por semestre</h2>
-${i.texts.disclaimer ? `<div class="note">${esc(i.texts.disclaimer)}</div>` : ""}
-<table class="proj"><thead><tr>
-<th>Sem.</th><th>Período</th><th>Bolsa</th><th>Ajuste bolsa</th><th>Reajuste semestral</th><th>Anual ${Number(p.annualMin)}%</th><th>Ajustes totais ${Number(p.annualMin)}%</th><th>Mensalidade ${Number(p.annualMin)}%</th><th>Anual ${Number(p.annualMax)}%</th><th>Ajustes totais ${Number(p.annualMax)}%</th><th>Mensalidade ${Number(p.annualMax)}%</th><th>Diferença/ mês</th>
-</tr></thead><tbody>${rows}</tbody></table>
-
-<h2>Produtos ou serviços</h2>
-<table class="prod"><thead><tr><th>Produto</th><th>Preço</th><th>Desconto</th><th class="r">Sub-total</th></tr></thead>
-<tbody><tr><td><b>${esc(i.title)}</b>${i.modalityLabel ? `<div class="muted">${esc(i.modalityLabel)}</div>` : ""}</td>
-<td>${brl(p.gross)}</td><td>${pct2(firstDiscount)}</td><td class="r">${brl(first)}</td></tr></tbody></table>
-<div class="total"><span>Valor total do pedido</span><span>${brl(first)}</span></div>
-
+${p.planType === "parcelado" && r.plan ? installmentsHtml(p, r, i, firstDue, secondDue) : semestralHtml()}
 <h2>Mensagem final</h2>
 <div class="final">${esc(i.texts.finalMessage || "")}</div>
 ${i.institution?.footer ? `<div class="foot">${esc(i.institution.footer)}</div>` : ""}

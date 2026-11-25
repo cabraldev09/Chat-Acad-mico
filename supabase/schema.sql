@@ -1658,7 +1658,12 @@ CREATE TABLE public."Courses" (
     "institutionId" integer,
     category character varying(255),
     semesters integer DEFAULT 8 NOT NULL,
-    aliases text
+    aliases text,
+    "durationMonths" integer,
+    "installmentsTotal" integer,
+    "enrollmentFee" numeric(10,2),
+    "certificationFee" numeric(10,2),
+    "singlePayment" boolean DEFAULT false NOT NULL
 );
 
 
@@ -3039,7 +3044,16 @@ CREATE TABLE public."ProposalTemplates" (
     "firstExempt" boolean DEFAULT false NOT NULL,
     "waIntro" text,
     "waClosing" text,
-    active boolean DEFAULT true NOT NULL
+    active boolean DEFAULT true NOT NULL,
+    "planType" character varying(20) DEFAULT 'semestral'::character varying NOT NULL,
+    "installmentsByDuration" text,
+    "certificationFee" numeric(10,2) DEFAULT 0 NOT NULL,
+    "chargeCertification" boolean DEFAULT false NOT NULL,
+    "pixDiscountPct" numeric(5,2) DEFAULT 0 NOT NULL,
+    "cardMaxInstallments" integer DEFAULT 12 NOT NULL,
+    "cardRatePct" numeric(5,2) DEFAULT 0 NOT NULL,
+    "cardPassInterest" boolean DEFAULT true NOT NULL,
+    "courseLevels" text
 );
 
 
@@ -8179,6 +8193,9 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') 
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261230000001-send-quota-and-costs.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261231000001-fix-buritis-entry-term.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-proposal-template-active.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

@@ -75,8 +75,49 @@ A turma e a liberação no AVA aparecem no PDF e no resumo do WhatsApp.
 - A taxa de matrícula usa a última proposta enviada e, sem nenhuma enviada, o último rascunho. A lista marca qual vale.
 - Só a gestão apaga uma proposta já enviada.
 
+## Propostas parceladas, taxas e formas de pagamento
+
+Usadas na SESTED (técnico regular, técnico por competência, pós e profissionalizante) e na pós-graduação da Cruzeiro.
+O modelo de proposta tem o campo **Tipo**: "Graduação" (a projeção por semestre de sempre) ou "Parcelada".
+
+**Parcelada:**
+- N parcelas de valor fixo, sem reajuste e sem projeção por semestre.
+- O número de parcelas vem, nesta ordem:
+  1. da coluna "Parcelas" do curso;
+  2. da tabela "Parcelas pela duração" do modelo, uma linha por duração (`6=12`, `9=15`, `12=18`), com a "Duração (meses)" do curso;
+  3. do "Total de parcelas do curso (fixo)" do modelo;
+  4. senão, uma por mês da duração.
+- O consultor pode mudar o número de parcelas e a mensalidade das demais. A 1ª mensalidade continua com valor próprio ou isenta.
+- **Taxa de matrícula:** vem do curso ou do modelo; o consultor edita ou isenta.
+- **Taxa de certificação:** valor único, pago ao concluir o curso. Vem do curso ou do modelo; o consultor escolhe Cobrar, Isenta
+  ou "O curso não tem", e edita o valor.
+- **Parcela única:** vem ligada quando o curso tem "Parcela única" (profissionalizante); o consultor liga e desliga. Aparecem as
+  formas de pagamento:
+  - boleto: o valor cheio;
+  - Pix: digitar a % de desconto ou o valor final; um atualiza o outro;
+  - cartão: vezes e juros % ao mês. Repassando os juros ao aluno, a parcela segue a tabela Price
+    (`valor × i / (1 − (1 + i)^−n)`); sem repassar, é o valor dividido pelas vezes. A tela e o PDF mostram a parcela e o total.
+- Os padrões de Pix e cartão ficam no modelo ("Formas de pagamento (parcela única)").
+
+**Qual modelo a proposta usa sozinha:** o consultor pode trocar no estúdio; sem escolha, vale, nesta ordem:
+1. o modelo ligado à universidade do curso e ao nível do curso (campo "Níveis de curso" do modelo);
+2. um modelo para o nível do curso;
+3. o modelo padrão.
+
+Um modelo sem níveis serve para todos. Assim, a graduação da Cruzeiro continua no modelo de graduação, e a pós vai para o da pós.
+
+**Modelos criados na instalação** (só se ainda não existirem, com as taxas e % zerados para a gestão preencher):
+"Pós-graduação Cruzeiro" (6=12, 9=15, 12=18; níveis Pós-graduação e MBA), "SESTED: técnicos e pós" (técnicos, pós e MBA) e
+"SESTED: profissionalizante" (Profissionalizante).
+Cada um fica ligado à universidade de nome parecido, se ela existir em Universidades.
+
+**Planilha de cursos** (Configurações do CRM, Cursos, Importar): além das colunas de sempre, "Duração (meses)", "Parcelas",
+"Taxa de matrícula", "Taxa de certificação" e "Parcela única" (Sim ou Não). A coluna "Instituição" precisa ter o nome igual ao
+cadastrado em Universidades.
+
 ## Testes
 
 - `tests/analysis/unit/entry-calendar.test.ts`: turmas, limites dos períodos, parcelas e vencimentos.
+- `tests/analysis/unit/proposal-installments.test.ts`: parcelas pela duração, proposta parcelada, Pix e cartão.
 - `scripts/channels-e2e.js`, seção "proposals": obrigatórios, troca de curso, calendário, valor travado, balões salvos e duas
   propostas no mesmo lead.
