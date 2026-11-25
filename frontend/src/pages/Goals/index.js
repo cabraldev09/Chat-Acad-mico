@@ -20,6 +20,7 @@ import toastError from "../../errors/toastError";
 import { fetchAllUsers } from "../Affiliates/shared";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const SHARE_WIDTH = 600;
 const MONTHS = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
@@ -95,8 +96,8 @@ const Goals = () => {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const choose = (g) => {
-    if (dirty && !window.confirm("Há alterações não salvas. Descartar?")) return;
+  const choose = async (g) => {
+    if (dirty && !(await confirmDialog({ title: "Descartar as alterações?", message: "Há alterações que não foram salvas.", confirmText: "Descartar", tone: "danger" }))) return;
     setSelected(g.id); setDraft(clean(g)); setDirty(false);
   };
   const change = (fn) => { setDraft((d) => { const next = clean(d); fn(next); return next; }); setDirty(true); };
@@ -122,11 +123,11 @@ const Goals = () => {
     } catch (e) { toastError(e); }
   };
   const repeat = async () => {
-    if (dirty && !window.confirm("Há alterações não salvas. Repetir o período sem salvar descarta o que foi digitado. Continuar?")) return;
+    if (dirty && !(await confirmDialog({ title: "Repetir sem salvar?", message: "Há alterações não salvas. Repetir o período agora descarta o que foi digitado.", confirmText: "Repetir mesmo assim", tone: "danger" }))) return;
     try { const { data } = await api.post(`/goals/${draft.id}/repeat`); toast.success("Período repetido com as mesmas pessoas e metas."); await load(data.id); } catch (e) { toastError(e); }
   };
   const remove = async () => {
-    if (!window.confirm("Excluir este período de metas?")) return;
+    if (!(await confirmDialog({ title: "Excluir este período de metas?", message: "As metas deste período deixam de aparecer nos painéis.", confirmText: "Excluir", tone: "danger" }))) return;
     try { await api.delete(`/goals/${draft.id}`); setSelected(null); await load(); } catch (e) { toastError(e); }
   };
 

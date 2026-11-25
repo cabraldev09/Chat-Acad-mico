@@ -7,6 +7,7 @@ import api from "../../services/api";
 import openSocket from "../../services/socket-io";
 import toastError from "../../errors/toastError";
 import IconAction from "../../components/IconAction";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 // Configurações → Modelos da Meta: the templates of the official WhatsApp account by department, with their status (updated live), the
 // recommended pack (written as notices for Utility, the cheapest paid category; the Meta may still move one to Marketing), and a form to create a new one with its
@@ -165,7 +166,7 @@ export default function MetaTemplates({ values, save }) {
     setSending(false);
   };
   const remove = async (name) => {
-    if (!window.confirm(`Remover o modelo ${name} da conta da Meta? Isso não pode ser desfeito.`)) return;
+    if (!(await confirmDialog({ title: "Remover o modelo da Meta?", message: `${name} sai da conta da Meta. Isso não pode ser desfeito.`, confirmText: "Remover", tone: "danger" }))) return;
     try { await api.delete(`/meta/templates/${name}`); toast.success("Modelo removido."); await load(true); } catch (err) { toastError(err); }
   };
 

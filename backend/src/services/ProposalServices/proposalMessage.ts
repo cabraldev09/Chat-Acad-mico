@@ -1,5 +1,5 @@
 import { getAppTz } from "../../helpers/AppTime";
-import { ProposalParams, ProposalResult } from "./calc";
+import { ProposalParams, ProposalResult, baseMonthly, firstPayment } from "./calc";
 
 // The text a consultant sends on WhatsApp together with the PDF: a few short
 // messages, in the order people read them. Each block can be copied or edited.
@@ -52,12 +52,14 @@ export const buildProposalMessages = (i: Input): MessageBlock[] => {
   lines.push(`*Duração:* ${p.semesters} semestre${p.semesters > 1 ? "s" : ""}`);
   lines.push(`*Mensalidade normal:* ${brl(p.gross)}`);
   lines.push(`*Bolsa aplicada:* ${pct(r.bolsaApplied)}`);
-  lines.push(`*Mensalidade com bolsa:* ${brl(p.firstMonthly)}`);
+  lines.push(`*Mensalidade com bolsa:* ${brl(baseMonthly(p))}`);
 
   const d1 = day(p.firstDueDate);
   const d2 = day(p.secondDueDate);
   if (p.firstExempt) {
-    lines.push(`*1ª mensalidade:* isenta${d2 ? ` · a 2ª vence em ${d2}` : ""}`);
+    lines.push(`*1ª mensalidade:* isenta${d1 ? ` (vencimento ${d1})` : ""}${d2 ? ` · a 2ª vence em ${d2}` : ""}`);
+  } else if (Math.abs(firstPayment(p) - baseMonthly(p)) >= 0.01) {
+    lines.push(`*1ª mensalidade:* ${brl(firstPayment(p))}${d1 ? ` (vencimento ${d1})` : ""}`);
   } else if (d1) {
     lines.push(`*Vencimento da 1ª mensalidade:* ${d1}`);
   }

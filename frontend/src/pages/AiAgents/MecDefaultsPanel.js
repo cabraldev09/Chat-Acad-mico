@@ -4,6 +4,7 @@ import { Button, CircularProgress, MenuItem, TextField, Typography, makeStyles }
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const useStyles = makeStyles((theme) => ({
   card: { border: theme.border.divider, borderRadius: 14, padding: theme.spacing(1.5, 2), marginTop: theme.spacing(1.5) },
@@ -43,7 +44,7 @@ const MecDefaultsPanel = ({ onChanged }) => {
     const msg = overwrite
       ? `Aplicar este padrão a TODOS os ${a ? data.areas.find((x) => x.id === a.id).courses.length : data.total} cursos${a ? " desta área" : ""}? As regras já cadastradas deles serão substituídas (regras de um período de ingresso não mudam).`
       : "Preencher só os cursos que ainda não têm regra?";
-    if (!window.confirm(msg)) return;
+    if (!(await confirmDialog({ title: "Aplicar o padrão do MEC?", message: msg, confirmText: "Aplicar" }))) return;
     setBusy(`apply-${a ? a.id : "all"}`);
     try {
       if (a) await api.put(`/mec-defaults/${a.id}`, forms[a.id]);
