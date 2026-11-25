@@ -1516,6 +1516,63 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put(`/proposal-templates/${made.data.id}`, { active: true }, auth())).data.active === true, "reactivate");
       await http.delete(`/proposal-templates/${made.data.id}`, auth());
     });
+    await test("a model saves with an empty number field (the 'Graduação FAMAR' error), creating and editing", async () => {
+      const made = await http.post("/proposal-templates", { name: "Modelo Campo Vazio Teste", enrollmentFee: "", dueDay: 10, installments: "", installmentsFixed: "", bolsaFirst: 30, bolsaNext: 30 }, auth());
+      assert(made.status === 201, `create with empty fields ${made.status} ${JSON.stringify(made.data)}`);
+      const edited = await http.put(`/proposal-templates/${made.data.id}`, { installments: "", cardRatePct: "", observation: "ok" }, auth());
+      assert(edited.status === 200 && edited.data.observation === "ok", `edit with empty fields ${edited.status} ${JSON.stringify(edited.data)}`);
+      await http.delete(`/proposal-templates/${made.data.id}`, auth());
+    });
+    await test("installment proposals (SESTED and Cruzeiro pós): installments by duration, fees, single payment with Pix and card", async () => {
+      const tpl = await http.post("/proposal-templates", {
+        name: "Pós Parcelada Teste", planType: "parcelado", installments: "", installmentsByDuration: "6=12\n9=15\n12=18", enrollmentFee: 0, dueDay: 10,
+        bolsaFirst: 0, bolsaNext: 0, chargeCertification: true, certificationFee: 150, pixDiscountPct: 10, cardMaxInstallments: 10, cardRatePct: 1.99, cardPassInterest: true,
+        courseLevels: ["Pós-graduação"]
+      }, auth());
+      assert(tpl.status === 201 && tpl.data.planType === "parcelado", `template ${tpl.status} ${JSON.stringify(tpl.data).slice(0, 300)}`);
+      const imp = await http.post("/courses/import", { items: [
+        { name: "Pós Gestão Parcelada Teste", category: "Pós-graduação", level: "Pós-graduação", modality: "EAD", monthlyFee: "300,00", durationMonths: "9", enrollmentFee: "80,00", certificationFee: "150,00" },
+        { name: "Profissionalizante Teste", category: "Profissionalizante", level: "Profissionalizante", modality: "EAD", monthlyFee: "1.200,00", durationMonths: "3", installmentsTotal: "1", singlePayment: "Sim" },
+        { name: "Pós Duração Errada Teste", category: "Pós-graduação", modality: "EAD", monthlyFee: "300", durationMonths: "abc" },
+        { name: "Graduação Nível Teste", category: "Graduação", level: "Bacharelado", modality: "EAD", monthlyFee: "900", semesters: "8" }] }, auth());
+      assert(imp.data.created === 3 && imp.data.errors === 1, `import ${JSON.stringify(imp.data)}`);
+      assert(sql("SELECT durationMonths||'/'||enrollmentFee||'/'||certificationFee FROM Courses WHERE name='Pós Gestão Parcelada Teste'") === "9/80.00/150.00", "the new columns of the spreadsheet");
+      assert(sql("SELECT singlePayment FROM Courses WHERE name='Profissionalizante Teste'") === "1", "single payment column");
+      const pos = Number(sql("SELECT id FROM Courses WHERE name='Pós Gestão Parcelada Teste'"));
+      const lead = (await http.post("/leads", { name: "Lead Pós Teste", phone: "11 95555-0091", source: "Indicação", courseId: pos }, auth())).data.lead;
+      const d = await http.get(`/proposals/defaults?leadId=${lead.id}&templateId=${tpl.data.id}`, auth());
+      assert(d.status === 200 && d.data.params.planType === "parcelado" && d.data.params.installmentsTotal === 15, `9 months should be 15 installments: ${JSON.stringify(d.data.params || d.data).slice(0, 300)}`);
+      assert(d.data.params.enrollmentFee === 80 && d.data.params.certification === "charge" && d.data.params.certificationFee === 150, "the fees of the course");
+      // the automatic choice: a graduate course gets a model of its level; a graduation course never gets it
+      const auto = await http.get(`/proposals/defaults?leadId=${lead.id}`, auth());
+      assert(auto.status === 200 && auto.data.params.planType === "parcelado", `a graduate course got a graduation model: ${auto.data.templateId}`);
+      const grad = Number(sql("SELECT id FROM Courses WHERE name='Graduação Nível Teste'"));
+      const gLead = (await http.post("/leads", { name: "Lead Graduação Nível Teste", phone: "11 95555-0092", source: "Indicação", courseId: grad }, auth())).data.lead;
+      const g = await http.get(`/proposals/defaults?leadId=${gLead.id}`, auth());
+      assert(g.status === 200 && g.data.params.planType !== "parcelado" && g.data.templateId !== tpl.data.id, `a graduation course got the graduate model ${g.data.templateId}`);
+      const prev = p => http.post("/proposals/preview", { leadId: lead.id, templateId: tpl.data.id, params: { ...d.data.params, ...p } }, auth());
+      const plain = await prev({});
+      assert(plain.status === 200 && plain.data.result.plan.installments === 15 && plain.data.result.plan.total === 4500, `plan ${plain.status} ${JSON.stringify(plain.data.result || plain.data).slice(0, 300)}`);
+      assert(/Parcelas:<\/b> 15 de R\$\s?300,00/.test(plain.data.html) && /Taxa de certificação:<\/b> R\$\s?150,00/.test(plain.data.html) && !plain.data.html.includes("Projeção por semestre"), "the PDF of an installment proposal");
+      assert(/15 de R\$\s?300,00/.test(plain.data.messages.map(m => m.text).join("\n")), "the WhatsApp summary");
+      const exempt = await prev({ certification: "exempt", enrollmentExempt: true, firstExempt: true, firstMonthly: 0 });
+      assert(exempt.status === 200 && /Taxa de certificação:<\/b> isenta/.test(exempt.data.html) && /Taxa de matrícula:<\/b> isenta/.test(exempt.data.html), "waived fees");
+      assert(exempt.data.result.plan.total === 4200, `waived 1st: ${exempt.data.result.plan.total}`);
+      const edited = await prev({ certificationFee: 200, monthly: 280, installmentsTotal: 12 });
+      assert(edited.status === 200 && /Taxa de certificação:<\/b> R\$\s?200,00/.test(edited.data.html) && edited.data.result.plan.installments === 12, "edited certification and installments");
+      const single = await prev({ singlePayment: true, singleValue: 1000, pixDiscountPct: 10, cardInstallments: 10, cardRatePct: 1.99, cardPassInterest: true });
+      const s = single.data.result.plan.single;
+      assert(single.status === 200 && s.value === 1000 && s.pix === 900 && Math.abs(s.card.installment - 111.25) < 0.1, `single payment ${JSON.stringify(s)}`);
+      const noPass = (await prev({ singlePayment: true, singleValue: 1000, cardInstallments: 10, cardRatePct: 1.99, cardPassInterest: false })).data.result.plan.single;
+      assert(noPass.card.installment === 100 && noPass.card.total === 1000, `card without passing interest ${JSON.stringify(noPass.card)}`);
+      assert(/Pix:<\/b> R\$\s?900,00/.test(single.data.html) && /Cartão de crédito:<\/b> 10x de R\$/.test(single.data.html), "payment methods in the PDF");
+      // the graduation reference is untouched by the new model
+      const ref = await previewFor(REF1);
+      assert(ref.result.rows.length === REF1.rows.length && !ref.result.plan, "graduation turned into an installment proposal");
+      await http.delete(`/proposal-templates/${tpl.data.id}`, auth());
+      // out of the catalog, so the AI scenarios further on do not see them
+      sql("UPDATE Courses SET active=false WHERE name IN ('Pós Gestão Parcelada Teste','Profissionalizante Teste','Graduação Nível Teste')");
+    });
     let prop, propCourse;
     await test("a draft saves without the base data, but the PDF and the sending ask for the admission, the course and the deadline", async () => {
       propCourse = (await http.post("/courses", { name: "Administração Proposta Teste", modality: "EAD", category: "Graduação - Teste", semesters: 6, monthlyFee: REF1.gross, active: true }, auth())).data;
