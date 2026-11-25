@@ -1759,6 +1759,49 @@ ALTER SEQUENCE public."CurricularAnalyses_id_seq" OWNED BY public."CurricularAna
 
 
 --
+-- Name: DataPurgeRuns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."DataPurgeRuns" (
+    id integer NOT NULL,
+    mode character varying(20) NOT NULL,
+    "audioDays" integer DEFAULT 0 NOT NULL,
+    "conversationDays" integer DEFAULT 0 NOT NULL,
+    "audioFiles" integer DEFAULT 0 NOT NULL,
+    conversations integer DEFAULT 0 NOT NULL,
+    "conversationMessages" integer DEFAULT 0 NOT NULL,
+    "filesDeleted" integer DEFAULT 0 NOT NULL,
+    details text,
+    error text,
+    "actorId" integer,
+    "startedAt" timestamp with time zone NOT NULL,
+    "finishedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: DataPurgeRuns_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."DataPurgeRuns_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: DataPurgeRuns_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."DataPurgeRuns_id_seq" OWNED BY public."DataPurgeRuns".id;
+
+
+--
 -- Name: EnrollmentForms; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2561,7 +2604,9 @@ CREATE TABLE public."Messages" (
     reactions text,
     "isEdited" boolean DEFAULT false NOT NULL,
     "isGif" boolean DEFAULT false NOT NULL,
-    transcript text
+    transcript text,
+    "mediaPurgedAt" timestamp with time zone,
+    "bodyPurgedAt" timestamp with time zone
 );
 
 
@@ -4246,6 +4291,13 @@ ALTER TABLE ONLY public."CurricularAnalyses" ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: DataPurgeRuns id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."DataPurgeRuns" ALTER COLUMN id SET DEFAULT nextval('public."DataPurgeRuns_id_seq"'::regclass);
+
+
+--
 -- Name: EnrollmentForms id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4986,6 +5038,14 @@ ALTER TABLE ONLY public."Courses"
 
 ALTER TABLE ONLY public."CurricularAnalyses"
     ADD CONSTRAINT "CurricularAnalyses_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: DataPurgeRuns DataPurgeRuns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."DataPurgeRuns"
+    ADD CONSTRAINT "DataPurgeRuns_pkey" PRIMARY KEY (id);
 
 
 --
@@ -6003,6 +6063,13 @@ CREATE INDEX curricular_analyses_user_id_created_at ON public."CurricularAnalyse
 --
 
 CREATE INDEX curricular_followup_due_idx ON public."CurricularAnalyses" USING btree ("followUpDueAt") WHERE ("followUpDueAt" IS NOT NULL);
+
+
+--
+-- Name: data_purge_runs_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_purge_runs_created ON public."DataPurgeRuns" USING btree ("createdAt");
 
 
 --
@@ -8215,6 +8282,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-course-aliases.js') O
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261230000001-send-quota-and-costs.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261231000001-fix-buritis-entry-term.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-content-retention.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-proposal-template-active.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
