@@ -911,6 +911,14 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert((await http.post(`/polos/${poloB}/members/${coordAId}`, { role: "coordenacao" }, as(coordA))).status === 403, "coordination A joined polo B by itself");
       assert((await http.post(`/polos/${poloA}/members/${userId("rel-sca@x.com")}`, { role: "comercial" }, as(coordA))).status === 200, "coordination A cannot manage its own polo");
       assert(Number(sql(`SELECT COUNT(*) FROM PoloMembers WHERE poloId=${poloB} AND userId=${coordAId}`)) === 0, "coordination A is in polo B");
+      // nor changes the data of polo B: the cities it serves decide the polo of the leads (it would pull them), its name, deleting it, importing over it
+      assert((await http.put(`/polos/${poloB}/coverage`, { cities: ["Cidade Escopo - RO"] }, as(coordA))).status === 403, "coordination A changed the cities of polo B");
+      assert((await http.put(`/polos/${poloB}`, { name: "Polo tomado" }, as(coordA))).status === 403, "coordination A edited polo B");
+      assert((await http.delete(`/polos/${poloB}`, as(coordA))).status === 403, "coordination A deleted polo B");
+      const imp = (await http.post("/polos/import", { items: [{ code: "SCB", name: "Polo tomado" }], dryRun: false }, as(coordA))).data;
+      assert(imp.errors === 1 && imp.updated === 0, `coordination A imported over polo B: ${JSON.stringify(imp).slice(0, 200)}`);
+      assert(sql(`SELECT name FROM Polos WHERE id=${poloB}`) === "Polo Escopo B" && Number(sql(`SELECT COUNT(*) FROM PoloCoverages WHERE poloId=${poloB}`)) === 0, "polo B changed");
+      assert((await http.put(`/polos/${poloA}/coverage`, { cities: ["Cidade Escopo - RO"] }, as(coordA))).status === 200, "coordination A cannot set the cities of its polo");
       void enrolledA;
     });
   } catch (err) {

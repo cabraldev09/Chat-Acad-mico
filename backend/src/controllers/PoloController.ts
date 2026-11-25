@@ -77,6 +77,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 export const update = async (req: Request, res: Response): Promise<Response> => {
   const polo = await Polo.findByPk(req.params.id);
   if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  await assertPoloTeam(req, polo.id);
   const data = clean({ ...polo.toJSON(), ...req.body });
   if (data.code && data.code !== polo.code && (await Polo.findOne({ where: { code: data.code } }))) {
     throw new AppError("ERR_POLO_CODE_DUPLICATED", 409);
@@ -100,6 +101,8 @@ export const coverage = async (req: Request, res: Response): Promise<Response> =
 export const setCoverage = async (req: Request, res: Response): Promise<Response> => {
   const polo = await Polo.findByPk(req.params.id);
   if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  // the cities decide the polo of a lead: the coordination of another polo would pull its leads (middleware/scope)
+  await assertPoloTeam(req, polo.id);
   const list: any[] = Array.isArray(req.body.cities) ? req.body.cities.slice(0, 500) : [];
   const rows = new Map<string, { poloId: number; city: string; cityKey: string; state: string | null }>();
   for (const item of list) {
@@ -127,6 +130,7 @@ export const setCoverage = async (req: Request, res: Response): Promise<Response
 export const remove = async (req: Request, res: Response): Promise<Response> => {
   const polo = await Polo.findByPk(req.params.id, { include: [{ model: Queue, as: "queues" }] });
   if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  await assertPoloTeam(req, polo.id);
   const queueIds = (polo.queues || []).map(q => q.id);
   const leads = await Lead.count({ where: { poloId: polo.id } });
   const tickets = queueIds.length ? await Ticket.count({ where: { queueId: queueIds } }) : 0;
@@ -139,11 +143,13 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   return res.json({ message: "deleted" });
 };
 
-// The coordination sees the CRM of its polos only (middleware/scope): it changes the team of the polos it belongs to, never puts itself in
-// another polo. The administration changes any team.
+// The coordination sees the CRM of its polos only (middleware/scope): it changes the team and the data of the polos it belongs to, never
+// puts itself in another polo. The administration changes any polo.
+const canChangePolo = async (req: Request, poloId: number): Promise<boolean> =>
+  seesEveryPolo(req) || (await poloIdsOf(Number(req.user.id))).includes(poloId);
+// the same for the data of the polo itself (name, cities served, deletion, import): the cities decide the polo of the leads
 const assertPoloTeam = async (req: Request, poloId: number): Promise<void> => {
-  if (seesEveryPolo(req)) return;
-  if (!(await poloIdsOf(Number(req.user.id))).includes(poloId)) throw new AppError("ERR_NO_PERMISSION", 403);
+  if (!(await canChangePolo(req, poloId))) throw new AppError("ERR_NO_PERMISSION", 403);
 };
 
 // body: { members: [{ userId, role }] } — replaces the whole team of the polo
@@ -223,6 +229,12 @@ export const importPolos = async (req: Request, res: Response): Promise<Response
     const existing =
       (data.code && (await Polo.findOne({ where: { code: data.code } }))) ||
       (await Polo.findOne({ where: { name: data.name } }));
+    // the coordination updates only the polos it belongs to (a new polo it may create)
+    // eslint-disable-next-line no-await-in-loop
+    if (existing && !(await canChangePolo(req, existing.id))) {
+      rows.push({ line, status: "error", error: "Polo de outra equipe: só a administração ou a coordenação dele altera", ...it });
+      continue;
+    }
     if (!dryRun) {
       if (existing) {
         // eslint-disable-next-line no-await-in-loop

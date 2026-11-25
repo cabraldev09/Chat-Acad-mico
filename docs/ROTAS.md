@@ -12,11 +12,15 @@ Públicas: 40 · logado (qualquer perfil): 328 · gestão: 182 · admin: 37
 | tutor, academico | os leads em que é o responsável e os alunos dados a ele (Ambientação e Alunos da tutoria: também os do seu polo ainda sem tutor) |
 | relacionamento | só os matriculados dos polos em que está; sem polo, nenhum |
 
-A mesma regra vale em toda porta do CRM: lista, quadro, busca, ficha do lead e o que pende dela (atividades, tarefas, propostas,
+A mesma regra vale nas telas do CRM de leads: lista, quadro, busca, ficha do lead e o que pende dela (atividades, tarefas, propostas,
 cobranças, documentos), contagens do Painel do CRM, novos para conferir, tarefas da equipe, Relatório do CRM (CSV), Matrículas
 realizadas, comissões, Alunos da tutoria e Avisos da tutoria, Retenção e os avisos em tempo real de lead, risco e satisfação.
-A coordenação continua com os poderes da gestão (`isAdminReq`): o que muda é o que ela vê. Ela só muda a equipe dos polos em que está.
-Conversas (Atendimento) seguem a regra das filas e setores (`canAccessTicket.ts`), não esta.
+A coordenação continua com os poderes da gestão (`isAdminReq`): o que muda é o que ela vê. Ela só muda a equipe e os dados (cidades
+atendidas, nome, exclusão, importação) dos polos em que está.
+
+**Ainda NÃO isolado por polo para a coordenação:** conversas (Atendimento) e contatos. A coordenação lê qualquer conversa e suas
+mensagens (`canAccessTicket.ts`, também em tempo real) e, por elas, os contatos; `GET /contacts` e a planilha de contatos trazem
+todos os contatos. Isso fica para um PR próprio; até lá, este isolamento vale para os leads do CRM, não entre franquias por inteiro.
 
 ## Públicas (sem login)
 
