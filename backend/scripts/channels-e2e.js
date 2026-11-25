@@ -1606,6 +1606,63 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put(`/proposal-templates/${made.data.id}`, { active: true }, auth())).data.active === true, "reactivate");
       await http.delete(`/proposal-templates/${made.data.id}`, auth());
     });
+    await test("a model saves with an empty number field (the 'Graduação FAMAR' error), creating and editing", async () => {
+      const made = await http.post("/proposal-templates", { name: "Modelo Campo Vazio Teste", enrollmentFee: "", dueDay: 10, installments: "", installmentsFixed: "", bolsaFirst: 30, bolsaNext: 30 }, auth());
+      assert(made.status === 201, `create with empty fields ${made.status} ${JSON.stringify(made.data)}`);
+      const edited = await http.put(`/proposal-templates/${made.data.id}`, { installments: "", cardRatePct: "", observation: "ok" }, auth());
+      assert(edited.status === 200 && edited.data.observation === "ok", `edit with empty fields ${edited.status} ${JSON.stringify(edited.data)}`);
+      await http.delete(`/proposal-templates/${made.data.id}`, auth());
+    });
+    await test("installment proposals (SESTED and Cruzeiro pós): installments by duration, fees, single payment with Pix and card", async () => {
+      const tpl = await http.post("/proposal-templates", {
+        name: "Pós Parcelada Teste", planType: "parcelado", installments: "", installmentsByDuration: "6=12\n9=15\n12=18", enrollmentFee: 0, dueDay: 10,
+        bolsaFirst: 0, bolsaNext: 0, chargeCertification: true, certificationFee: 150, pixDiscountPct: 10, cardMaxInstallments: 10, cardRatePct: 1.99, cardPassInterest: true,
+        courseLevels: ["Pós-graduação"]
+      }, auth());
+      assert(tpl.status === 201 && tpl.data.planType === "parcelado", `template ${tpl.status} ${JSON.stringify(tpl.data).slice(0, 300)}`);
+      const imp = await http.post("/courses/import", { items: [
+        { name: "Pós Gestão Parcelada Teste", category: "Pós-graduação", level: "Pós-graduação", modality: "EAD", monthlyFee: "300,00", durationMonths: "9", enrollmentFee: "80,00", certificationFee: "150,00" },
+        { name: "Profissionalizante Teste", category: "Profissionalizante", level: "Profissionalizante", modality: "EAD", monthlyFee: "1.200,00", durationMonths: "3", installmentsTotal: "1", singlePayment: "Sim" },
+        { name: "Pós Duração Errada Teste", category: "Pós-graduação", modality: "EAD", monthlyFee: "300", durationMonths: "abc" },
+        { name: "Graduação Nível Teste", category: "Graduação", level: "Bacharelado", modality: "EAD", monthlyFee: "900", semesters: "8" }] }, auth());
+      assert(imp.data.created === 3 && imp.data.errors === 1, `import ${JSON.stringify(imp.data)}`);
+      assert(sql("SELECT durationMonths||'/'||enrollmentFee||'/'||certificationFee FROM Courses WHERE name='Pós Gestão Parcelada Teste'") === "9/80.00/150.00", "the new columns of the spreadsheet");
+      assert(sql("SELECT singlePayment FROM Courses WHERE name='Profissionalizante Teste'") === "1", "single payment column");
+      const pos = Number(sql("SELECT id FROM Courses WHERE name='Pós Gestão Parcelada Teste'"));
+      const lead = (await http.post("/leads", { name: "Lead Pós Teste", phone: "11 95555-0091", source: "Indicação", courseId: pos }, auth())).data.lead;
+      const d = await http.get(`/proposals/defaults?leadId=${lead.id}&templateId=${tpl.data.id}`, auth());
+      assert(d.status === 200 && d.data.params.planType === "parcelado" && d.data.params.installmentsTotal === 15, `9 months should be 15 installments: ${JSON.stringify(d.data.params || d.data).slice(0, 300)}`);
+      assert(d.data.params.enrollmentFee === 80 && d.data.params.certification === "charge" && d.data.params.certificationFee === 150, "the fees of the course");
+      // the automatic choice: a graduate course gets a model of its level; a graduation course never gets it
+      const auto = await http.get(`/proposals/defaults?leadId=${lead.id}`, auth());
+      assert(auto.status === 200 && auto.data.params.planType === "parcelado", `a graduate course got a graduation model: ${auto.data.templateId}`);
+      const grad = Number(sql("SELECT id FROM Courses WHERE name='Graduação Nível Teste'"));
+      const gLead = (await http.post("/leads", { name: "Lead Graduação Nível Teste", phone: "11 95555-0092", source: "Indicação", courseId: grad }, auth())).data.lead;
+      const g = await http.get(`/proposals/defaults?leadId=${gLead.id}`, auth());
+      assert(g.status === 200 && g.data.params.planType !== "parcelado" && g.data.templateId !== tpl.data.id, `a graduation course got the graduate model ${g.data.templateId}`);
+      const prev = p => http.post("/proposals/preview", { leadId: lead.id, templateId: tpl.data.id, params: { ...d.data.params, ...p } }, auth());
+      const plain = await prev({});
+      assert(plain.status === 200 && plain.data.result.plan.installments === 15 && plain.data.result.plan.total === 4500, `plan ${plain.status} ${JSON.stringify(plain.data.result || plain.data).slice(0, 300)}`);
+      assert(/Parcelas:<\/b> 15 de R\$\s?300,00/.test(plain.data.html) && /Taxa de certificação:<\/b> R\$\s?150,00/.test(plain.data.html) && !plain.data.html.includes("Projeção por semestre"), "the PDF of an installment proposal");
+      assert(/15 de R\$\s?300,00/.test(plain.data.messages.map(m => m.text).join("\n")), "the WhatsApp summary");
+      const exempt = await prev({ certification: "exempt", enrollmentExempt: true, firstExempt: true, firstMonthly: 0 });
+      assert(exempt.status === 200 && /Taxa de certificação:<\/b> isenta/.test(exempt.data.html) && /Taxa de matrícula:<\/b> isenta/.test(exempt.data.html), "waived fees");
+      assert(exempt.data.result.plan.total === 4200, `waived 1st: ${exempt.data.result.plan.total}`);
+      const edited = await prev({ certificationFee: 200, monthly: 280, installmentsTotal: 12 });
+      assert(edited.status === 200 && /Taxa de certificação:<\/b> R\$\s?200,00/.test(edited.data.html) && edited.data.result.plan.installments === 12, "edited certification and installments");
+      const single = await prev({ singlePayment: true, singleValue: 1000, pixDiscountPct: 10, cardInstallments: 10, cardRatePct: 1.99, cardPassInterest: true });
+      const s = single.data.result.plan.single;
+      assert(single.status === 200 && s.value === 1000 && s.pix === 900 && Math.abs(s.card.installment - 111.25) < 0.1, `single payment ${JSON.stringify(s)}`);
+      const noPass = (await prev({ singlePayment: true, singleValue: 1000, cardInstallments: 10, cardRatePct: 1.99, cardPassInterest: false })).data.result.plan.single;
+      assert(noPass.card.installment === 100 && noPass.card.total === 1000, `card without passing interest ${JSON.stringify(noPass.card)}`);
+      assert(/Pix:<\/b> R\$\s?900,00/.test(single.data.html) && /Cartão de crédito:<\/b> 10x de R\$/.test(single.data.html), "payment methods in the PDF");
+      // the graduation reference is untouched by the new model
+      const ref = await previewFor(REF1);
+      assert(ref.result.rows.length === REF1.rows.length && !ref.result.plan, "graduation turned into an installment proposal");
+      await http.delete(`/proposal-templates/${tpl.data.id}`, auth());
+      // out of the catalog, so the AI scenarios further on do not see them
+      sql("UPDATE Courses SET active=false WHERE name IN ('Pós Gestão Parcelada Teste','Profissionalizante Teste','Graduação Nível Teste')");
+    });
     let prop, propCourse;
     await test("a draft saves without the base data, but the PDF and the sending ask for the admission, the course and the deadline", async () => {
       propCourse = (await http.post("/courses", { name: "Administração Proposta Teste", modality: "EAD", category: "Graduação - Teste", semesters: 6, monthlyFee: REF1.gross, active: true }, auth())).data;
@@ -2769,7 +2826,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sent.status === 200, `send ${sent.status} ${JSON.stringify(sent.data)}`);
       const out = tg.sent.slice(before);
       // one message: the PDF with the summary as its description (as when a document is attached with a caption)
-      assert(out.length === 1 && out[0].method === "sendDocument" && /Cst em Marketing/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
+      // the course is the name of the file; the caption starts with the duration and does not repeat the course
+      assert(out.length === 1 && out[0].method === "sendDocument" && !/Matriz curricular:/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
       assert((await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket), summary: false, pdf: false }, auth())).status === 400, "nothing to send accepted");
       // the contact can be chosen instead of a conversation: its open conversation is used
       const tgTicketData = (await http.get(`/tickets/${tgTicket}`, auth())).data;
@@ -3069,7 +3127,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.delete(`/payments/efi/wallets/${cb.id}`, auth())).data.informed === false, "admin wallet removal");
       assert((await http.put("/payments/efi/wallets/999999", { payeeCode: "ZZZZ1111YYYY2222" }, auth())).status === 404, "wallet of a missing user");
     });
-    await test("coordinator: manages every polo and sees every lead, creates the team but never administrators, no access to payment credentials", async () => {
+    await test("coordinator: manages the team and sees the leads of its polos only, never administrators, no access to payment credentials", async () => {
       const made = await http.post("/users", { name: "Coord Comercial", email: "coord-c@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
       assert(made.status === 200 && made.data.role === "coordenacao" && made.data.coordArea === "comercial", `create coordinator ${made.status} ${JSON.stringify(made.data).slice(0, 160)}`);
       const academic = (await http.post("/users", { name: "Coord Acadêmica", email: "coord-a@x.com", password: "senha123", role: "coordenacao", coordArea: "academica" }, auth())).data;
@@ -3094,11 +3152,17 @@ const postMeta = (id, payload, secret, badSig) => {
       assert([200, 204].includes((await http.delete(`/users/${throwaway.id}`, as)).status), "coordinator cannot remove a member of the team");
       assert((await http.delete(`/users/${adminId}`, as)).status === 403, "coordinator removed an administrator");
 
-      // every polo and every lead, whatever the polo
+      // the leads of its polos only (middleware/scope): a lead with no polo (or of another polo) stays with the administration
       const lead = (await http.post("/leads", { name: "Lead sem dono", phone: "5569988887771", source: "Site" }, auth())).data.lead;
-      assert((await http.get(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot open any lead");
+      assert((await http.get(`/leads/${lead.id}`, as)).status === 403, "coordinator opened a lead outside its polos");
       assert((await http.get("/polos", as)).status === 200, "polos list");
-      assert((await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as)).status === 201, "coordinator creating a polo");
+      const coordPolo = await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as);
+      assert(coordPolo.status === 201, "coordinator creating a polo");
+      // it does not put itself in a polo it is not part of; the administration does
+      assert((await http.post(`/polos/${coordPolo.data.id}/members/${made.data.id}`, { role: "coordenacao" }, as)).status === 403, "coordinator joined a polo by itself");
+      assert((await http.post(`/polos/${coordPolo.data.id}/members/${made.data.id}`, { role: "coordenacao" }, auth())).status === 200, "administration cannot put the coordinator in the polo");
+      sql(`UPDATE Leads SET poloId = ${Number(coordPolo.data.id)} WHERE id = ${Number(lead.id)}`);
+      assert((await http.get(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot open a lead of its polo");
 
       // the credentials and integration secrets are the administrator's alone (not coordination): payment gateway,
       // API tokens, webhook secrets, AI keys and e-mail/SMTP
@@ -4800,7 +4864,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const llmMa2 = anthropic.requests.length;
       out = await say(MA, "wamid.ma-5", "Sim, pode continuar", t => t.some(x => /Você tem alguma dúvida sobre o curso ou o formato\?/.test(x)), "MA grade, tutoring and internship");
       const ma5 = out.join("\n");
-      assert(/\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
+      // with the PDF the file carries the course's name and the caption does not repeat it; without the PDF the summary has the title
+      const maDoc = graph.sent.filter(x => x.body && x.body.type === "document" && String(x.body.to || "").endsWith(MA.slice(-8))).pop();
+      if (maDoc) assert(/^Biomedicina/.test(maDoc.body.document.filename) && !/Matriz curricular:/.test(maDoc.body.document.caption || ""), `MA grade file: ${JSON.stringify(maDoc.body.document).slice(0, 200)}`);
+      assert((maDoc || /\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5)) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
       assert(/Sobre a tutoria, esse é um diferencial importante/.test(ma5) && /começa no 6º semestre e soma 640 horas/.test(ma5) && /convênios com órgãos públicos/.test(ma5), `MA tutoring and internship: ${ma5}`);
       assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
       out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /simular as bolsas disponíveis para você, pode me informar o seu nome completo e CPF/.test(x)), "MA name and CPF asked");
@@ -4808,6 +4875,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/^\W*Para o consultor do seu polo simular as bolsas/.test(out[out.length - 1]), `MA bolsa: ${out}`);
       // the copilot follows the conversation: the name and the CPF were just asked, so it does not suggest asking again; it says it waits and
       // offers a short reminder (never the same message, never "Caso não tenha" out of place)
+      // the agent of this course does not speak of the faculty: before it, the step "Corpo docente" is the next one; the consultant marks it
+      const beforeFaculty = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
+      assert(beforeFaculty.current === "docentes", `the faculty step: ${beforeFaculty.current}`);
+      await http.put(`/tickets/${ticketOf(MA)}/copilot/progress`, { key: "docentes", done: true }, auth());
       const copWait = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(copWait.current === "bolsa" && copWait.suggestion.kind === "waiting" && /Você já pediu o nome completo e o CPF/.test(copWait.suggestion.note), `copilot while waiting: ${JSON.stringify(copWait.suggestion)}`);
       assert(/conseguiu ver a minha mensagem/.test(copWait.suggestion.text) && !/Caso não tenha/.test(copWait.suggestion.text), `copilot reminder: ${copWait.suggestion.text}`);
@@ -4819,7 +4890,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // the copilot of the consultant reads the same conversation: everything up to the name and CPF is done, the proposal is next, with no model call
       const cop = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(cop.hasLead && cop.current === "proposal", `copilot step: ${JSON.stringify(cop.steps)}`);
-      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,grade,doubts,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
+      // the simple process (11 steps): the tutoring and the faculty count when the agent told them
+      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,tutoria,grade,docentes,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
       assert(cop.suggestion && cop.suggestion.action === "proposal" && /proposta da sua bolsa/.test(cop.suggestion.text) && !emoji.test(cop.suggestion.text), `copilot text: ${JSON.stringify(cop.suggestion)}`);
       assert(anthropic.requests.length === llmMa2, "the copilot called the model");
       assert(cop.course && cop.course.semPratica === false && /Semipresencial: 30% de prática presencial/.test(cop.course.resumo), `copilot course rule: ${JSON.stringify(cop.course)}`);
@@ -4831,7 +4903,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/tickets/${tMA}/take`, {}, auth())).status === 200, "the consultant takes the conversation");
       const copNow = async () => (await http.get(`/tickets/${tMA}/copilot`, auth())).data;
       const consultantSays = async text => { const r = await http.post(`/messages/${tMA}`, { body: text }, auth()); assert(r.status === 200, `consultant message ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`); };
-      assert((await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.some(x => x.key === "objective" && x.optional), "the objective is an optional step");
+      const simple = (await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.map(x => x.key).join(",");
+      assert(simple === "course,entry,city,format,tutoria,grade,docentes,bolsa,proposal,ficha,enroll", `the simple process of 11 steps: ${simple}`);
       await consultantSays("Maira, segue a proposta da sua bolsa para o curso de Biomedicina.");
       let cp = await copNow();
       // the sentence alone is not a proposal: the step waits for a proposal really sent (the PDF)
@@ -4846,14 +4919,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // asked is not sent: the step waits for the form (by the link) or the documents in the conversation, with a reminder meanwhile
       assert(cp.current === "ficha" && cp.suggestion.kind === "waiting", `the form counted as sent when it was only asked: ${cp.current} ${cp.suggestion && cp.suggestion.kind}`);
       await inboundCloud(MA, "wamid.ma-ficha", "Segue o meu RG e o nome da mãe é Maria");
-      await waitFor(async () => (await copNow()).current === "taxa", 15000, "the documents in the conversation completed the form step");
-      cp = await copNow();
-      assert(cp.current === "taxa" && /boleto da taxa de matrícula/.test(cp.suggestion.text) && /comprovante/.test(cp.suggestion.text), `after the form: ${cp.current}`);
-      await consultantSays(cp.suggestion.text);
-      cp = await copNow();
-      assert(cp.current === "comprovante", `after the fee: ${cp.current}`);
-      await inboundCloud(MA, "wamid.ma-pix", "Pix feito, segue o comprovante");
-      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the proof of payment moved the process to the enrollment");
+      // the fee and its proof are part of the enrollment step (no steps of their own any more)
+      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the documents in the conversation completed the form step");
       cp = await copNow();
       assert(cp.suggestion.action === "enroll" && /matrícula/.test(cp.suggestion.text) && /Biomedicina/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `enrollment step: ${JSON.stringify(cp.suggestion)}`);
       // before it is registered in the CRM, the lead is never told the enrollment is confirmed
@@ -5611,7 +5678,11 @@ const postMeta = (id, payload, secret, badSig) => {
       const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const tutorR = await mkUser("Tutora Retencao", "tutorr@ret.test", "tutor");
       const poloR = (await http.post("/polos", { name: "Polo Retencao", code: "RET1", state: "RO" }, auth())).data;
-      await http.put(`/polos/${poloR.id}/members`, { members: [{ userId: tutorR.id, role: "tutoria" }] }, auth());
+      // the academic coordinator sees the students of the polos it belongs to (middleware/scope): it is in the team of this polo
+      const coordAcId = Number(sql(`SELECT id FROM Users WHERE email = 'coord-a@x.com'`));
+      await http.put(`/polos/${poloR.id}/members`, { members: [{ userId: tutorR.id, role: "tutoria" }, { userId: coordAcId, role: "coordenacao" }] }, auth());
+      await mkUser("Coord Acadêmica sem polo", "coord-a-np@ret.test", "coordenacao");
+      sql(`UPDATE Users SET coordArea = 'academica' WHERE email = 'coord-a-np@ret.test'`);
       const tutorTok = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;
       const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const coordCom = (await http.post("/auth/login", { email: "coord-c@x.com", password: "senha123" })).data.token;
@@ -5692,6 +5763,11 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(rc && rc.days >= 45 && rc.level === "attention" && risk.riskDays === 30, `risk ${JSON.stringify(rc)}`);
       assert(!risk.students.some(x => x.id === ana.leadId), "a student with recent news is at risk");
       assert((await http.get("/retention/risk", asUser(coordAc))).data.students.some(x => x.id === carla.leadId), "the academic coordinator does not see the student at risk");
+      // an academic coordinator outside the polo of the student does not see it, nor acts on it
+      const coordNp = (await http.post("/auth/login", { email: "coord-a-np@ret.test", password: "senha123" })).data.token;
+      const npRisk = await http.get("/retention/risk", asUser(coordNp));
+      assert(npRisk.status === 200 && !npRisk.data.students.some(x => x.id === carla.leadId), "an academic coordinator outside the polo saw the student at risk");
+      assert((await http.post(`/retention/nps/send/${carla.leadId}`, {}, asUser(coordNp))).status === 403, "an academic coordinator outside the polo sent a survey to the student");
       await http.post("/retention/run", {}, auth());
       assert(/Risco de evasão/.test(labelsOf(carla.leadId)), "no risk label");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${carla.leadId} AND title LIKE 'Retenção:%'`)) === 1, "no retention task");
@@ -7008,7 +7084,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const tutorX = await mkUser("Tutor Envios", "tutorx@env.test", "tutor");
       const poloX = (await http.post("/polos", { name: "Polo Envios", code: "ENV1", state: "RO" }, auth())).data;
-      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }] }, auth());
+      // the academic coordinator is in the team of this polo: it sees its students (middleware/scope)
+      const coordAcId = Number(sql(`SELECT id FROM Users WHERE email = 'coord-a@x.com'`));
+      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }, { userId: coordAcId, role: "coordenacao" }] }, auth());
       const tutorTok = (await http.post("/auth/login", { email: "tutorx@env.test", password: "senha123" })).data.token;
       const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
@@ -7364,6 +7442,12 @@ const postMeta = (id, payload, secret, badSig) => {
       const adminNps = (await http.get("/retention/nps", auth())).data;
       assert(adminNps.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the management does not see the answer");
       assert((await http.get("/retention/nps", asUser(tutor))).status === 403 && (await http.get("/retention/nps.csv", asUser(tutor))).status === 403, "a tutor read the satisfaction answers");
+      // the academic coordinator sees the answers of the students of its polos only: outside them, nothing
+      const coordNp = (await http.post("/auth/login", { email: "coord-a-np@ret.test", password: "senha123" })).data.token;
+      assert(!(await http.get("/retention/nps", asUser(coordNp))).data.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "an academic coordinator outside the polo read the answer");
+      const otherPolo = sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id = ${other}`);
+      if (otherPolo) sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) SELECT ${otherPolo}, id, 'coordenacao', NOW(), NOW() FROM Users WHERE email = 'coord-a@x.com' AND NOT EXISTS (SELECT 1 FROM PoloMembers pm WHERE pm.poloId = ${otherPolo} AND pm.userId = Users.id)`);
+      else sql(`UPDATE Leads SET poloId = (SELECT id FROM Polos WHERE code = 'RET1') WHERE id = ${other}`);
       assert((await http.get("/retention/nps", asUser(coordAc))).data.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the academic coordinator does not see the answers");
       assert(Array.isArray(adminNps.series) && adminNps.series.length >= 1 && adminNps.series[0].week && typeof adminNps.commentsTotal === "number", "series by week");
       adminNps.byKind.forEach(k => assert(Object.prototype.hasOwnProperty.call(k, "nps"), "byKind without nps"));
@@ -7727,7 +7811,7 @@ const postMeta = (id, payload, secret, badSig) => {
       { const off = (await http.get("/copilot/settings", auth())).data; off.aiEnabled = false; await http.put("/copilot/settings", off, auth()); }
       const before = anthropic.requests.length;
       let view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
-      assert(view.enabled && !view.hasLead && view.steps.length === 15 && view.current === "course", "no process for unlinked contact");
+      assert(view.enabled && !view.hasLead && view.steps.length === 11 && view.current === "course", "no process for unlinked contact");
       assert(!view.aiAvailable && anthropic.requests.length === before, "process used paid generation");
       assert((await http.post(`/tickets/${tid}/suggest-reply`, {}, auth())).status === 403, "AI opt-in ignored");
       assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"course",done:true}, auth())).data.current === "entry", "step not saved");

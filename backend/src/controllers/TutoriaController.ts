@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 
 import AppError from "../errors/AppError";
 import { isManagerRole, roleOf } from "../helpers/Roles";
+import { crmPolosOf } from "../middleware/scope";
 import Lead from "../models/Lead";
 import Queue from "../models/Queue";
 import { connectionOfTeam } from "../services/ChannelServices/ConnectionTeam";
@@ -18,7 +19,10 @@ export const students = async (req: Request, res: Response): Promise<Response> =
   const manager = isManagerRole(roleOf(req.user));
   if (!manager && !isTutor(req)) throw new AppError("ERR_NO_PERMISSION", 403);
   const tutorId = manager ? (req.query.tutorId === "none" ? "none" : Number(req.query.tutorId) || null) : Number(req.user.id);
-  const list = await listStudents({ tutorId, poloId: manager ? Number(req.query.poloId) || null : null });
+  // the coordination: the students of its polos only (a polo outside them reads as none)
+  const polos = manager ? await crmPolosOf(req) : null;
+  const asked = manager ? Number(req.query.poloId) || null : null;
+  const list = await listStudents({ tutorId, poloId: polos ? null : asked, poloIds: polos ? (asked ? polos.filter(id => id === asked) : polos) : null });
   return res.json({ ...list, ...(manager ? await tutorsAndPolos() : {}) });
 };
 
@@ -28,7 +32,7 @@ export const panel = async (req: Request, res: Response): Promise<Response> => {
   const to = req.query.to ? new Date(`${req.query.to}T23:59:59`) : new Date();
   const from = req.query.from ? new Date(`${req.query.from}T00:00:00`) : new Date(to.getTime() - 30 * 86400000);
   if (Number.isNaN(+from) || Number.isNaN(+to) || from > to) throw new AppError("ERR_INVALID_PERIOD", 400);
-  return res.json(await tutorPanel(from, to));
+  return res.json(await tutorPanel(from, to, await crmPolosOf(req)));
 };
 
 // opens (or finds) the student's conversation on the tutoring number, with the student's tutor; outside the 24 hours the screen offers
@@ -39,6 +43,8 @@ export const openConversation = async (req: Request, res: Response): Promise<Res
   const lead = await Lead.findByPk(req.params.leadId, { attributes: ["id", "contactId", "poloId", "onboardingTutorId"] });
   if (!lead || !lead.contactId) throw new AppError("ERR_NOT_FOUND", 404);
   if (!manager && lead.onboardingTutorId !== Number(req.user.id)) throw new AppError("ERR_NO_PERMISSION", 403);
+  const polos = manager ? await crmPolosOf(req) : null;
+  if (polos && !polos.includes(Number(lead.poloId))) throw new AppError("ERR_NO_PERMISSION", 403);
   const number = await connectionOfTeam("tutoria");
   if (!number) throw new AppError("ERR_TEAM_NO_TUTORIA_NUMBER", 400);
   const queue = lead.poloId ? await Queue.findOne({ where: { poloId: lead.poloId, role: "tutoria" } as any, attributes: ["id"] }) : null;
@@ -72,11 +78,11 @@ const noticeScope = (req: Request): number | null => {
 export const noticePreview = async (req: Request, res: Response): Promise<Response> => {
   const tutorOnly = noticeScope(req);
   const { cleanNotice, previewNotice, publicPreview } = await import("../services/TutoriaServices/Notices");
-  return res.json(publicPreview(await previewNotice(cleanNotice(req.body), tutorOnly, Number(req.user.id))));
+  return res.json(publicPreview(await previewNotice({ ...cleanNotice(req.body), poloIds: tutorOnly ? null : await crmPolosOf(req) }, tutorOnly, Number(req.user.id))));
 };
 export const noticeSend = async (req: Request, res: Response): Promise<Response> => {
   const tutorOnly = noticeScope(req);
   if (req.body?.confirm !== true) throw new AppError("ERR_NOTICE_CONFIRM", 400);
   const { cleanNotice, sendNotice } = await import("../services/TutoriaServices/Notices");
-  return res.json(await sendNotice(cleanNotice(req.body), Number(req.user.id), tutorOnly));
+  return res.json(await sendNotice({ ...cleanNotice(req.body), poloIds: tutorOnly ? null : await crmPolosOf(req) }, Number(req.user.id), tutorOnly));
 };
