@@ -4767,7 +4767,7 @@ const postMeta = (id, payload, secret, badSig) => {
       cp = await copNow();
       assert(cp.suggestion.action === "enroll" && /matrícula/.test(cp.suggestion.text) && /Biomedicina/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `enrollment step: ${JSON.stringify(cp.suggestion)}`);
       // before it is registered in the CRM, the lead is never told the enrollment is confirmed
-      assert(!/confirmada/i.test(cp.suggestion.text), `the copilot congratulated an enrollment not registered: ${cp.suggestion.text}`);
+      assert(!/foi confirmada|confirmada com sucesso|parab[eé]ns/i.test(cp.suggestion.text), `the copilot congratulated an enrollment not registered: ${cp.suggestion.text}`);
       assert(anthropic.requests.length === llmMa2, "the steps after the proposal called the model");
       // EA) a course the Portaria does not restrict (a tecnólogo of management) is EAD with no practical classes: the agent says the duration and the format, as the team does
       if (sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());

@@ -565,7 +565,8 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
 export const undoEnrollment = async (lead: Lead, actorId: number | null): Promise<void> => {
   if (!lead.enrolledAt) return;
   const wasDone = lead.onboardingStatus === "done";
-  lead.set({ enrolledAt: null, onboardingStatus: null, onboardingTutorId: wasDone ? lead.onboardingTutorId : null, onboardingStartedAt: wasDone ? lead.onboardingStartedAt : null, onboardingAlertAt: null } as any);
+  // (the tutor stays when the ambientação was done: it is history; the board only shows enrolled students)
+  lead.set({ enrolledAt: null, onboardingStatus: "none", onboardingTutorId: wasDone ? lead.onboardingTutorId : null, onboardingStartedAt: wasDone ? lead.onboardingStartedAt : null, onboardingAlertAt: null } as any);
   await lead.save();
   const { closeTasksFor } = await import("./TaskLifecycle");
   await closeTasksFor(lead.id, ["onboarding", "onboarding_late"], "enrollment_undone");
