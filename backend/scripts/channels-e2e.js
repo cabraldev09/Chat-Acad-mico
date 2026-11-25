@@ -1060,7 +1060,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // (a value that is itself one of the codes of the answer, like the origin "Instagram" or the channel "instagram", is a code, not a person)
       const leak = people.filter(p => !codes.has(p.toLowerCase())).find(p => text.toLowerCase().includes(p.toLowerCase()));
       assert(!leak, `the indicators carry personal data: ${leak}`);
-      assert(!/Pessoal|joana|pedro|rita|29537914852|5569933330001/i.test(text), "the indicators carry the data of the seeded people");
+      // (the seeded people one by one: "pessoal" alone is a code of the answer, the function of a personal number)
+      for (const v of ["Joana Pessoal", "Pedro Pessoal", "Rita Pessoal", "joana.indicadores", "pedro.indicadores", "rita.indicadores", "29537914852", "5569933330001", "5569933330002", "5569933330003", "7999001", "falou do preço"]) assert(!text.toLowerCase().includes(v.toLowerCase()), `the indicators carry the data of a seeded person: ${v}`);
 
       // the content: polo A has the follow-up, the task, the enrollment and the review of the consultant, by codes
       const a = r.data.polos.find(p => p.poloId === Number(poloA));
