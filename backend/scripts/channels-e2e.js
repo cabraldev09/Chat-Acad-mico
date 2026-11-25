@@ -944,7 +944,7 @@ const postMeta = (id, payload, secret, badSig) => {
     // ------------------------------------------------------ Outbound webhooks
     console.log("\napi & webhooks");
     await test("API token sends through any channel and rejects bad tokens", async () => {
-      const t = (await http.post("/api-tokens", { name: "e2e" }, auth())).data.token;
+      const t = (await http.post("/api-tokens", { name: "e2e", scopes: ["connections:read", "messages:send"] }, auth())).data.token;
       assert((await http.get("/api/v1/connections", { headers: { Authorization: "Bearer wrong" } })).status >= 400, "bad token accepted");
       const list = (await http.get("/api/v1/connections", { headers: { Authorization: `Bearer ${t}` } })).data;
       assert(list.length >= 5, `connections=${list.length}`);
@@ -952,6 +952,73 @@ const postMeta = (id, payload, secret, badSig) => {
       const r = await http.post("/api/v1/messages/send", { number: "5511988887777", body: "Olá {{name}}!", whatsappId: cid, name: "Lead API" }, { headers: { Authorization: `Bearer ${t}` } });
       assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
       assert(graph.sent.slice(before).some(x => x.body && x.body.to === "5511988887777"), "not sent through cloud api");
+    });
+
+    // API v1 tokens (docs/API-V1.md): each route asks for its scope, a token of some polos reads only those polos, a token that expired is
+    // refused, the token itself is never in the database (only its SHA-256), the ones made before the scopes keep full access (legacy)
+    // and the old single token of Configurações can be turned off.
+    await test("API tokens: scopes, polos, validity, kept only as a hash, legacy tokens and the old token of Configurações", async () => {
+      const api = (t, method, url, body) => http.request({ method, url, data: body, headers: { Authorization: `Bearer ${t}` } });
+      const mk = async body => { const r = await http.post("/api-tokens", body, auth()); assert(r.status === 201, `token ${r.status} ${JSON.stringify(r.data)}`); return r.data; };
+      assert((await http.post("/api-tokens", { name: "sem escopo" }, auth())).status === 400, "a token without scopes was created");
+      assert((await http.post("/api-tokens", { name: "tudo", scopes: ["*"] }, auth())).status === 400, "a token with full access was created");
+      assert((await http.post("/api-tokens", { name: "longo", scopes: ["leads:read"], expiresInDays: 400 }, auth())).status === 400, "a token of more than a year was created");
+
+      // a read-only token does not send messages
+      const reader = await mk({ name: "só leitura", scopes: ["leads:read"] });
+      const denied = await api(reader.token, "post", "/api/v1/messages/send", { number: "5511988887777", body: "oi", whatsappId: cid });
+      assert(denied.status === 403 && denied.data.error === "ERR_API_TOKEN_SCOPE", `read-only token sent a message: ${denied.status} ${JSON.stringify(denied.data)}`);
+      assert((await api(reader.token, "post", "/api/v1/leads", { name: "X", phone: "5511977776666" })).status === 403, "read-only token created a lead");
+      assert((await api(reader.token, "get", "/api/v1/contacts")).status === 403, "a leads token read the contacts");
+      assert((await api(reader.token, "get", "/api/v1/leads")).status === 200, "read-only token cannot read leads");
+
+      // a token of polo A does not see the leads of polo B, and the answer has only the fields of the integration
+      const poloA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('APA', 'Polo API A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const poloB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('APB', 'Polo API B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      sql(`INSERT INTO Leads (name, phone, cpf, source, stageId, poloId, isHistorical, createdAt, updatedAt) VALUES ('APIPOLO A', '5569911110001', '11144477735', 'API', ${open}, ${poloA}, false, NOW(), NOW()), ('APIPOLO B', '5569911110002', NULL, 'API', ${open}, ${poloB}, false, NOW(), NOW())`);
+      const ofA = await mk({ name: "polo A", scopes: ["leads:read", "messages:send"], poloIds: [Number(poloA)] });
+      const seen = (await api(ofA.token, "get", "/api/v1/leads?limit=200")).data;
+      assert(seen.some(l => l.name === "APIPOLO A") && !seen.some(l => l.name === "APIPOLO B"), `token of polo A: ${JSON.stringify(seen.map(l => l.name))}`);
+      assert(seen.every(l => Number(l.poloId) === Number(poloA)), "token of polo A read a lead of another polo");
+      assert(seen.every(l => !("cpf" in l) && !("notes" in l)), `the API answered personal fields: ${Object.keys(seen[0] || {}).join(",")}`);
+      const all = (await api(reader.token, "get", "/api/v1/leads?limit=200")).data;
+      assert(all.some(l => l.name === "APIPOLO A") && all.some(l => l.name === "APIPOLO B"), "a token of every polo misses a polo");
+      // and it writes only to people of its polos
+      assert((await api(ofA.token, "post", "/api/v1/messages/send", { number: "5569911110002", body: "oi", whatsappId: cid })).status === 403, "token of polo A wrote to a lead of polo B");
+
+      // a token that expired is refused
+      const old = await mk({ name: "vencido", scopes: ["leads:read"], expiresInDays: 1 });
+      sql(`UPDATE ApiTokens SET expiresAt = NOW() - INTERVAL '1 minute' WHERE id = ${old.id}`);
+      const expired = await api(old.token, "get", "/api/v1/leads");
+      assert(expired.status === 401 && expired.data.error === "ERR_API_TOKEN_EXPIRED", `expired token: ${expired.status} ${JSON.stringify(expired.data)}`);
+
+      // the token is never in the database: only its SHA-256 and the prefix; the list never shows it
+      const sha = t => crypto.createHash("sha256").update(t).digest("hex");
+      assert(sql(`SELECT tokenHash FROM ApiTokens WHERE id = ${reader.id}`) === sha(reader.token), "the hash is not the SHA-256 of the token");
+      assert(Number(sql(`SELECT COUNT(*) FROM ApiTokens WHERE token IS NOT NULL`)) === 0, "a token is kept in plain text");
+      for (const t of [reader.token, ofA.token]) assert(!sql(`SELECT string_agg(CONCAT_WS('|', name, tokenHash, tokenPrefix, scopes, poloIds), ';') FROM ApiTokens`).includes(t), "the token is in the database");
+      const listed = JSON.stringify((await http.get("/api-tokens", auth())).data);
+      assert(!listed.includes(reader.token) && !listed.includes(sha(reader.token)) && listed.includes(reader.token.slice(0, 9)), "the list shows the token or its hash");
+
+      // a token made before the scopes (plain text): the migration turns it into a hash, with full access, marked legacy
+      const plain = `wt_${crypto.randomBytes(24).toString("hex")}`;
+      sql(`INSERT INTO ApiTokens (name, token, createdAt, updatedAt) VALUES ('integração antiga', '${plain}', NOW(), NOW())`);
+      execFileSync(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; (async()=>{ await require("./dist/database/migrations/20270101000102-hash-api-tokens").up(db.getQueryInterface()); })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 25000 });
+      assert(sql(`SELECT CONCAT(COALESCE(token, 'null'), '|', tokenHash, '|', scopes, '|', CAST(legacy AS INTEGER)) FROM ApiTokens WHERE name = 'integração antiga'`) === `null|${sha(plain)}|["*"]|1`, "the legacy token was not turned into a hash with full access");
+      assert((await api(plain, "get", "/api/v1/leads")).status === 200 && (await api(plain, "get", "/api/v1/connections")).status === 200, "the legacy token lost its access");
+      assert((await http.get("/api-tokens", auth())).data.some(t => t.name === "integração antiga" && t.legacy === true), "the screen does not mark the legacy token");
+
+      // the old single token of Configurações: on by default, the administrator turns it off (and only the administrator)
+      const settingsToken = sql(`SELECT value FROM Settings WHERE key = 'userApiToken'`);
+      assert(settingsToken, "no token in Configurações");
+      assert((await http.get("/api-tokens/legacy", auth())).data.enabled === true, "the old token is not on by default");
+      assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token of Configurações stopped");
+      assert((await http.put("/api-tokens/legacy", { enabled: "não" }, auth())).status === 400, "an invalid value was saved");
+      assert((await http.put("/api-tokens/legacy", { enabled: false }, auth())).data.enabled === false, "the old token was not turned off");
+      assert((await api(settingsToken, "get", "/api/v1/connections")).status === 401, "the old token works while off");
+      assert((await http.put("/api-tokens/legacy", { enabled: true }, auth())).data.enabled === true, "the old token was not turned on again");
+      assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token does not come back");
     });
 
     // -------------------------------------------------------------------- CRM
@@ -1029,7 +1096,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT CONCAT(source,'|',utmSource,'|',utmCampaign,'|',CAST(consentAt IS NOT NULL AS INTEGER)) FROM Leads WHERE email='pedro@x.com'`) === "Site / formulário|instagram|vestibular|1", "form fields");
     });
     await test("API v1 creates leads (deduplicated) and lists them", async () => {
-      const t = (await http.post("/api-tokens", { name: "crm" }, auth())).data.token;
+      const t = (await http.post("/api-tokens", { name: "crm", scopes: ["leads:write", "leads:read"] }, auth())).data.token;
       const h = { headers: { Authorization: `Bearer ${t}` } };
       const a = await http.post("/api/v1/leads", { name: "Lead API", phone: "21 99999-1111", source: "Google" }, h);
       assert(a.status === 201, `status ${a.status}`);
@@ -1046,7 +1113,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(m.bySource.length >= 4, "bySource");
     });
     await test("backfill registers people who have a conversation, never an imported address book", async () => {
-      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "bf" }, auth())).data.token}` } };
+      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "bf", scopes: ["contacts:write"] }, auth())).data.token}` } };
       await http.post("/api/v1/contacts", { name: "Contato antigo", number: "5531977770000" }, headers);
       await http.post("/api/v1/contacts", { name: "So agenda", number: "5531977771111" }, headers);
       assert(!leadOf("5531977770000") && !leadOf("5531977771111"), "lead existed before backfill");
@@ -1134,7 +1201,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get(`/ficha-publica/${token}`)).status === 410, "the erased form still opens");
     });
     await test("a conversation the team opened, with no message yet, is nobody waiting in Responder agora", async () => {
-      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn" }, auth())).data.token}` } };
+      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn", scopes: ["contacts:write"] }, auth())).data.token}` } };
       await http.post("/api/v1/contacts", { name: "So salvei", number: "5531977773333" }, headers);
       const savedId = Number(sql(`SELECT id FROM Contacts WHERE number='5531977773333'`));
       const adminUserId = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
@@ -6128,7 +6195,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const answer = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
       assert(answer.startsWith(`Olá, Aluna, que bom que você chamou!\n\nEu sou ${tutorName}, tutor(a) da `) && answer.includes("no curso de Pedagogia Abordagem Teste"), `the approach after the student wrote: ${answer}`);
       // someone with no enrollment writes to the tutoring: no greeting of a new student, only who the tutor is and the RGM
-      const obTok = (await http.post("/api-tokens", { name: "ob-unknown" }, auth())).data.token;
+      const obTok = (await http.post("/api-tokens", { name: "ob-unknown", scopes: ["contacts:write"] }, auth())).data.token;
       await http.post("/api/v1/contacts", { name: "Pessoa Sem Matricula", number: "5511955552777" }, { headers: { Authorization: `Bearer ${obTok}` } });
       const strangerId = sql(`SELECT id FROM Contacts WHERE number='5511955552777'`);
       assert(strangerId && !sql(`SELECT id FROM Leads WHERE contactId=${strangerId}`), "the contact with no enrollment already had a lead");

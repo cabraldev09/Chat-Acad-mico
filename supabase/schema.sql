@@ -746,10 +746,17 @@ ALTER SEQUENCE public."AnalysisEvents_id_seq" OWNED BY public."AnalysisEvents".i
 CREATE TABLE public."ApiTokens" (
     id integer NOT NULL,
     name character varying(255) NOT NULL,
-    token character varying(255) NOT NULL,
+    token character varying(255),
     "lastUsedAt" timestamp with time zone,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "tokenHash" character varying(64),
+    "tokenPrefix" character varying(16),
+    scopes text,
+    "poloIds" text,
+    "expiresAt" timestamp with time zone,
+    legacy boolean DEFAULT false NOT NULL,
+    "createdById" integer
 );
 
 
@@ -4734,6 +4741,14 @@ ALTER TABLE ONLY public."ApiTokens"
 
 
 --
+-- Name: ApiTokens ApiTokens_tokenHash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ApiTokens"
+    ADD CONSTRAINT "ApiTokens_tokenHash_key" UNIQUE ("tokenHash");
+
+
+--
 -- Name: ApiTokens ApiTokens_token_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8177,6 +8192,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-course-aliases.js') O
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261230000001-send-quota-and-costs.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261231000001-fix-buritis-entry-term.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

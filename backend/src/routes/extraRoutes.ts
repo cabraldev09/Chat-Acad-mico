@@ -173,6 +173,9 @@ r.put("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.update);
 r.delete("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.remove);
 r.post("/webhooks-config/:id/test", isAuth, isSystemAdmin, Webhook.test);
 r.get("/api-tokens", isAuth, isSystemAdmin, ApiToken.index);
+r.get("/api-tokens/scopes", isAuth, isSystemAdmin, ApiToken.scopes);
+r.get("/api-tokens/legacy", isAuth, isSystemAdmin, ApiToken.legacyShow);
+r.put("/api-tokens/legacy", isAuth, isSystemAdmin, ApiToken.legacySave);
 r.post("/api-tokens", isAuth, isSystemAdmin, ApiToken.store);
 r.delete("/api-tokens/:id", isAuth, isSystemAdmin, ApiToken.remove);
 
