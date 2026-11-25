@@ -29,7 +29,7 @@ Rotas em `/api/v1` (`backend/src/routes/apiV1Routes.ts`), autenticadas por token
 | `GET /tickets` | `tickets:read` | só conversas das filas desses polos; sem o texto das mensagens |
 | `GET /connections` | `connections:read` | todas (sem dado pessoal) |
 | `POST /messages/send` | `messages:send` | só para número de lead desses polos (`403 ERR_API_TOKEN_POLO`) |
-| `GET /indicadores` | `indicators:read` | (rota dos indicadores consolidados) |
+| (indicadores consolidados) | `indicators:read` | escopo já disponível; a rota `GET /indicadores` vem em PR próprio |
 
 As respostas trazem só os campos que a integração usa: lead sem CPF, endereço, notas nem histórico; conversa sem texto.
 
