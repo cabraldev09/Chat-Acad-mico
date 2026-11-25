@@ -32,6 +32,7 @@ import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
 import api from "../../services/api";
 import { getBackendUrl } from "../../config";
+import { publicApiBase } from "../../utils/publicApiBase";
 import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles((theme) => ({
@@ -109,7 +110,8 @@ const ApiTokens = () => {
     }
   };
 
-  const base = getBackendUrl().replace(/\/$/, "");
+  // the public domain of the API, never the address of the server (utils/publicApiBase)
+  const base = publicApiBase(getBackendUrl());
 
   return (
     <Paper className={classes.paper} variant="outlined">

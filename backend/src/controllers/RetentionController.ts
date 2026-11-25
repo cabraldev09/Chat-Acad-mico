@@ -4,6 +4,7 @@ import AppError from "../errors/AppError";
 import { dayBounds, shiftDays, todayInAppTz, getAppTz } from "../helpers/AppTime";
 import { setSetting } from "../helpers/AppSettings";
 import { canOperateRetention } from "../helpers/Roles";
+import { seesEveryPolo } from "../middleware/scope";
 import Lead from "../models/Lead";
 import { runCadences } from "../services/CrmServices/Cadences";
 import { GROUP_OPTIONS, NPS_KINDS, npsAnswers, npsSummary, readNpsConfig, sendSurvey } from "../services/CrmServices/Nps";
@@ -26,10 +27,12 @@ import { withButtons } from "../helpers/QuickButtons";
 const uid = (req: Request): number => Number(req.user.id);
 
 // The maintainer (administrator) and the academic coordinator operate the retention area; nobody else comes in here.
+// The maintainer sees every student; the academic coordinator, the students of its polos (middleware/scope: loadCrmPolos fills
+// req.crmPolos before these routes; without it the coordinator sees nobody).
 const scopeOf = (req: Request): Scope => {
-  // the maintainer and the academic coordinator see every student; nobody else comes in here
-  if (canOperateRetention(req.user)) return {};
-  throw new AppError("ERR_NO_PERMISSION", 403);
+  if (!canOperateRetention(req.user)) throw new AppError("ERR_NO_PERMISSION", 403);
+  if (seesEveryPolo(req)) return {};
+  return { poloIds: Array.isArray((req as any).crmPolos) ? (req as any).crmPolos : [] };
 };
 
 const leadOf = async (req: Request): Promise<Lead> => {
@@ -37,6 +40,7 @@ const leadOf = async (req: Request): Promise<Lead> => {
   const lead = await Lead.findByPk(req.params.leadId);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   if (scope.tutorId && lead.onboardingTutorId !== scope.tutorId) throw new AppError("ERR_NO_PERMISSION", 403);
+  if (scope.poloIds && !scope.poloIds.includes(Number(lead.poloId))) throw new AppError("ERR_NO_PERMISSION", 403);
   return lead;
 };
 
@@ -57,7 +61,7 @@ const period = (q: any) => {
 export const nps = async (req: Request, res: Response): Promise<Response> => {
   scopeOf(req);
   const p = period(req.query);
-  return res.json({ from: p.from, to: p.to, ...(await npsSummary(p.start, p.end, scopeOf(req).tutorId)) });
+  return res.json({ from: p.from, to: p.to, ...(await npsSummary(p.start, p.end, scopeOf(req).tutorId, scopeOf(req).poloIds)) });
 };
 
 const KIND_LABEL: Record<string, string> = { onboarding: "Após a ambientação", d30: "30 dias de matrícula", d90: "90 dias de matrícula", manual: "Manual" };
@@ -66,7 +70,7 @@ const CATEGORY_LABEL: Record<string, string> = { promoter: "Promotor", neutral: 
 export const npsCsv = async (req: Request, res: Response): Promise<Response> => {
   const scope = scopeOf(req);
   const p = period(req.query);
-  const rows = await npsAnswers(p.start, p.end, scope.tutorId);
+  const rows = await npsAnswers(p.start, p.end, scope.tutorId, scope.poloIds);
   return sendCsv(res, `satisfacao-${p.from}-a-${p.to}.csv`, ["Data", "Aluno", "Momento", "Nota", "Classificação", "Motivo"],
     rows.map(r => [csvDay(r.at), r.lead, KIND_LABEL[r.kind] || r.kind, r.score, CATEGORY_LABEL[r.category], r.comment]));
 };
@@ -76,7 +80,7 @@ export const summary = async (req: Request, res: Response): Promise<Response> =>
   const scope = scopeOf(req);
   const today = todayInAppTz();
   const from = dayBounds(shiftDays(dayBounds(today).start, -29)).start;
-  const [risk, remat, n, ops] = await Promise.all([riskStudents(scope, 1000), rematriculaList(scope), npsSummary(from, dayBounds(today).end, scope.tutorId), retentionOperations(scope, from, dayBounds(today).end)]);
+  const [risk, remat, n, ops] = await Promise.all([riskStudents(scope, 1000), rematriculaList(scope), npsSummary(from, dayBounds(today).end, scope.tutorId, scope.poloIds), retentionOperations(scope, from, dayBounds(today).end)]);
   return res.json({
     risk: { days: risk.riskDays, total: risk.total, high: risk.students.filter(s => s.level === "high").length, attention: risk.students.filter(s => s.level === "attention").length },
     rematricula: { term: remat.config.term, window: remat.window, daysLeft: remat.daysLeft, pending: remat.pending, done: remat.done, rate: remat.rate },
@@ -169,8 +173,8 @@ export const preview = async (req: Request, res: Response): Promise<Response> =>
   const extra: Record<string, string> = { periodo: r.rematricula.term || currentTerm() };
   const template = kind === "nps" ? n.question : kind === "risk" ? r.riskMessage : kind === "remat" ? r.rematricula.message : String(req.body?.text || "").trim();
   const ids: number[] = (Array.isArray(req.body?.leadIds) ? req.body.leadIds : []).map(Number).filter(Boolean).slice(0, 5);
-  const leads = ids.length ? await Lead.findAll({ where: { id: ids }, attributes: ["id", "name", "onboardingTutorId"] }) : [];
-  const allowed = leads.filter(l => !scope.tutorId || l.onboardingTutorId === scope.tutorId);
+  const leads = ids.length ? await Lead.findAll({ where: { id: ids }, attributes: ["id", "name", "onboardingTutorId", "poloId"] }) : [];
+  const allowed = leads.filter(l => (!scope.tutorId || l.onboardingTutorId === scope.tutorId) && (!scope.poloIds || scope.poloIds.includes(Number(l.poloId))));
   const names: string[] = (Array.isArray(req.body?.names) ? req.body.names : []).map((x: any) => String(x).slice(0, 80)).filter(Boolean).slice(0, 3);
   const found = [...allowed.map(l => ({ leadId: l.id as number | null, name: l.name })), ...names.map(name => ({ leadId: null as number | null, name }))].slice(0, 5);
   const people = found.length ? found : [{ leadId: null as number | null, name: "Maria Souza" }];
@@ -257,6 +261,7 @@ export const sendBulk = async (req: Request, res: Response): Promise<Response> =
     const lead = leads.find(l => l.id === id);
     if (!lead) { results.push({ leadId: id, name: null, ok: false, error: "Aluno não encontrado." }); continue; }
     if (scope.tutorId && lead.onboardingTutorId !== scope.tutorId) { results.push({ leadId: id, name: lead.name, ok: false, error: "Este aluno não é seu." }); continue; }
+    if (scope.poloIds && !scope.poloIds.includes(Number(lead.poloId))) { results.push({ leadId: id, name: null, ok: false, error: "Este aluno não é dos seus polos." }); continue; }
     // the survey and the retention message are for students; a message written by hand may go to a lead that has not enrolled yet
     if (!lead.enrolledAt && kind !== "custom") { results.push({ leadId: id, name: lead.name, ok: false, error: "A pessoa ainda não está matriculada." }); continue; }
     try {

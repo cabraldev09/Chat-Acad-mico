@@ -29,6 +29,8 @@ export const NOTICE_TEMPLATES: Record<NoticeKind, { name: string; label: string 
 export interface NoticeInput {
   kind: NoticeKind; date: string; subject?: string; note?: string;
   poloId?: number | null; courseId?: number | null; tutorId?: number | null;
+  // the polos the sender sees (the coordination: its polos); null = every polo
+  poloIds?: number[] | null;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -69,7 +71,7 @@ const audience = async (n: NoticeInput, tutorOnly: number | null) => {
       lostAt: null,
       phone: { [Op.ne]: null },
       ...(tutorOnly ? { onboardingTutorId: tutorOnly } : n.tutorId ? { onboardingTutorId: n.tutorId } : {}),
-      ...(n.poloId ? { poloId: n.poloId } : {}),
+      ...(n.poloId || n.poloIds ? { poloId: { [Op.in]: (n.poloIds ? n.poloIds.filter(id => !n.poloId || id === n.poloId) : [n.poloId as number]).concat(0) } } : {}),
       ...(n.courseId ? { courseId: n.courseId } : {})
     } as any,
     attributes: ["id", "name", "phone", "consentAt"],

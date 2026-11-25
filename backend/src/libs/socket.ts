@@ -64,7 +64,13 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
       return !data.userId && !!data.queueId && user.role === "consultor" && (await inQueue(user.id, data.queueId));
     }
     // the dissatisfied student of the survey: the tutor and the consultant of that student, and the management
-    if (event === "npsAlert") return manager || Number(data.tutorId) === Number(user.id) || Number(data.ownerId) === Number(user.id);
+    // (the coordination: only the students of its polos, the same rule of the CRM)
+    if (event === "npsAlert") {
+      if (Number(data.tutorId) === Number(user.id) || Number(data.ownerId) === Number(user.id)) return true;
+      if (!manager || !data.leadId) return false;
+      await assertLead(req, data.leadId);
+      return true;
+    }
     if (event === "contact") return contactAllowed(req, Number(data.contact?.id || data.contactId));
     if (["whatsapp", "whatsappSession", "whatsappAlert", "safety", "historyImport"].includes(event)) {
       const item = data.session || data.whatsapp || data;
@@ -88,7 +94,12 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     // the return of a curricular analysis is for its owner (the management reads it on the screen)
     if (event === "followUp" || event === "taskAssigned" || event === "onboardingAssigned" || event === "notification" || event === "taskChanged") return Number(data.userId) === Number(user.id);
     // a student entered the risk of dropping out: the tutor, the consultant of the student and the management
-    if (event === "riskAlert") return manager || Number(data.tutorId) === Number(user.id) || Number(data.ownerId) === Number(user.id);
+    if (event === "riskAlert") {
+      if (Number(data.tutorId) === Number(user.id) || Number(data.ownerId) === Number(user.id)) return true;
+      if (!manager || !data.leadId) return false;
+      await assertLead(req, data.leadId);
+      return true;
+    }
     // Settings may contain API credentials. Other users refetch their permitted subset over HTTP.
     if (event === "settings") return manager;
     // progress of what a person forwarded: only they hear it (the room "user:<id>" already limits the delivery)

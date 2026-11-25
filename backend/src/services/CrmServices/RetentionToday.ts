@@ -1,3 +1,4 @@
+import { poloSql } from "../../helpers/PoloScope";
 import { QueryTypes } from "sequelize";
 
 import AppError from "../../errors/AppError";
@@ -51,7 +52,7 @@ export const todayList = async (scope: Scope = {}): Promise<{ total: number; ite
       WHERE s.status = 'answered' AND s.score <= 6 AND s."answeredAt" > now() - interval '60 days' AND l."isHistorical" = false
         AND NOT EXISTS (SELECT 1 FROM "RetentionContacts" c WHERE c."leadId" = s."leadId" AND c."createdAt" >= s."answeredAt")
         AND NOT EXISTS (SELECT 1 FROM "LeadTasks" t WHERE t."leadId" = s."leadId" AND t.title LIKE 'Falar com o aluno que deu nota%' AND t."doneAt" IS NOT NULL AND t."doneAt" >= s."answeredAt")
-        ${scope.tutorId ? `AND l."onboardingTutorId" = :tutor` : ""}
+        ${scope.tutorId ? `AND l."onboardingTutorId" = :tutor` : ""} ${poloSql(scope.poloIds ?? null, 'l."poloId"')}
       ORDER BY s."leadId", s."answeredAt" DESC`,
     { replacements: { tutor: scope.tutorId || 0 }, type: QueryTypes.SELECT }
   )) as any[];

@@ -8,8 +8,8 @@
 --
 
 
--- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped from database version 16.15 (Homebrew)
+-- Dumped by pg_dump version 16.15 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -1665,7 +1665,12 @@ CREATE TABLE public."Courses" (
     "institutionId" integer,
     category character varying(255),
     semesters integer DEFAULT 8 NOT NULL,
-    aliases text
+    aliases text,
+    "durationMonths" integer,
+    "installmentsTotal" integer,
+    "enrollmentFee" numeric(10,2),
+    "certificationFee" numeric(10,2),
+    "singlePayment" boolean DEFAULT false NOT NULL
 );
 
 
@@ -3046,7 +3051,16 @@ CREATE TABLE public."ProposalTemplates" (
     "firstExempt" boolean DEFAULT false NOT NULL,
     "waIntro" text,
     "waClosing" text,
-    active boolean DEFAULT true NOT NULL
+    active boolean DEFAULT true NOT NULL,
+    "planType" character varying(20) DEFAULT 'semestral'::character varying NOT NULL,
+    "installmentsByDuration" text,
+    "certificationFee" numeric(10,2) DEFAULT 0 NOT NULL,
+    "chargeCertification" boolean DEFAULT false NOT NULL,
+    "pixDiscountPct" numeric(5,2) DEFAULT 0 NOT NULL,
+    "cardMaxInstallments" integer DEFAULT 12 NOT NULL,
+    "cardRatePct" numeric(5,2) DEFAULT 0 NOT NULL,
+    "cardPassInterest" boolean DEFAULT true NOT NULL,
+    "courseLevels" text
 );
 
 
@@ -8204,6 +8218,9 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-proposal-template-act
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
