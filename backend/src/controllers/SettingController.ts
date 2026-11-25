@@ -36,6 +36,8 @@ export const update = async (
   if (key === "consultant_copilot" || key === "mail_pass" || SEALED_SETTINGS.includes(key)) throw new AppError("ERR_NO_PERMISSION", 403);
   // the API token is the administrator's alone (it authenticates the external integrations)
   if (key === "userApiToken" && roleOf(req.user) !== "admin") throw new AppError("ERR_NO_PERMISSION", 403);
+  // the retention of conversations and voice notes deletes content: only through its own route (administrator, validated days)
+  if (key.startsWith("retention_")) throw new AppError("ERR_NO_PERMISSION", 403);
   const { value } = req.body;
 
   const setting = await UpdateSettingService({

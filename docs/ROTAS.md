@@ -1,6 +1,6 @@
-# Rotas da API (600)
+# Rotas da API (603)
 
-Públicas: 40 · logado (qualquer perfil): 329 · gestão: 182 · admin: 40
+Públicas: 40 · logado (qualquer perfil): 329 · gestão: 182 · admin: 43
 
 ## Quem vê quais leads no CRM (middleware/scope.ts)
 
