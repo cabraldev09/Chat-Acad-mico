@@ -8,8 +8,8 @@
 --
 
 
--- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped from database version 16.15 (Homebrew)
+-- Dumped by pg_dump version 16.15 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -746,10 +746,17 @@ ALTER SEQUENCE public."AnalysisEvents_id_seq" OWNED BY public."AnalysisEvents".i
 CREATE TABLE public."ApiTokens" (
     id integer NOT NULL,
     name character varying(255) NOT NULL,
-    token character varying(255) NOT NULL,
+    token character varying(255),
     "lastUsedAt" timestamp with time zone,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "tokenHash" character varying(64),
+    "tokenPrefix" character varying(16),
+    scopes text,
+    "poloIds" text,
+    "expiresAt" timestamp with time zone,
+    legacy boolean DEFAULT false NOT NULL,
+    "createdById" integer
 );
 
 
@@ -4749,6 +4756,14 @@ ALTER TABLE ONLY public."ApiTokens"
 
 
 --
+-- Name: ApiTokens ApiTokens_tokenHash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ApiTokens"
+    ADD CONSTRAINT "ApiTokens_tokenHash_key" UNIQUE ("tokenHash");
+
+
+--
 -- Name: ApiTokens ApiTokens_token_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5833,6 +5848,13 @@ CREATE UNIQUE INDEX commercial_grades_content_hash ON public."CommercialGrades" 
 --
 
 CREATE INDEX commercial_grades_course_name ON public."CommercialGrades" USING btree ("courseName");
+
+
+--
+-- Name: consultant_reviews_day_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX consultant_reviews_day_idx ON public."ConsultantReviews" USING btree (day);
 
 
 --
@@ -8193,6 +8215,9 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') 
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261230000001-send-quota-and-costs.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261231000001-fix-buritis-entry-term.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-proposal-template-active.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
