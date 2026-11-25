@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
-  Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, Tooltip, makeStyles,
+  Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, Tooltip, IconButton, makeStyles,
 } from "@material-ui/core";
 import { Copy, RefreshCw, DatabaseBackup, Library, Upload, ShieldCheck, PlugZap, KeyRound } from "lucide-react";
 import { Dialog, DialogTitle, DialogContent, DialogActions } from "@material-ui/core";
@@ -17,8 +17,11 @@ import { getBackendUrl } from "../../config";
 import toastError from "../../errors/toastError";
 import { dayDefault } from "../../utils/workWeek";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const useStyles = makeStyles((theme) => ({
+  formHead: { fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: theme.palette.text.secondary, marginTop: theme.spacing(1.5), paddingTop: theme.spacing(1), borderTop: `1px solid ${theme.palette.divider}` },
+  off: { color: theme.palette.text.secondary, fontWeight: 400 },
   pane: { padding: theme.spacing(2.5), display: "grid", gap: theme.spacing(2), maxWidth: 720, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
   code: {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, background: theme.palette.action.hover, padding: theme.spacing(1.25),
@@ -81,7 +84,7 @@ export const Capture = ({ s, setS, save }) => {
           <div className={classes.row}>
             <Button variant="outlined" size="small" href={link} target="_blank">Abrir formulário</Button>
             <Button variant="outlined" size="small" startIcon={<RefreshCw size={14} />}
-              onClick={() => window.confirm("Gerar um novo link desativa o anterior. Continuar?") && save({ regenerateFormToken: true })}>Gerar novo link</Button>
+              onClick={async () => { if (await confirmDialog({ title: "Gerar um novo link?", message: "O link atual para de funcionar. Quem já tem o link antigo precisa receber o novo.", confirmText: "Gerar novo link", tone: "danger" })) save({ regenerateFormToken: true }); }}>Gerar novo link</Button>
           </div>
         </>
       ) : <Button variant="contained" color="primary" onClick={() => save({ regenerateFormToken: true })}>Ativar formulário</Button>}
@@ -525,6 +528,7 @@ const ActiveToggle = ({ row: course, endpoint = "/courses", label = "curso" }) =
 };
 
 const CrmSettings = () => {
+  const classes = useStyles();
   const [tab, setTab] = useState(0);
   const [s, setS] = useState({});
   const [users, setUsers] = useState([]);
@@ -668,12 +672,15 @@ const CrmSettings = () => {
             mapOut={(v) => ({ ...v, semestralSchedule: String(v.semestralSchedule || "").split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [from, pct] = l.split("="); return { from: Number(from), pct: Number(String(pct).replace(",", ".")) }; }) })}
             fields={[
               { name: "name", label: "Nome do modelo", required: true },
+              { name: "active", label: "Ativo (aparece nas propostas novas)", type: "switch", default: true },
               { name: "institutionIds", label: "Instituições que usam este modelo", type: "multiselect", options: institutions.map((i) => ({ value: i.id, label: i.name })), helper: "O modelo aparece na proposta dos cursos dessas instituições. Vazio = serve para todas." },
+              { name: "_hvalores", type: "custom", render: () => <div className={classes.formHead}>Valores e parcelas</div> },
               { name: "enrollmentFee", label: "Taxa de matrícula (R$)", type: "number", default: 0 },
               { name: "dueDay", label: "Dia de vencimento", type: "number", default: 10 },
               { name: "installments", label: "Parcelas por semestre", type: "number", default: 6 },
               { name: "installmentsFixed", label: "Total de parcelas do curso (fixo)", type: "number", helper: "Deixe vazio quando as mensalidades seguem até o fim do curso." },
-              { name: "firstExempt", label: "1ª mensalidade isenta (a 2ª leva a data de vencimento)", type: "switch", default: false },
+              { name: "firstExempt", label: "1ª mensalidade isenta (R$ 0,00; o consultor pode mudar na proposta)", type: "switch", default: false },
+              { name: "_hregras", type: "custom", render: () => <div className={classes.formHead}>Bolsa e reajustes</div> },
               { name: "hasRegression", label: "Tem regressão da bolsa (cai após o 1º semestre)", type: "switch", default: true },
               { name: "hasAdjustment", label: "Tem reajuste semestral e anual", type: "switch", default: true },
               { name: "fixedUntilEnd", label: "Mensalidade fixa até o fim do curso (sem regressão nem reajuste)", type: "switch", default: false },
@@ -685,6 +692,7 @@ const CrmSettings = () => {
               { name: "annualMin", label: "Reajuste anual mínimo (%)", type: "number", default: 5 },
               { name: "annualMax", label: "Reajuste anual teto (%)", type: "number", default: 11 },
               { name: "semestralSchedule", label: "Reajuste semestral", type: "textarea", rows: 3, default: "2=2\n6=3", helper: "Uma linha por degrau: semestre=percentual. “2=2” e “6=3” = 2% do 2º ao 5º semestre e 3% do 6º em diante." },
+              { name: "_htextos", type: "custom", render: () => <div className={classes.formHead}>Textos da proposta</div> },
               { name: "bolsaNote", label: "Nota da bolsa aplicada", type: "textarea", rows: 2 },
               { name: "observation", label: "Observação", type: "textarea", rows: 2 },
               { name: "disclaimer", label: "Aviso da projeção", type: "textarea", rows: 3 },
@@ -693,8 +701,32 @@ const CrmSettings = () => {
               { name: "waClosing", label: "WhatsApp · fechamento (validade)", type: "textarea", rows: 2, helper: "Variáveis: {{nome}}, {{curso}} e {{hoje}}." },
               { name: "isDefault", label: "Modelo padrão", type: "switch", default: false },
             ]}
+            rowActions={(r, load) => (
+              <>
+                <Tooltip title={r.isDefault ? "O modelo padrão fica sempre ativo" : r.active === false ? "Ativar" : "Desativar"}>
+                  <span>
+                    <Switch size="small" color="primary" checked={r.active !== false} disabled={!!r.isDefault}
+                      inputProps={{ "aria-label": `${r.active === false ? "Ativar" : "Desativar"} o modelo ${r.name}` }}
+                      onChange={async (e) => {
+                        const on = e.target.checked;
+                        try { await api.put(`/proposal-templates/${r.id}`, { active: on }); toast.success(on ? "Modelo ativado." : "Modelo desativado: não aparece nas propostas novas."); load(); } catch (err) { toastError(err); }
+                      }} />
+                  </span>
+                </Tooltip>
+                <Tooltip title="Duplicar">
+                  <IconButton size="small" aria-label={`Duplicar o modelo ${r.name}`} onClick={async () => {
+                    const { id, createdAt, updatedAt, institutions, isDefault, name, ...rest } = r;
+                    try {
+                      await api.post("/proposal-templates", { ...rest, name: `${name} (cópia)`, isDefault: false, active: true, institutionIds: (institutions || []).map((i) => i.id) });
+                      toast.success("Modelo duplicado. Edite a cópia.");
+                      load();
+                    } catch (err) { toastError(err); }
+                  }}><Copy size={17} /></IconButton>
+                </Tooltip>
+              </>
+            )}
             columns={[
-              { header: "Modelo", render: (r) => (<>{r.name}{r.isDefault ? " (padrão)" : ""}</>) },
+              { header: "Modelo", render: (r) => (<>{r.name}{r.isDefault ? " (padrão)" : ""}{r.active === false ? <span className={classes.off}> · inativo</span> : null}</>) },
               { header: "Matrícula", render: (r) => Number(r.enrollmentFee).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) },
               { header: "Bolsa 1º / demais", render: (r) => `${Number(r.bolsaFirst)}% / ${Number(r.bolsaNext)}%` },
               { header: "Regras", render: (r) => [r.fixedUntilEnd ? "Fixa até o fim" : null, !r.fixedUntilEnd && r.hasRegression === false ? "Sem regressão" : null, !r.fixedUntilEnd && r.hasAdjustment === false ? "Sem reajuste" : null, r.firstExempt ? "1ª isenta" : null, r.installmentsFixed ? `${r.installmentsFixed} parcelas` : null].filter(Boolean).join(" · ") || "Padrão" },

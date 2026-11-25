@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { noticeDialog } from "../../components/ConfirmDialog";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import { makeStyles } from "@material-ui/core/styles";
@@ -212,6 +213,9 @@ const EnrollmentForm = () => {
       setStatus("saved");
       setSavedAt(new Date());
     } catch (err) {
+      // a link that expired or no longer exists is not a connection problem: say what to do
+      const code = err && err.response && err.response.status;
+      if (code === 404 || code === 410) { setView(null); setFailure(errorText(err)); return; }
       pending.current = { ...patch, ...pending.current };
       setStatus("error");
     }
@@ -245,7 +249,7 @@ const EnrollmentForm = () => {
       setSavedAt(new Date());
       setStatus("saved");
     } catch (err) {
-      window.alert(errorText(err));
+      noticeDialog({ title: "Não foi possível concluir", message: errorText(err) });
     }
     setUploading((u) => ({ ...u, [kind]: false }));
   };
@@ -254,7 +258,7 @@ const EnrollmentForm = () => {
       const { data: v } = await api.delete(`/ficha-publica/${token}/files/${kind}`);
       apply(v);
     } catch (err) {
-      window.alert(errorText(err));
+      noticeDialog({ title: "Não foi possível concluir", message: errorText(err) });
     }
   };
 
@@ -268,7 +272,7 @@ const EnrollmentForm = () => {
       setEditing(false);
       window.scrollTo(0, 0);
     } catch (err) {
-      window.alert(errorText(err));
+      noticeDialog({ title: "Não foi possível concluir", message: errorText(err) });
     }
     setSending(false);
   };

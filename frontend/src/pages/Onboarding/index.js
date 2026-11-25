@@ -14,6 +14,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
+import { promptDialog } from "../../components/ConfirmDialog";
 
 const COLUMNS = [
   { key: "pending", title: "Pendentes", hint: "Matriculados aguardando o primeiro contato.", color: "#d97706" },
@@ -138,7 +139,7 @@ const OnboardingBoard = ({ embedded = false }) => {
     if (action === "done") {
       const missing = STEPS.filter(st => !(lead.checklist || {})[st.key]);
       if (missing.length) {
-        note = window.prompt(`Faltam ${missing.length} etapa(s) do checklist: ${missing.map(m => m.label).join("; ")}.\n\nPara concluir mesmo assim, escreva o motivo:`) || "";
+        note = (await promptDialog({ title: "Concluir sem o checklist completo?", message: `Faltam ${missing.length} etapa(s): ${missing.map(m => m.label).join("; ")}. Para concluir mesmo assim, escreva o motivo (vai para o histórico do aluno).`, label: "Motivo", multiline: true, required: true, confirmText: "Concluir" })) || "";
         if (!note.trim()) return;
       }
     }

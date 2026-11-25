@@ -22,7 +22,7 @@ import { getIO } from "../libs/socket";
 import SendToContact from "../services/ChannelServices/SendToContact";
 import { addActivity, changeStage, loadLead, resolveLeadTarget } from "../services/CrmServices/LeadCore";
 import dispatchWebhook from "../services/WebhookServices/DispatchWebhook";
-import { calcProposal, ProposalParams, SemestralStep } from "../services/ProposalServices/calc";
+import { baseMonthly, calcProposal, ProposalParams, SemestralStep } from "../services/ProposalServices/calc";
 import { renderProposalHtml } from "../services/ProposalServices/render";
 import { buildProposalMessages } from "../services/ProposalServices/proposalMessage";
 import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
@@ -57,22 +57,25 @@ const parseSchedule = (v: any): SemestralStep[] => {
 // explicit choice, else a model made for the course's institution (default one first),
 // else the default model of the system
 const defaultTemplate = async (id?: number | null, institutionId?: number | null) => {
+  // a model chosen by id is used even when inactive (a draft made with it keeps working); the automatic choice skips inactive ones
   if (id) {
     const chosen = await ProposalTemplate.findByPk(id);
     if (chosen) return chosen;
   }
+  const active = { active: true };
   if (institutionId) {
     const links = await ProposalTemplateInstitution.findAll({ where: { institutionId } });
     const ids = links.map(l => l.templateId);
     const own =
       (ids.length &&
-        ((await ProposalTemplate.findOne({ where: { id: ids, isDefault: true } })) ||
-          (await ProposalTemplate.findOne({ where: { id: ids }, order: [["name", "ASC"]] })))) ||
-      (await ProposalTemplate.findOne({ where: { institutionId }, order: [["name", "ASC"]] }));
+        ((await ProposalTemplate.findOne({ where: { id: ids, isDefault: true, ...active } })) ||
+          (await ProposalTemplate.findOne({ where: { id: ids, ...active }, order: [["name", "ASC"]] })))) ||
+      (await ProposalTemplate.findOne({ where: { institutionId, ...active }, order: [["name", "ASC"]] }));
     if (own) return own;
   }
   return (
-    (await ProposalTemplate.findOne({ where: { isDefault: true } })) ||
+    (await ProposalTemplate.findOne({ where: { isDefault: true, ...active } })) ||
+    (await ProposalTemplate.findOne({ where: active, order: [["id", "ASC"]] })) ||
     (await ProposalTemplate.findOne({ order: [["id", "ASC"]] }))
   );
 };
@@ -102,6 +105,8 @@ const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: 
     turmaKey === "" ? null : (turmaKey && calendar.find(t => t.key === turmaKey)) || turmaFor(calendar, todayInAppTz());
   const params: ProposalParams = {
     gross,
+    // the monthly fee with the scholarship; the 1st installment starts the same (a model that waives it sets firstExempt, and the
+    // saving makes it R$ 0). "monthly" is left out here: a caller that changes only firstMonthly keeps meaning every installment
     firstMonthly: gross ? Math.round(gross * 0.2 * 100) / 100 : 0,
     enrollmentFee: Number(tpl.enrollmentFee),
     dueDay: tpl.dueDay,
@@ -149,6 +154,9 @@ const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: 
 const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams => {
   const p: ProposalParams = {
     gross: num(raw.gross, base.gross),
+    // the monthly fee with the scholarship; a caller that only knows "firstMonthly" (the API before the 1st installment had its own value)
+    // means the same value for every installment
+    monthly: num(raw.monthly, raw.monthly === undefined && raw.firstMonthly !== undefined ? num(raw.firstMonthly, 0) : baseMonthly(base)),
     firstMonthly: num(raw.firstMonthly, base.firstMonthly),
     enrollmentFee: num(raw.enrollmentFee, base.enrollmentFee),
     dueDay: Math.min(28, Math.max(1, num(raw.dueDay, base.dueDay))),
@@ -200,7 +208,16 @@ const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams =>
     p.extraSemesters = Math.max(0, p.semesters - remaining);
   }
   if (!(p.gross > 0)) throw new AppError("ERR_PROPOSAL_NO_GROSS");
-  if (!(p.firstMonthly > 0) || p.firstMonthly > p.gross) throw new AppError("ERR_PROPOSAL_FIRST_MONTHLY");
+  if (!(Number(p.monthly) > 0) || Number(p.monthly) > p.gross) throw new AppError("ERR_PROPOSAL_FIRST_MONTHLY");
+  // the 1st installment: the value the consultant typed (0 means waived), never above the gross fee
+  // not typed: it follows the others (as it did before), unless it had its own value
+  if (raw.firstMonthly === undefined && !p.firstExempt) {
+    const own = Number(base.firstMonthly) > 0 && Math.abs(Number(base.firstMonthly) - baseMonthly(base)) >= 0.01;
+    p.firstMonthly = own ? Number(base.firstMonthly) : Number(p.monthly);
+  }
+  if (!(p.firstMonthly >= 0) || p.firstMonthly > p.gross) throw new AppError("ERR_PROPOSAL_FIRST_PAYMENT");
+  if (p.firstMonthly === 0) p.firstExempt = true;
+  if (p.firstExempt) p.firstMonthly = 0;
   return p;
 };
 
@@ -357,7 +374,8 @@ const save = async (req: Request, existing?: Proposal) => {
   const data: any = {
     courseName: snapshot.title,
     grossFee: params.gross,
-    firstMonthly: params.firstMonthly,
+    // the column keeps the monthly fee with the scholarship (what reports and the affiliate bonus read)
+    firstMonthly: baseMonthly(params),
     bolsaPct: result.bolsaApplied,
     params: JSON.stringify({ params, snapshot, ...(blocks && Object.keys(blocks).length ? { blocks } : {}) }),
     courseId: d.course ? d.course.id : null,
@@ -385,7 +403,7 @@ const rebuild = async (p: Proposal) => {
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const p = await save(req);
-  await addActivity(p.leadId, uid(req), "system", `Proposta #${p.id} criada (${p.courseName}, 1ª mensalidade ${Number(p.firstMonthly).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`);
+  await addActivity(p.leadId, uid(req), "system", `Proposta #${p.id} criada (${p.courseName}, mensalidade com bolsa ${Number(p.firstMonthly).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`);
   getIO().emit("lead", { action: "update", lead: await loadLead(p.leadId) });
   return res.status(201).json(present(p));
 };
@@ -547,17 +565,21 @@ export const templates = makeCrud(ProposalTemplate, {
     "name", "institutionId", "enrollmentFee", "dueDay", "installments", "punctualityPct", "lateFee1Pct",
     "lateFee2Pct", "annualMin", "annualMax", "semestralSchedule", "bolsaFirst", "bolsaNext", "bolsaNote",
     "observation", "disclaimer", "finalMessage", "isDefault", "installmentsFixed", "hasRegression", "hasAdjustment",
-    "fixedUntilEnd", "firstExempt", "waIntro", "waClosing"
+    "fixedUntilEnd", "firstExempt", "waIntro", "waClosing", "active"
   ],
   required: ["name"],
   include: [{ model: Institution, as: "institutions", attributes: ["id", "name"], through: { attributes: [] } }],
   order: [["name", "ASC"]],
-  beforeSave: data => {
+  beforeSave: (data, _req, existing) => {
+    // a new model without the semester steps has none (it used to fail with a server error)
+    if (!existing && data.semestralSchedule === undefined) data.semestralSchedule = [];
     if (data.semestralSchedule !== undefined) {
       data.semestralSchedule = JSON.stringify(parseSchedule(data.semestralSchedule));
     }
     if (data.institutionId === "" || data.institutionId === 0) data.institutionId = null;
     if (data.installmentsFixed === "" || data.installmentsFixed === 0) data.installmentsFixed = null;
+    // the default model is the one every proposal falls back to: it stays active
+    if ((data.isDefault ?? existing?.isDefault) && data.active === false) throw new AppError("ERR_PROPOSAL_TEMPLATE_DEFAULT_ACTIVE");
     return data;
   },
   afterSave: async (row, req) => {

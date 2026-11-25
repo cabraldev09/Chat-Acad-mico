@@ -1469,6 +1469,41 @@ const postMeta = (id, payload, secret, badSig) => {
       const bad = p => http.post("/proposals/preview", { leadId: plead.id, params: p }, auth());
       assert((await bad({ gross: 0, firstMonthly: 100 })).status === 400, "zero gross accepted");
       assert((await bad({ gross: 500, firstMonthly: 900 })).status === 400, "first monthly above gross accepted");
+      assert((await bad({ gross: 500, monthly: 200, firstMonthly: -1 })).data.error === "ERR_PROPOSAL_FIRST_PAYMENT", "a negative 1st installment accepted");
+    });
+    await test("the 1st installment: the same as the others by default, its own value, or waived (R$ 0) without touching the rest", async () => {
+      const prev = p => http.post("/proposals/preview", { leadId: plead.id, params: { gross: 954.8, monthly: 220, enrollmentFee: 99, semesters: 8, startYear: 2027, startSemester: 1, firstDueDate: "2027-02-01", ...p } }, auth());
+      const same = await prev({});
+      assert(same.status === 200 && same.data.result.tiers.onTime === 220 && /Primeira Mensalidade:<\/b> R\$\s?220,00/.test(same.data.html), `default 1st ${same.status} ${JSON.stringify(same.data).slice(0, 200)}`);
+      const exempt = await prev({ firstExempt: true });
+      assert(exempt.status === 200, `exempt ${exempt.status} ${JSON.stringify(exempt.data).slice(0, 200)}`);
+      assert(exempt.data.result.tiers.onTime === 220 && exempt.data.result.bolsaApplied === same.data.result.bolsaApplied, "the waived 1st changed the others");
+      assert(/isenta \(R\$\s?0,00\)/.test(exempt.data.html) && /vencimento 01\/02\/2027/.test(exempt.data.html) && /Valor total do pedido<\/span><span>R\$\s?0,00/.test(exempt.data.html), "the PDF of a waived 1st installment");
+      const zero = await prev({ firstMonthly: 0 });
+      assert(zero.status === 200 && /isenta \(R\$\s?0,00\)/.test(zero.data.html), "R$ 0 typed should mean waived");
+      const own = await prev({ firstMonthly: 150 });
+      assert(own.status === 200 && /Primeira Mensalidade:<\/b> R\$\s?150,00/.test(own.data.html) && own.data.result.tiers.onTime === 220, "a 1st installment with its own value");
+      // the brand's logo on a Cruzeiro do Sul university without an uploaded logo
+      assert(/<img src="data:image\/svg\+xml;base64,/.test(same.data.html) || !/cruzeiro do sul/i.test(same.data.html), "the proposal of a Cruzeiro do Sul university has no logo");
+    });
+    await test("proposal models: an inactive one is not offered, the default stays active, a copy is a new model", async () => {
+      const made = await http.post("/proposal-templates", { name: "Modelo Inativo Teste", enrollmentFee: 50, dueDay: 10, installments: 6, bolsaFirst: 30, bolsaNext: 30, active: true }, auth());
+      assert(made.status === 201 && made.data.active === true, `template ${made.status}`);
+      const off = await http.put(`/proposal-templates/${made.data.id}`, { active: false }, auth());
+      assert(off.status === 200 && off.data.active === false, "deactivate a model");
+      const def = (await http.get("/proposal-templates", auth())).data;
+      const list = Array.isArray(def) ? def : def.rows || def.items || [];
+      const dflt = list.find(t => t.isDefault);
+      if (dflt) {
+        const refused = await http.put(`/proposal-templates/${dflt.id}`, { active: false }, auth());
+        assert(refused.status === 400 && refused.data.error === "ERR_PROPOSAL_TEMPLATE_DEFAULT_ACTIVE", `the default model was deactivated ${refused.status}`);
+        // the default is the one picked when the inactive model would otherwise come first
+        const d = await http.get(`/proposals/defaults?leadId=${plead.id}`, auth());
+        assert(d.status !== 200 || d.data.templateId !== made.data.id, "an inactive model was offered");
+      }
+      // turning it on again
+      assert((await http.put(`/proposal-templates/${made.data.id}`, { active: true }, auth())).data.active === true, "reactivate");
+      await http.delete(`/proposal-templates/${made.data.id}`, auth());
     });
     let prop, propCourse;
     await test("a draft saves without the base data, but the PDF and the sending ask for the admission, the course and the deadline", async () => {

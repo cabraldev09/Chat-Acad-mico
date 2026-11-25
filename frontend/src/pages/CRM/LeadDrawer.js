@@ -30,6 +30,7 @@ import { ScoreRing, SourceIcon, StagePill, ago, isOverdue, burst, initials } fro
 import { onColor, tint } from "../../utils/color";
 import AiBrief from "../../components/AiBrief";
 import StudentRecord from "./StudentRecord";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const useStyles = makeStyles((theme) => ({
   paper: { width: 500, maxWidth: "100vw", display: "flex", flexDirection: "column", borderLeft: theme.border.divider, animation: "slide-in-left .0s" },
@@ -215,7 +216,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
     try { await api.put(`/leads/${lead.id}/tasks/${t.id}`, { dueAt: d.toISOString() }); toast.success("Remarcada para amanhã às 9h.", { autoClose: 2500 }); tasksChanged(); } catch (err) { toastError(err); }
   };
   const removeTask = async (t) => {
-    if (!window.confirm(`Apagar a tarefa "${t.title}"? Fica registrado no histórico do lead.`)) return;
+    if (!(await confirmDialog({ title: "Apagar a tarefa?", message: `"${t.title}" sai da lista. Fica registrado no histórico do lead.`, confirmText: "Apagar", tone: "danger" }))) return;
     try { await api.delete(`/leads/${lead.id}/tasks/${t.id}`); tasksChanged(); } catch (err) { toastError(err); }
   };
 
@@ -435,7 +436,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                           try { await api.post(`/proposals/${pr.id}/send`, {}); toast.success("Proposta enviada ao candidato."); changed(); } catch (e) { toastError(e); }
                         }}><SendHorizonal size={16} /></IconAction>
                         <IconAction title="Duplicar como novo rascunho" onClick={async () => { try { const { data } = await api.post(`/proposals/${pr.id}/duplicate`); changed(); setStudio({ id: data.id }); } catch (e) { toastError(e); } }}><CopyPlus size={16} /></IconAction>
-                        {pr.status === "draft" && <IconAction title="Excluir rascunho" onClick={async () => { if (!window.confirm(`Excluir o rascunho #${pr.id}?`)) return; try { await api.delete(`/proposals/${pr.id}`); toast.success("Rascunho excluído."); changed(); } catch (e) { toastError(e); } }}><Trash2 size={16} /></IconAction>}
+                        {pr.status === "draft" && <IconAction title="Excluir rascunho" onClick={async () => { if (!(await confirmDialog({ title: `Excluir o rascunho #${pr.id}?`, message: "A proposta ainda não foi enviada ao lead.", confirmText: "Excluir", tone: "danger" }))) return; try { await api.delete(`/proposals/${pr.id}`); toast.success("Rascunho excluído."); changed(); } catch (e) { toastError(e); } }}><Trash2 size={16} /></IconAction>}
                       </div>
                     </div>
                   ))}

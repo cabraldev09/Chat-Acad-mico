@@ -6,6 +6,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import EnrollDialog from "../../pages/CRM/EnrollDialog";
 import CopilotSettings from "./Settings";
+import { promptDialog } from "../ConfirmDialog";
 
 const useStyles = makeStyles(theme => ({
   root: { flex: "none", minWidth: 0, position: "relative", zIndex: 5, color: theme.palette.text.primary, background: theme.palette.background.paper, borderBottom: "2px solid var(--line-strong, #cbd5e1)" },
@@ -172,7 +173,12 @@ function Panel({ ticket }) {
   const rate = async (item, setItem, value) => {
     if (!item || !item.id) return;
     const feedback = item.feedback === value ? null : value;
-    const reason = feedback === "nao_util" ? window.prompt("O que faltou ou estava errado? (opcional)") || "" : "";
+    let reason = "";
+    if (feedback === "nao_util") {
+      const typed = await promptDialog({ title: "O que faltou ou estava errado?", message: "Ajuda a melhorar as sugestões. Pode deixar em branco.", label: "Comentário (opcional)", multiline: true, confirmText: "Enviar" });
+      if (typed === null) return;
+      reason = typed;
+    }
     try {
       await api.put(`/tickets/${ticket.id}/copilot/requests/${item.id}/feedback`, { feedback, reason });
       if (alive.current) setItem(v => (v && v.id === item.id ? { ...v, feedback } : v));

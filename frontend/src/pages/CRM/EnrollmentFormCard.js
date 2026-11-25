@@ -7,6 +7,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
+import { copyDialog } from "../../components/ConfirmDialog";
 
 const useStyles = makeStyles((theme) => ({
   card: { border: theme.border ? theme.border.divider : "1px solid rgba(127,127,127,.25)", borderRadius: 14, padding: 14, marginBottom: 18 },
@@ -74,7 +75,7 @@ const EnrollmentFormCard = ({ lead, onChanged }) => {
       const { data } = form ? { data: form } : await api.post(`/leads/${lead.id}/enrollment-form`);
       setForm(data);
       if (await copyText(data.link)) toast.success("Link da ficha copiado.");
-      else window.prompt("Copie o link da ficha:", data.link);
+      else copyDialog({ title: "Link da ficha de matrícula", message: "Copie o link e envie ao lead.", text: data.link });
     } catch (err) { toastError(err); }
     setBusy("");
   };
