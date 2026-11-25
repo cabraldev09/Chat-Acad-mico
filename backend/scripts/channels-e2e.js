@@ -3459,6 +3459,30 @@ const postMeta = (id, payload, secret, badSig) => {
       const cid = (await http.post("/auth/login", { email: "admin@whaticket.com", password: "admin" })).data.token;
       assert((await http.post("/courses/load-default", {}, { headers: { Authorization: `Bearer ${cid}` } })).status === 200, "admin load");
     });
+    await test("a consultant or tutor connects their own WhatsApp by QR Code: one per person, theirs only, strict protection", async () => {
+      const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const c = await mk("Carla Própria", "qr-propria@x.com", "consultor");
+      await mk("Tito Tutor", "qr-tutor@x.com", "tutor");
+      const tc = (await http.post("/auth/login", { email: "qr-propria@x.com", password: "senha123" })).data.token;
+      const tt = (await http.post("/auth/login", { email: "qr-tutor@x.com", password: "senha123" })).data.token;
+      const qrs = Number(sql("SELECT COUNT(*) FROM Whatsapps WHERE channel='whatsapp'"));
+      const mine = await http.post("/whatsapp/mine", {}, asUser(tc));
+      assert(mine.status === 200 && mine.data.channel === "whatsapp" && mine.data.ownerId === c.id && mine.data.isDefault === false, `own QR ${mine.status} ${JSON.stringify(mine.data).slice(0, 200)} (QR numbers before: ${qrs})`);
+      assert(/^WhatsApp de Carla/.test(mine.data.name), `name ${mine.data.name}`);
+      assert(sql(`SELECT riskMode FROM Whatsapps WHERE id=${mine.data.id}`) === "strict", "the own number starts in strict protection");
+      assert(sql(`SELECT whatsappId FROM Users WHERE id=${c.id}`) === String(mine.data.id), "the own number becomes the person's sending number");
+      const again = await http.post("/whatsapp/mine", {}, asUser(tc));
+      assert(again.status === 409 && again.data.error === "ERR_QR_ALREADY_HAS", `a second own number ${again.status}`);
+      // the owner keeps it connected; another person cannot touch it
+      assert((await http.post(`/whatsappsession/${mine.data.id}`, {}, asUser(tc))).status === 200, "the owner cannot start the session");
+      assert((await http.post(`/whatsappsession/${mine.data.id}`, {}, asUser(tt))).status === 403, "someone else started it");
+      assert(!(await http.get("/whatsapp", asUser(tt))).data.some(w => w.id === mine.data.id), "someone else lists it");
+      const tutors = await http.post("/whatsapp/mine", {}, asUser(tt));
+      assert(tutors.status === 200 && /^WhatsApp de Tito/.test(tutors.data.name), `the tutor's own number ${tutors.status}`);
+      // the management still adds any connection through the usual route; a consultant still cannot
+      assert((await http.post("/whatsapp", { name: "x" }, asUser(tc))).status === 403, "a consultant used the management's route");
+      for (const id of [mine.data.id, tutors.data.id]) await http.delete(`/whatsapp/${id}`, auth());
+    });
     await test("a QR Code number given to a person by the management: only its owner sees it in Conexões, reads its QR Code and picks its groups", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
       const u1 = await mk("Dona Um", "dona1@x.com"), u2 = await mk("Dono Dois", "dono2@x.com");
