@@ -8,7 +8,13 @@ Os limites diários abrangem a equipe, cada consultor e cada conexão. Zero sign
 
 As sugestões são contabilizadas como `copilot` no consumo de IA e também respeitam os limites de tokens do agente e do sistema. Ferramentas rodam em simulação: pedir uma sugestão não envia mensagens nem altera o lead. O consultor revisa o texto e decide entre editar e enviar. O envio passa pelas mesmas regras do canal que uma mensagem normal.
 
-O processo padrão acompanha forma de ingresso, curso, cidade/polo, formato/MEC, grade/tutoria/estágio, dúvidas, dados para bolsa, proposta e matrícula. O gestor pode renomear, reordenar, adicionar e remover etapas, definir objetivos e mensagens prontas. A matrícula permanece na última posição e depende do registro real no CRM. Salvar uma edição antiga após outra revisão retorna conflito, evitando sobrescrever silenciosamente o trabalho de outro gestor.
+O processo padrão acompanha forma de ingresso, curso, cidade/polo, formato/MEC, grade/tutoria/estágio, dúvidas, dados para bolsa, proposta e matrícula. O gestor pode renomear, reordenar, adicionar e remover etapas, definir objetivos e mensagens prontas. A matrícula permanece na última posição e depende do registro real no CRM.
+
+**O que conta como feito (25/11/2026):**
+- **Proposta:** só uma proposta enviada de verdade (pelo estúdio ou um PDF com "proposta" mandado na conversa). A frase pronta "estou te encaminhando a proposta" sozinha não conta. A etapa tem o botão "Abrir proposta", que abre o estúdio do lead.
+- **Ficha:** quando o lead envia a ficha pelo link ou manda os documentos na conversa. Enquanto isso, o copiloto mostra o lembrete com o quanto da ficha já foi preenchido.
+- **Matrícula:** só com a matrícula registrada no CRM. Antes disso o texto pronto diz que a matrícula está sendo finalizada, nunca que foi confirmada.
+- **Tutoria e Comunidade:** opcional, e feita sozinha quando a matrícula é registrada (o contato da tutoria vai ao aluno na hora). Salvar uma edição antiga após outra revisão retorna conflito, evitando sobrescrever silenciosamente o trabalho de outro gestor.
 
 O progresso combina a leitura das mensagens recentes e dos dados do CRM com ajustes explícitos do consultor. Concluir/reabrir uma etapa persiste por conversa; “Usar detecção automática” remove o ajuste. Uma marca no checklist não cria matrícula. Contatos ainda sem lead recebem o roteiro e a indicação de cadastro no CRM.
 

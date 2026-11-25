@@ -15,3 +15,16 @@ export const logoDataUri = (file?: string | null): string | null => {
     return null;
   }
 };
+
+// the brand's logo (Cruzeiro do Sul Virtual), shipped with the server: used where a university of the brand has no logo of its own
+const BRAND_LOGO = path.join(__dirname, "..", "..", "assets", "brand", "logo-cruzeiro-color.svg");
+let brandCache: string | null | undefined;
+export const brandLogoDataUri = (): string | null => {
+  if (brandCache !== undefined) return brandCache;
+  try {
+    brandCache = `data:image/svg+xml;base64,${fs.readFileSync(BRAND_LOGO).toString("base64")}`;
+  } catch (e) {
+    brandCache = null;
+  }
+  return brandCache;
+};

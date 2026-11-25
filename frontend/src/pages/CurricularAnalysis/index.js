@@ -13,6 +13,7 @@ import heroImage from "../../assets/orig/foto-04-cruzeiro.jpg";
 import { BackButton, Badge, Button, Card, CardContent, Input, Portal, cn, formatDay, pluralize } from "../Analysis/orig";
 import SectionBoundary from "../../components/SectionBoundary";
 import { EnrollmentBanner, FollowUpPanel, ProposalCard } from "./FollowUp";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 // "Análise curricular", as in the original system: the PDF of the candidate's curricular analysis (SIAA) becomes the
 // forecast of the entry, semester by semester, with the text ready for WhatsApp. The numbers come from the academic
@@ -674,7 +675,7 @@ const Detail = ({ id }) => {
     setBusy(false);
   };
   const removeSubject = async (s) => {
-    if (!window.confirm(`Excluir a disciplina ${s.name} desta análise? Fica registrado no histórico.`)) return;
+    if (!(await confirmDialog({ title: "Excluir a disciplina?", message: `${s.name} sai desta análise. Fica registrado no histórico.`, confirmText: "Excluir", tone: "danger" }))) return;
     try { const { data } = await api.delete(`/analysis/curricular/${id}/subject/${s.id}`); apply(data); setChanges((n) => n + 1); toast.success("Disciplina excluída. A previsão foi recalculada."); } catch (e) { toast.error(errorText(e)); }
   };
   const remove = async () => { try { await api.delete(`/analysis/curricular/${id}`); toast.success("Análise excluída."); history.replace("/analise-curricular"); } catch (e) { toastError(e); } };

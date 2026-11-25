@@ -87,6 +87,15 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const rgm = String(v.rgm || "").replace(/\s+/g, "");
   const rgmOk = /^[A-Za-z0-9.\-/]{3,40}$/.test(rgm);
   const invalid = !v.poloId || !v.courseId || !rgmOk || (v.fee === "later" && !v.feeDueDate) || needsCpf || reading || (!proof && !noProof);
+  // what is missing, said next to the button (a grey button alone did not tell why)
+  const missing = [
+    !proof && !noProof ? "o print da matrícula (ou marque “Não tenho o print agora”)" : null,
+    !v.courseId ? "o curso" : null,
+    !rgmOk ? "o RGM" : null,
+    !v.poloId ? "o polo" : null,
+    v.fee === "later" && !v.feeDueDate ? "o vencimento combinado da taxa" : null,
+    needsCpf ? "o CPF na ficha do lead (para gerar a cobrança)" : null,
+  ].filter(Boolean);
 
   const confirm = async () => {
     setBusy(true);
@@ -153,7 +162,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
         {!additional && (
           <TextField select fullWidth variant="outlined" margin="dense" label="Período de entrada" value={v.entryTerm || terms.fallback || ""} onChange={(e) => setV({ ...v, entryTerm: e.target.value })}
             helperText="O semestre da meta em que esta matrícula conta, mesmo feita depois do fim do período.">
-            {[...new Set([...terms.list, ...(v.entryTerm ? [v.entryTerm] : [])])].map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
+            {[...new Set([...terms.list, ...(v.entryTerm ? [v.entryTerm] : []), ...(terms.fallback ? [terms.fallback] : [])])].sort().map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
           </TextField>
         )}
         <TextField fullWidth variant="outlined" margin="dense" label="RGM do aluno" required value={v.rgm} onChange={(e) => setV({ ...v, rgm: e.target.value })}
@@ -194,6 +203,9 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
           helperText="Aparece no histórico. Ex.: prefere à noite, já tem notebook." />
         <div className={classes.hint}>{additional ? "Nenhuma mensagem é enviada ao aluno agora." : "O aluno recebe nesta conversa o número da tutoria, com o nome do tutor, e o pedido para mandar mensagem por lá e agendar a ambientação."} O tutor recebe a conversa com o texto de boas-vindas pronto. Daqui para frente o consultor não vê as mensagens do tutor, e o tutor não vê as suas; o contato com o aluno volta a você depois da ambientação.</div>
       </DialogContent>
+      {!reading && missing.length > 0 && (
+        <div role="status" style={{ padding: "8px 24px 0", fontSize: 13, color: "#b45309" }}>Falta {missing.join(", ")}.</div>
+      )}
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
         <Button variant="contained" color="primary" onClick={confirm} disabled={busy || invalid}>

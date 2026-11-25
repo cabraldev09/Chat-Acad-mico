@@ -180,6 +180,38 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   return res.status(200).json(whatsapp);
 };
 
+// a person connects their own WhatsApp by QR Code: the number is theirs (only they and the management see its QR Code), it starts with the
+// protection against blocking in "strict" and becomes their sending number
+export const storeMine = async (req: Request, res: Response): Promise<Response> => {
+  const userId = me(req);
+  const user = await User.findByPk(userId, { attributes: ["id", "name", "whatsappId"] });
+  if (!user) throw new AppError("ERR_NO_USER_FOUND", 404);
+  if (await Whatsapp.count({ where: { ownerId: userId, channel: "whatsapp" } })) throw new AppError("ERR_QR_ALREADY_HAS", 409);
+  const cap = Number(process.env.WHATSAPP_MAX_QR || 8);
+  if ((await Whatsapp.count({ where: { channel: "whatsapp" } })) >= cap) throw new AppError("ERR_CONNECTION_CAPACITY", 400);
+
+  const first = String(user.name || "").trim().split(/\s+/)[0] || "Equipe";
+  const base = `WhatsApp de ${first}`;
+  // the name is unique among the connections
+  let name = base;
+  for (let i = 2; await Whatsapp.count({ where: { name } }); i += 1) name = `${base} (${i})`;
+  const { whatsapp } = await CreateWhatsAppService({ name, status: "OPENING", isDefault: false, queueIds: [], channel: "whatsapp", ownerId: userId } as any);
+  await whatsapp.update({ riskMode: "strict" } as any);
+
+  const current = user.whatsappId ? await Whatsapp.findByPk(user.whatsappId, { attributes: ["id", "ownerId"] }) : null;
+  if (!current || current.ownerId !== userId) await user.update({ whatsappId: whatsapp.id });
+
+  if (req.body && req.body.pairingPhone) {
+    const phone = normalizePairingPhone(req.body.pairingPhone);
+    if (!phone) throw new AppError("ERR_INVALID_PHONE", 400);
+    await whatsapp.update({ pairingPhone: phone });
+  }
+
+  StartWhatsAppSession(whatsapp);
+  getIO().emit("whatsapp", { action: "update", whatsapp });
+  return res.status(200).json(present(req, whatsapp));
+};
+
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { whatsappId } = req.params;
 

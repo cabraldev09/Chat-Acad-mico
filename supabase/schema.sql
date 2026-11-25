@@ -3045,7 +3045,8 @@ CREATE TABLE public."ProposalTemplates" (
     "fixedUntilEnd" boolean DEFAULT false NOT NULL,
     "firstExempt" boolean DEFAULT false NOT NULL,
     "waIntro" text,
-    "waClosing" text
+    "waClosing" text,
+    active boolean DEFAULT true NOT NULL
 );
 
 
@@ -8192,6 +8193,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-course-aliases.js') O
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261230000001-send-quota-and-costs.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261231000001-fix-buritis-entry-term.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-proposal-template-active.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
 

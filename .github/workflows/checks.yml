@@ -61,6 +61,9 @@ jobs:
       - name: Menu sem ícones repetidos
         working-directory: frontend
         run: node scripts/check-menu-icons.js
+      - name: Sem caixas do navegador (confirm, alert, prompt)
+        working-directory: frontend
+        run: node scripts/check-native-dialogs.js
       - name: Avisos somem sozinhos
         working-directory: frontend
         run: node scripts/check-toast-timer.js

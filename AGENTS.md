@@ -32,7 +32,8 @@ A lista completa, com a pasta de cada comando, está em **`docs/VERIFICACOES.md`
 
 - Backend (pasta `backend`): `npx tsc --noEmit`, `npx vitest run`, `node scripts/i18n-check.js`, `node scripts/audit-routes.js`.
   Mexeu em segurança ou em IA: `npm run test:security` e `npm run test:ai`.
-- Frontend (pasta `frontend`): `npx vite build`, `node scripts/check-menu-icons.js`, `node scripts/check-lazy-events.js`.
+- Frontend (pasta `frontend`): `npx vite build`, `node scripts/check-menu-icons.js`, `node scripts/check-lazy-events.js`,
+  `node scripts/check-native-dialogs.js`.
   Instale com `npm install --legacy-peer-deps`.
 - Ponta a ponta (a API inteira com WhatsApp e Efí simulados): suba o Postgres, rode `npm run build` e então
   `PGUSER=postgres PGHOST=localhost LOGIN_RATE_MAX=100 NODE_ENV=test node scripts/channels-e2e.js` (pasta `backend`).

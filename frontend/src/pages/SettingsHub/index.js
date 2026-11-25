@@ -28,6 +28,7 @@ import toastError from "../../errors/toastError";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 import { ErrorState } from "../../components/ui";
 import { BUILD } from "../../utils/versionWatch";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 // Configurações: where the rules of the system are set. Each group holds the real controls (saved as soon as they change);
 // "Cadastros" shows the lists that are not in the side menu (people, polos, queues...), never a second way to what the menu already has.
@@ -564,7 +565,7 @@ const ErrosDeTela = () => {
   useEffect(() => { if (view === "resumo") loadGroups(); else loadRows(); }, [view, loadGroups, loadRows]);
 
   const clear = async () => {
-    if (!window.confirm("Apagar todos os registros de erro de tela?")) return;
+    if (!(await confirmDialog({ title: "Apagar os registros de erro de tela?", message: "Todos os registros saem da lista.", confirmText: "Apagar", tone: "danger" }))) return;
     try { await api.delete("/client-errors"); setRows([]); setGroups([]); toast.success("Registros apagados"); } catch (e) { toastError(e); }
   };
   const mark = async (g, resolved) => {

@@ -19,7 +19,7 @@ export const DEFAULT_STEPS = [
   ["enroll", "Matrícula confirmada", "Confirme a matrícula no CRM com o RGM informado pela instituição."],
   ["comunidade", "Tutoria e Comunidade dos Alunos", "Avise que a tutoria entra em contato e convide para a Comunidade dos Alunos."],
   ["afiliado", "Programa de afiliados", "Explique o programa de indicação, sem prometer valores."]
-].map(([key, label, instruction]) => ({ key, label, instruction, message: "", optional: key === "objective" || key === "afiliado" }));
+].map(([key, label, instruction]) => ({ key, label, instruction, message: "", optional: key === "objective" || key === "afiliado" || key === "comunidade" }));
 // the order shipped before: a process still saved exactly like it moves to the new order (a process the manager changed is kept as it is)
 export const OLD_DEFAULT_ORDER = ["entry", "objective", "course", "city", "format", "grade", "doubts", "bolsa", "proposal", "ficha", "taxa", "comprovante", "enroll", "comunidade", "afiliado"];
 export const upgradeSteps = (steps: ProcessStep[]): ProcessStep[] => {

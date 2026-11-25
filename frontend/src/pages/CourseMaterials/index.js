@@ -8,6 +8,7 @@ import toastError from "../../errors/toastError";
 import { copyText, errorText } from "../Analysis/shared";
 import { BackButton, Badge, Button, Card, CardContent, Input, Portal, cn } from "../Analysis/orig";
 import { ContactChooser } from "../Analysis/ContactChooser";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 // THE COMMERCIAL AREA OF THE COURSES. Each course with its format and the practical share that the MEC asks for, the text the institution approved and the prints it
 // sent. The management attaches a print, the AI reads it, the management confirms; from then on the agent and the consultants say the same. Whoever sells copies
@@ -95,7 +96,7 @@ const MaterialCard = ({ m, canManage, courseName, onChanged }) => {
     setBusy(false);
   };
   const remove = async () => {
-    if (!window.confirm("Excluir este print?")) return;
+    if (!(await confirmDialog({ title: "Excluir este print?", message: "A IA deixa de usar este material.", confirmText: "Excluir", tone: "danger" }))) return;
     try { await api.delete(`/course-materials/${m.id}`); onChanged(); } catch (e) { toastError(e); }
   };
   return (
@@ -230,7 +231,7 @@ const CourseList = () => {
   // a course that is no longer offered is turned off here: the AI, the forms and the lists stop showing it at once
   const toggle = async (c) => {
     const next = c.active === false;
-    if (!next && !window.confirm(`Deixar de ofertar ${c.name}? A IA e os formulários param de oferecer este curso. Você pode voltar atrás quando quiser.`)) return;
+    if (!next && !(await confirmDialog({ title: `Deixar de ofertar ${c.name}?`, message: "A IA e os formulários param de oferecer este curso. Você pode voltar atrás quando quiser.", confirmText: "Deixar de ofertar", tone: "danger" }))) return;
     setBusyId(c.id);
     try {
       await api.put(`/courses/${c.id}/active`, { active: next });
