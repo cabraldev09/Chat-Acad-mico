@@ -2548,7 +2548,8 @@ CREATE TABLE public."Messages" (
     reactions text,
     "isEdited" boolean DEFAULT false NOT NULL,
     "isGif" boolean DEFAULT false NOT NULL,
-    transcript text
+    transcript text,
+    "transcribeTriedAt" timestamp with time zone
 );
 
 
@@ -8177,6 +8178,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-course-aliases.js') O
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261230000001-send-quota-and-costs.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261231000001-fix-buritis-entry-term.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tried.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

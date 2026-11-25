@@ -11,8 +11,8 @@ import { consultantWhere, rows, VALID_TICKET } from "./AnalyticsService";
 
 // Once a day the AI reads the conversations the consultants had that day and writes down, for each one, the objections the lead raised
 // (and whether the consultant answered them), the steps of the sales process where the consultant had trouble and the ones skipped.
-// What goes to the model: only the text of the last messages, with CPF, RG, phones, e-mails, CEP, long numbers and the names of the lead
-// and of the consultant replaced by tags. What is kept: only codes and a short note. The daily caps of spending (Budget) apply to it.
+// What goes to the model: only the text of the last messages (a voice note goes as its transcript, see AiServices/HumanTranscription),
+// with CPF, RG, phones, e-mails, CEP, long numbers and the names of the lead and of the consultant replaced by tags. What is kept: only codes and a short note. The daily caps of spending (Budget) apply to it.
 
 export const OBJECTION_LABEL: Record<string, string> = {
   preco: "preço", tempo: "falta de tempo", confianca: "confiança na faculdade", concorrente: "concorrente", familia: "família",
@@ -59,6 +59,7 @@ export const parseReviewAnswer = (text: string, stepKeys: string[]): ReviewAnswe
 const SYSTEM = (steps: Array<{ key: string; label: string }>) => [
   "Você ajuda a gestão comercial de uma faculdade a entender onde cada consultor precisa de treinamento.",
   "Leia a conversa entre um consultor e um interessado em estudar. Dados pessoais foram trocados por marcadores como [NOME] e [TEL].",
+  "Mensagens de voz aparecem como [áudio] seguido do texto transcrito; [áudio sem transcrição] é um áudio que não pôde ser lido: não deduza o que foi dito nele.",
   `Tipos de objeção válidos: ${OBJECTION_TYPES.join(", ")}.`,
   `Etapas do processo de vendas (chave: descrição): ${steps.map(s => `${s.key}: ${s.label}`).join("; ")}.`,
   "Responda só com JSON válido, sem markdown, exatamente no formato",
@@ -69,8 +70,20 @@ const SYSTEM = (steps: Array<{ key: string; label: string }>) => [
   "note: uma frase curta, sem nomes nem dados pessoais, sobre o principal ponto a melhorar. Não invente nada que não esteja na conversa."
 ].join(" ");
 
-const transcript = (msgs: any[], names: string[]): string =>
-  msgs.map(m => `${m.fromMe ? "Consultor" : "Interessado"}: ${scrub(String(m.body || "").slice(0, 600), names)}`).join("\n");
+// a voice note (the same rule of AiServices/Media.mediaKindOf; one whose file is still missing counts by its type)
+export const isAudioRow = (m: { mediaType?: string | null; mediaUrl?: string | null }): boolean => {
+  const file = String(m.mediaUrl || "").toLowerCase();
+  if (/\.(pdf|webp)$/.test(file)) return false;
+  return m.mediaType === "audio" || m.mediaType === "ptt" || /\.(ogg|opus|mp3|m4a|wav|oga|aac)$/.test(file);
+};
+
+// the conversation as the model reads it: a voice note is its transcript, with the same removal of personal data
+export const reviewTranscript = (msgs: any[], names: string[]): string =>
+  msgs.map(m => {
+    const who = m.fromMe ? "Consultor" : "Interessado";
+    if (isAudioRow(m)) return `${who}: ${m.transcript ? `[áudio] ${scrub(String(m.transcript).slice(0, 600), names)}` : "[áudio sem transcrição]"}`;
+    return `${who}: ${scrub(String(m.body || "").slice(0, 600), names)}`;
+  }).join("\n");
 
 // the conversations of the consultants with a human message on that day, not reviewed yet (most messages first)
 const candidates = async (day: string, limit: number) => {
@@ -98,8 +111,10 @@ export const reviewDay = async (day: string, steps: Array<{ key: string; label: 
   for (const c of await candidates(day, limit)) {
     const ticketId = Number(c.ticketId);
     // eslint-disable-next-line no-await-in-loop
-    const msgs = (await rows(`SELECT m.body, m.fromMe FROM Messages m WHERE m.ticketId = :ticketId AND m.isDeleted = false AND m.createdAt <= :end
-      AND m.body IS NOT NULL AND m.body <> '' AND (m.mediaType IS NULL OR m.mediaType IN ('chat', 'text', 'conversation', 'extendedTextMessage'))
+    // the text messages and the voice notes (with their transcript, when there is one)
+    const msgs = (await rows(`SELECT m.body, m.fromMe, m.mediaType, m.mediaUrl, m.transcript FROM Messages m WHERE m.ticketId = :ticketId AND m.isDeleted = false AND m.createdAt <= :end
+      AND ((m.body IS NOT NULL AND m.body <> '' AND (m.mediaType IS NULL OR m.mediaType IN ('chat', 'text', 'conversation', 'extendedTextMessage')))
+        OR m.mediaType IN ('audio', 'ptt') OR m.transcript IS NOT NULL)
       ORDER BY m.createdAt DESC LIMIT ${MAX_MESSAGES}`, { ticketId, end })).reverse();
     if (msgs.length < MIN_MESSAGES || !msgs.some(m => m.fromMe) || !msgs.some(m => !m.fromMe)) { run.skipped += 1; continue; }
     // eslint-disable-next-line no-await-in-loop
@@ -108,7 +123,7 @@ export const reviewDay = async (day: string, steps: Array<{ key: string; label: 
     const names = [who?.contact, who?.consultant, who?.lead].filter(Boolean);
     try {
       // eslint-disable-next-line no-await-in-loop
-      const answer = await askOnce(agent, apiKey, system, transcript(msgs, names), 300, { kind: "reading", ticketId });
+      const answer = await askOnce(agent, apiKey, system, reviewTranscript(msgs, names), 300, { kind: "reading", ticketId });
       const parsed = parseReviewAnswer(answer.text, stepKeys);
       const tokens = Number(answer.usage?.total_tokens || (answer.usage?.input_tokens || 0) + (answer.usage?.output_tokens || 0) || 0);
       // eslint-disable-next-line no-await-in-loop

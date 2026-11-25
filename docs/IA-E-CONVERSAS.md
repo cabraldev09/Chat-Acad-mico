@@ -88,6 +88,24 @@ Referências: [instruções e contexto na OpenAI](https://developers.openai.com/
     2. a variável `OPENAI_API_KEY` do servidor;
     3. a de um agente OpenAI ativo.
   - **Interruptor:** `ai_transcribe_audio` (ligado por padrão).
+  - **Áudios das conversas entre pessoas** (lead, consultor e tutor, nos números de WhatsApp oficial e QR Code; grupos e outros canais
+    ficam de fora): `workers/HumanTranscription.ts` transcreve em segundo plano, a cada minuto, até 10 áudios por vez, nunca no
+    caminho que recebe a mensagem (`services/AiServices/HumanTranscription.ts`).
+    - Só áudios das últimas 48 horas e com pelo menos 2 minutos (o agente de IA e o download vêm primeiro). Ligar não transcreve o
+      que é mais antigo.
+    - **Uma vez por mensagem** (`Messages.transcribeTriedAt`, também quando não havia fala ou deu erro): o mesmo áudio nunca é pago
+      duas vezes. O agente de IA marca o mesmo campo.
+    - **Interruptores:** precisa de `ai_transcribe_audio` e da chave da OpenAI, e do próprio `ai_transcribe_human` (ligado por padrão).
+      Ficam em **Agentes de IA > Passagem para a equipe > Mensagens de voz** (gestão).
+    - **Limites:** os limites diários de gasto da IA (`ai_daily_token_cap`, `ai_daily_usd_cap`) e um teto próprio de minutos por dia
+      (`ai_transcribe_human_daily_minutes`, 120; zero para). Áudio com mais de `ai_transcribe_human_max_minutes` (10) ou mais de
+      12 MB não é enviado. Com o teto atingido o áudio espera e é transcrito quando houver espaço, dentro das 48 horas.
+    - **Custo (estimativa):** a OpenAI cobra cerca de US$ 0,006 por minuto de áudio (`whisper-1`, tabela de 2026-11). Com o teto
+      padrão de 120 minutos por dia, no máximo cerca de US$ 0,72 por dia (uns US$ 22 por mês). Com áudios de 30 segundos, 120
+      minutos são uns 240 áudios por dia. O uso entra em Custos como "Resumos e leituras", sem agente.
+    - **Na conversa:** o texto aparece embaixo do áudio, com o rótulo "Transcrição", para quem já pode ver a conversa (a mesma
+      permissão das mensagens; a conversa aberta recebe o texto na hora).
+    - **LGPD:** o áudio vai para a OpenAI só para virar texto. A equipe e os leads devem saber que as conversas são analisadas.
 
 ## Chatbot de menus
 Além de submenu, texto, fila, atendente, IA e encerrar, há passos que **seguem o fluxo**: *perguntar e guardar a resposta*,

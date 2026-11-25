@@ -18,7 +18,8 @@ import { logUsage } from "./Usage";
 // AI answers what the person said instead of a file name. It is ON by default with a key; the company can turn it off (Setting
 // `ai_transcribe_audio` = "0").
 const OPENAI_URL = (): string => process.env.OPENAI_API_URL || "https://api.openai.com";
-const MAX_BYTES = 12 * 1024 * 1024;
+export const MAX_BYTES = 12 * 1024 * 1024;
+export const transcribeModel = (): string => process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1";
 
 export const transcriptionEnabled = async (): Promise<boolean> => (await getSetting("ai_transcribe_audio", "1")) !== "0" && !!(await openaiKey());
 
@@ -30,7 +31,8 @@ const openaiKey = async (): Promise<string> =>
   "";
 
 // the text of the audio (null when it is off, too big, fails or has no speech): the caller then asks the person to write
-export const transcribeAudio = async (mediaUrl: string, agentId?: number | null): Promise<string | null> => {
+// (the voice notes of the conversations between people are logged as "reading", with no agent: see HumanTranscription)
+export const transcribeAudio = async (mediaUrl: string, agentId?: number | null, opts: { kind?: "reply" | "reading"; ticketId?: number | null } = {}): Promise<string | null> => {
   try {
     if (!(await transcriptionEnabled())) return null;
     const full = path.join(PUBLIC_DIR, path.basename(String(mediaUrl || "")));
@@ -39,7 +41,7 @@ export const transcribeAudio = async (mediaUrl: string, agentId?: number | null)
     if (size > MAX_BYTES) return null;
     const form = new FormData();
     form.append("file", fs.createReadStream(full));
-    form.append("model", process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1");
+    form.append("model", transcribeModel());
     form.append("language", "pt");
     // with the duration, so the cost (charged by minute) is counted in Custos
     form.append("response_format", "verbose_json");
@@ -51,7 +53,7 @@ export const transcribeAudio = async (mediaUrl: string, agentId?: number | null)
     });
     // the seconds of audio are the unit of the charge (WhatsApp voice notes are about 2 KB per second when the duration is not told)
     const seconds = Math.max(1, Math.round(Number(data?.duration) || size / 2000));
-    await logUsage({ agentId: agentId || null, model: process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1", kind: "reply", usage: { input_tokens: seconds, output_tokens: 0 }, latencyMs: Date.now() - started });
+    await logUsage({ agentId: agentId || null, ticketId: opts.ticketId || null, model: transcribeModel(), kind: opts.kind || "reply", usage: { input_tokens: seconds, output_tokens: 0 }, latencyMs: Date.now() - started });
     const text = String(data?.text || "").replace(/\s+/g, " ").trim();
     return text ? text.slice(0, 1500) : null;
   } catch (err) {
@@ -79,7 +81,8 @@ export const transcribeMessage = async (m: Message, agentId?: number | null, wai
   }
   if (!file || mediaKindOf(m.mediaType, file) !== "audio") return null;
   const text = await transcribeAudio(file, agentId);
-  if (text) await Message.update({ transcript: text } as any, { where: { id: m.id }, silent: true } as any).then(() => m.set("transcript", text));
+  // tried once: the worker of the conversations between people does not send the same audio again (it had no speech, or failed)
+  await Message.update({ ...(text ? { transcript: text } : {}), transcribeTriedAt: new Date() } as any, { where: { id: m.id }, silent: true } as any).then(() => { if (text) m.set("transcript", text); });
   return text;
 };
 
