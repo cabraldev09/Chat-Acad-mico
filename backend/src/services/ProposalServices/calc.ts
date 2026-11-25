@@ -1,8 +1,9 @@
 // Scholarship proposal maths. The rules were derived from real proposals and
 // reproduce them to the cent (see scripts/channels-e2e.js, "proposal" section):
 //
-//  * Bolsa aplicada      = 1 - primeira mensalidade / mensalidade bruta
-//  * Faixas de vencimento = primeira mensalidade, +lateFee1Pct (dias 11 a 25), +lateFee2Pct (depois)
+//  * Bolsa aplicada      = 1 - mensalidade com bolsa / mensalidade bruta
+//  * Faixas de vencimento = mensalidade com bolsa, +lateFee1Pct (dias 11 a 25), +lateFee2Pct (depois)
+//  * A 1ª mensalidade é um valor à parte (por padrão o mesmo das demais; pode ser isenta, R$ 0): ela não muda a bolsa nem a projeção
 //  * Projeção por semestre, semestre i >= 2:
 //      ajuste de bolsa    = bolsaPrimeiroSemestre - bolsaDemais   (apenas no 2º semestre)
 //      reajuste semestral = degrau configurável (ex.: 2% do 2º ao 5º, 3% do 6º em diante)
@@ -16,6 +17,9 @@ export interface SemestralStep {
 
 export interface ProposalParams {
   gross: number;
+  // the monthly fee with the scholarship (the one of the 2nd installment on); proposals made before it existed have only firstMonthly
+  monthly?: number;
+  // what the 1st installment costs (by default the same as the others; 0 when waived)
   firstMonthly: number;
   enrollmentFee: number;
   dueDay: number;
@@ -90,8 +94,15 @@ export const semestralFor = (schedule: SemestralStep[], i: number): number => {
   return pct;
 };
 
+// the monthly fee with the scholarship: the base of every value but the 1st installment
+export const baseMonthly = (p: Pick<ProposalParams, "monthly" | "firstMonthly">): number =>
+  Number(p.monthly) > 0 ? Number(p.monthly) : Number(p.firstMonthly);
+// what the 1st installment costs: 0 when waived; a proposal from before "monthly" kept the base in firstMonthly
+export const firstPayment = (p: Pick<ProposalParams, "monthly" | "firstMonthly" | "firstExempt">): number =>
+  p.firstExempt ? 0 : Number(p.firstMonthly);
+
 export const calcProposal = (p: ProposalParams): ProposalResult => {
-  const first = Number(p.firstMonthly);
+  const first = baseMonthly(p);
   const gross = Number(p.gross);
   const bolsaApplied = gross > 0 ? r2((1 - first / gross) * 100) : 0;
 

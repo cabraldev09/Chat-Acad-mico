@@ -22,6 +22,7 @@ import ImportDialog from "./ImportDialog";
 import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, StagePill, ago, short, isOverdue, burst } from "./shared";
 import { tint } from "../../utils/color";
 import { NEXT_LABEL, TEMP_COLOR, TEMP_LABEL } from "../../utils/commercial";
+import { putStage } from "./moveStage";
 
 const useStyles = makeStyles((theme) => ({
   filters: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", marginBottom: theme.spacing(1.5) },
@@ -290,8 +291,8 @@ const Board = () => {
       return without.map((s) => (s.id === stage.id && moved ? { ...s, count: s.count + 1, leads: [moved, ...s.leads] } : s));
     });
     try {
-      await api.put(`/leads/${leadId}/stage`, { stageId: stage.id, ...extra });
-      if (stage.type === "won" && e) burst(e.clientX, e.clientY);
+      const pos = e ? { x: e.clientX, y: e.clientY } : null;
+      if ((await putStage(leadId, stage, extra)) && stage.type === "won" && pos) burst(pos.x, pos.y);
     } catch (err) { toastError(err); }
     load();
   };

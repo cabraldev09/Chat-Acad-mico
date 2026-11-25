@@ -1,11 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { Button, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, LinearProgress, makeStyles } from "@material-ui/core";
 import { Check, ChevronDown, ChevronUp, Compass, Flag, ListChecks, Send, Settings2, Workflow, X, FileText, GraduationCap, RotateCcw, ThumbsUp, ThumbsDown, BookOpen, History } from "lucide-react";
 import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import EnrollDialog from "../../pages/CRM/EnrollDialog";
+const ProposalStudio = lazy(() => import("../../pages/CRM/ProposalStudio"));
 import CopilotSettings from "./Settings";
+import { promptDialog } from "../ConfirmDialog";
 
 const useStyles = makeStyles(theme => ({
   root: { flex: "none", minWidth: 0, position: "relative", zIndex: 5, color: theme.palette.text.primary, background: theme.palette.background.paper, borderBottom: "2px solid var(--line-strong, #cbd5e1)" },
@@ -89,6 +91,8 @@ function Panel({ ticket }) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [editor, setEditor] = useState(false);
   const [enrollLead, setEnrollLead] = useState(null);
+  // the proposal step opens the proposal studio of the lead (the step is done when a proposal is really sent)
+  const [studio, setStudio] = useState(null);
   const alive = useRef(true);
   const requestSequence = useRef(0);
   const suggestionEpoch = useRef(0);
@@ -172,7 +176,12 @@ function Panel({ ticket }) {
   const rate = async (item, setItem, value) => {
     if (!item || !item.id) return;
     const feedback = item.feedback === value ? null : value;
-    const reason = feedback === "nao_util" ? window.prompt("O que faltou ou estava errado? (opcional)") || "" : "";
+    let reason = "";
+    if (feedback === "nao_util") {
+      const typed = await promptDialog({ title: "O que faltou ou estava errado?", message: "Ajuda a melhorar as sugestões. Pode deixar em branco.", label: "Comentário (opcional)", multiline: true, confirmText: "Enviar" });
+      if (typed === null) return;
+      reason = typed;
+    }
     try {
       await api.put(`/tickets/${ticket.id}/copilot/requests/${item.id}/feedback`, { feedback, reason });
       if (alive.current) setItem(v => (v && v.id === item.id ? { ...v, feedback } : v));
@@ -192,6 +201,10 @@ function Panel({ ticket }) {
     if (summary) return;
     try { const { data: result } = await api.get(`/tickets/${ticket.id}/ai-summary`); if (alive.current) setSummary(result); } catch (e) { toastError(e); }
   };
+  const openProposal = () => run(async () => {
+    const [{ data: lead }, { data: options }] = await Promise.all([api.get(`/leads/${data.leadId}`), api.get("/crm/options").catch(() => ({ data: {} }))]);
+    if (alive.current) setStudio({ lead, options });
+  });
   const enrollment = () => run(async () => { const { data: lead } = await api.get(`/leads/${data.leadId}`); if (alive.current) setEnrollLead(lead); });
   const quota = data.quota && data.quota.user;
   const text = (suggestion && suggestion.text) || (next && next.text);
@@ -258,6 +271,7 @@ function Panel({ ticket }) {
             {!suggestion && kind === "reply" && ctx.leadAsked && <Button size="small" className={c.button} disabled={busy || !data.aiAvailable || !canSend} startIcon={<Workflow size={13} />} onClick={() => suggest()}>Sugerir resposta</Button>}
             {suggestion && <Button size="small" className={c.button} onClick={() => setSuggestion(null)}>Descartar</Button>}
             {!suggestion && next && next.action === "send_grade" && data.leadId && <Button size="small" className={c.button} startIcon={<FileText size={13} />} href="/grades">Abrir grades</Button>}
+            {active.key === "proposal" && data.leadId && !active.done && <Button size="small" className={c.button} startIcon={<FileText size={15} />} disabled={busy} onClick={openProposal}>Abrir proposta</Button>}
             {active.key === "enroll" && data.leadId && !active.done && <Button size="small" className={c.button} startIcon={<GraduationCap size={15} />} disabled={busy || !canSend} onClick={enrollment}>Registrar matrícula</Button>}
             {active.key !== "enroll" && <Button size="small" className={c.button} disabled={busy || !canSend && !data.canManage} startIcon={active.done ? <RotateCcw size={13} /> : <Check size={14} />} onClick={() => mark(!active.done)}>{active.done ? "Reabrir etapa" : "Concluir etapa"}</Button>}
             {active.manual && <Button size="small" className={c.button} disabled={busy || !canSend && !data.canManage} onClick={() => mark(null)}>Usar detecção automática</Button>}
@@ -301,5 +315,10 @@ function Panel({ ticket }) {
       <DialogContent><CopilotSettings processOnly onSaved={() => { setEditor(false); reload(); }} /></DialogContent>
     </Dialog>
     {enrollLead && <EnrollDialog open lead={enrollLead} onClose={() => setEnrollLead(null)} onDone={() => { setEnrollLead(null); reload(); }} />}
+    {studio && (
+      <Suspense fallback={null}>
+        <ProposalStudio lead={studio.lead} ctx={{ options: studio.options }} onSaved={() => reload()} onClose={() => { setStudio(null); reload(); }} />
+      </Suspense>
+    )}
   </section>;
 }

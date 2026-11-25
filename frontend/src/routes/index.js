@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect } from "react";
 import { BrowserRouter, Redirect, Switch, useLocation } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
+import ConfirmHost from "../components/ConfirmDialog";
 
 import LoggedInLayout from "../layout";
 import Login from "../pages/Login/";
@@ -197,6 +198,8 @@ const Routes = () => {
             </WhatsAppsProvider>
           </Switch>
           {/* every notice leaves by itself after a few seconds: no pause when the pointer rests on it or the window loses focus */}
+          {/* the system's confirmation dialogs (in place of the browser's boxes) */}
+          <ConfirmHost />
           <ToastContainer position="top-right" autoClose={4500} hideProgressBar newestOnTop pauseOnHover={false} pauseOnFocusLoss={false} draggable closeOnClick limit={4} />
         </ThemeProvider>
       </AuthProvider>

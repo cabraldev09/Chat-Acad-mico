@@ -394,6 +394,11 @@ export const submitForm = async (form: EnrollmentForm, lead: Lead) => {
     link: `/crm?lead=${lead.id}`,
     dedupeKey: `enrollment_form:${form.id}:${first ? "first" : form.submittedAt.toISOString()}`
   });
+  // the next step is the consultant's: check the form and confirm the enrollment (closed by itself when the enrollment is confirmed)
+  if (!lead.enrolledAt && lead.ownerId) {
+    const { ensureTask } = await import("./Tasks");
+    await ensureTask({ key: `enroll-after-form:${lead.id}`, leadId: lead.id, userId: lead.ownerId, title: "Ficha recebida: conferir os dados e confirmar a matrícula", dueAt: new Date(Date.now() + 4 * 3600e3) }).catch(() => null);
+  }
   getIO().emit("lead", { action: "update", lead: await loadLead(lead.id) });
   return publicView(form, lead);
 };

@@ -1,6 +1,6 @@
-# Rotas da API (598)
+# Rotas da API (599)
 
-Públicas: 40 · logado (qualquer perfil): 328 · gestão: 182 · admin: 40
+Públicas: 40 · logado (qualquer perfil): 329 · gestão: 182 · admin: 40
 
 ## Públicas (sem login)
 
@@ -215,6 +215,7 @@ Públicas: 40 · logado (qualquer perfil): 328 · gestão: 182 · admin: 40
 - POST /tickets/:ticketId/typing → canWriteTicket
 - PUT /tickets/:ticketId → canWriteTicket
 - PUT /users/:userId → canEditUser
+- POST /whatsapp/mine → canConnectOwnQr
 - PUT /whatsapp/:whatsappId → canManageWhatsapp
 - POST /whatsapp/:whatsappId/import-history → canManageWhatsapp
 - POST /whatsappsession/:whatsappId → canManageWhatsapp
