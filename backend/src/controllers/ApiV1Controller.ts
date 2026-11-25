@@ -129,3 +129,9 @@ export const connections = async (_req: Request, res: Response): Promise<Respons
     rows.map(w => ({ id: w.id, name: w.name, channel: w.channel, status: w.status }))
   );
 };
+
+// GET /api/v1/indicadores?de=AAAA-MM-DD&ate=AAAA-MM-DD&polo=<id>: totals and codes only (services/IndicatorServices/Indicators)
+export const indicators = async (req: Request, res: Response): Promise<Response> => {
+  const { buildIndicators, cleanIndicatorQuery } = await import("../services/IndicatorServices/Indicators");
+  return res.json(await buildIndicators(cleanIndicatorQuery(req.query, polosOf(req))));
+};

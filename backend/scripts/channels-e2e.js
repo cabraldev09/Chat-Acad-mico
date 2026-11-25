@@ -1021,6 +1021,79 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token does not come back");
     });
 
+    // GET /api/v1/indicadores (docs/API-V1.md): totals and codes only, never a name, phone, e-mail, CPF or text; the scope and the polos of
+    // the token are respected, the period is at most 93 days, and the numbers are the ones of the screens for the same period.
+    await test("API indicators: only totals and codes, scope and polos of the token, the same numbers of the screens", async () => {
+      const api = (t, url) => http.get(url, { headers: { Authorization: `Bearer ${t}` } });
+      const mkTok = async body => (await http.post("/api-tokens", body, auth())).data;
+      const today = (await http.get("/enrollments", auth())).data.to;
+      const poloA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('IDA', 'Polo Indicadores A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const poloB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('IDB', 'Polo Indicadores B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const won = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
+      const consultant = Number(sql(`SELECT id FROM Users ORDER BY id LIMIT 1`));
+      const ins = (name, phone, email, cpf, polo, extra = "") => sql(`INSERT INTO Leads (name, phone, email, cpf, source, stageId, poloId, isHistorical, firstContactAt, ${extra ? "nextFollowUpAt, " : ""}createdAt, updatedAt) VALUES ('${name}', '${phone}', '${email}', ${cpf ? `'${cpf}'` : "NULL"}, 'Instagram', ${open}, ${polo}, false, NOW() + INTERVAL '30 minutes', ${extra ? "NOW() - INTERVAL '1 day', " : ""}NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const la = ins("Indicadora Joana Pessoal", "5569933330001", "joana.indicadores@x.com", "29537914852", poloA, "follow");
+      ins("Indicador Pedro Pessoal", "5569933330002", "pedro.indicadores@x.com", null, poloB);
+      const lw = sql(`INSERT INTO Leads (name, phone, email, source, stageId, poloId, isHistorical, wonAt, enrolledAt, rgm, createdAt, updatedAt) VALUES ('Matriculada Rita Pessoal', '5569933330003', 'rita.indicadores@x.com', 'Google', ${won}, ${poloA}, false, NOW(), NOW(), '7999001', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO LeadTasks (leadId, userId, title, type, dueAt, createdAt, updatedAt) VALUES (${la}, ${consultant}, 'Ligar para Joana Pessoal', 'ligacao', NOW() - INTERVAL '2 hours', NOW(), NOW())`);
+      sql(`INSERT INTO ConsultantReviews (userId, ticketId, leadId, day, objections, difficulties, skipped, note, model, tokens, createdAt, updatedAt) VALUES (${consultant}, 0, ${la}, '${today}', '[{"type":"preco","handled":true},{"type":"tempo","handled":false}]', '["entry"]', '["grade"]', 'Joana Pessoal falou do preço', 'test', 0, NOW(), NOW())`);
+
+      // scope: a token without indicators:read is refused; the period and the polo are checked
+      const leadsOnly = await mkTok({ name: "leads", scopes: ["leads:read"] });
+      assert((await api(leadsOnly.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).status === 403, "a token without indicators:read read the indicators");
+      const all = await mkTok({ name: "indicadores", scopes: ["indicators:read"] });
+      assert((await api(all.token, `/api/v1/indicadores?de=2026-01-01&ate=2026-12-31`)).status === 400, "a period of a year was accepted");
+      assert((await api(all.token, `/api/v1/indicadores?de=${today}`)).status === 400, "a period without the end was accepted");
+      const r = await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}`);
+      assert(r.status === 200 && Array.isArray(r.data.polos) && Array.isArray(r.data.conexoes), `indicators ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+
+      // no personal data: no field that carries it, and no name, phone, e-mail or CPF of any person of the base anywhere in the answer
+      const text = JSON.stringify(r.data);
+      const keys = new Set();
+      const walk = v => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => { keys.add(k.toLowerCase()); walk(x); }); };
+      walk(r.data);
+      for (const k of ["name", "nome", "phone", "telefone", "number", "email", "cpf", "rgm", "body", "note", "comment", "lastmessage", "contact", "lead", "aluno"]) assert(!keys.has(k), `the indicators carry the field ${k}`);
+      const people = sql(`SELECT name FROM Leads WHERE LENGTH(name) >= 6 UNION SELECT phone FROM Leads WHERE LENGTH(phone) >= 8 UNION SELECT email FROM Leads WHERE LENGTH(email) >= 6 UNION SELECT cpf FROM Leads WHERE cpf IS NOT NULL UNION SELECT rgm FROM Leads WHERE LENGTH(rgm) >= 5 UNION SELECT name FROM Contacts WHERE LENGTH(name) >= 6 UNION SELECT number FROM Contacts WHERE LENGTH(number) >= 8 UNION SELECT name FROM Users WHERE LENGTH(name) >= 6 UNION SELECT email FROM Users WHERE LENGTH(email) >= 6 UNION SELECT name FROM Whatsapps WHERE LENGTH(name) >= 6`).split("\n").map(x => x.trim()).filter(Boolean);
+      assert(people.length > 20, "the base has no people to compare");
+      const leak = people.find(p => text.includes(p));
+      assert(!leak, `the indicators carry personal data: ${leak}`);
+      assert(!/Pessoal|joana|pedro|rita|29537914852|5569933330001/i.test(text), "the indicators carry the data of the seeded people");
+
+      // the content: polo A has the follow-up, the task, the enrollment and the review of the consultant, by codes
+      const a = r.data.polos.find(p => p.poloId === Number(poloA));
+      assert(a && a.codigo === "IDA" && a.leads.total === 2 && a.leads.porOrigem.some(o => o.origem === "Instagram" && o.total === 1) && a.leads.porOrigem.some(o => o.origem === "Google" && o.matriculados === 1), `polo A leads ${JSON.stringify(a && a.leads)}`);
+      assert(a.followUps.vencidos === 1 && a.followUps.tarefasVencidas === 1 && a.matriculasRealizadas.total === 1 && a.primeiraResposta.leadsRespondidos === 1, `polo A ${JSON.stringify(a)}`);
+      const rv = a.revisaoConsultores.find(c => c.consultor === consultant);
+      assert(rv && rv.conversasLidas === 1 && rv.objecoes.some(o => o.tipo === "preco" && o.levantadas === 1 && o.tratadas === 1) && rv.objecoes.some(o => o.tipo === "tempo" && o.tratadas === 0) && rv.etapasComDificuldade[0].etapa === "entry" && rv.etapasPuladas[0].etapa === "grade", `review ${JSON.stringify(a.revisaoConsultores)}`);
+      assert(r.data.conexoes.every(c => Number.isInteger(c.id) && typeof c.conectado === "boolean" && c.funcao), `connections ${JSON.stringify(r.data.conexoes).slice(0, 300)}`);
+
+      // the same numbers of the screens for the same period: Captação/Painel do CRM (origins, stages, overdue tasks) and Matrículas realizadas
+      const metrics = (await http.get(`/crm/metrics?from=${today}&to=${today}`, auth())).data;
+      const sumBy = (list, k, v) => list.reduce((m, x) => ({ ...m, [x[k]]: (m[x[k]] || 0) + x[v] }), {});
+      const apiSources = sumBy(r.data.polos.flatMap(p => p.leads.porOrigem), "origem", "total");
+      const screenSources = sumBy(metrics.bySource, "name", "leads");
+      assert(JSON.stringify(Object.entries(apiSources).sort()) === JSON.stringify(Object.entries(screenSources).sort()), `origins API ${JSON.stringify(apiSources)} screen ${JSON.stringify(screenSources)}`);
+      const apiStages = sumBy(r.data.polos.flatMap(p => p.leads.porEtapa), "etapaId", "total");
+      const screenStages = sumBy(metrics.funnel.filter(f => f.total > 0), "id", "total");
+      assert(JSON.stringify(Object.entries(apiStages).sort()) === JSON.stringify(Object.entries(screenStages).sort()), `stages API ${JSON.stringify(apiStages)} screen ${JSON.stringify(screenStages)}`);
+      const now = (await http.get(`/crm/metrics?now=1`, auth())).data;
+      const apiTasks = r.data.polos.reduce((t, p) => t + p.followUps.tarefasVencidas, 0);
+      assert(apiTasks === now.attention.overdueTasks, `overdue tasks API ${apiTasks} screen ${now.attention.overdueTasks}`);
+      const screenEnr = (await http.get(`/enrollments?from=${today}&to=${today}`, auth())).data;
+      const apiEnr = r.data.polos.reduce((t, p) => t + p.matriculasRealizadas.total, 0);
+      assert(apiEnr === screenEnr.total, `enrollments API ${apiEnr} screen ${screenEnr.total}`);
+
+      // the polos of the token: polo A only, and polo B is refused
+      const ofA = await mkTok({ name: "indicadores A", scopes: ["indicators:read"], poloIds: [Number(poloA)] });
+      const onlyA = (await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).data;
+      assert(onlyA.polos.length === 1 && onlyA.polos[0].poloId === Number(poloA), `token of polo A: ${JSON.stringify(onlyA.polos.map(p => p.poloId))}`);
+      assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).status === 403, "token of polo A read polo B");
+      const askedB = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).data;
+      assert(askedB.polos.length === 1 && askedB.polos[0].leads.total === 1 && askedB.polos[0].matriculasRealizadas.total === 0, `polo B asked: ${JSON.stringify(askedB.polos)}`);
+      void lw;
+    });
+
     // -------------------------------------------------------------------- CRM
     console.log("\ncrm");
     const leadOf = number => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}' LIMIT 1`);

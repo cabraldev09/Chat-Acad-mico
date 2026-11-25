@@ -705,6 +705,7 @@ const messages = {
         ERR_API_TOKEN_EXPIRY: "A validade do token vai de 1 a 365 dias.",
         ERR_API_TOKEN_EXPIRED: "O token da API venceu. Crie um novo em API e webhooks.",
         ERR_API_TOKEN_SCOPE: "Este token não tem permissão para esta ação.",
+        ERR_API_PERIOD_TOO_LONG: "O período dos indicadores vai até 93 dias.",
         ERR_API_TOKEN_POLO: "Este token não alcança esta pessoa: ela não é de um dos polos do token.",
         ERR_CONTACT_NUMBER_INVALID: "Informe o número com o DDD, por exemplo 69 99999-0000. Espaços, traços e parênteses podem ficar.",
         ERR_NO_PERMISSION: "Você não tem permissão para fazer isso.",
