@@ -7,7 +7,7 @@ import AppError from "../errors/AppError";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
 import { getBusinessConfig, businessMinutes } from "../helpers/BusinessTime";
 import { portable, nowSql, diffHours, countIf } from "../helpers/sqlDialect";
-import { reqRole } from "../middleware/scope";
+import { crmPolosOf, poloSql, reqRole } from "../middleware/scope";
 
 const q = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
   (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
@@ -60,7 +60,9 @@ export const crmReport = async (req: Request, res: Response): Promise<Response> 
   // consultants only ever see their own numbers
   const ownerOnly = reqRole(req) === "consultor" ? Number(req.user.id) : null;
   const rep = { from, to, ownerOnly };
-  const f = `AND l.isHistorical = false AND l.createdAt BETWEEN :from AND :to AND (:ownerOnly IS NULL OR l.ownerId = :ownerOnly)`;
+  // the coordination: the leads of its polos only (middleware/scope)
+  const polos = poloSql(await crmPolosOf(req));
+  const f = `AND l.isHistorical = false AND l.createdAt BETWEEN :from AND :to AND (:ownerOnly IS NULL OR l.ownerId = :ownerOnly) ${polos}`;
 
   const key = groupBy === "polo" ? "p.id" : "u.id";
   const join = groupBy === "polo" ? "LEFT JOIN Polos p ON p.id = l.poloId" : "LEFT JOIN Users u ON u.id = l.ownerId";
@@ -87,7 +89,7 @@ export const crmReport = async (req: Request, res: Response): Promise<Response> 
     `SELECT ${key} AS gid, COUNT(*) AS total
      FROM LeadTasks t JOIN Leads l ON l.id = t.leadId ${join}
      WHERE t.doneAt IS NULL AND t.dueAt < ${nowSql()} AND l.isHistorical = false
-       AND (:ownerOnly IS NULL OR l.ownerId = :ownerOnly)
+       AND (:ownerOnly IS NULL OR l.ownerId = :ownerOnly) ${polos}
      GROUP BY ${key}`,
     rep
   );

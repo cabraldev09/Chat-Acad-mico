@@ -14,6 +14,7 @@ import Lead from "../models/Lead";
 import LeadEnrollment from "../models/LeadEnrollment";
 import Polo from "../models/Polo";
 import User from "../models/User";
+import { crmPolosOf } from "../middleware/scope";
 import { proofFilePath, storeProof } from "../services/CommercialServices/EnrollmentProof";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -69,15 +70,18 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const from = String(req.query.from || `${today.slice(0, 8)}01`);
   if (!DAY.test(from) || !DAY.test(to) || from > to) throw new AppError("ERR_INVALID_PERIOD", 400);
   const range = { [Op.gte]: dayBounds(from).start, [Op.lte]: dayBounds(to).end };
-  const poloId = Number(req.query.poloId) || null;
   const ownerId = Number(req.query.ownerId) || null;
+  // the coordination sees the enrollments of its polos only (middleware/scope): a polo outside them reads as none
+  const mine = await crmPolosOf(req);
+  const asked = Number(req.query.poloId) || null;
+  const polo = mine === null ? (asked ? { poloId: asked } : {}) : { poloId: { [Op.in]: (asked ? mine.filter(id => id === asked) : mine).concat(0) } };
 
   const firsts = await Lead.findAll({
-    where: { isHistorical: false, wonAt: range, ...(poloId ? { poloId } : {}), ...(ownerId ? { ownerId } : {}) } as any,
+    where: { isHistorical: false, wonAt: range, ...polo, ...(ownerId ? { ownerId } : {}) } as any,
     attributes: ["id", "name", "rgm", "wonAt", "poloId", "ownerId", "courseId", "entryTerm"], limit: 3000, order: [["wonAt", "DESC"]]
   });
   const extras = await LeadEnrollment.findAll({
-    where: { enrolledAt: range, ...(poloId ? { poloId } : {}), ...(ownerId ? { ownerId } : {}) } as any, limit: 3000, order: [["enrolledAt", "DESC"]]
+    where: { enrolledAt: range, ...polo, ...(ownerId ? { ownerId } : {}) } as any, limit: 3000, order: [["enrolledAt", "DESC"]]
   });
   const leadIds = [...new Set([...firsts.map(l => l.id), ...extras.map(e => e.leadId)])];
   const extraLeads = await Lead.findAll({ where: { id: extras.map(e => e.leadId) } as any, attributes: ["id", "name"] });

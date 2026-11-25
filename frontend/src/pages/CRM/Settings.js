@@ -14,6 +14,7 @@ import ImportWizard from "../../components/ImportWizard";
 import ColorSwatchPicker from "../../components/ColorSwatchPicker";
 import api from "../../services/api";
 import { getBackendUrl } from "../../config";
+import { publicApiBase } from "../../utils/publicApiBase";
 import toastError from "../../errors/toastError";
 import { dayDefault } from "../../utils/workWeek";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
@@ -98,7 +99,7 @@ export const Capture = ({ s, setS, save }) => {
         <Typography className={classes.hint}>
           Conversas de qualquer canal viram lead automaticamente. Para ligar RD Station, Meta Lead Ads (via Zapier/Make), landing pages ou planilhas, use a API com um token criado em API &amp; Webhooks:
         </Typography>
-        <Copyable text={`POST ${base}/api/v1/leads  {"name":"Maria","phone":"11999990000","email":"m@x.com","source":"Google","utmCampaign":"vestibular"}`} />
+        <Copyable text={`POST ${publicApiBase(base)}/api/v1/leads  {"name":"Maria","phone":"11999990000","email":"m@x.com","source":"Google","utmCampaign":"vestibular"}`} />
         <Typography className={classes.hint} style={{ marginTop: 8 }}>Eventos por webhook: lead.created, lead.stage_changed, lead.won, lead.lost.</Typography>
       </div>
     </Paper>
