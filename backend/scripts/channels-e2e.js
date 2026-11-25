@@ -976,7 +976,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const poloA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('APA', 'Polo API A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const poloB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('APB', 'Polo API B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
-      sql(`INSERT INTO Leads (name, phone, cpf, source, stageId, poloId, isHistorical, createdAt, updatedAt) VALUES ('APIPOLO A', '5569911110001', '11144477735', 'API', ${open}, ${poloA}, false, NOW(), NOW()), ('APIPOLO B', '5569911110002', NULL, 'API', ${open}, ${poloB}, false, NOW(), NOW())`);
+      sql(`INSERT INTO Leads (name, phone, cpf, source, stageId, poloId, isHistorical, createdAt, updatedAt) VALUES ('APIPOLO A', '5569911110001', '86421357946', 'API', ${open}, ${poloA}, false, NOW(), NOW()), ('APIPOLO B', '5569911110002', NULL, 'API', ${open}, ${poloB}, false, NOW(), NOW())`);
       const ofA = await mk({ name: "polo A", scopes: ["leads:read", "messages:send"], poloIds: [Number(poloA)] });
       const seen = (await api(ofA.token, "get", "/api/v1/leads?limit=200")).data;
       assert(seen.some(l => l.name === "APIPOLO A") && !seen.some(l => l.name === "APIPOLO B"), `token of polo A: ${JSON.stringify(seen.map(l => l.name))}`);
