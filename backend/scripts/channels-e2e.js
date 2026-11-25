@@ -1037,7 +1037,7 @@ const postMeta = (id, payload, secret, badSig) => {
       ins("Indicador Pedro Pessoal", "5569933330002", "pedro.indicadores@x.com", null, poloB);
       const lw = sql(`INSERT INTO Leads (name, phone, email, source, stageId, poloId, isHistorical, wonAt, enrolledAt, rgm, createdAt, updatedAt) VALUES ('Matriculada Rita Pessoal', '5569933330003', 'rita.indicadores@x.com', 'Google', ${won}, ${poloA}, false, NOW(), NOW(), '7999001', NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`INSERT INTO LeadTasks (leadId, userId, title, type, dueAt, createdAt, updatedAt) VALUES (${la}, ${consultant}, 'Ligar para Joana Pessoal', 'ligacao', NOW() - INTERVAL '2 hours', NOW(), NOW())`);
-      sql(`INSERT INTO ConsultantReviews (userId, ticketId, leadId, day, objections, difficulties, skipped, note, model, tokens, createdAt, updatedAt) VALUES (${consultant}, 0, ${la}, '${today}', '[{"type":"preco","handled":true},{"type":"tempo","handled":false}]', '["entry"]', '["grade"]', 'Joana Pessoal falou do preço', 'test', 0, NOW(), NOW())`);
+      sql(`INSERT INTO ConsultantReviews (userId, ticketId, leadId, day, objections, difficulties, skipped, note, model, tokens, createdAt, updatedAt) VALUES (${consultant}, ${sql(`SELECT id FROM Tickets ORDER BY id LIMIT 1`).split("\n")[0]}, ${la}, '${today}', '[{"type":"preco","handled":true},{"type":"tempo","handled":false}]', '["entry"]', '["grade"]', 'Joana Pessoal falou do preço', 'test', 0, NOW(), NOW())`);
 
       // scope: a token without indicators:read is refused; the period and the polo are checked
       const leadsOnly = await mkTok({ name: "leads", scopes: ["leads:read"] });
