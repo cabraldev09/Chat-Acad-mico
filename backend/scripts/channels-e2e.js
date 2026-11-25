@@ -989,14 +989,28 @@ const postMeta = (id, payload, secret, badSig) => {
       // a token of polo A writes only in polo A: a new lead stays in A (never in B), a lead of B is not touched, stage and owner of its scope
       const writerA = await mk({ name: "escrita A", scopes: ["leads:write", "contacts:write"], poloIds: [Number(poloA)] });
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", poloId: Number(poloB) })).status === 403, "token of polo A created a lead in polo B");
-      const fresh = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade de outro polo" });
-      assert(fresh.status === 201 && Number(fresh.data.lead.poloId) === Number(poloA) && Number(sql(`SELECT poloId FROM Leads WHERE id = ${fresh.data.lead.id}`)) === Number(poloA), `new lead of the token of polo A: ${fresh.status} ${JSON.stringify(fresh.data)}`);
+      // a token of some polos gets the same answer for a new person, one of its polos and one of another polo (it never learns who exists)
+      const ACCEPTED = JSON.stringify({ aceito: true });
+      // the city of the new person is served by polo B
+      assert((await http.put(`/polos/${poloB}/coverage`, { cities: ["Cidade Do Polo B - RO"] }, auth())).status === 200, "coverage of polo B");
+      const fresh = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade Do Polo B", state: "RO" });
+      assert(fresh.status === 202 && JSON.stringify(fresh.data) === ACCEPTED, `new lead of the token of polo A: ${fresh.status} ${JSON.stringify(fresh.data)}`);
+      const freshId = sql(`SELECT id FROM Leads WHERE phone = '5569911110010'`);
+      // born in polo A (the city of polo B does not move it), before any notice; nobody of another polo gets it
+      assert(sql(`SELECT CONCAT(poloId, '|', poloSource, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE id = ${freshId}`) === `${poloA}|flow|none`, `new lead: ${sql(`SELECT CONCAT(poloId, '|', poloSource, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE id = ${freshId}`)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId = ${freshId} AND body LIKE 'Polo definido%'`)) === 0, "the polo was decided by the city before the token's");
+      const again = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade Do Polo B", state: "RO" });
+      assert(again.status === 202 && JSON.stringify(again.data) === ACCEPTED && sql(`SELECT poloId FROM Leads WHERE id = ${freshId}`) === String(poloA), "a lead of the token's polo answered differently or moved");
       const leadB = sql(`SELECT id FROM Leads WHERE name = 'APIPOLO B'`);
       const stateB = () => sql(`SELECT CONCAT(name, '|', COALESCE(notes, ''), '|', (SELECT COUNT(*) FROM LeadActivities a WHERE a.leadId = ${leadB})) FROM Leads WHERE id = ${leadB}`);
       const beforeB = stateB();
       const twin = await api(writerA.token, "post", "/api/v1/leads", { name: "Outro nome", phone: "5569911110002", notes: "nota da API" });
-      assert(twin.status === 403 && !JSON.stringify(twin.data).includes(leadB), `token of polo A reached a lead of polo B: ${twin.status} ${JSON.stringify(twin.data)}`);
+      assert(twin.status === 202 && JSON.stringify(twin.data) === ACCEPTED, `a person of polo B answered differently: ${twin.status} ${JSON.stringify(twin.data)}`);
       assert(stateB() === beforeB, "the lead of polo B was changed");
+      // nor by CPF: a person of polo A asked by CPF answers the same
+      assert(JSON.stringify((await api(writerA.token, "post", "/api/v1/leads", { name: "Pelo CPF", email: "cpf@x.com", cpf: "864.213.579-46" })).data) === ACCEPTED, "CPF answered differently");
+      // the administration is told about the possible duplicate (the caller never is)
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind = 'api_duplicate'`)) >= 1, "the administration was not told about the duplicate");
       const wonStage = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Direto matriculado", phone: "5569911110011", stageId: Number(wonStage) })).status === 422, "a polo token created a lead straight into an enrolled stage");
       const outsider = Number(sql(`SELECT id FROM Users WHERE id NOT IN (SELECT userId FROM PoloMembers WHERE poloId = ${poloA}) ORDER BY id LIMIT 1`));
@@ -1004,11 +1018,17 @@ const postMeta = (id, payload, secret, badSig) => {
       // contacts: the contact of a lead of polo B, or one that is not a lead of polo A, is not changed; a new contact is
       const contactB = sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato do B', '5569911110002', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`UPDATE Leads SET contactId = ${contactB} WHERE id = ${leadB}`);
-      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110002" })).status === 403, "token of polo A changed the contact of a lead of polo B");
+      const contactOfB = await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110002" });
+      assert(contactOfB.status === 202 && JSON.stringify(contactOfB.data) === ACCEPTED, `the contact of polo B answered differently: ${contactOfB.status}`);
       sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato solto', '5569911110020', '', false, NOW(), NOW())`);
-      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110020" })).status === 403, "token of polo A changed a contact that is not of its polos");
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110020" })).status === 202, "a contact that is not of its polos answered differently");
       assert(sql(`SELECT string_agg(name, ',' ORDER BY id) FROM Contacts WHERE number IN ('5569911110002', '5569911110020')`) === "Contato do B,Contato solto", "a contact was renamed");
-      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Contato novo", number: "5569911110021" })).status === 201, "token of polo A cannot create a new contact");
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Contato novo", number: "5569911110021" })).status === 202, "token of polo A cannot create a new contact");
+      assert(sql(`SELECT name FROM Contacts WHERE number = '5569911110021'`) === "Contato novo", "the new contact was not created");
+      // what each token is used for (only method and route): the integration that depends on it
+      const usage = JSON.parse(sql(`SELECT usage FROM ApiTokens WHERE id = ${writerA.id}`) || "{}");
+      assert(usage.routes && usage.routes["POST /api/v1/leads"] && usage.routes["POST /api/v1/leads"].count >= 1, `usage of the token: ${JSON.stringify(usage)}`);
+      assert(!JSON.stringify(usage).includes("5569911110"), "the usage kept a phone number");
 
       // a token that expired is refused
       const old = await mk({ name: "vencido", scopes: ["leads:read"], expiresInDays: 1 });
@@ -1042,6 +1062,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await api(settingsToken, "get", "/api/v1/connections")).status === 401, "the old token works while off");
       assert((await http.put("/api-tokens/legacy", { enabled: true }, auth())).data.enabled === true, "the old token was not turned on again");
       assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token does not come back");
+      const legacyUse = (await http.get("/api-tokens/legacy", auth())).data.usage;
+      assert(legacyUse && legacyUse.routes && legacyUse.routes["GET /api/v1/connections"], `the routes of the old token are not shown: ${JSON.stringify(legacyUse)}`);
     });
 
     // GET /api/v1/indicadores (docs/API-V1.md): totals and codes only, never a name, phone, e-mail, CPF or text; the scope and the polos of

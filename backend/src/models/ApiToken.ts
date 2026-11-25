@@ -1,3 +1,4 @@
+import { parseUsage } from "../helpers/ApiUsage";
 import Model from "./BaseModel";
 import {
   Table,
@@ -62,6 +63,10 @@ class ApiToken extends Model<ApiToken> {
   @Column
   lastUsedAt: Date;
 
+  // the routes it calls (helpers/ApiUsage): which integration depends on it, before replacing it
+  @Column(DataType.TEXT)
+  usage: string;
+
   // never the token nor its hash: the prefix, what it may do, the polos and the validity
   toJSON(): any {
     const data: any = super.toJSON();
@@ -70,6 +75,7 @@ class ApiToken extends Model<ApiToken> {
     data.scopes = scopesOf(data.scopes);
     data.poloIds = polosOf(data.poloIds);
     data.expired = !!data.expiresAt && new Date(data.expiresAt).getTime() <= Date.now();
+    data.usage = parseUsage(data.usage);
     return data;
   }
 

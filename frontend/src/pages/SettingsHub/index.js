@@ -185,6 +185,9 @@ const LegacyTokenSwitch = () => {
           ? "Recomendado desligar: este token tem acesso total, a todos os polos. Crie um token por integração, com só o que ela precisa, e desligue este."
           : "Desligado: a API recusa este token."}
         {" "}Último uso: {state.lastUsedAt ? new Date(state.lastUsedAt).toLocaleString("pt-BR") : "nunca registrado"}.
+        {state.usage && state.usage.routes && Object.keys(state.usage.routes).length > 0 && (
+          <> Usado em: {Object.entries(state.usage.routes).sort((a, b) => b[1].count - a[1].count).slice(0, 4).map(([route, u]) => `${route} (${u.count}×)`).join(", ")}.</>
+        )}
       </Typography>
     </div>
   );

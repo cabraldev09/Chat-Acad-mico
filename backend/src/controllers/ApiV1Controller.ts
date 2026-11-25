@@ -64,26 +64,55 @@ export const contacts = async (req: Request, res: Response): Promise<Response> =
   return res.json(rows);
 };
 
-// answers only the id: the integration already has the data it sent (an existing contact is never read back through here)
+// A token of some polos never learns whether a person is already registered somewhere else: every answer to it is the same
+// `202 { aceito: true }` (a new person, one of its polos or one of another polo). A person of another polo, or of no polo, is never
+// changed; the administration gets a notice of the possible duplicate (no personal data goes back to the caller). Tokens of every polo
+// keep the former answers (id and created), as the integrations already in use expect.
+const ACCEPTED = { aceito: true };
+const noticeOtherPolo = async (kind: "lead" | "contato", key: string): Promise<void> => {
+  try {
+    const { notify } = await import("../services/NotificationServices/Notify");
+    const { default: User } = await import("../models/User");
+    const admins = (await User.findAll({ where: { [Op.or]: [{ profile: "admin" }, { role: "admin" }] } as any, attributes: ["id"] })).map(u => u.id);
+    await notify(admins, {
+      kind: "api_duplicate",
+      level: "info",
+      title: `Integração enviou um ${kind} que já existe em outro polo`,
+      body: "Um token de API limitado a polos enviou uma pessoa já cadastrada fora dos polos dele. Nada foi alterado. Confira se é a mesma pessoa e para qual polo ela deve ir.",
+      link: "/crm",
+      dedupeKey: `api-duplicate:${key}`
+    });
+  } catch (_) {
+    /* the notice is a courtesy: the answer to the integration does not depend on it */
+  }
+};
+
 export const upsertContact = async (req: Request, res: Response): Promise<Response> => {
   const { name, number, email } = req.body;
   const digits = String(number || "").replace(/\D/g, "");
   if (!digits) throw new AppError("ERR_FIELD_REQUIRED_number");
-  const existing = await Contact.findOne({ where: { number: digits } });
   const polos = polosOf(req);
+  const existing = polos
+    ? await Contact.findOne({ where: { number: { [Op.in]: brPhoneVariants(digits) } }, order: [["id", "ASC"]] })
+    : await Contact.findOne({ where: { number: digits } });
   if (existing) {
-    // a token of some polos changes only a person who is a lead of one of them (never one of another polo, nor one it cannot see)
     if (polos) {
+      // a token of some polos changes only a person who is a lead of one of them (never one of another polo, nor one it cannot see)
       const { default: Lead } = await import("../models/Lead");
-      const inPolos = { poloId: { [Op.in]: polos.length ? polos : [0] } };
       const outside = await Lead.count({ where: { contactId: existing.id, [Op.or]: [{ poloId: null }, { poloId: { [Op.notIn]: polos.length ? polos : [0] } }] } as any });
-      const mine = await Lead.count({ where: { contactId: existing.id, ...inPolos } as any });
-      if (outside || !mine) throw new AppError("ERR_API_TOKEN_POLO", 403);
+      const mine = await Lead.count({ where: { contactId: existing.id, poloId: { [Op.in]: polos.length ? polos : [0] } } as any });
+      if (outside || !mine) {
+        await noticeOtherPolo("contato", `contact:${existing.id}`);
+        return res.status(202).json(ACCEPTED);
+      }
+      await existing.update({ name: name || existing.name, email: email || existing.email });
+      return res.status(202).json(ACCEPTED);
     }
     await existing.update({ name: name || existing.name, email: email || existing.email });
     return res.json({ id: existing.id, created: false });
   }
   const created = await Contact.create({ name: name || digits, number: digits, email: email || "" });
+  if (polos) return res.status(202).json(ACCEPTED);
   return res.status(201).json({ id: created.id, created: true });
 };
 
@@ -140,18 +169,25 @@ export const createLead = async (req: Request, res: Response): Promise<Response>
       const member = await PoloMember.count({ where: { userId: Number(b.ownerId), poloId: { [Op.in]: polos } } as any });
       if (!member) throw new AppError("ERR_API_OWNER_NOT_ALLOWED", 422);
     }
-    // the same person already in the CRM: only a lead of the token's polos is enriched (nothing is written on a lead of another polo)
+    // the same person already in the CRM: only a lead of the token's polos is enriched (nothing is written on a lead of another polo,
+    // and the answer is the same either way)
     const phone = normalizePhone(b.phone);
     const contact = phone ? await Contact.findOne({ where: { number: { [Op.in]: brPhoneVariants(phone) } }, attributes: ["id"], order: [["id", "ASC"]] }) : null;
     const twin = await findDuplicate(phone, normalizeEmail(b.email), contact ? contact.id : null, normalizeCpf(b.cpf), b.institutionId);
-    if (twin && !polos.includes(Number(twin.poloId))) throw new AppError("ERR_API_TOKEN_POLO", 403);
+    if (twin && !polos.includes(Number(twin.poloId))) {
+      await noticeOtherPolo("lead", `lead:${twin.id}`);
+      return res.status(202).json(ACCEPTED);
+    }
+    // the lead is born in the polo of the token (before any notice, webhook or flow) and goes to a consultant of that polo
+    const { default: User } = await import("../models/User");
+    const members = (await PoloMember.findAll({ where: { poloId: polo }, attributes: ["userId"] })).map(m => m.userId);
+    const pool = members.length
+      ? (await User.findAll({ where: { id: { [Op.in]: members }, [Op.or]: [{ role: "consultor" }, { role: null }, { role: "" }] } as any, attributes: ["id"] })).map(u => u.id)
+      : [];
+    await upsertLead({ ...safe, name: b.name, source: b.source || "API", pinPolo: polo, ownerPool: pool } as any);
+    return res.status(202).json(ACCEPTED);
   }
   const { lead, created } = await upsertLead({ ...safe, name: b.name, source: b.source || "API" });
-  // the lead created by a token of some polos stays in the polo it asked for (the city would otherwise decide it)
-  if (polo !== null && created && lead.poloId !== polo) {
-    lead.set({ poloId: polo, poloSource: "flow" } as any);
-    await lead.update({ poloId: polo, poloSource: "flow" } as any);
-  }
   // the answer: what the lead is now in the funnel, not the whole record (a lead that already existed is not read back through here)
   return res.status(created ? 201 : 200).json({ created, lead: { id: lead.id, stageId: lead.stageId, poloId: lead.poloId ?? null } });
 };
