@@ -68,11 +68,20 @@ Por polo (`poloId`, `codigo`):
 | `followUps.vencidos`, `followUps.tarefasVencidas` | follow-up já passado (lead aberto) e tarefas abertas vencidas (agora, não do período) |
 | `matriculasRealizadas` | `EnrollmentController.index` (Matrículas realizadas): total, dentro da meta, com print |
 | `metas` | meta do **semestre atual** (`buildPoloBoard`), não do período pedido: `doCrm` e `ajustesManuais` (total, sem mês, por mês) separados, canceladas. **`metas.feito` = `doCrm` + `ajustesManuais.total`** (inclui o que foi digitado à mão nas Metas); para conversão use `matriculasRealizadas` ou `doCrm` |
-| `revisaoConsultores` | `ConsultantReviews` do período, por código do consultor: objeções levantadas/tratadas, etapas com dificuldade e puladas |
+| `revisaoConsultores` | `ConsultantReviews` do período, por **código opaco do consultor** (`c_` + 10 caracteres, HMAC com o segredo do servidor): o mesmo consultor tem o mesmo código no mesmo token e outro código em outro token; nunca o id nem o nome. Objeções levantadas/tratadas, etapas com dificuldade e puladas |
 
 **`origem` e `etapa` são texto livre** (`Leads.source`, gravado também pela API e pela importação; o nome da etapa é digitado na
 configuração do funil). A garantia de nenhum dado pessoal vale para os campos e para as pessoas da base, não para um texto que
 alguém digite como origem ou etapa.
+
+**Limites e cache:**
+- Toda rota de `/api/v1` aceita até **120 chamadas por minuto por token** (`API_V1_RATE_MAX`). Os indicadores aceitam até
+  **20 por minuto** (`API_V1_INDICATORS_RATE_MAX`). Acima disso: `429 ERR_TOO_MANY_REQUESTS` com `Retry-After`. O limite de um
+  token não afeta outro.
+- A mesma pergunta (token, período e polo) é respondida do cache por **60 s** (`API_INDICATORS_CACHE_MS`; `geradoEm` mostra quando
+  foi calculada). A chave do cache leva o token, os escopos e os polos: um token nunca recebe a resposta calculada para outro.
+- **Desempenho:** cada lista é agrupada por polo uma vez (não por polo × linhas). Com um polo pedido, Matrículas realizadas lê só esse
+  polo. A revisão dos consultores lê só os leads dos polos pedidos.
 
 `conexoes`: id, canal, função (`atendimento`, `tutoria`, `pessoal`…), conectado, estado, qualidade (verde/amarela/vermelha, lida do
 aviso da conexão) e validade do token da Meta (data e dias). Nunca o nome da conexão nem o token. Com polos no token, só as conexões
@@ -86,7 +95,9 @@ que atendem filas desses polos.
   outro polo intacta e o aviso à administração; lead novo nasce no polo do token mesmo com cidade de outro polo; uso por rota
   gravado sem dados de pessoas; token vencido recebe 401; nenhum token em texto no banco; migração dos antigos; token de
   Configurações ligado e desligado, com as rotas usadas.
-- Indicadores: `tests/channels/indicators-query.test.ts` (período e polo) e o ponta a ponta "API indicators" (nenhum campo pessoal
+- Indicadores: `tests/channels/indicators-query.test.ts` (período, polo e código do consultor) e o ponta a ponta "API indicators":
+  consultor só como código; o mesmo código no mesmo token e outro em outro token; a segunda chamada igual vem do cache; a 21ª chamada
+  no minuto recebe 429 e outro token não é afetado; nenhum campo pessoal
   nem nome, telefone, e-mail, CPF ou RGM de pessoa da base na resposta; escopo e polos; os números batem com Captação, Painel do CRM
   e Matrículas realizadas no mesmo período).
 

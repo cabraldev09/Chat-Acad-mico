@@ -25,3 +25,15 @@ describe("período e polo dos indicadores da API", () => {
     expect(cleanIndicatorQuery({ de: "2026-11-01", ate: "2026-11-02", polo: "9" }, null).poloId).toBe(9);
   });
 });
+
+describe("consultor nos indicadores: código opaco por token", () => {
+  it("o mesmo consultor tem o mesmo código no mesmo token, outro código em outro token, e nunca o id", async () => {
+    const { consultantCode } = await import("../../src/services/IndicatorServices/IndicatorQuery");
+    const a1 = consultantCode("token:1", 42, "segredo");
+    expect(a1).toMatch(/^c_[0-9a-f]{10}$/);
+    expect(consultantCode("token:1", 42, "segredo")).toBe(a1);
+    expect(consultantCode("token:2", 42, "segredo")).not.toBe(a1);
+    expect(consultantCode("token:1", 43, "segredo")).not.toBe(a1);
+    expect(consultantCode("token:1", 42, "outro")).not.toBe(a1);
+  });
+});

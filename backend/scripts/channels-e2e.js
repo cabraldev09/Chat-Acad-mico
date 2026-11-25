@@ -1113,7 +1113,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const a = r.data.polos.find(p => p.poloId === Number(poloA));
       assert(a && a.codigo === "IDA" && a.leads.total === 2 && a.leads.porOrigem.some(o => o.origem === "Instagram" && o.total === 1) && a.leads.porOrigem.some(o => o.origem === "Google" && o.matriculados === 1), `polo A leads ${JSON.stringify(a && a.leads)}`);
       assert(a.followUps.vencidos === 1 && a.followUps.tarefasVencidas === 1 && a.matriculasRealizadas.total === 1 && a.primeiraResposta.leadsRespondidos === 1, `polo A ${JSON.stringify(a)}`);
-      const rv = a.revisaoConsultores.find(c => c.consultor === consultant);
+      // the consultant is an opaque code of this token, never the user id
+      assert(a.revisaoConsultores.length === 1 && /^c_[0-9a-f]{10}$/.test(a.revisaoConsultores[0].consultor) && a.revisaoConsultores[0].consultor !== consultant && !a.revisaoConsultores.some(c => c.consultor === Number(consultant) || String(c.consultor) === String(consultant)), `consultant code ${JSON.stringify(a.revisaoConsultores.map(c => c.consultor))}`);
+      const rv = a.revisaoConsultores[0];
       assert(rv && rv.conversasLidas === 1 && rv.objecoes.some(o => o.tipo === "preco" && o.levantadas === 1 && o.tratadas === 1) && rv.objecoes.some(o => o.tipo === "tempo" && o.tratadas === 0) && rv.etapasComDificuldade[0].etapa === "entry" && rv.etapasPuladas[0].etapa === "grade", `review ${JSON.stringify(a.revisaoConsultores)}`);
       assert(r.data.conexoes.every(c => Number.isInteger(c.id) && typeof c.conectado === "boolean" && c.funcao), `connections ${JSON.stringify(r.data.conexoes).slice(0, 300)}`);
 
@@ -1140,6 +1142,20 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).status === 403, "token of polo A read polo B");
       const askedB = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).data;
       assert(askedB.polos.length === 1 && askedB.polos[0].leads.total === 1 && askedB.polos[0].matriculasRealizadas.total === 0, `polo B asked: ${JSON.stringify(askedB.polos)}`);
+      // the code of the same consultant is the same for this token and another for another token (two integrations cannot join by it)
+      const codeOf = d => (d.polos.find(p => p.poloId === Number(poloA)) || { revisaoConsultores: [] }).revisaoConsultores.map(c => c.consultor)[0];
+      const allAgain = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).data;
+      assert(codeOf(allAgain) === codeOf(r.data) && codeOf(onlyA) && codeOf(onlyA) !== codeOf(r.data), `codes: ${codeOf(r.data)} ${codeOf(allAgain)} ${codeOf(onlyA)}`);
+      // the same question of the same token within a minute is answered from the cache (the same instant of generation)
+      assert(allAgain.geradoEm === r.data.geradoEm, "the second identical call was computed again");
+      // a token of polo A never receives the answer cached for a token of every polo
+      assert(onlyA.polos.length === 1 && onlyA.geradoEm !== undefined, "token of polo A got another token's answer");
+      // per token limit: 20 indicator calls a minute, then 429 with Retry-After (another token is not affected)
+      const busy = await mkTok({ name: "indicadores limite", scopes: ["indicators:read"] });
+      let last;
+      for (let i = 0; i < 21; i += 1) last = await api(busy.token, `/api/v1/indicadores?de=${today}&ate=${today}`);
+      assert(last.status === 429 && last.headers["retry-after"], `the 21st call in a minute: ${last.status}`);
+      assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).status === 200, "the limit of one token blocked another");
       void lw;
     });
 

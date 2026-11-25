@@ -1,3 +1,5 @@
+import crypto from "crypto";
+
 import AppError from "../../errors/AppError";
 
 // The period and the polo asked to GET /api/v1/indicadores, checked (pure: no database).
@@ -28,3 +30,7 @@ export const cleanIndicatorQuery = (q: any, tokenPolos: number[] | null): Indica
   return { from, to, poloId, tokenPolos };
 };
 
+// The consultant as the OpenBot sees it: a code that follows the same person over time for THIS token, and that nobody can turn back
+// into a person without the server's secret (another token gets other codes, so two integrations cannot join their data by it)
+export const consultantCode = (tokenKey: string, userId: number, secret = process.env.API_PSEUDONYM_SECRET || process.env.JWT_SECRET || ""): string =>
+  `c_${crypto.createHmac("sha256", `${secret}:indicadores`).update(`${tokenKey}:${userId}`).digest("hex").slice(0, 10)}`;

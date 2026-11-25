@@ -200,7 +200,15 @@ export const connections = async (_req: Request, res: Response): Promise<Respons
 };
 
 // GET /api/v1/indicadores?de=AAAA-MM-DD&ate=AAAA-MM-DD&polo=<id>: totals and codes only (services/IndicatorServices/Indicators)
+// One computation per token, period and polo for a minute (helpers/TtlCache): the cache key carries the token, its scopes and its polos,
+// so two tokens never share an answer (the consultant codes are per token, and the polos may differ)
+export const INDICATORS_CACHE_MS = Number(process.env.API_INDICATORS_CACHE_MS ?? 60000);
 export const indicators = async (req: Request, res: Response): Promise<Response> => {
   const { buildIndicators, cleanIndicatorQuery } = await import("../services/IndicatorServices/Indicators");
-  return res.json(await buildIndicators(cleanIndicatorQuery(req.query, polosOf(req))));
+  const { remember } = await import("../helpers/TtlCache");
+  const caller = apiCaller(req);
+  const query = cleanIndicatorQuery(req.query, polosOf(req));
+  const tokenKey = caller?.id ? `token:${caller.id}` : "legacy";
+  const cacheKey = ["indicadores", tokenKey, (caller?.scopes || []).slice().sort().join(","), (query.tokenPolos || ["all"]).join(","), query.from, query.to, query.poloId || ""].join("|");
+  return res.json(await remember(cacheKey, INDICATORS_CACHE_MS, () => buildIndicators(query, new Date(), tokenKey)));
 };
