@@ -9,6 +9,7 @@ import { ScoreRing, burst, useCrmOptions } from "../../pages/CRM/shared";
 import { onColor, tint } from "../../utils/color";
 import AiBrief from "../AiBrief";
 import { lazyPage as lazy } from "../../utils/lazyPage";
+import { putStage } from "../../pages/CRM/moveStage";
 
 // the heavy CRM dialogs load only when someone opens them
 const ProposalStudio = lazy(() => import("../../pages/CRM/ProposalStudio"));
@@ -91,9 +92,11 @@ const LeadCard = ({ contactId, attendantId }) => {
   const move = async (stage, extra = {}, e) => { e && e.persist && e.persist();
     setBusy(true);
     try {
-      await api.put(`/leads/${lead.id}/stage`, { stageId: stage.id, ...extra });
-      if (stage.type === "won" && e) burst(e.clientX, e.clientY);
-      toast.success(`Movido para “${stage.name}”`);
+      const pos = e ? { x: e.clientX, y: e.clientY } : null;
+      if (await putStage(lead.id, stage, extra)) {
+        if (stage.type === "won" && pos) burst(pos.x, pos.y);
+        toast.success(`Movido para “${stage.name}”`);
+      }
       load();
     } catch (err) { toastError(err); }
     setBusy(false);
@@ -142,7 +145,7 @@ const LeadCard = ({ contactId, attendantId }) => {
             <button key={pr.id} type="button" className={classes.proposal} onClick={() => setStudio({ id: pr.id })}>
               <FileText size={15} />
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>#{pr.id} · {pr.courseName || "Proposta"}{pr.entry && pr.entry.turma ? ` · ${pr.entry.turma}` : ""}</span>
-              <span className={classes.meta}>{PROPOSAL_STATUS[pr.status] || pr.status}</span>
+              <span className={classes.meta}>{pr.status !== "draft" && pr.viewedAt ? "Visualizada" : PROPOSAL_STATUS[pr.status] || pr.status}</span>
             </button>
           ))}
         </div>

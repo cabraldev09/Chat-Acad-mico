@@ -110,6 +110,11 @@ class ProposalTemplate extends Model<ProposalTemplate> {
   @Column
   firstExempt: boolean;
 
+  // an inactive model is not offered in new proposals (the ones already made keep their numbers)
+  @Default(true)
+  @Column
+  active: boolean;
+
   @Column(DataType.TEXT)
   waIntro: string;
 

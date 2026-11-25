@@ -10,20 +10,25 @@
 - **O WhatsApp corporativo do consultor (QR code)** fica só para quem ainda não migrou. É uma conexão não oficial e corre risco de banimento, principalmente com contatos frios e envios em volume.
 
 ## Quem cria e quem vê as conexões
-- **Só a gestão** (`admin` e `coordenacao`) adiciona, edita e apaga conexões, incluindo o Instagram. Consultores e tutores não criam
-  número próprio.
+- **A gestão** (`admin` e `coordenacao`) adiciona, edita e apaga conexões, incluindo o Instagram.
+- **Número próprio por QR Code (desde 25/11/2026):** consultor, tutor e relacionamento conectam o próprio WhatsApp em Conexões,
+  no botão **"Conectar meu WhatsApp"** (`POST /whatsapp/mine`, `canConnectOwnQr`).
+  - É um número por pessoa (`ERR_QR_ALREADY_HAS`) e respeita o limite de números QR do servidor (`WHATSAPP_MAX_QR`).
+  - O número nasce com o nome "WhatsApp de <primeiro nome>", em proteção "rígida" contra bloqueio, e vira o número de envio da pessoa.
+  - A tela avisa que é conexão não oficial: sem envio em massa e sem contato frio. Campanhas grandes e avisos da tutoria saem pelo oficial.
 - **Número QR Code de uma pessoa:** ao criar um WhatsApp por QR Code, a gestão escolhe em **"Responsável pelo número"** o consultor
   ou tutor. O número vira dele:
   - as conversas que chegam nele vão para ele;
   - vira o número de envio dele.
 
   A gestão pode trocar o responsável ou devolver o número à empresa depois.
-- **Conexões para quem não é da gestão:** o item aparece no menu só para quem tem um número QR Code próprio.
+- **Conexões para quem não é da gestão:** o item aparece no menu para quem tem ou pode ter um número QR Code próprio.
   - A tela mostra só esse número. A pessoa lê o QR Code com o celular, reconecta, desconecta e escolhe quais grupos viram conversas.
   - Os números da empresa, o Instagram e os botões de adicionar, editar e apagar não aparecem.
-  - Sem número próprio, o endereço `/connections` leva para Conversas.
+  - Sem número próprio, a tela mostra o cartão "Conectar meu WhatsApp".
 - **No servidor:**
   - `POST /whatsapp`, `DELETE /whatsapp/:id` e `/channels/instagram/authorize` são só da gestão;
+  - `POST /whatsapp/mine` cria o número QR da própria pessoa (consultor, tutor, relacionamento e a gestão);
   - as rotas de sessão (`/whatsappsession/:id`) e `PUT /whatsapp/:id` aceitam a gestão e o dono do número QR (`canManageWhatsapp`);
   - no `PUT`, o dono só muda os grupos (`groupsMode` e `allowedGroups`).
 

@@ -215,6 +215,7 @@ Públicas: 40 · logado (qualquer perfil): 327 · gestão: 182 · admin: 37
 - POST /tickets/:ticketId/typing → canWriteTicket
 - PUT /tickets/:ticketId → canWriteTicket
 - PUT /users/:userId → canEditUser
+- POST /whatsapp/mine → canConnectOwnQr
 - PUT /whatsapp/:whatsappId → canManageWhatsapp
 - POST /whatsapp/:whatsappId/import-history → canManageWhatsapp
 - POST /whatsappsession/:whatsappId → canManageWhatsapp
