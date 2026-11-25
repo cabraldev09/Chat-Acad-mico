@@ -5,6 +5,7 @@ import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { ErrorState } from "../../components/ui";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 // Configurações > Retenção de dados (só o administrador). As duas regras começam desligadas: apagar não tem volta.
 // A simulação mostra o que seria apagado, por polo e por tipo, sem apagar nada.
@@ -22,11 +23,11 @@ const Rule = ({ title, sub, days, suggested, min, max, onSave, busy }) => {
   const [value, setValue] = useState(String(days || suggested));
   useEffect(() => { setValue(String(days || suggested)); }, [days, suggested]);
   const on = days > 0;
-  const toggle = (e) => {
+  const toggle = async (e) => {
     const checked = e.target.checked;
     if (checked) {
       const v = Math.round(Number(value) || suggested);
-      if (!window.confirm(`Ligar a regra: toda noite o sistema apaga o que tiver mais de ${v} dias. O que for apagado não pode ser recuperado. Confirma?`)) return;
+      if (!(await confirmDialog({ title: "Ligar a regra?", message: `Toda noite o sistema apaga o que tiver mais de ${v} dias. O que for apagado não pode ser recuperado.`, confirmText: "Ligar" }))) return;
       onSave(v);
     } else onSave(0);
   };
@@ -40,10 +41,10 @@ const Rule = ({ title, sub, days, suggested, min, max, onSave, busy }) => {
         <TextField variant="outlined" size="small" type="number" label="Dias" value={value} style={{ width: 140 }}
           inputProps={{ min, max, step: 1 }} onChange={(e) => setValue(e.target.value)} disabled={busy} />
         {on && Number(value) !== days && (
-          <Button variant="outlined" disabled={busy} onClick={() => {
+          <Button variant="outlined" disabled={busy} onClick={async () => {
             const v = Math.round(Number(value));
             if (!(v >= min && v <= max)) { toast.error(`Use um número entre ${min} e ${max} dias.`); return; }
-            if (window.confirm(`Mudar para ${v} dias? O que tiver mais de ${v} dias será apagado na próxima noite.`)) onSave(v);
+            if (await confirmDialog({ title: `Mudar para ${v} dias?`, message: `O que tiver mais de ${v} dias será apagado na próxima noite.`, confirmText: "Mudar" })) onSave(v);
           }}>Salvar dias</Button>
         )}
         <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={on} disabled={busy} onChange={toggle} />} label={on ? `Ligada: ${days} dias` : "Desligada"} />
