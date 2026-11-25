@@ -80,6 +80,13 @@ Cada ação que altera números (envio concluído, atividade no lead, tarefa cri
 
 ## Teste de aceite
 `npm run test:analytics` (`scripts/analytics-e2e.js`): mesma produção de João pelas duas portas em hoje/7 dias/mês/intervalo, João sem acesso aos números de Gabrielli e Laura, coordenação limitada ao polo, exportação, configuração e eventos em tempo real.
+O mesmo script confere o CRM por polo: a coordenação do polo A não vê lead do polo B na lista, na busca, no quadro, no Painel do CRM
+(`/crm/metrics`, também a aba Captação), nos novos para conferir, nas tarefas da equipe, no Relatório do CRM (CSV) nem em Matrículas
+realizadas; o relacionamento vê só os matriculados dos seus polos; a coordenação sem polo não vê lead; a administração vê tudo
+(regra completa em `docs/ROTAS.md`, "Quem vê quais leads no CRM").
+
+A planilha de Matrículas realizadas (gerada no navegador, `frontend/src/utils/enrollmentsCsv.js`) leva nome e RGM só para a
+administração; os outros perfis recebem o identificador do lead (`#123`).
 
 ## Estatísticas do comercial (`GET /analytics/commercial`)
 Serviço `AnalyticsServices/SalesInsights.ts`. A gestão vê os consultores que pode ver (`poloId` e `userId` filtram); qualquer outra pessoa vê só os próprios números, seja qual for a query.

@@ -8,8 +8,8 @@
 --
 
 
--- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped from database version 16.15 (Homebrew)
+-- Dumped by pg_dump version 16.15 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -746,10 +746,17 @@ ALTER SEQUENCE public."AnalysisEvents_id_seq" OWNED BY public."AnalysisEvents".i
 CREATE TABLE public."ApiTokens" (
     id integer NOT NULL,
     name character varying(255) NOT NULL,
-    token character varying(255) NOT NULL,
+    token character varying(255),
     "lastUsedAt" timestamp with time zone,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "tokenHash" character varying(64),
+    "tokenPrefix" character varying(16),
+    scopes text,
+    "poloIds" text,
+    "expiresAt" timestamp with time zone,
+    legacy boolean DEFAULT false NOT NULL,
+    "createdById" integer
 );
 
 
@@ -1658,7 +1665,12 @@ CREATE TABLE public."Courses" (
     "institutionId" integer,
     category character varying(255),
     semesters integer DEFAULT 8 NOT NULL,
-    aliases text
+    aliases text,
+    "durationMonths" integer,
+    "installmentsTotal" integer,
+    "enrollmentFee" numeric(10,2),
+    "certificationFee" numeric(10,2),
+    "singlePayment" boolean DEFAULT false NOT NULL
 );
 
 
@@ -1743,6 +1755,49 @@ CREATE SEQUENCE public."CurricularAnalyses_id_seq"
 --
 
 ALTER SEQUENCE public."CurricularAnalyses_id_seq" OWNED BY public."CurricularAnalyses".id;
+
+
+--
+-- Name: DataPurgeRuns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."DataPurgeRuns" (
+    id integer NOT NULL,
+    mode character varying(20) NOT NULL,
+    "audioDays" integer DEFAULT 0 NOT NULL,
+    "conversationDays" integer DEFAULT 0 NOT NULL,
+    "audioFiles" integer DEFAULT 0 NOT NULL,
+    conversations integer DEFAULT 0 NOT NULL,
+    "conversationMessages" integer DEFAULT 0 NOT NULL,
+    "filesDeleted" integer DEFAULT 0 NOT NULL,
+    details text,
+    error text,
+    "actorId" integer,
+    "startedAt" timestamp with time zone NOT NULL,
+    "finishedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: DataPurgeRuns_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."DataPurgeRuns_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: DataPurgeRuns_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."DataPurgeRuns_id_seq" OWNED BY public."DataPurgeRuns".id;
 
 
 --
@@ -2549,6 +2604,8 @@ CREATE TABLE public."Messages" (
     "isEdited" boolean DEFAULT false NOT NULL,
     "isGif" boolean DEFAULT false NOT NULL,
     transcript text,
+    "mediaPurgedAt" timestamp with time zone,
+    "bodyPurgedAt" timestamp with time zone,
     "transcribeTriedAt" timestamp with time zone
 );
 
@@ -3040,7 +3097,16 @@ CREATE TABLE public."ProposalTemplates" (
     "firstExempt" boolean DEFAULT false NOT NULL,
     "waIntro" text,
     "waClosing" text,
-    active boolean DEFAULT true NOT NULL
+    active boolean DEFAULT true NOT NULL,
+    "planType" character varying(20) DEFAULT 'semestral'::character varying NOT NULL,
+    "installmentsByDuration" text,
+    "certificationFee" numeric(10,2) DEFAULT 0 NOT NULL,
+    "chargeCertification" boolean DEFAULT false NOT NULL,
+    "pixDiscountPct" numeric(5,2) DEFAULT 0 NOT NULL,
+    "cardMaxInstallments" integer DEFAULT 12 NOT NULL,
+    "cardRatePct" numeric(5,2) DEFAULT 0 NOT NULL,
+    "cardPassInterest" boolean DEFAULT true NOT NULL,
+    "courseLevels" text
 );
 
 
@@ -4225,6 +4291,13 @@ ALTER TABLE ONLY public."CurricularAnalyses" ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: DataPurgeRuns id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."DataPurgeRuns" ALTER COLUMN id SET DEFAULT nextval('public."DataPurgeRuns_id_seq"'::regclass);
+
+
+--
 -- Name: EnrollmentForms id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4736,6 +4809,14 @@ ALTER TABLE ONLY public."ApiTokens"
 
 
 --
+-- Name: ApiTokens ApiTokens_tokenHash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ApiTokens"
+    ADD CONSTRAINT "ApiTokens_tokenHash_key" UNIQUE ("tokenHash");
+
+
+--
 -- Name: ApiTokens ApiTokens_token_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4957,6 +5038,14 @@ ALTER TABLE ONLY public."Courses"
 
 ALTER TABLE ONLY public."CurricularAnalyses"
     ADD CONSTRAINT "CurricularAnalyses_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: DataPurgeRuns DataPurgeRuns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."DataPurgeRuns"
+    ADD CONSTRAINT "DataPurgeRuns_pkey" PRIMARY KEY (id);
 
 
 --
@@ -5823,6 +5912,13 @@ CREATE INDEX commercial_grades_course_name ON public."CommercialGrades" USING bt
 
 
 --
+-- Name: consultant_reviews_day_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX consultant_reviews_day_idx ON public."ConsultantReviews" USING btree (day);
+
+
+--
 -- Name: consultant_reviews_ticket_day; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5967,6 +6063,13 @@ CREATE INDEX curricular_analyses_user_id_created_at ON public."CurricularAnalyse
 --
 
 CREATE INDEX curricular_followup_due_idx ON public."CurricularAnalyses" USING btree ("followUpDueAt") WHERE ("followUpDueAt" IS NOT NULL);
+
+
+--
+-- Name: data_purge_runs_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_purge_runs_created ON public."DataPurgeRuns" USING btree ("createdAt");
 
 
 --
@@ -8179,8 +8282,15 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-course-aliases.js') O
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261230000001-send-quota-and-costs.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261231000001-fix-buritis-entry-term.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-content-retention.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-proposal-template-active.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tried.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

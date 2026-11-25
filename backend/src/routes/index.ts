@@ -1,4 +1,5 @@
 import operationsRoutes from "./operationsRoutes";
+import dataRetentionRoutes from "./dataRetentionRoutes";
 import { Router } from "express";
 
 import userRoutes from "./userRoutes";
@@ -34,6 +35,7 @@ routes.put("/client-errors/resolve", isAuth, isAdmin, ClientErrors.resolve);
 routes.delete("/client-errors", isAuth, isAdmin, ClientErrors.clear);
 
 routes.use(operationsRoutes);
+routes.use(dataRetentionRoutes);
 routes.use(analysisRoutes);
 
 routes.use(userRoutes);

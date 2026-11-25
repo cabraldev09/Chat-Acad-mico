@@ -4,10 +4,12 @@ import sequelize from "../database";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import { getAppTz } from "../helpers/AppTime";
 import { logger } from "../utils/logger";
+import { runContentRetention } from "../services/SystemServices/ContentRetention";
 
 // The tables that only grow (a copy of every send, every model call, every error) are trimmed once a night, in small batches so the
 // database is never locked for long. Nothing the screens, the reports or the audit trail of a student need is touched: conversations,
-// messages, leads, tasks, enrollments and the activity history stay as they are.
+// messages, leads, tasks, enrollments and the activity history stay as they are. The CONTENT of old conversations and old voice notes
+// only goes when the administrator turns that rule on (off by default; see services/SystemServices/ContentRetention).
 interface Rule {
   table: string;
   // the condition of what may go; {days} is replaced by the age
@@ -81,10 +83,17 @@ const tick = async (): Promise<void> => {
     const today = `${part("year")}-${part("month")}-${part("day")}`;
     if (hour < 3 || hour > 5 || (await getSetting("retention_last_run", "")) === today) return;
     const { trimmed, failed } = await runRetention();
+    // the content of old conversations and old voice notes: only when the administrator turned the rule on (off by default)
+    const content = await runContentRetention().catch(err => {
+      logger.warn(`Retenção de conversas e áudios falhou: ${err}`);
+      return { ran: true, failed: true, audioFiles: 0, conversations: 0, conversationMessages: 0, filesDeleted: 0 };
+    });
+    if (content.failed) failed.push("conteúdo das conversas");
     // a table that failed is tried again in the next half hour (the day is not marked as done)
     if (!failed.length) await setSetting("retention_last_run", today);
     const text = Object.entries(trimmed).filter(([, n]) => n > 0).map(([t, n]) => `${t}: ${n}`).join(", ");
-    logger.info(`Data retention: ${text || "nothing to trim"}${failed.length ? ` (falharam: ${failed.join(", ")}; nova tentativa em 30 min)` : ""}`);
+    const contentText = content.ran ? `; conversas: ${content.conversations} (${content.conversationMessages} mensagens), áudios: ${content.audioFiles}, arquivos apagados: ${content.filesDeleted}` : "";
+    logger.info(`Data retention: ${text || "nothing to trim"}${contentText}${failed.length ? ` (falharam: ${failed.join(", ")}; nova tentativa em 30 min)` : ""}`);
   } catch (err) {
     logger.warn(`Data retention failed: ${err}`);
   }

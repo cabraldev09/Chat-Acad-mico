@@ -3,13 +3,14 @@ import Operations from "./Operations";
 import Costs from "./Costs";
 import MetaTemplates from "./MetaTemplates";
 import Readiness from "./Readiness";
+import DataRetention from "./DataRetention";
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link, useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles, useMediaQuery } from "@material-ui/core";
 import {
   ArrowUpRight, BellRing, Bot, Building2, Clock, CreditCard, Eye, EyeOff, FileInput, GraduationCap, KeyRound, ListTree, Plug, Search,
-  Settings2, Tags, Users, Workflow, Zap, FileText, ListChecks, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator, CircleDollarSign,
+  Settings2, Tags, Users, Workflow, Zap, FileText, ListChecks, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator, CircleDollarSign, Archive,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -48,6 +49,7 @@ const GROUPS = [
   { id: "regras", section: "Matrícula", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true, keywords: "vagas semestres previsão análise curricular regras" },
   { id: "email", section: "Sistema", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true, system: true, keywords: "email e-mail envio smtp resend modelo pendências diário" },
   { id: "entregas", section: "Sistema", label: "Entregas e arquivos", icon: SlidersHorizontal, hint: "Mensagens interrompidas e acesso a arquivos", keywords: "entrega mensagem interrompida conferir reenviar arquivo revogar link operação" },
+  { id: "retencao", section: "Sistema", label: "Retenção de dados", icon: Archive, hint: "Prazo para apagar conversas e áudios antigos", admin: true, system: true, keywords: "retenção lgpd apagar conversas áudios prazo dias expurgo simulação privacidade" },
   { id: "erros", section: "Sistema", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true, keywords: "erro falha tela navegador" },
 ];
 const plainText = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -164,6 +166,32 @@ const useCrm = (enabled) => {
   return { s, setS, save, users, failed, retry: () => setAttempt((n) => n + 1) };
 };
 
+// The old single token has full access to the API, of every polo. It stays on (an integration nobody knows about may use it), but the
+// recommendation is to make a token per integration in API e webhooks and turn this one off.
+const LegacyTokenSwitch = () => {
+  const [state, setState] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    api.get("/api-tokens/legacy").then(({ data }) => setState(data)).catch(() => setFailed(true));
+  }, []);
+  const change = async (enabled) => {
+    try { const { data } = await api.put("/api-tokens/legacy", { enabled }); setState(data); toast.success(enabled ? "Token antigo ligado." : "Token antigo desligado."); } catch (err) { toastError(err); }
+  };
+  if (failed) return <Typography variant="body2" color="error">Não foi possível ler se o token antigo está ligado.</Typography>;
+  if (!state) return null;
+  return (
+    <div>
+      <FormControlLabel control={<Switch color="primary" checked={!!state.enabled} onChange={(e) => { const v = e.target.checked; change(v); }} />} label="Aceitar este token antigo na API" />
+      <Typography variant="body2" style={{ color: state.enabled ? "#92400e" : undefined }}>
+        {state.enabled
+          ? "Recomendado desligar: este token tem acesso total, a todos os polos. Crie um token por integração, com só o que ela precisa, e desligue este."
+          : "Desligado: a API recusa este token."}
+        {" "}Último uso: {state.lastUsedAt ? new Date(state.lastUsedAt).toLocaleString("pt-BR") : "nunca registrado"}.
+      </Typography>
+    </div>
+  );
+};
+
 const Geral = ({ values, save, admin, system }) => {
   const classes = useStyles();
   const [show, setShow] = useState(false);
@@ -189,6 +217,7 @@ const Geral = ({ values, save, admin, system }) => {
               <Button variant="outlined" disabled={!token} startIcon={<Copy size={15} />} onClick={() => { navigator.clipboard.writeText(token); toast.success("Token copiado."); }}>Copiar</Button>
             </div>
             <div className={classes.hint}>Para criar tokens por integração e cadastrar webhooks, use <Link to="/integrations">API e webhooks</Link>.</div>
+            <LegacyTokenSwitch />
           </Card>
         </Advanced>
       )}
@@ -726,6 +755,7 @@ const SettingsHub = () => {
                 {current.id === "cadastros" && <Cadastros admin={admin} system={system} />}
                 {current.id === "regras" && admin && <RegrasAcademicas />}
                 {current.id === "email" && system && <><Email /><EmailModels /></>}
+                {current.id === "retencao" && system && <DataRetention />}
                 {current.id === "erros" && admin && <ErrosDeTela />}
               </SectionBoundary>
             )}

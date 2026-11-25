@@ -947,7 +947,7 @@ const postMeta = (id, payload, secret, badSig) => {
     // ------------------------------------------------------ Outbound webhooks
     console.log("\napi & webhooks");
     await test("API token sends through any channel and rejects bad tokens", async () => {
-      const t = (await http.post("/api-tokens", { name: "e2e" }, auth())).data.token;
+      const t = (await http.post("/api-tokens", { name: "e2e", scopes: ["connections:read", "messages:send"] }, auth())).data.token;
       assert((await http.get("/api/v1/connections", { headers: { Authorization: "Bearer wrong" } })).status >= 400, "bad token accepted");
       const list = (await http.get("/api/v1/connections", { headers: { Authorization: `Bearer ${t}` } })).data;
       assert(list.length >= 5, `connections=${list.length}`);
@@ -955,6 +955,173 @@ const postMeta = (id, payload, secret, badSig) => {
       const r = await http.post("/api/v1/messages/send", { number: "5511988887777", body: "Olá {{name}}!", whatsappId: cid, name: "Lead API" }, { headers: { Authorization: `Bearer ${t}` } });
       assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
       assert(graph.sent.slice(before).some(x => x.body && x.body.to === "5511988887777"), "not sent through cloud api");
+    });
+
+    // API v1 tokens (docs/API-V1.md): each route asks for its scope, a token of some polos reads only those polos, a token that expired is
+    // refused, the token itself is never in the database (only its SHA-256), the ones made before the scopes keep full access (legacy)
+    // and the old single token of Configurações can be turned off.
+    await test("API tokens: scopes, polos, validity, kept only as a hash, legacy tokens and the old token of Configurações", async () => {
+      const api = (t, method, url, body) => http.request({ method, url, data: body, headers: { Authorization: `Bearer ${t}` } });
+      const mk = async body => { const r = await http.post("/api-tokens", body, auth()); assert(r.status === 201, `token ${r.status} ${JSON.stringify(r.data)}`); return r.data; };
+      assert((await http.post("/api-tokens", { name: "sem escopo" }, auth())).status === 400, "a token without scopes was created");
+      assert((await http.post("/api-tokens", { name: "tudo", scopes: ["*"] }, auth())).status === 400, "a token with full access was created");
+      assert((await http.post("/api-tokens", { name: "longo", scopes: ["leads:read"], expiresInDays: 400 }, auth())).status === 400, "a token of more than a year was created");
+
+      // a read-only token does not send messages
+      const reader = await mk({ name: "só leitura", scopes: ["leads:read"] });
+      const denied = await api(reader.token, "post", "/api/v1/messages/send", { number: "5511988887777", body: "oi", whatsappId: cid });
+      assert(denied.status === 403 && denied.data.error === "ERR_API_TOKEN_SCOPE", `read-only token sent a message: ${denied.status} ${JSON.stringify(denied.data)}`);
+      assert((await api(reader.token, "post", "/api/v1/leads", { name: "X", phone: "5511977776666" })).status === 403, "read-only token created a lead");
+      assert((await api(reader.token, "get", "/api/v1/contacts")).status === 403, "a leads token read the contacts");
+      assert((await api(reader.token, "get", "/api/v1/leads")).status === 200, "read-only token cannot read leads");
+
+      // a token of polo A does not see the leads of polo B, and the answer has only the fields of the integration
+      const poloA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('APA', 'Polo API A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const poloB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('APB', 'Polo API B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      sql(`INSERT INTO Leads (name, phone, cpf, source, stageId, poloId, isHistorical, createdAt, updatedAt) VALUES ('APIPOLO A', '5569911110001', '86421357946', 'API', ${open}, ${poloA}, false, NOW(), NOW()), ('APIPOLO B', '5569911110002', NULL, 'API', ${open}, ${poloB}, false, NOW(), NOW())`);
+      const ofA = await mk({ name: "polo A", scopes: ["leads:read", "messages:send"], poloIds: [Number(poloA)] });
+      const seen = (await api(ofA.token, "get", "/api/v1/leads?limit=200")).data;
+      assert(seen.some(l => l.name === "APIPOLO A") && !seen.some(l => l.name === "APIPOLO B"), `token of polo A: ${JSON.stringify(seen.map(l => l.name))}`);
+      assert(seen.every(l => Number(l.poloId) === Number(poloA)), "token of polo A read a lead of another polo");
+      assert(seen.every(l => !("cpf" in l) && !("notes" in l)), `the API answered personal fields: ${Object.keys(seen[0] || {}).join(",")}`);
+      const all = (await api(reader.token, "get", "/api/v1/leads?limit=200")).data;
+      assert(all.some(l => l.name === "APIPOLO A") && all.some(l => l.name === "APIPOLO B"), "a token of every polo misses a polo");
+      // and it writes only to people of its polos
+      assert((await api(ofA.token, "post", "/api/v1/messages/send", { number: "5569911110002", body: "oi", whatsappId: cid })).status === 403, "token of polo A wrote to a lead of polo B");
+      // a token of polo A writes only in polo A: a new lead stays in A (never in B), a lead of B is not touched, stage and owner of its scope
+      const writerA = await mk({ name: "escrita A", scopes: ["leads:write", "contacts:write"], poloIds: [Number(poloA)] });
+      assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", poloId: Number(poloB) })).status === 403, "token of polo A created a lead in polo B");
+      const fresh = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade de outro polo" });
+      assert(fresh.status === 201 && Number(fresh.data.lead.poloId) === Number(poloA) && Number(sql(`SELECT poloId FROM Leads WHERE id = ${fresh.data.lead.id}`)) === Number(poloA), `new lead of the token of polo A: ${fresh.status} ${JSON.stringify(fresh.data)}`);
+      const leadB = sql(`SELECT id FROM Leads WHERE name = 'APIPOLO B'`);
+      const stateB = () => sql(`SELECT CONCAT(name, '|', COALESCE(notes, ''), '|', (SELECT COUNT(*) FROM LeadActivities a WHERE a.leadId = ${leadB})) FROM Leads WHERE id = ${leadB}`);
+      const beforeB = stateB();
+      const twin = await api(writerA.token, "post", "/api/v1/leads", { name: "Outro nome", phone: "5569911110002", notes: "nota da API" });
+      assert(twin.status === 403 && !JSON.stringify(twin.data).includes(leadB), `token of polo A reached a lead of polo B: ${twin.status} ${JSON.stringify(twin.data)}`);
+      assert(stateB() === beforeB, "the lead of polo B was changed");
+      const wonStage = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
+      assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Direto matriculado", phone: "5569911110011", stageId: Number(wonStage) })).status === 422, "a polo token created a lead straight into an enrolled stage");
+      const outsider = Number(sql(`SELECT id FROM Users WHERE id NOT IN (SELECT userId FROM PoloMembers WHERE poloId = ${poloA}) ORDER BY id LIMIT 1`));
+      assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Dono de fora", phone: "5569911110012", ownerId: outsider })).status === 422, "a polo token gave a lead to someone outside its polos");
+      // contacts: the contact of a lead of polo B, or one that is not a lead of polo A, is not changed; a new contact is
+      const contactB = sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato do B', '5569911110002', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`UPDATE Leads SET contactId = ${contactB} WHERE id = ${leadB}`);
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110002" })).status === 403, "token of polo A changed the contact of a lead of polo B");
+      sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato solto', '5569911110020', '', false, NOW(), NOW())`);
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110020" })).status === 403, "token of polo A changed a contact that is not of its polos");
+      assert(sql(`SELECT string_agg(name, ',' ORDER BY id) FROM Contacts WHERE number IN ('5569911110002', '5569911110020')`) === "Contato do B,Contato solto", "a contact was renamed");
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Contato novo", number: "5569911110021" })).status === 201, "token of polo A cannot create a new contact");
+
+      // a token that expired is refused
+      const old = await mk({ name: "vencido", scopes: ["leads:read"], expiresInDays: 1 });
+      sql(`UPDATE ApiTokens SET expiresAt = NOW() - INTERVAL '1 minute' WHERE id = ${old.id}`);
+      const expired = await api(old.token, "get", "/api/v1/leads");
+      assert(expired.status === 401 && expired.data.error === "ERR_API_TOKEN_EXPIRED", `expired token: ${expired.status} ${JSON.stringify(expired.data)}`);
+
+      // the token is never in the database: only its SHA-256 and the prefix; the list never shows it
+      const sha = t => crypto.createHash("sha256").update(t).digest("hex");
+      assert(sql(`SELECT tokenHash FROM ApiTokens WHERE id = ${reader.id}`) === sha(reader.token), "the hash is not the SHA-256 of the token");
+      assert(Number(sql(`SELECT COUNT(*) FROM ApiTokens WHERE token IS NOT NULL`)) === 0, "a token is kept in plain text");
+      for (const t of [reader.token, ofA.token]) assert(!sql(`SELECT string_agg(CONCAT_WS('|', name, tokenHash, tokenPrefix, scopes, poloIds), ';') FROM ApiTokens`).includes(t), "the token is in the database");
+      const listed = JSON.stringify((await http.get("/api-tokens", auth())).data);
+      assert(!listed.includes(reader.token) && !listed.includes(sha(reader.token)) && listed.includes(reader.token.slice(0, 9)), "the list shows the token or its hash");
+
+      // a token made before the scopes (plain text): the migration turns it into a hash, with full access, marked legacy
+      const plain = `wt_${crypto.randomBytes(24).toString("hex")}`;
+      sql(`INSERT INTO ApiTokens (name, token, createdAt, updatedAt) VALUES ('integração antiga', '${plain}', NOW(), NOW())`);
+      execFileSync(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; (async()=>{ await require("./dist/database/migrations/20270101000102-hash-api-tokens").up(db.getQueryInterface()); })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 25000 });
+      assert(sql(`SELECT CONCAT(COALESCE(token, 'null'), '|', tokenHash, '|', scopes, '|', CAST(legacy AS INTEGER)) FROM ApiTokens WHERE name = 'integração antiga'`) === `null|${sha(plain)}|["*"]|1`, "the legacy token was not turned into a hash with full access");
+      assert((await api(plain, "get", "/api/v1/leads")).status === 200 && (await api(plain, "get", "/api/v1/connections")).status === 200, "the legacy token lost its access");
+      assert((await http.get("/api-tokens", auth())).data.some(t => t.name === "integração antiga" && t.legacy === true), "the screen does not mark the legacy token");
+
+      // the old single token of Configurações: on by default, the administrator turns it off (and only the administrator)
+      const settingsToken = sql(`SELECT value FROM Settings WHERE key = 'userApiToken'`);
+      assert(settingsToken, "no token in Configurações");
+      assert((await http.get("/api-tokens/legacy", auth())).data.enabled === true, "the old token is not on by default");
+      assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token of Configurações stopped");
+      assert((await http.put("/api-tokens/legacy", { enabled: "não" }, auth())).status === 400, "an invalid value was saved");
+      assert((await http.put("/api-tokens/legacy", { enabled: false }, auth())).data.enabled === false, "the old token was not turned off");
+      assert((await api(settingsToken, "get", "/api/v1/connections")).status === 401, "the old token works while off");
+      assert((await http.put("/api-tokens/legacy", { enabled: true }, auth())).data.enabled === true, "the old token was not turned on again");
+      assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token does not come back");
+    });
+
+    // GET /api/v1/indicadores (docs/API-V1.md): totals and codes only, never a name, phone, e-mail, CPF or text; the scope and the polos of
+    // the token are respected, the period is at most 93 days, and the numbers are the ones of the screens for the same period.
+    await test("API indicators: only totals and codes, scope and polos of the token, the same numbers of the screens", async () => {
+      const api = (t, url) => http.get(url, { headers: { Authorization: `Bearer ${t}` } });
+      const mkTok = async body => (await http.post("/api-tokens", body, auth())).data;
+      const today = (await http.get("/enrollments", auth())).data.to;
+      const poloA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('IDA', 'Polo Indicadores A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const poloB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('IDB', 'Polo Indicadores B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const won = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
+      const consultant = Number(sql(`SELECT id FROM Users ORDER BY id LIMIT 1`));
+      const ins = (name, phone, email, cpf, polo, extra = "") => sql(`INSERT INTO Leads (name, phone, email, cpf, source, stageId, poloId, isHistorical, firstContactAt, ${extra ? "nextFollowUpAt, " : ""}createdAt, updatedAt) VALUES ('${name}', '${phone}', '${email}', ${cpf ? `'${cpf}'` : "NULL"}, 'Instagram', ${open}, ${polo}, false, NOW() + INTERVAL '30 minutes', ${extra ? "NOW() - INTERVAL '1 day', " : ""}NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const la = ins("Indicadora Joana Pessoal", "5569933330001", "joana.indicadores@x.com", "29537914852", poloA, "follow");
+      ins("Indicador Pedro Pessoal", "5569933330002", "pedro.indicadores@x.com", null, poloB);
+      const lw = sql(`INSERT INTO Leads (name, phone, email, source, stageId, poloId, isHistorical, wonAt, enrolledAt, rgm, createdAt, updatedAt) VALUES ('Matriculada Rita Pessoal', '5569933330003', 'rita.indicadores@x.com', 'Google', ${won}, ${poloA}, false, NOW(), NOW(), '7999001', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO LeadTasks (leadId, userId, title, type, dueAt, createdAt, updatedAt) VALUES (${la}, ${consultant}, 'Ligar para Joana Pessoal', 'ligacao', NOW() - INTERVAL '2 hours', NOW(), NOW())`);
+      sql(`INSERT INTO ConsultantReviews (userId, ticketId, leadId, day, objections, difficulties, skipped, note, model, tokens, createdAt, updatedAt) VALUES (${consultant}, ${sql(`SELECT id FROM Tickets ORDER BY id LIMIT 1`).split("\n")[0]}, ${la}, '${today}', '[{"type":"preco","handled":true},{"type":"tempo","handled":false}]', '["entry"]', '["grade"]', 'Joana Pessoal falou do preço', 'test', 0, NOW(), NOW())`);
+
+      // scope: a token without indicators:read is refused; the period and the polo are checked
+      const leadsOnly = await mkTok({ name: "leads", scopes: ["leads:read"] });
+      assert((await api(leadsOnly.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).status === 403, "a token without indicators:read read the indicators");
+      const all = await mkTok({ name: "indicadores", scopes: ["indicators:read"] });
+      assert((await api(all.token, `/api/v1/indicadores?de=2026-01-01&ate=2026-12-31`)).status === 400, "a period of a year was accepted");
+      assert((await api(all.token, `/api/v1/indicadores?de=${today}`)).status === 400, "a period without the end was accepted");
+      assert((await api(all.token, `/api/v1/indicadores?de=2026-02-31&ate=2026-03-02`)).status === 400, "an impossible day (31/02) was accepted");
+      const r = await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}`);
+      assert(r.status === 200 && Array.isArray(r.data.polos) && Array.isArray(r.data.conexoes), `indicators ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+
+      // no personal data: no field that carries it, and no name, phone, e-mail or CPF of any person of the base anywhere in the answer
+      const text = JSON.stringify(r.data);
+      const keys = new Set();
+      const codes = new Set();
+      const walk = v => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => { keys.add(k.toLowerCase()); walk(x); }); else if (typeof v === "string") codes.add(v.toLowerCase()); };
+      walk(r.data);
+      for (const k of ["name", "nome", "phone", "telefone", "number", "email", "cpf", "rgm", "body", "note", "comment", "lastmessage", "contact", "lead", "aluno"]) assert(!keys.has(k), `the indicators carry the field ${k}`);
+      const people = sql(`SELECT name FROM Leads WHERE LENGTH(name) >= 6 UNION SELECT phone FROM Leads WHERE LENGTH(phone) >= 8 UNION SELECT email FROM Leads WHERE LENGTH(email) >= 6 UNION SELECT cpf FROM Leads WHERE cpf IS NOT NULL UNION SELECT rgm FROM Leads WHERE LENGTH(rgm) >= 5 UNION SELECT name FROM Contacts WHERE LENGTH(name) >= 6 UNION SELECT number FROM Contacts WHERE LENGTH(number) >= 8 UNION SELECT name FROM Users WHERE LENGTH(name) >= 6 UNION SELECT email FROM Users WHERE LENGTH(email) >= 6 UNION SELECT name FROM Whatsapps WHERE LENGTH(name) >= 6`).split("\n").map(x => x.trim()).filter(Boolean);
+      assert(people.length > 20, "the base has no people to compare");
+      // (a value that is itself one of the codes of the answer, like the origin "Instagram" or the channel "instagram", is a code, not a person)
+      const leak = people.filter(p => !codes.has(p.toLowerCase())).find(p => text.toLowerCase().includes(p.toLowerCase()));
+      assert(!leak, `the indicators carry personal data: ${leak}`);
+      // (the seeded people one by one: "pessoal" alone is a code of the answer, the function of a personal number)
+      for (const v of ["Joana Pessoal", "Pedro Pessoal", "Rita Pessoal", "joana.indicadores", "pedro.indicadores", "rita.indicadores", "29537914852", "5569933330001", "5569933330002", "5569933330003", "7999001", "falou do preço"]) assert(!text.toLowerCase().includes(v.toLowerCase()), `the indicators carry the data of a seeded person: ${v}`);
+
+      // the content: polo A has the follow-up, the task, the enrollment and the review of the consultant, by codes
+      const a = r.data.polos.find(p => p.poloId === Number(poloA));
+      assert(a && a.codigo === "IDA" && a.leads.total === 2 && a.leads.porOrigem.some(o => o.origem === "Instagram" && o.total === 1) && a.leads.porOrigem.some(o => o.origem === "Google" && o.matriculados === 1), `polo A leads ${JSON.stringify(a && a.leads)}`);
+      assert(a.followUps.vencidos === 1 && a.followUps.tarefasVencidas === 1 && a.matriculasRealizadas.total === 1 && a.primeiraResposta.leadsRespondidos === 1, `polo A ${JSON.stringify(a)}`);
+      const rv = a.revisaoConsultores.find(c => c.consultor === consultant);
+      assert(rv && rv.conversasLidas === 1 && rv.objecoes.some(o => o.tipo === "preco" && o.levantadas === 1 && o.tratadas === 1) && rv.objecoes.some(o => o.tipo === "tempo" && o.tratadas === 0) && rv.etapasComDificuldade[0].etapa === "entry" && rv.etapasPuladas[0].etapa === "grade", `review ${JSON.stringify(a.revisaoConsultores)}`);
+      assert(r.data.conexoes.every(c => Number.isInteger(c.id) && typeof c.conectado === "boolean" && c.funcao), `connections ${JSON.stringify(r.data.conexoes).slice(0, 300)}`);
+
+      // the same numbers of the screens for the same period: Captação/Painel do CRM (origins, stages, overdue tasks) and Matrículas realizadas
+      const metrics = (await http.get(`/crm/metrics?from=${today}&to=${today}`, auth())).data;
+      const sumBy = (list, k, v) => list.reduce((m, x) => ({ ...m, [x[k]]: (m[x[k]] || 0) + x[v] }), {});
+      const apiSources = sumBy(r.data.polos.flatMap(p => p.leads.porOrigem), "origem", "total");
+      const screenSources = sumBy(metrics.bySource, "name", "leads");
+      assert(JSON.stringify(Object.entries(apiSources).sort()) === JSON.stringify(Object.entries(screenSources).sort()), `origins API ${JSON.stringify(apiSources)} screen ${JSON.stringify(screenSources)}`);
+      const apiStages = sumBy(r.data.polos.flatMap(p => p.leads.porEtapa), "etapaId", "total");
+      const screenStages = sumBy(metrics.funnel.filter(f => f.total > 0), "id", "total");
+      assert(JSON.stringify(Object.entries(apiStages).sort()) === JSON.stringify(Object.entries(screenStages).sort()), `stages API ${JSON.stringify(apiStages)} screen ${JSON.stringify(screenStages)}`);
+      const now = (await http.get(`/crm/metrics?now=1`, auth())).data;
+      const apiTasks = r.data.polos.reduce((t, p) => t + p.followUps.tarefasVencidas, 0);
+      assert(apiTasks === now.attention.overdueTasks, `overdue tasks API ${apiTasks} screen ${now.attention.overdueTasks}`);
+      const screenEnr = (await http.get(`/enrollments?from=${today}&to=${today}`, auth())).data;
+      const apiEnr = r.data.polos.reduce((t, p) => t + p.matriculasRealizadas.total, 0);
+      assert(apiEnr === screenEnr.total, `enrollments API ${apiEnr} screen ${screenEnr.total}`);
+
+      // the polos of the token: polo A only, and polo B is refused
+      const ofA = await mkTok({ name: "indicadores A", scopes: ["indicators:read"], poloIds: [Number(poloA)] });
+      const onlyA = (await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).data;
+      assert(onlyA.polos.length === 1 && onlyA.polos[0].poloId === Number(poloA), `token of polo A: ${JSON.stringify(onlyA.polos.map(p => p.poloId))}`);
+      assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).status === 403, "token of polo A read polo B");
+      const askedB = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).data;
+      assert(askedB.polos.length === 1 && askedB.polos[0].leads.total === 1 && askedB.polos[0].matriculasRealizadas.total === 0, `polo B asked: ${JSON.stringify(askedB.polos)}`);
+      void lw;
     });
 
     // -------------------------------------------------------------------- CRM
@@ -1032,7 +1199,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT CONCAT(source,'|',utmSource,'|',utmCampaign,'|',CAST(consentAt IS NOT NULL AS INTEGER)) FROM Leads WHERE email='pedro@x.com'`) === "Site / formulário|instagram|vestibular|1", "form fields");
     });
     await test("API v1 creates leads (deduplicated) and lists them", async () => {
-      const t = (await http.post("/api-tokens", { name: "crm" }, auth())).data.token;
+      const t = (await http.post("/api-tokens", { name: "crm", scopes: ["leads:write", "leads:read"] }, auth())).data.token;
       const h = { headers: { Authorization: `Bearer ${t}` } };
       const a = await http.post("/api/v1/leads", { name: "Lead API", phone: "21 99999-1111", source: "Google" }, h);
       assert(a.status === 201, `status ${a.status}`);
@@ -1049,7 +1216,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(m.bySource.length >= 4, "bySource");
     });
     await test("backfill registers people who have a conversation, never an imported address book", async () => {
-      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "bf" }, auth())).data.token}` } };
+      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "bf", scopes: ["contacts:write"] }, auth())).data.token}` } };
       await http.post("/api/v1/contacts", { name: "Contato antigo", number: "5531977770000" }, headers);
       await http.post("/api/v1/contacts", { name: "So agenda", number: "5531977771111" }, headers);
       assert(!leadOf("5531977770000") && !leadOf("5531977771111"), "lead existed before backfill");
@@ -1148,7 +1315,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get(`/ficha-publica/${token}`)).status === 410, "the erased form still opens");
     });
     await test("a conversation the team opened, with no message yet, is nobody waiting in Responder agora", async () => {
-      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn" }, auth())).data.token}` } };
+      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn", scopes: ["contacts:write"] }, auth())).data.token}` } };
       await http.post("/api/v1/contacts", { name: "So salvei", number: "5531977773333" }, headers);
       const savedId = Number(sql(`SELECT id FROM Contacts WHERE number='5531977773333'`));
       const adminUserId = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
@@ -1518,6 +1685,63 @@ const postMeta = (id, payload, secret, badSig) => {
       // turning it on again
       assert((await http.put(`/proposal-templates/${made.data.id}`, { active: true }, auth())).data.active === true, "reactivate");
       await http.delete(`/proposal-templates/${made.data.id}`, auth());
+    });
+    await test("a model saves with an empty number field (the 'Graduação FAMAR' error), creating and editing", async () => {
+      const made = await http.post("/proposal-templates", { name: "Modelo Campo Vazio Teste", enrollmentFee: "", dueDay: 10, installments: "", installmentsFixed: "", bolsaFirst: 30, bolsaNext: 30 }, auth());
+      assert(made.status === 201, `create with empty fields ${made.status} ${JSON.stringify(made.data)}`);
+      const edited = await http.put(`/proposal-templates/${made.data.id}`, { installments: "", cardRatePct: "", observation: "ok" }, auth());
+      assert(edited.status === 200 && edited.data.observation === "ok", `edit with empty fields ${edited.status} ${JSON.stringify(edited.data)}`);
+      await http.delete(`/proposal-templates/${made.data.id}`, auth());
+    });
+    await test("installment proposals (SESTED and Cruzeiro pós): installments by duration, fees, single payment with Pix and card", async () => {
+      const tpl = await http.post("/proposal-templates", {
+        name: "Pós Parcelada Teste", planType: "parcelado", installments: "", installmentsByDuration: "6=12\n9=15\n12=18", enrollmentFee: 0, dueDay: 10,
+        bolsaFirst: 0, bolsaNext: 0, chargeCertification: true, certificationFee: 150, pixDiscountPct: 10, cardMaxInstallments: 10, cardRatePct: 1.99, cardPassInterest: true,
+        courseLevels: ["Pós-graduação"]
+      }, auth());
+      assert(tpl.status === 201 && tpl.data.planType === "parcelado", `template ${tpl.status} ${JSON.stringify(tpl.data).slice(0, 300)}`);
+      const imp = await http.post("/courses/import", { items: [
+        { name: "Pós Gestão Parcelada Teste", category: "Pós-graduação", level: "Pós-graduação", modality: "EAD", monthlyFee: "300,00", durationMonths: "9", enrollmentFee: "80,00", certificationFee: "150,00" },
+        { name: "Profissionalizante Teste", category: "Profissionalizante", level: "Profissionalizante", modality: "EAD", monthlyFee: "1.200,00", durationMonths: "3", installmentsTotal: "1", singlePayment: "Sim" },
+        { name: "Pós Duração Errada Teste", category: "Pós-graduação", modality: "EAD", monthlyFee: "300", durationMonths: "abc" },
+        { name: "Graduação Nível Teste", category: "Graduação", level: "Bacharelado", modality: "EAD", monthlyFee: "900", semesters: "8" }] }, auth());
+      assert(imp.data.created === 3 && imp.data.errors === 1, `import ${JSON.stringify(imp.data)}`);
+      assert(sql("SELECT durationMonths||'/'||enrollmentFee||'/'||certificationFee FROM Courses WHERE name='Pós Gestão Parcelada Teste'") === "9/80.00/150.00", "the new columns of the spreadsheet");
+      assert(sql("SELECT singlePayment FROM Courses WHERE name='Profissionalizante Teste'") === "1", "single payment column");
+      const pos = Number(sql("SELECT id FROM Courses WHERE name='Pós Gestão Parcelada Teste'"));
+      const lead = (await http.post("/leads", { name: "Lead Pós Teste", phone: "11 95555-0091", source: "Indicação", courseId: pos }, auth())).data.lead;
+      const d = await http.get(`/proposals/defaults?leadId=${lead.id}&templateId=${tpl.data.id}`, auth());
+      assert(d.status === 200 && d.data.params.planType === "parcelado" && d.data.params.installmentsTotal === 15, `9 months should be 15 installments: ${JSON.stringify(d.data.params || d.data).slice(0, 300)}`);
+      assert(d.data.params.enrollmentFee === 80 && d.data.params.certification === "charge" && d.data.params.certificationFee === 150, "the fees of the course");
+      // the automatic choice: a graduate course gets a model of its level; a graduation course never gets it
+      const auto = await http.get(`/proposals/defaults?leadId=${lead.id}`, auth());
+      assert(auto.status === 200 && auto.data.params.planType === "parcelado", `a graduate course got a graduation model: ${auto.data.templateId}`);
+      const grad = Number(sql("SELECT id FROM Courses WHERE name='Graduação Nível Teste'"));
+      const gLead = (await http.post("/leads", { name: "Lead Graduação Nível Teste", phone: "11 95555-0092", source: "Indicação", courseId: grad }, auth())).data.lead;
+      const g = await http.get(`/proposals/defaults?leadId=${gLead.id}`, auth());
+      assert(g.status === 200 && g.data.params.planType !== "parcelado" && g.data.templateId !== tpl.data.id, `a graduation course got the graduate model ${g.data.templateId}`);
+      const prev = p => http.post("/proposals/preview", { leadId: lead.id, templateId: tpl.data.id, params: { ...d.data.params, ...p } }, auth());
+      const plain = await prev({});
+      assert(plain.status === 200 && plain.data.result.plan.installments === 15 && plain.data.result.plan.total === 4500, `plan ${plain.status} ${JSON.stringify(plain.data.result || plain.data).slice(0, 300)}`);
+      assert(/Parcelas:<\/b> 15 de R\$\s?300,00/.test(plain.data.html) && /Taxa de certificação:<\/b> R\$\s?150,00/.test(plain.data.html) && !plain.data.html.includes("Projeção por semestre"), "the PDF of an installment proposal");
+      assert(/15 de R\$\s?300,00/.test(plain.data.messages.map(m => m.text).join("\n")), "the WhatsApp summary");
+      const exempt = await prev({ certification: "exempt", enrollmentExempt: true, firstExempt: true, firstMonthly: 0 });
+      assert(exempt.status === 200 && /Taxa de certificação:<\/b> isenta/.test(exempt.data.html) && /Taxa de matrícula:<\/b> isenta/.test(exempt.data.html), "waived fees");
+      assert(exempt.data.result.plan.total === 4200, `waived 1st: ${exempt.data.result.plan.total}`);
+      const edited = await prev({ certificationFee: 200, monthly: 280, installmentsTotal: 12 });
+      assert(edited.status === 200 && /Taxa de certificação:<\/b> R\$\s?200,00/.test(edited.data.html) && edited.data.result.plan.installments === 12, "edited certification and installments");
+      const single = await prev({ singlePayment: true, singleValue: 1000, pixDiscountPct: 10, cardInstallments: 10, cardRatePct: 1.99, cardPassInterest: true });
+      const s = single.data.result.plan.single;
+      assert(single.status === 200 && s.value === 1000 && s.pix === 900 && Math.abs(s.card.installment - 111.25) < 0.1, `single payment ${JSON.stringify(s)}`);
+      const noPass = (await prev({ singlePayment: true, singleValue: 1000, cardInstallments: 10, cardRatePct: 1.99, cardPassInterest: false })).data.result.plan.single;
+      assert(noPass.card.installment === 100 && noPass.card.total === 1000, `card without passing interest ${JSON.stringify(noPass.card)}`);
+      assert(/Pix:<\/b> R\$\s?900,00/.test(single.data.html) && /Cartão de crédito:<\/b> 10x de R\$/.test(single.data.html), "payment methods in the PDF");
+      // the graduation reference is untouched by the new model
+      const ref = await previewFor(REF1);
+      assert(ref.result.rows.length === REF1.rows.length && !ref.result.plan, "graduation turned into an installment proposal");
+      await http.delete(`/proposal-templates/${tpl.data.id}`, auth());
+      // out of the catalog, so the AI scenarios further on do not see them
+      sql("UPDATE Courses SET active=false WHERE name IN ('Pós Gestão Parcelada Teste','Profissionalizante Teste','Graduação Nível Teste')");
     });
     let prop, propCourse;
     await test("a draft saves without the base data, but the PDF and the sending ask for the admission, the course and the deadline", async () => {
@@ -2682,7 +2906,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sent.status === 200, `send ${sent.status} ${JSON.stringify(sent.data)}`);
       const out = tg.sent.slice(before);
       // one message: the PDF with the summary as its description (as when a document is attached with a caption)
-      assert(out.length === 1 && out[0].method === "sendDocument" && /Cst em Marketing/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
+      // the course is the name of the file; the caption starts with the duration and does not repeat the course
+      assert(out.length === 1 && out[0].method === "sendDocument" && !/Matriz curricular:/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
       assert((await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket), summary: false, pdf: false }, auth())).status === 400, "nothing to send accepted");
       // the contact can be chosen instead of a conversation: its open conversation is used
       const tgTicketData = (await http.get(`/tickets/${tgTicket}`, auth())).data;
@@ -2982,7 +3207,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.delete(`/payments/efi/wallets/${cb.id}`, auth())).data.informed === false, "admin wallet removal");
       assert((await http.put("/payments/efi/wallets/999999", { payeeCode: "ZZZZ1111YYYY2222" }, auth())).status === 404, "wallet of a missing user");
     });
-    await test("coordinator: manages every polo and sees every lead, creates the team but never administrators, no access to payment credentials", async () => {
+    await test("coordinator: manages the team and sees the leads of its polos only, never administrators, no access to payment credentials", async () => {
       const made = await http.post("/users", { name: "Coord Comercial", email: "coord-c@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
       assert(made.status === 200 && made.data.role === "coordenacao" && made.data.coordArea === "comercial", `create coordinator ${made.status} ${JSON.stringify(made.data).slice(0, 160)}`);
       const academic = (await http.post("/users", { name: "Coord Acadêmica", email: "coord-a@x.com", password: "senha123", role: "coordenacao", coordArea: "academica" }, auth())).data;
@@ -3007,11 +3232,17 @@ const postMeta = (id, payload, secret, badSig) => {
       assert([200, 204].includes((await http.delete(`/users/${throwaway.id}`, as)).status), "coordinator cannot remove a member of the team");
       assert((await http.delete(`/users/${adminId}`, as)).status === 403, "coordinator removed an administrator");
 
-      // every polo and every lead, whatever the polo
+      // the leads of its polos only (middleware/scope): a lead with no polo (or of another polo) stays with the administration
       const lead = (await http.post("/leads", { name: "Lead sem dono", phone: "5569988887771", source: "Site" }, auth())).data.lead;
-      assert((await http.get(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot open any lead");
+      assert((await http.get(`/leads/${lead.id}`, as)).status === 403, "coordinator opened a lead outside its polos");
       assert((await http.get("/polos", as)).status === 200, "polos list");
-      assert((await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as)).status === 201, "coordinator creating a polo");
+      const coordPolo = await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as);
+      assert(coordPolo.status === 201, "coordinator creating a polo");
+      // it does not put itself in a polo it is not part of; the administration does
+      assert((await http.post(`/polos/${coordPolo.data.id}/members/${made.data.id}`, { role: "coordenacao" }, as)).status === 403, "coordinator joined a polo by itself");
+      assert((await http.post(`/polos/${coordPolo.data.id}/members/${made.data.id}`, { role: "coordenacao" }, auth())).status === 200, "administration cannot put the coordinator in the polo");
+      sql(`UPDATE Leads SET poloId = ${Number(coordPolo.data.id)} WHERE id = ${Number(lead.id)}`);
+      assert((await http.get(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot open a lead of its polo");
 
       // the credentials and integration secrets are the administrator's alone (not coordination): payment gateway,
       // API tokens, webhook secrets, AI keys and e-mail/SMTP
@@ -4713,7 +4944,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const llmMa2 = anthropic.requests.length;
       out = await say(MA, "wamid.ma-5", "Sim, pode continuar", t => t.some(x => /Você tem alguma dúvida sobre o curso ou o formato\?/.test(x)), "MA grade, tutoring and internship");
       const ma5 = out.join("\n");
-      assert(/\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
+      // with the PDF the file carries the course's name and the caption does not repeat it; without the PDF the summary has the title
+      const maDoc = graph.sent.filter(x => x.body && x.body.type === "document" && String(x.body.to || "").endsWith(MA.slice(-8))).pop();
+      if (maDoc) assert(/^Biomedicina/.test(maDoc.body.document.filename) && !/Matriz curricular:/.test(maDoc.body.document.caption || ""), `MA grade file: ${JSON.stringify(maDoc.body.document).slice(0, 200)}`);
+      assert((maDoc || /\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5)) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
       assert(/Sobre a tutoria, esse é um diferencial importante/.test(ma5) && /começa no 6º semestre e soma 640 horas/.test(ma5) && /convênios com órgãos públicos/.test(ma5), `MA tutoring and internship: ${ma5}`);
       assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
       out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /simular as bolsas disponíveis para você, pode me informar o seu nome completo e CPF/.test(x)), "MA name and CPF asked");
@@ -4721,6 +4955,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/^\W*Para o consultor do seu polo simular as bolsas/.test(out[out.length - 1]), `MA bolsa: ${out}`);
       // the copilot follows the conversation: the name and the CPF were just asked, so it does not suggest asking again; it says it waits and
       // offers a short reminder (never the same message, never "Caso não tenha" out of place)
+      // the agent of this course does not speak of the faculty: before it, the step "Corpo docente" is the next one; the consultant marks it
+      const beforeFaculty = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
+      assert(beforeFaculty.current === "docentes", `the faculty step: ${beforeFaculty.current}`);
+      await http.put(`/tickets/${ticketOf(MA)}/copilot/progress`, { key: "docentes", done: true }, auth());
       const copWait = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(copWait.current === "bolsa" && copWait.suggestion.kind === "waiting" && /Você já pediu o nome completo e o CPF/.test(copWait.suggestion.note), `copilot while waiting: ${JSON.stringify(copWait.suggestion)}`);
       assert(/conseguiu ver a minha mensagem/.test(copWait.suggestion.text) && !/Caso não tenha/.test(copWait.suggestion.text), `copilot reminder: ${copWait.suggestion.text}`);
@@ -4732,7 +4970,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // the copilot of the consultant reads the same conversation: everything up to the name and CPF is done, the proposal is next, with no model call
       const cop = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(cop.hasLead && cop.current === "proposal", `copilot step: ${JSON.stringify(cop.steps)}`);
-      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,grade,doubts,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
+      // the simple process (11 steps): the tutoring and the faculty count when the agent told them
+      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,tutoria,grade,docentes,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
       assert(cop.suggestion && cop.suggestion.action === "proposal" && /proposta da sua bolsa/.test(cop.suggestion.text) && !emoji.test(cop.suggestion.text), `copilot text: ${JSON.stringify(cop.suggestion)}`);
       assert(anthropic.requests.length === llmMa2, "the copilot called the model");
       assert(cop.course && cop.course.semPratica === false && /Semipresencial: 30% de prática presencial/.test(cop.course.resumo), `copilot course rule: ${JSON.stringify(cop.course)}`);
@@ -4744,7 +4983,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/tickets/${tMA}/take`, {}, auth())).status === 200, "the consultant takes the conversation");
       const copNow = async () => (await http.get(`/tickets/${tMA}/copilot`, auth())).data;
       const consultantSays = async text => { const r = await http.post(`/messages/${tMA}`, { body: text }, auth()); assert(r.status === 200, `consultant message ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`); };
-      assert((await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.some(x => x.key === "objective" && x.optional), "the objective is an optional step");
+      const simple = (await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.map(x => x.key).join(",");
+      assert(simple === "course,entry,city,format,tutoria,grade,docentes,bolsa,proposal,ficha,enroll", `the simple process of 11 steps: ${simple}`);
       await consultantSays("Maira, segue a proposta da sua bolsa para o curso de Biomedicina.");
       let cp = await copNow();
       // the sentence alone is not a proposal: the step waits for a proposal really sent (the PDF)
@@ -4759,14 +4999,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // asked is not sent: the step waits for the form (by the link) or the documents in the conversation, with a reminder meanwhile
       assert(cp.current === "ficha" && cp.suggestion.kind === "waiting", `the form counted as sent when it was only asked: ${cp.current} ${cp.suggestion && cp.suggestion.kind}`);
       await inboundCloud(MA, "wamid.ma-ficha", "Segue o meu RG e o nome da mãe é Maria");
-      await waitFor(async () => (await copNow()).current === "taxa", 15000, "the documents in the conversation completed the form step");
-      cp = await copNow();
-      assert(cp.current === "taxa" && /boleto da taxa de matrícula/.test(cp.suggestion.text) && /comprovante/.test(cp.suggestion.text), `after the form: ${cp.current}`);
-      await consultantSays(cp.suggestion.text);
-      cp = await copNow();
-      assert(cp.current === "comprovante", `after the fee: ${cp.current}`);
-      await inboundCloud(MA, "wamid.ma-pix", "Pix feito, segue o comprovante");
-      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the proof of payment moved the process to the enrollment");
+      // the fee and its proof are part of the enrollment step (no steps of their own any more)
+      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the documents in the conversation completed the form step");
       cp = await copNow();
       assert(cp.suggestion.action === "enroll" && /matrícula/.test(cp.suggestion.text) && /Biomedicina/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `enrollment step: ${JSON.stringify(cp.suggestion)}`);
       // before it is registered in the CRM, the lead is never told the enrollment is confirmed
@@ -5524,7 +5758,11 @@ const postMeta = (id, payload, secret, badSig) => {
       const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const tutorR = await mkUser("Tutora Retencao", "tutorr@ret.test", "tutor");
       const poloR = (await http.post("/polos", { name: "Polo Retencao", code: "RET1", state: "RO" }, auth())).data;
-      await http.put(`/polos/${poloR.id}/members`, { members: [{ userId: tutorR.id, role: "tutoria" }] }, auth());
+      // the academic coordinator sees the students of the polos it belongs to (middleware/scope): it is in the team of this polo
+      const coordAcId = Number(sql(`SELECT id FROM Users WHERE email = 'coord-a@x.com'`));
+      await http.put(`/polos/${poloR.id}/members`, { members: [{ userId: tutorR.id, role: "tutoria" }, { userId: coordAcId, role: "coordenacao" }] }, auth());
+      await mkUser("Coord Acadêmica sem polo", "coord-a-np@ret.test", "coordenacao");
+      sql(`UPDATE Users SET coordArea = 'academica' WHERE email = 'coord-a-np@ret.test'`);
       const tutorTok = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;
       const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const coordCom = (await http.post("/auth/login", { email: "coord-c@x.com", password: "senha123" })).data.token;
@@ -5605,6 +5843,11 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(rc && rc.days >= 45 && rc.level === "attention" && risk.riskDays === 30, `risk ${JSON.stringify(rc)}`);
       assert(!risk.students.some(x => x.id === ana.leadId), "a student with recent news is at risk");
       assert((await http.get("/retention/risk", asUser(coordAc))).data.students.some(x => x.id === carla.leadId), "the academic coordinator does not see the student at risk");
+      // an academic coordinator outside the polo of the student does not see it, nor acts on it
+      const coordNp = (await http.post("/auth/login", { email: "coord-a-np@ret.test", password: "senha123" })).data.token;
+      const npRisk = await http.get("/retention/risk", asUser(coordNp));
+      assert(npRisk.status === 200 && !npRisk.data.students.some(x => x.id === carla.leadId), "an academic coordinator outside the polo saw the student at risk");
+      assert((await http.post(`/retention/nps/send/${carla.leadId}`, {}, asUser(coordNp))).status === 403, "an academic coordinator outside the polo sent a survey to the student");
       await http.post("/retention/run", {}, auth());
       assert(/Risco de evasão/.test(labelsOf(carla.leadId)), "no risk label");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${carla.leadId} AND title LIKE 'Retenção:%'`)) === 1, "no retention task");
@@ -6232,7 +6475,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const answer = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
       assert(answer.startsWith(`Olá, Aluna, que bom que você chamou!\n\nEu sou ${tutorName}, tutor(a) da `) && answer.includes("no curso de Pedagogia Abordagem Teste"), `the approach after the student wrote: ${answer}`);
       // someone with no enrollment writes to the tutoring: no greeting of a new student, only who the tutor is and the RGM
-      const obTok = (await http.post("/api-tokens", { name: "ob-unknown" }, auth())).data.token;
+      const obTok = (await http.post("/api-tokens", { name: "ob-unknown", scopes: ["contacts:write"] }, auth())).data.token;
       await http.post("/api/v1/contacts", { name: "Pessoa Sem Matricula", number: "5511955552777" }, { headers: { Authorization: `Bearer ${obTok}` } });
       const strangerId = sql(`SELECT id FROM Contacts WHERE number='5511955552777'`);
       assert(strangerId && !sql(`SELECT id FROM Leads WHERE contactId=${strangerId}`), "the contact with no enrollment already had a lead");
@@ -6921,7 +7164,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const tutorX = await mkUser("Tutor Envios", "tutorx@env.test", "tutor");
       const poloX = (await http.post("/polos", { name: "Polo Envios", code: "ENV1", state: "RO" }, auth())).data;
-      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }] }, auth());
+      // the academic coordinator is in the team of this polo: it sees its students (middleware/scope)
+      const coordAcId = Number(sql(`SELECT id FROM Users WHERE email = 'coord-a@x.com'`));
+      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }, { userId: coordAcId, role: "coordenacao" }] }, auth());
       const tutorTok = (await http.post("/auth/login", { email: "tutorx@env.test", password: "senha123" })).data.token;
       const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
@@ -7277,6 +7522,12 @@ const postMeta = (id, payload, secret, badSig) => {
       const adminNps = (await http.get("/retention/nps", auth())).data;
       assert(adminNps.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the management does not see the answer");
       assert((await http.get("/retention/nps", asUser(tutor))).status === 403 && (await http.get("/retention/nps.csv", asUser(tutor))).status === 403, "a tutor read the satisfaction answers");
+      // the academic coordinator sees the answers of the students of its polos only: outside them, nothing
+      const coordNp = (await http.post("/auth/login", { email: "coord-a-np@ret.test", password: "senha123" })).data.token;
+      assert(!(await http.get("/retention/nps", asUser(coordNp))).data.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "an academic coordinator outside the polo read the answer");
+      const otherPolo = sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id = ${other}`);
+      if (otherPolo) sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) SELECT ${otherPolo}, id, 'coordenacao', NOW(), NOW() FROM Users WHERE email = 'coord-a@x.com' AND NOT EXISTS (SELECT 1 FROM PoloMembers pm WHERE pm.poloId = ${otherPolo} AND pm.userId = Users.id)`);
+      else sql(`UPDATE Leads SET poloId = (SELECT id FROM Polos WHERE code = 'RET1') WHERE id = ${other}`);
       assert((await http.get("/retention/nps", asUser(coordAc))).data.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the academic coordinator does not see the answers");
       assert(Array.isArray(adminNps.series) && adminNps.series.length >= 1 && adminNps.series[0].week && typeof adminNps.commentsTotal === "number", "series by week");
       adminNps.byKind.forEach(k => assert(Object.prototype.hasOwnProperty.call(k, "nps"), "byKind without nps"));
@@ -7640,7 +7891,7 @@ const postMeta = (id, payload, secret, badSig) => {
       { const off = (await http.get("/copilot/settings", auth())).data; off.aiEnabled = false; await http.put("/copilot/settings", off, auth()); }
       const before = anthropic.requests.length;
       let view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
-      assert(view.enabled && !view.hasLead && view.steps.length === 15 && view.current === "course", "no process for unlinked contact");
+      assert(view.enabled && !view.hasLead && view.steps.length === 11 && view.current === "course", "no process for unlinked contact");
       assert(!view.aiAvailable && anthropic.requests.length === before, "process used paid generation");
       assert((await http.post(`/tickets/${tid}/suggest-reply`, {}, auth())).status === 403, "AI opt-in ignored");
       assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"course",done:true}, auth())).data.current === "entry", "step not saved");

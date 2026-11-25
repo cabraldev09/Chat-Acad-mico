@@ -32,6 +32,17 @@
   - as rotas de sessão (`/whatsappsession/:id`) e `PUT /whatsapp/:id` aceitam a gestão e o dono do número QR (`canManageWhatsapp`);
   - no `PUT`, o dono só muda os grupos (`groupsMode` e `allowedGroups`).
 
+## Número QR que não volta (reaberturas e processos do navegador)
+- O vigia (`workers/WhatsappWatchdog.ts`) reabre sozinho um número QR caído com o login salvo, a cada 30 min no máximo.
+  Depois de 3 reaberturas sem sucesso, avisa os administradores e passa a tentar só uma vez a cada 6 horas. Para voltar na hora,
+  clique em QR CODE e leia o código no celular.
+- Ao fechar o navegador de um número (ou antes de abrir de novo), os processos do Chromium daquele número que ficaram abertos são
+  encerrados (`browserProcesses.ts`). Antes, eles se acumulavam até o contêiner não conseguir criar processos ("pthread_create",
+  "Cannot fork"), a API ficar doente e as atualizações travarem.
+- Se a API travar assim, rode o workflow **"Reiniciar a API"**: com `executar = nao` só mostra quem segura o bloqueio da
+  atualização e quantos processos há; com `executar = sim` encerra as atualizações presas e reinicia só o contêiner da API
+  (1 a 2 minutos fora). Depois, rode "Atualizar a VPS".
+
 ## Como a carteira funciona
 - **Dono do cliente**: é o **responsável no CRM**, se ele já conversou com o cliente. Se não, é **quem atendeu por último**.
 - **Quando o cliente escreve de novo** num número compartilhado (sem dono), a conversa vai direto para esse consultor: sem robô, sem fluxo e sem rodízio.
