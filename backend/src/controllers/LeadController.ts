@@ -293,6 +293,16 @@ export const setStage = async (req: Request, res: Response): Promise<Response> =
       throw new AppError("ERR_ENROLL_REQUIRED", 409);
     }
   }
+  // an enrolled student taken back to an open column: the enrollment is undone (asked first; it used to leave the lead in the open funnel
+  // still saying "Matrícula confirmada", with no way to confirm it again)
+  if (target && target.type === "open") {
+    const current = await Lead.findByPk(req.params.id);
+    if (current && current.enrolledAt) {
+      if (req.body.undoEnroll !== true) throw new AppError("ERR_ENROLL_UNDO_CONFIRM", 409);
+      const { undoEnrollment } = await import("../services/CrmServices/EnrollLead");
+      await undoEnrollment(current, uid(req));
+    }
+  }
   try {
     const lead = await changeStage(req.params.id, Number(stageId), uid(req), { lostReason, lostNote });
     return res.json(lead);
@@ -1095,8 +1105,16 @@ export const onboardingAccessSave = async (req: Request, res: Response): Promise
 export const onboardingAccessSend = async (req: Request, res: Response): Promise<Response> => {
   const { lead, student } = await accessStudent(req);
   if (!student.academicEmail) throw new AppError("Informe primeiro o e-mail de acesso do aluno.", 400);
-  const ticket = lead.contactId ? await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } as any, order: [["id", "DESC"]] }) : null;
-  if (!ticket) throw new AppError("Este aluno não tem a conversa de ambientação aberta.", 400);
+  let ticket = lead.contactId ? await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } as any, order: [["id", "DESC"]] }) : null;
+  // the ambientação conversation was closed: it opens again with the person sending (the access is sent there, not lost)
+  if (!ticket && lead.contactId) {
+    const closed = await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding" } as any, order: [["id", "DESC"]] });
+    if (closed) {
+      await closed.update({ status: "open", userId: closed.userId || uid(req) });
+      ticket = closed;
+    }
+  }
+  if (!ticket) throw new AppError("ERR_ONBOARDING_NO_CONVERSATION", 400);
   const { issueToken } = await import("../analysis/Store");
   const token = await issueToken(student, student.activatedAt ? "reset" : "invite");
   const base = String(process.env.FRONTEND_URL || "").split(",")[0].trim().replace(/\/$/, "") || "http://localhost:3000";
@@ -1221,7 +1239,8 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
 
 // how many students wait for the first contact of the person (the badge of the menu)
 export const onboardingPending = async (req: Request, res: Response): Promise<Response> => {
-  const mine = reqRole(req) === "consultor" ? { ownerId: uid(req) } : reqRole(req) === "tutor" ? { onboardingTutorId: uid(req) } : {};
+  // a tutor counts their own students and the ones of their polos still without a tutor (the scope decides which); a consultant, theirs
+  const mine = reqRole(req) === "consultor" ? { ownerId: uid(req) } : {};
   const total = await Lead.count({ where: await withOnboardingScope(req, { onboardingStatus: "pending", ...mine }) });
   return res.json({ pending: total });
 };
@@ -1236,7 +1255,13 @@ export const onboardingList = async (req: Request, res: Response): Promise<Respo
   const { parseChecklist } = await import("../services/CrmServices/EnrollLead");
   const rows = await Lead.findAll({
     // a consultant sees only the students THEY sent to the ambientação; tutors see theirs (and the polo's queue), the management everyone
-    where: await withOnboardingScope(req, { onboardingStatus: { [Op.ne]: "none" }, ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}) }),
+    // the board is the work of the ambientação: the concluded ones only of the last 30 days, and never the students imported into a tutor's
+    // list (they arrive concluded, with no ambientação of their own, and used to fill the board)
+    where: await withOnboardingScope(req, {
+      onboardingStatus: { [Op.ne]: "none" },
+      ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}),
+      [Op.or]: [{ onboardingStatus: { [Op.ne]: "done" } }, { onboardingDoneAt: { [Op.gte]: new Date(Date.now() - 30 * 864e5) } }]
+    }),
     include: leadInclude as any,
     order: [["enrolledAt", "DESC"]],
     limit: 300

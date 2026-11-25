@@ -31,6 +31,7 @@ import { onColor, tint } from "../../utils/color";
 import AiBrief from "../../components/AiBrief";
 import StudentRecord from "./StudentRecord";
 import { confirmDialog } from "../../components/ConfirmDialog";
+import { putStage } from "./moveStage";
 
 const useStyles = makeStyles((theme) => ({
   paper: { width: 500, maxWidth: "100vw", display: "flex", flexDirection: "column", borderLeft: theme.border.divider, animation: "slide-in-left .0s" },
@@ -170,8 +171,9 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
     // confirming an enrollment hands the student to the tutor: dedicated dialog
     if (stage.type === "won" && !extra.skipEnroll) { setEnrollOpen(true); return; }
     try {
-      await api.put(`/leads/${lead.id}/stage`, { stageId: stage.id, ...extra });
-      if (stage.type === "won" && e) burst(e.clientX, e.clientY);
+      const pos = e ? { x: e.clientX, y: e.clientY } : null;
+      if (!(await putStage(lead.id, stage, extra))) return;
+      if (stage.type === "won" && pos) burst(pos.x, pos.y);
       toast.success(`Movido para “${stage.name}”`);
       changed();
     } catch (err) {
@@ -433,6 +435,8 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                           try { const r = await api.get(`/proposals/${pr.id}/pdf`, { responseType: "blob" }); const u = URL.createObjectURL(r.data); const a = document.createElement("a"); a.href = u; a.download = `Proposta - ${lead.name}.pdf`; a.click(); URL.revokeObjectURL(u); } catch (e) { toastError(e); }
                         }}><Download size={16} /></IconAction>
                         <IconAction title={pr.status === "draft" ? "Enviar ao candidato" : "Reenviar ao candidato"} onClick={async () => {
+                          // sending goes straight to the candidate's WhatsApp: asked first, like in the proposal studio
+                          if (!(await confirmDialog({ title: pr.status === "draft" ? "Enviar a proposta ao candidato?" : "Reenviar a proposta ao candidato?", message: `O PDF e o resumo vão para o WhatsApp de ${lead.name}.`, confirmText: pr.status === "draft" ? "Enviar" : "Reenviar" }))) return;
                           try { await api.post(`/proposals/${pr.id}/send`, {}); toast.success("Proposta enviada ao candidato."); changed(); } catch (e) { toastError(e); }
                         }}><SendHorizonal size={16} /></IconAction>
                         <IconAction title="Duplicar como novo rascunho" onClick={async () => { try { const { data } = await api.post(`/proposals/${pr.id}/duplicate`); changed(); setStudio({ id: data.id }); } catch (e) { toastError(e); } }}><CopyPlus size={16} /></IconAction>

@@ -640,6 +640,8 @@ const messages = {
         ERR_CONNECTION_LIMIT: "Você já conectou o número que o administrador permite. Para conectar outro, remova o atual ou peça ao administrador para aumentar o limite.",
         ERR_CONNECTION_CAPACITY: "O servidor está no limite de números por QR Code. Peça ao administrador para aumentar a memória do servidor ou remover um número que não usa mais.",
         ERR_QR_ALREADY_HAS: "Você já tem um WhatsApp conectado por QR Code. Use a opção Reconectar dele em Conexões.",
+        ERR_ENROLL_UNDO_CONFIRM: "Este lead está matriculado. Para tirá-lo de Matriculado, confirme que a matrícula deve ser desfeita.",
+        ERR_ONBOARDING_NO_CONVERSATION: "Este aluno ainda não tem conversa no WhatsApp. Abra uma conversa com ele primeiro e envie o acesso de novo.",
         ERR_PAYMENT_AMOUNT: "Informe o valor da taxa de matrícula.",
         ERR_PROPOSAL_NO_GROSS: "Informe a mensalidade bruta do curso.",
         ERR_PROPOSAL_FIRST_MONTHLY: "A mensalidade com bolsa precisa ser maior que zero e não pode passar da mensalidade bruta.",

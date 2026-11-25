@@ -23,6 +23,7 @@ import SendToContact from "../services/ChannelServices/SendToContact";
 import { addActivity, changeStage, loadLead, resolveLeadTarget } from "../services/CrmServices/LeadCore";
 import dispatchWebhook from "../services/WebhookServices/DispatchWebhook";
 import { baseMonthly, calcProposal, ProposalParams, SemestralStep } from "../services/ProposalServices/calc";
+import { resolveStage } from "../services/CommercialServices/Pipeline";
 import { renderProposalHtml } from "../services/ProposalServices/render";
 import { buildProposalMessages } from "../services/ProposalServices/proposalMessage";
 import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
@@ -520,8 +521,14 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   await lead.update({ lastContactAt: new Date(), ...(lead.firstContactAt ? {} : { firstContactAt: new Date() }) });
 
   // move to the "proposta" stage when the lead is still earlier in the funnel
+  // the column of the proposal itself ("Proposta / negociação"), not the first one with "proposta" in the name ("Pronto para proposta"
+  // comes before it in the agent's funnel and kept the lead where it was)
   const stages = await LeadStage.findAll({ order: [["position", "ASC"]] });
-  const target = stages.find(s => s.type === "open" && /proposta/i.test(s.name));
+  const proposalStageId = await resolveStage("proposal");
+  const target =
+    stages.find(s => s.id === proposalStageId && s.type === "open") ||
+    stages.find(s => s.type === "open" && /proposta/i.test(s.name) && !/pronto/i.test(s.name)) ||
+    stages.find(s => s.type === "open" && /proposta/i.test(s.name));
   const current = stages.find(s => s.id === lead.stageId);
   if (target && current && current.type === "open" && current.position < target.position) {
     await changeStage(lead.id, target.id, uid(req));

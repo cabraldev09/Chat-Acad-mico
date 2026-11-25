@@ -227,7 +227,8 @@ export const EfiSettings = ({ stages }) => {
             helperText="Para vencimentos distantes" style={{ width: 220 }} />
           <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ flex: 1, minWidth: 240 }}>
             <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
-            {stages.map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
+            {/* a payment never enrolls by itself (the RGM and the tutor come from the enrollment dialog): only the open columns */}
+            {stages.filter((st) => st.type === "open" || st.id === v.moveStageId).map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
           </TextField>
         </div>
         <div><Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button></div>

@@ -1116,6 +1116,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT status FROM LeadDocuments WHERE leadId=${leadId} AND name='RG ou CNH'`) === "received", "the ID did not count as delivered");
       const staff = (await http.get(`/leads/${leadId}/enrollment-form`, auth())).data;
       assert(staff.progress === 100 && staff.data.cpf === "74682489070" && staff.consentAt && staff.submittedAt, `staff view ${JSON.stringify(staff).slice(0, 200)}`);
+      // the form sent by a lead not enrolled yet: the consultant gets the task of checking it and confirming the enrollment
+      const ownerOfForm = sql(`SELECT COALESCE(ownerId::text,'') FROM Leads WHERE id=${leadId}`);
+      if (ownerOfForm) assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId} AND automationKey='enroll-after-form:${leadId}' AND doneAt IS NULL`) === "1", "the received form did not create the task of confirming the enrollment");
       // an enrolled student also gets the form, fills it and sends it; the tutor is told along with the consultant
       const tutorF = (await http.post("/users", { name: "Tutora Ficha", email: "ficha-tutora@x.com", password: "senha123", role: "tutor" }, auth())).data;
       sql(`UPDATE Leads SET enrolledAt=NOW(), onboardingTutorId=${tutorF.id} WHERE id=${leadId}`);
@@ -1127,6 +1130,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const resent = await http.post(`/ficha-publica/${token}/submit`);
       assert(resent.status === 200 && sql(`SELECT city FROM Leads WHERE id=${leadId}`) === "Campinas", `an enrolled student could not send the form ${resent.status}`);
       assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${tutorF.id} AND kind='enrollment_form'`)) === 1, "the tutor was not told about the form");
+      // taking an enrolled student back to an open column asks first, then undoes the enrollment
+      const openStage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
+      const asked = await http.put(`/leads/${leadId}/stage`, { stageId: Number(openStage) }, auth());
+      assert(asked.status === 409 && asked.data.error === "ERR_ENROLL_UNDO_CONFIRM", `an enrolled lead went back without asking ${asked.status}`);
+      assert(sql(`SELECT enrolledAt IS NOT NULL FROM Leads WHERE id=${leadId}`) === "1", "the enrollment was undone without the confirmation");
+      const undone = await http.put(`/leads/${leadId}/stage`, { stageId: Number(openStage), undoEnroll: true }, auth());
+      assert(undone.status === 200 && sql(`SELECT COALESCE(enrolledAt::text,'') FROM Leads WHERE id=${leadId}`) === "", `undo the enrollment ${undone.status}`);
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Matrícula desfeita%'`) === "1", "the undoing is not in the history");
       // erasing on request of the person (LGPD): only the management, and the pictures go
       assert((await http.delete(`/leads/${leadId}/enrollment-form`, asUser(other))).status === 403, "a consultant erased the form");
       assert((await http.delete(`/leads/${leadId}/enrollment-form`, auth())).status === 200, "erase");
@@ -1541,7 +1552,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const doc = graph.sent.slice(before).find(x => x.body && x.body.type === "document");
       assert(doc && doc.body.document.filename && doc.body.document.filename.endsWith(".pdf"), "document message payload");
       assert(sql(`SELECT status FROM Proposals WHERE id=${prop.id}`) === "sent", "status");
-      assert(/proposta/i.test(stageName(lid)), `stage ${stageName(lid)}`);
+      // the column of the proposal itself, never "Pronto para proposta"
+      assert(/proposta/i.test(stageName(lid)) && !/pronto/i.test(stageName(lid)), `stage ${stageName(lid)}`);
       assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lid} AND body LIKE 'Proposta #${prop.id} enviada%'`) === "1", "activity");
       const pub = await http.get(`/p/${prop.token}`);
       assert(pub.status === 200 && String(pub.data).includes("Projeção por semestre"), "public link");
@@ -1735,6 +1747,24 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: pay.txid }] });
       await sleep(1500);
       assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${paying.id} AND body LIKE 'Taxa de matrícula paga%'`) === "1", "duplicate activity");
+    });
+    await test("a paid fee never enrolls by itself: with the setting pointing to Matriculado the lead stays and the consultant gets the task", async () => {
+      const won = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`);
+      await http.put("/payments/efi/settings", { moveStageId: Number(won) }, auth());
+      const me = sql(`SELECT id FROM Users WHERE email='admin@whaticket.com'`);
+      const l = await mkLead("Aluno Taxa Sem Matricula", "5511955550011");
+      await http.put(`/leads/${l.id}`, { cpf: "529.982.247-25" }, auth());
+      sql(`UPDATE Leads SET ownerId=${me} WHERE id=${l.id}`);
+      const p = (await http.post(`/leads/${l.id}/payments`, { amount: "99,00", method: "pix" }, auth())).data;
+      efi.charges[p.txid].status = "CONCLUIDA";
+      efi.charges[p.txid].pix = [{ endToEndId: "E2026WON", txid: p.txid, valor: "99.00", horario: new Date().toISOString() }];
+      const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
+      await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: p.txid }] });
+      await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${p.id}`) === "paid", 8000, "payment paid");
+      await http.put("/payments/efi/settings", { moveStageId: null }, auth());
+      assert(sql(`SELECT COALESCE(enrolledAt::text,'') FROM Leads WHERE id=${l.id}`) === "", "a payment enrolled the lead");
+      assert(sql(`SELECT s.type FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.id=${l.id}`) === "open", `a payment moved the lead to ${stageName(l.id)}`);
+      await waitFor(() => sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${l.id} AND automationKey='enroll-after-fee:${l.id}' AND doneAt IS NULL`) === "1", 8000, "the task of confirming the enrollment");
     });
     await test("without a webhook (localhost) the poller still detects the payment", async () => {
       const l = await mkLead("Aluno Poller", "5511955550002");
@@ -4714,9 +4744,19 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.some(x => x.key === "objective" && x.optional), "the objective is an optional step");
       await consultantSays("Maira, segue a proposta da sua bolsa para o curso de Biomedicina.");
       let cp = await copNow();
+      // the sentence alone is not a proposal: the step waits for a proposal really sent (the PDF)
+      assert(cp.current === "proposal", `a sentence counted as the proposal: ${cp.current}`);
+      const maLead = sql(`SELECT l.id FROM Leads l JOIN Tickets t ON t.contactId=l.contactId WHERE t.id=${tMA} LIMIT 1`);
+      sql(`INSERT INTO Proposals (leadId, token, status, courseName, grossFee, firstMonthly, bolsaPct, params, sentAt, createdAt, updatedAt) VALUES (${maLead}, 'tok-ma-${Date.now()}', 'sent', 'Biomedicina', 500, 250, 50, '{}', NOW(), NOW(), NOW())`);
+      cp = await copNow();
       // the form goes as the lead's personal link (the lead fills it in on the phone, with the picture of the ID)
       assert(cp.current === "ficha" && /ficha de matrícula/.test(cp.suggestion.text) && /\/ficha\/[a-f0-9]{48}/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `after the proposal: ${cp.current} ${JSON.stringify(cp.suggestion)}`);
       await consultantSays(cp.suggestion.text);
+      cp = await copNow();
+      // asked is not sent: the step waits for the form (by the link) or the documents in the conversation, with a reminder meanwhile
+      assert(cp.current === "ficha" && cp.suggestion.kind === "waiting", `the form counted as sent when it was only asked: ${cp.current} ${cp.suggestion && cp.suggestion.kind}`);
+      await inboundCloud(MA, "wamid.ma-ficha", "Segue o meu RG e o nome da mãe é Maria");
+      await waitFor(async () => (await copNow()).current === "taxa", 15000, "the documents in the conversation completed the form step");
       cp = await copNow();
       assert(cp.current === "taxa" && /boleto da taxa de matrícula/.test(cp.suggestion.text) && /comprovante/.test(cp.suggestion.text), `after the form: ${cp.current}`);
       await consultantSays(cp.suggestion.text);
@@ -4726,6 +4766,8 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(async () => (await copNow()).current === "enroll", 15000, "the proof of payment moved the process to the enrollment");
       cp = await copNow();
       assert(cp.suggestion.action === "enroll" && /matrícula/.test(cp.suggestion.text) && /Biomedicina/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `enrollment step: ${JSON.stringify(cp.suggestion)}`);
+      // before it is registered in the CRM, the lead is never told the enrollment is confirmed
+      assert(!/confirmada/i.test(cp.suggestion.text), `the copilot congratulated an enrollment not registered: ${cp.suggestion.text}`);
       assert(anthropic.requests.length === llmMa2, "the steps after the proposal called the model");
       // EA) a course the Portaria does not restrict (a tecnólogo of management) is EAD with no practical classes: the agent says the duration and the format, as the team does
       if (sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());

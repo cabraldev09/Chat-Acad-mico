@@ -53,9 +53,11 @@ const EnrollmentFormCard = ({ lead, onChanged }) => {
   const [busy, setBusy] = useState("");
   const [viewer, setViewer] = useState(null);
   const [erase, setErase] = useState(false);
+  const [failed, setFailed] = useState(false);
 
+  // a failed load is said as such (it used to look like "not sent yet")
   const load = useCallback(() => {
-    api.get(`/leads/${lead.id}/enrollment-form`).then(({ data }) => setForm(data)).catch(() => setForm(null));
+    api.get(`/leads/${lead.id}/enrollment-form`).then(({ data }) => { setForm(data); setFailed(false); }).catch(() => { setForm(null); setFailed(true); });
   }, [lead.id]);
   useEffect(() => { load(); }, [load]);
 
@@ -109,7 +111,9 @@ const EnrollmentFormCard = ({ lead, onChanged }) => {
 
   if (form === undefined) return <div className={classes.card} style={{ textAlign: "center" }}><CircularProgress size={20} /></div>;
   const filled = form && Object.keys(form.data || {}).length > 0;
-  const status = !form
+  const status = failed && !form
+    ? "Não foi possível carregar a ficha agora."
+    : !form
     ? "Ainda não enviada ao lead."
     : form.submittedAt
     ? `Recebida em ${when(form.submittedAt)}.`
@@ -130,6 +134,14 @@ const EnrollmentFormCard = ({ lead, onChanged }) => {
         {status}
         {form && !form.submittedAt && form.missing && form.missing.length > 0 && ` Falta: ${form.missing.slice(0, 4).join(", ")}${form.missing.length > 4 ? ` e mais ${form.missing.length - 4}` : ""}.`}
       </div>
+      {failed && !form && <Button size="small" onClick={load}>Tentar de novo</Button>}
+      {/* the CPF of the form already belongs to another lead: it was not copied to this one (the consultant checks if it is the same person) */}
+      {form && form.submittedAt && form.data && form.data.cpf && lead.cpf && String(lead.cpf).replace(/\D/g, "") !== String(form.data.cpf).replace(/\D/g, "") && (
+        <div className={classes.hint} style={{ color: "#b45309", marginTop: 6 }}>O CPF da ficha já está em outro lead e não foi copiado para este. Confira no histórico se é a mesma pessoa.</div>
+      )}
+      {form && form.submittedAt && form.data && form.data.cpf && Object.prototype.hasOwnProperty.call(lead, "cpf") && !lead.cpf && (
+        <div className={classes.hint} style={{ color: "#b45309", marginTop: 6 }}>O CPF da ficha não foi copiado para o lead (já está em outro lead). Confira no histórico.</div>
+      )}
       <div className={classes.actions}>
         <Button size="small" variant="contained" color="primary" className={classes.btn} startIcon={<Send size={15} />} disabled={!!busy} onClick={send}>
           {form && form.sentAt ? "Enviar de novo pelo WhatsApp" : "Enviar pelo WhatsApp"}

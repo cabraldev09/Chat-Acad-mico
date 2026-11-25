@@ -187,6 +187,8 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   await changeStage(lead.id, won.id, actorId);
   // the only way to the "Matriculado" column is this one (the AI agent cannot do it); the agent only records the milestone
   void markMilestone(lead.id, "enrolled");
+  // the tasks that asked for this enrollment (fee paid, form received) are done
+  await LeadTask.update({ doneAt: new Date(), closedReason: "enrolled" } as any, { where: { leadId: lead.id, doneAt: null, automationKey: { [Op.like]: "enroll-after-%" } } as any });
 
   // 3) the tutor's own conversation
   let ticket = await Ticket.findOne({
@@ -556,4 +558,17 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
   return out;
+};
+
+// the enrollment undone (the lead goes back to the open funnel): it stops counting as enrolled and the pending onboarding is cancelled.
+// The RGM, the portal access and the conversations stay (they are history); a new confirmation starts the handoff again.
+export const undoEnrollment = async (lead: Lead, actorId: number | null): Promise<void> => {
+  if (!lead.enrolledAt) return;
+  const wasDone = lead.onboardingStatus === "done";
+  lead.set({ enrolledAt: null, onboardingStatus: null, onboardingTutorId: wasDone ? lead.onboardingTutorId : null, onboardingStartedAt: wasDone ? lead.onboardingStartedAt : null, onboardingAlertAt: null } as any);
+  await lead.save();
+  const { closeTasksFor } = await import("./TaskLifecycle");
+  await closeTasksFor(lead.id, ["onboarding", "onboarding_late"], "enrollment_undone");
+  const { addActivity } = await import("./LeadCore");
+  await addActivity(lead.id, actorId, "system", "Matrícula desfeita: o lead voltou ao funil e a ambientação pendente foi cancelada.");
 };

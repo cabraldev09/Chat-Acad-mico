@@ -312,8 +312,15 @@ const markPaidCore = async (
 
   const target = await targetStage();
   const current = await LeadStage.findByPk(lead.stageId);
-  if (target && current && current.type === "open" && (target.type !== "open" || target.position > current.position)) {
+  // a payment never makes an enrollment: "Matriculado" needs the RGM and the tutor (the enrollment dialog). When the setting points there,
+  // the lead stays where it is and the consultant gets the task of confirming the enrollment.
+  const closing = !!target && target.type !== "open" && !lead.enrolledAt;
+  if (target && current && current.type === "open" && !closing && (target.type !== "open" || target.position > current.position)) {
     await changeStage(lead.id, target.id, null);
+  }
+  if (!lead.enrolledAt && lead.ownerId) {
+    const { ensureTask } = await import("../CrmServices/Tasks");
+    await ensureTask({ key: `enroll-after-fee:${lead.id}`, leadId: lead.id, userId: lead.ownerId, title: "Taxa paga: confirmar a matrícula (RGM e tutor)", dueAt: new Date(Date.now() + 4 * 3600e3) }).catch(() => null);
   }
   await lead.update({ lastContactAt: new Date() });
 

@@ -13,6 +13,7 @@ import IconAction from "../../components/IconAction";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { ErrorState } from "../../components/ui";
 import openSocket from "../../services/socket-io";
 import { promptDialog } from "../../components/ConfirmDialog";
 
@@ -103,6 +104,7 @@ const OnboardingBoard = ({ embedded = false }) => {
   const classes = useStyles();
   const history = useHistory();
   const [rows, setRows] = useState(null);
+  const [failed, setFailed] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [menu, setMenu] = useState(null); // { anchor, lead }
   const [tutorFor, setTutorFor] = useState(null); // { lead, tutors, pick }
@@ -119,9 +121,11 @@ const OnboardingBoard = ({ embedded = false }) => {
     try {
       const { data } = await api.get("/onboarding");
       setRows(data);
+      setFailed(false);
     } catch (err) {
-      toastError(err);
-      setRows([]);
+      // a failed load says so, with "Tentar de novo" (empty columns would look like "no student waiting")
+      setFailed(true);
+      setRows((r) => r || []);
     }
   }, []);
 
@@ -256,6 +260,7 @@ const OnboardingBoard = ({ embedded = false }) => {
   };
 
   if (!rows) return <Shell><div className={classes.empty}><CircularProgress size={24} /></div></Shell>;
+  if (failed && !rows.length) return <Shell><ErrorState title="Não foi possível carregar a ambientação." onRetry={() => { setRows(null); load(); }} /></Shell>;
 
   return (
     <Shell>
@@ -401,10 +406,12 @@ const OnboardingBoard = ({ embedded = false }) => {
                     {late && <span className={classes.lateChip}>Prazo de {slaHours} h vencido</span>}
                     {!readOnly && col.key !== "done" && (
                       <div className={classes.actions}>
-                        {col.key === "pending" && (
+                        {/* one step at a time: start the ambientação, then conclude it */}
+                        {col.key === "pending" ? (
                           <Button size="small" variant="contained" color="primary" disableElevation startIcon={<Play size={14} />} disabled={busyId === l.id} onClick={() => act(l, "start")}>Iniciar</Button>
+                        ) : (
+                          <Button size="small" variant="contained" color="primary" disableElevation startIcon={<CheckCheck size={14} />} disabled={busyId === l.id} onClick={() => act(l, "done")}>Concluir</Button>
                         )}
-                        <Button size="small" variant={col.key === "pending" ? "outlined" : "contained"} color="primary" disableElevation startIcon={<CheckCheck size={14} />} disabled={busyId === l.id} onClick={() => act(l, "done")}>Concluir</Button>
                       </div>
                     )}
                   </div>
