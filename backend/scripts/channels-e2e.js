@@ -986,6 +986,29 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(all.some(l => l.name === "APIPOLO A") && all.some(l => l.name === "APIPOLO B"), "a token of every polo misses a polo");
       // and it writes only to people of its polos
       assert((await api(ofA.token, "post", "/api/v1/messages/send", { number: "5569911110002", body: "oi", whatsappId: cid })).status === 403, "token of polo A wrote to a lead of polo B");
+      // a token of polo A writes only in polo A: a new lead stays in A (never in B), a lead of B is not touched, stage and owner of its scope
+      const writerA = await mk({ name: "escrita A", scopes: ["leads:write", "contacts:write"], poloIds: [Number(poloA)] });
+      assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", poloId: Number(poloB) })).status === 403, "token of polo A created a lead in polo B");
+      const fresh = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade de outro polo" });
+      assert(fresh.status === 201 && Number(fresh.data.lead.poloId) === Number(poloA) && Number(sql(`SELECT poloId FROM Leads WHERE id = ${fresh.data.lead.id}`)) === Number(poloA), `new lead of the token of polo A: ${fresh.status} ${JSON.stringify(fresh.data)}`);
+      const leadB = sql(`SELECT id FROM Leads WHERE name = 'APIPOLO B'`);
+      const stateB = () => sql(`SELECT CONCAT(name, '|', COALESCE(notes, ''), '|', (SELECT COUNT(*) FROM LeadActivities a WHERE a.leadId = ${leadB})) FROM Leads WHERE id = ${leadB}`);
+      const beforeB = stateB();
+      const twin = await api(writerA.token, "post", "/api/v1/leads", { name: "Outro nome", phone: "5569911110002", notes: "nota da API" });
+      assert(twin.status === 403 && !JSON.stringify(twin.data).includes(leadB), `token of polo A reached a lead of polo B: ${twin.status} ${JSON.stringify(twin.data)}`);
+      assert(stateB() === beforeB, "the lead of polo B was changed");
+      const wonStage = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
+      assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Direto matriculado", phone: "5569911110011", stageId: Number(wonStage) })).status === 422, "a polo token created a lead straight into an enrolled stage");
+      const outsider = Number(sql(`SELECT id FROM Users WHERE id NOT IN (SELECT userId FROM PoloMembers WHERE poloId = ${poloA}) ORDER BY id LIMIT 1`));
+      assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Dono de fora", phone: "5569911110012", ownerId: outsider })).status === 422, "a polo token gave a lead to someone outside its polos");
+      // contacts: the contact of a lead of polo B, or one that is not a lead of polo A, is not changed; a new contact is
+      const contactB = sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato do B', '5569911110002', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`UPDATE Leads SET contactId = ${contactB} WHERE id = ${leadB}`);
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110002" })).status === 403, "token of polo A changed the contact of a lead of polo B");
+      sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato solto', '5569911110020', '', false, NOW(), NOW())`);
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110020" })).status === 403, "token of polo A changed a contact that is not of its polos");
+      assert(sql(`SELECT string_agg(name, ',' ORDER BY id) FROM Contacts WHERE number IN ('5569911110002', '5569911110020')`) === "Contato do B,Contato solto", "a contact was renamed");
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Contato novo", number: "5569911110021" })).status === 201, "token of polo A cannot create a new contact");
 
       // a token that expired is refused
       const old = await mk({ name: "vencido", scopes: ["leads:read"], expiresInDays: 1 });
