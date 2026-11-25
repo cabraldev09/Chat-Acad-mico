@@ -661,6 +661,7 @@ const messages = {
         ERR_STAFF_GROUP: "Grupos não podem ser marcados como da equipe. Marque as pessoas, uma a uma, na lista de participantes.",
         ERR_MEDIA_PURGED: "Este arquivo foi apagado pela política de retenção de dados e não pode ser recuperado.",
         ERR_RETENTION_DAYS: "Informe 0 para desligar ou um número de dias entre 30 e 3650.",
+        ERR_RETENTION_SIMULATION_REQUIRED: "Antes de ligar ou mudar o prazo, faça a simulação com esse mesmo número de dias (vale por 24 horas).",
         ERR_RETENTION_SIMULATION: "A simulação demorou demais ou falhou. Nada foi apagado. Tente de novo em outro horário.",
         ERR_MEDIA_EXPIRED: "Este arquivo é antigo: o WhatsApp só guarda os arquivos por cerca de dois meses e ele já saiu dos servidores. Peça para a pessoa enviar de novo.",
         ERR_MEDIA_NOT_AVAILABLE: "Não foi possível baixar este arquivo do celular. Ele pode ter sido apagado ou a conexão está fora do ar.",

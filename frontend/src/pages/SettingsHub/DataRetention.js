@@ -61,13 +61,13 @@ const Simulation = ({ data }) => {
     <div style={{ display: "grid", gap: 16 }}>
       {audio && (
         <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
-          <Typography style={{ fontWeight: 700 }}>Áudios com mais de {audio.days} dias: {n(audio.files)} arquivos</Typography>
-          <div style={hint}>{n(audio.withTranscript)} com transcrição (o texto fica) e {n(audio.withoutTranscript)} sem transcrição (o conteúdo se perde).</div>
+          <Typography style={{ fontWeight: 700 }}>Áudios com mais de {audio.days} dias: {n(audio.files)} arquivos seriam apagados</Typography>
+          <div style={hint}>Só áudios já transcritos (o texto fica). {n(audio.withoutTranscript)} áudios sem transcrição ficam como estão.</div>
           {audio.byPolo.length === 0 ? <div style={hint}>Nada seria apagado.</div> : (
             <div style={{ overflowX: "auto" }}>
               <table style={table}>
-                <thead><tr><th style={cell}>Polo</th><th style={num}>Arquivos</th><th style={num}>Com transcrição</th><th style={num}>Sem transcrição</th></tr></thead>
-                <tbody>{audio.byPolo.map((r) => <tr key={`a-${r.poloId || 0}`}><td style={cell}>{r.polo}</td><td style={num}>{n(r.files)}</td><td style={num}>{n(r.withTranscript)}</td><td style={num}>{n(r.withoutTranscript)}</td></tr>)}</tbody>
+                <thead><tr><th style={cell}>Polo</th><th style={num}>Apagados</th><th style={num}>Sem transcrição (ficam)</th></tr></thead>
+                <tbody>{audio.byPolo.map((r) => <tr key={`a-${r.poloId || 0}`}><td style={cell}>{r.polo}</td><td style={num}>{n(r.files)}</td><td style={num}>{n(r.withoutTranscript)}</td></tr>)}</tbody>
               </table>
             </div>
           )}
@@ -128,9 +128,9 @@ export default function DataRetention() {
     <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
       <Paper variant="outlined" style={{ ...card, background: "rgba(220,38,38,.06)" }}>
         <Typography style={{ fontWeight: 700 }}>Apagar não tem volta</Typography>
-        <div style={hint}>As regras começam desligadas. Antes de ligar, faça a simulação e confirme o prazo com a gestão e com a orientação jurídica (LGPD). Leads, matrículas, propostas, tarefas, histórico de atividades, revisões das conversas e dados acadêmicos nunca são apagados por aqui. Cópias de segurança do servidor seguem o próprio prazo delas.</div>
+        <div style={hint}>As regras começam desligadas. Antes de ligar, faça a simulação e confirme o prazo com a gestão e com a orientação jurídica (LGPD). Para ligar ou mudar um prazo, faça antes a simulação com o mesmo número de dias (vale por 24 horas). Esta retenção nunca apaga leads, matrículas, propostas, tarefas, histórico de atividades, revisões das conversas nem dados acadêmicos. As revisões das conversas já são apagadas depois de 400 dias pela limpeza que existia antes. Cópias de segurança do servidor seguem o próprio prazo delas.</div>
       </Paper>
-      <Rule title="Áudios" sub="Apaga o arquivo dos áudios mais antigos que o prazo. A mensagem e a transcrição ficam." days={data.audioDays} suggested={data.suggested.audioDays} min={min} max={max} busy={busy} onSave={(v) => save({ audioDays: v })} />
+      <Rule title="Áudios" sub="Apaga o arquivo dos áudios já transcritos mais antigos que o prazo, em conversas encerradas. A mensagem e a transcrição ficam. Áudio sem transcrição não é apagado. Nunca mexe em conversa aberta, de contato com outro atendimento aberto ou de lead com matrícula esperando confirmação." days={data.audioDays} suggested={data.suggested.audioDays} min={min} max={max} busy={busy} onSave={(v) => save({ audioDays: v })} />
       <Rule title="Conversas" sub="Em conversas encerradas e sem atividade no prazo, apaga o texto, a transcrição e os arquivos das mensagens. Fica só o registro de que a mensagem existiu. Nunca mexe em conversa aberta, de contato com outro atendimento aberto ou de lead com matrícula esperando confirmação." days={data.conversationDays} suggested={data.suggested.conversationDays} min={min} max={max} busy={busy} onSave={(v) => save({ conversationDays: v })} />
 
       <Paper variant="outlined" style={card}>

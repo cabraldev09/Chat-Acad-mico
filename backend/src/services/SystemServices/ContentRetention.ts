@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { QueryTypes } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
 import { PUBLIC_DIR } from "../../config/paths";
@@ -10,12 +10,16 @@ import { logger } from "../../utils/logger";
 
 // Retention of the CONTENT of the conversations. Both rules are OFF by default (0 days): deleting is irreversible and turning it on is a
 // decision of the owner of the company (LGPD and the needs of the operation). Only the administrator changes them (routes/dataRetentionRoutes).
-// - audio: the file of a voice note older than N days is deleted; the record of the message and its transcript stay.
+// - audio: the file of a voice note older than N days is deleted only when it already has its transcript (a voice note never written
+//   down keeps its file); the record of the message and its transcript stay. The same protections of the conversations apply.
 // - conversation: in a conversation that is closed and without any activity for N days, the text, the transcript and the file of each
-//   message are deleted; the record of the message (who, when) stays. Never touched: leads, enrollments, proposals, tasks, the activity
-//   history, the reviews of the consultants (ConsultantReviews) and the academic data (their own tables and files). A conversation is
-//   never cleared while it is open, while the same contact has another open conversation, or while the lead waits for the confirmation
-//   of the enrollment (won without enrollment, form sent, print of the enrollment not attached yet).
+//   message are deleted; the record of the message (who, when) stays.
+// Protections of both rules: nothing in a conversation that is open, whose contact has another open conversation, or whose lead waits
+// for the confirmation of the enrollment (won without enrollment, form sent, print of the enrollment not attached yet).
+// This retention never touches leads, enrollments, proposals, tasks, the activity history, the reviews of the consultants
+// (ConsultantReviews; the trimming that already existed deletes the ones older than 400 days, see workers/DataRetention) nor the academic
+// data (their own tables and files).
+// Turning a rule on needs a simulation with the same number of days in the last 24 hours (DataRetentionController).
 // It runs at night with the trimming of the other tables (workers/DataRetention), in small batches. The simulation counts what would go,
 // by polo and by type, and deletes nothing. Every run and every simulation is written in DataPurgeRuns (only numbers).
 
@@ -45,8 +49,6 @@ const cutoffOf = (days: number): Date => new Date(Date.now() - days * 86400000);
 const AUDIO_FILE = (a: string) =>
   `(lower(${a}."mediaUrl") !~ '\\.(pdf|webp)$' AND (${a}."mediaType" IN ('audio', 'ptt') OR lower(${a}."mediaUrl") ~ '\\.(ogg|opus|mp3|m4a|wav|oga|aac)$'))`;
 
-export const AUDIO_WHERE = `m."mediaUrl" IS NOT NULL AND m."mediaPurgedAt" IS NULL AND m."createdAt" < :cutoff AND ${AUDIO_FILE("m")}`;
-
 // a message that still has something to delete
 const HAS_CONTENT = (a: string) => `${a}."bodyPurgedAt" IS NULL AND (COALESCE(${a}.body, '') <> '' OR ${a}."mediaUrl" IS NOT NULL OR ${a}.transcript IS NOT NULL)`;
 
@@ -63,6 +65,12 @@ const OLD_CLOSED = `t.status = 'closed' AND t."updatedAt" < :cutoff AND COALESCE
   AND NOT EXISTS (SELECT 1 FROM "Messages" r WHERE r."ticketId" = t.id AND r."createdAt" >= :cutoff)`;
 
 export const TICKET_WHERE = `${OLD_CLOSED} AND NOT ${OPEN_ELSEWHERE} AND NOT ${PENDING_ENROLLMENT}`;
+
+// an old voice note of a closed conversation that is not protected (the age is of the message, not of the conversation)
+export const AUDIO_BASE = `m."mediaUrl" IS NOT NULL AND m."mediaPurgedAt" IS NULL AND m."createdAt" < :cutoff AND ${AUDIO_FILE("m")}
+  AND EXISTS (SELECT 1 FROM "Tickets" t WHERE t.id = m."ticketId" AND t.status = 'closed' AND NOT ${OPEN_ELSEWHERE} AND NOT ${PENDING_ENROLLMENT})`;
+// what the audio rule deletes: only the ones already written down (one never transcribed keeps its file)
+export const AUDIO_WHERE = `${AUDIO_BASE} AND m.transcript IS NOT NULL`;
 
 // the polo of a conversation: the one of its queue, else the one of its lead
 const POLO = `COALESCE(q."poloId", (SELECT l1."poloId" FROM "Leads" l1 WHERE l1.id = t."leadId"),
@@ -94,13 +102,13 @@ export interface Simulation {
 
 export const simulateAudio = async (days: number, transaction?: any): Promise<Simulation["audio"]> => {
   const names = await poloNames();
-  const rows = await select(`SELECT "poloId", COUNT(*) AS files, COUNT(transcript) AS "withTranscript" FROM (
+  // files: what would go (with transcript); withoutTranscript: the old ones that stay because they were never written down
+  const rows = await select(`SELECT "poloId", COUNT(transcript) AS "withTranscript", COUNT(*) - COUNT(transcript) AS "withoutTranscript" FROM (
       SELECT ${POLO} AS "poloId", m.transcript FROM "Messages" m JOIN "Tickets" t ON t.id = m."ticketId" LEFT JOIN "Queues" q ON q.id = t."queueId"
-      WHERE ${AUDIO_WHERE}) s GROUP BY "poloId"`, { cutoff: cutoffOf(days) }, transaction);
+      WHERE ${AUDIO_BASE}) s GROUP BY "poloId"`, { cutoff: cutoffOf(days) }, transaction);
   const byPolo = rows.map((r: any) => {
-    const files = Number(r.files) || 0;
     const withTranscript = Number(r.withTranscript) || 0;
-    return { poloId: r.poloId ? Number(r.poloId) : null, polo: nameOf(names, r.poloId), files, withTranscript, withoutTranscript: files - withTranscript };
+    return { poloId: r.poloId ? Number(r.poloId) : null, polo: nameOf(names, r.poloId), files: withTranscript, withTranscript, withoutTranscript: Number(r.withoutTranscript) || 0 };
   }).sort((a, b) => b.files - a.files);
   const sum = (k: keyof AudioCount) => byPolo.reduce((n, r) => n + Number(r[k] || 0), 0);
   return { days, files: sum("files"), withTranscript: sum("withTranscript"), withoutTranscript: sum("withoutTranscript"), byPolo };
@@ -316,6 +324,14 @@ export const runContentRetention = async (): Promise<ContentRun> => {
   } as any);
   return out;
 };
+
+// a rule is only turned on (or given other days) after a simulation with the same days in the last 24 hours
+export const SIMULATION_VALID_MS = 24 * 3600000;
+export const hasRecentSimulation = async (rule: "audio" | "conversation", days: number): Promise<boolean> =>
+  !!(await DataPurgeRun.findOne({
+    where: { mode: "simulation", [rule === "audio" ? "audioDays" : "conversationDays"]: days, createdAt: { [Op.gte]: new Date(Date.now() - SIMULATION_VALID_MS) } } as any,
+    attributes: ["id"]
+  }));
 
 export const recentRuns = async (limit = 20): Promise<DataPurgeRun[]> =>
   DataPurgeRun.findAll({ order: [["createdAt", "DESC"]], limit, attributes: ["id", "mode", "audioDays", "conversationDays", "audioFiles", "conversations", "conversationMessages", "filesDeleted", "error", "actorId", "startedAt", "finishedAt"] });

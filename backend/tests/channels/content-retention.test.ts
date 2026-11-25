@@ -25,7 +25,7 @@ vi.mock("../../src/database", () => ({
       if (/^SELECT t\.id FROM "Tickets" t WHERE/.test(sql.trim())) { db.ticketBatches += 1; return db.ticketBatches === 1 ? [{ id: 20 }] : []; }
       if (/SELECT t\.id, COALESCE/.test(sql)) return [{ id: 10, poloId: 1 }, { id: 20, poloId: null }];
       if (/COUNT\(\*\) FILTER/.test(sql)) return [{ openElsewhere: 2, pendingEnrollment: 1 }];
-      if (/COUNT\(transcript\)/.test(sql)) return [{ poloId: 1, files: 5, withTranscript: 3 }];
+      if (/COUNT\(transcript\)/.test(sql)) return [{ poloId: 1, withTranscript: 3, withoutTranscript: 2 }];
       if (/COUNT\(DISTINCT "ticketId"\)/.test(sql)) return [{ poloId: 1, conversations: 2, messages: 7, files: 3, text: 4, audio: 1, image: 1, video: 0, document: 1 }];
       return [];
     })
@@ -78,7 +78,8 @@ describe("retenção de conversas e áudios", () => {
     expect(writes()).toEqual([]);
     expect(db.calls).toContain("SET TRANSACTION READ ONLY");
     expect(["old-voice.ogg", "shared.ogg", "old-photo.jpg"].every(exists)).toBe(true);
-    expect(sim.audio).toMatchObject({ days: 90, files: 5, withTranscript: 3, withoutTranscript: 2, byPolo: [{ polo: "Polo Centro", files: 5 }] });
+    // only the ones already written down would go; the ones never transcribed are counted as staying
+    expect(sim.audio).toMatchObject({ days: 90, files: 3, withTranscript: 3, withoutTranscript: 2, byPolo: [{ polo: "Polo Centro", files: 3, withoutTranscript: 2 }] });
     expect(sim.conversations).toMatchObject({ days: 180, conversations: 2, messages: 7, files: 3, byType: { text: 4, audio: 1, image: 1, video: 0, document: 1 }, kept: { openElsewhere: 2, pendingEnrollment: 1 } });
     // the simulation is written down (who and when), as a simulation
     expect(runs.created).toHaveLength(1);
@@ -123,6 +124,13 @@ describe("retenção de conversas e áudios", () => {
     expect(PENDING_ENROLLMENT).toMatch(/"EnrollmentProofs" p WHERE p\."leadId" = l\.id AND p\."attachedAt" IS NULL/);
     // a PDF or a sticker is never taken for a voice note
     expect(AUDIO_WHERE).toMatch(/!~ '\\\.\(pdf\|webp\)\$'/);
+  });
+
+  it("a regra de áudio tem as mesmas proteções (conversa aberta, outro atendimento aberto, matrícula pendente) e só apaga áudio já transcrito", () => {
+    expect(AUDIO_WHERE).toContain("t.status = 'closed'");
+    expect(AUDIO_WHERE).toMatch(/NOT EXISTS \(SELECT 1 FROM "Tickets" o WHERE o\."contactId" = t\."contactId" AND o\.status <> 'closed'\)/);
+    expect(AUDIO_WHERE).toContain(`NOT ${PENDING_ENROLLMENT}`);
+    expect(AUDIO_WHERE).toMatch(/AND m\.transcript IS NOT NULL$/);
   });
 
   it("uma falha numa das regras não interrompe a outra e fica registrada (a noite tenta de novo)", async () => {
