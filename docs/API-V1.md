@@ -39,6 +39,8 @@ Para o OpenBot: **só totais e códigos**, sem nome, telefone, e-mail, CPF, RGM,
 (`services/IndicatorServices/Indicators.ts`). Período `de`/`ate` (AAAA-MM-DD) de até **93 dias** (`400 ERR_API_PERIOD_TOO_LONG`);
 `polo` opcional. Sem limite de polo no token, vem também o grupo `poloId: null` (leads ainda sem polo).
 
+Datas inexistentes (por exemplo `2026-02-31`) recebem `400 ERR_INVALID_PERIOD`.
+
 Por polo (`poloId`, `codigo`):
 
 | Bloco | Regra (a mesma da tela) |
@@ -47,8 +49,12 @@ Por polo (`poloId`, `codigo`):
 | `primeiraResposta.medianaMinutos` | mediana, em horário comercial, de criação até o primeiro contato, dos mesmos leads |
 | `followUps.vencidos`, `followUps.tarefasVencidas` | follow-up já passado (lead aberto) e tarefas abertas vencidas (agora, não do período) |
 | `matriculasRealizadas` | `EnrollmentController.index` (Matrículas realizadas): total, dentro da meta, com print |
-| `metas` | meta do semestre atual (`buildPoloBoard`): `doCrm` e `ajustesManuais` (total, sem mês, por mês) separados, canceladas |
+| `metas` | meta do **semestre atual** (`buildPoloBoard`), não do período pedido: `doCrm` e `ajustesManuais` (total, sem mês, por mês) separados, canceladas. **`metas.feito` = `doCrm` + `ajustesManuais.total`** (inclui o que foi digitado à mão nas Metas); para conversão use `matriculasRealizadas` ou `doCrm` |
 | `revisaoConsultores` | `ConsultantReviews` do período, por código do consultor: objeções levantadas/tratadas, etapas com dificuldade e puladas |
+
+**`origem` e `etapa` são texto livre** (`Leads.source`, gravado também pela API e pela importação; o nome da etapa é digitado na
+configuração do funil). A garantia de nenhum dado pessoal vale para os campos e para as pessoas da base, não para um texto que
+alguém digite como origem ou etapa.
 
 `conexoes`: id, canal, função (`atendimento`, `tutoria`, `pessoal`…), conectado, estado, qualidade (verde/amarela/vermelha, lida do
 aviso da conexão) e validade do token da Meta (data e dias). Nunca o nome da conexão nem o token. Com polos no token, só as conexões

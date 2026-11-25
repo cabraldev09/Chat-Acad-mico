@@ -6,10 +6,17 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface IndicatorQuery { from: string; to: string; poloId: number | null; tokenPolos: number[] | null }
 
+// a real day of the calendar: "2026-02-31" does not roll over to March, it is refused
+export const isRealDay = (v: string): boolean => {
+  if (!DAY.test(v)) return false;
+  const d = new Date(`${v}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
+
 export const cleanIndicatorQuery = (q: any, tokenPolos: number[] | null): IndicatorQuery => {
   const from = String(q?.de || "");
   const to = String(q?.ate || "");
-  if (!DAY.test(from) || !DAY.test(to) || Number.isNaN(Date.parse(`${from}T12:00:00Z`)) || Number.isNaN(Date.parse(`${to}T12:00:00Z`)) || from > to) throw new AppError("ERR_INVALID_PERIOD", 400);
+  if (!isRealDay(from) || !isRealDay(to) || from > to) throw new AppError("ERR_INVALID_PERIOD", 400);
   const days = Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86400000) + 1;
   if (days > MAX_PERIOD_DAYS) throw new AppError("ERR_API_PERIOD_TOO_LONG", 400);
   let poloId: number | null = null;

@@ -1068,6 +1068,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const all = await mkTok({ name: "indicadores", scopes: ["indicators:read"] });
       assert((await api(all.token, `/api/v1/indicadores?de=2026-01-01&ate=2026-12-31`)).status === 400, "a period of a year was accepted");
       assert((await api(all.token, `/api/v1/indicadores?de=${today}`)).status === 400, "a period without the end was accepted");
+      assert((await api(all.token, `/api/v1/indicadores?de=2026-02-31&ate=2026-03-02`)).status === 400, "an impossible day (31/02) was accepted");
       const r = await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}`);
       assert(r.status === 200 && Array.isArray(r.data.polos) && Array.isArray(r.data.conexoes), `indicators ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
 
