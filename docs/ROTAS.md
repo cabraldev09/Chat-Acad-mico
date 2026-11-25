@@ -1,6 +1,22 @@
-# Rotas da API (594)
+# Rotas da API (595)
 
-Públicas: 40 · logado (qualquer perfil): 327 · gestão: 182 · admin: 37
+Públicas: 40 · logado (qualquer perfil): 328 · gestão: 182 · admin: 37
+
+## Quem vê quais leads no CRM (middleware/scope.ts)
+
+| Perfil | Vê |
+|---|---|
+| admin | todos os leads, de todos os polos |
+| coordenacao | só os leads dos polos em que está (Polos e equipes); sem polo, nenhum. Um lead ainda sem polo fica com a administração |
+| consultor | só os leads em que é o responsável |
+| tutor, academico | os leads em que é o responsável e os alunos dados a ele (Ambientação e Alunos da tutoria: também os do seu polo ainda sem tutor) |
+| relacionamento | só os matriculados dos polos em que está; sem polo, nenhum |
+
+A mesma regra vale em toda porta do CRM: lista, quadro, busca, ficha do lead e o que pende dela (atividades, tarefas, propostas,
+cobranças, documentos), contagens do Painel do CRM, novos para conferir, tarefas da equipe, Relatório do CRM (CSV), Matrículas
+realizadas, comissões, Alunos da tutoria e Avisos da tutoria, Retenção e os avisos em tempo real de lead, risco e satisfação.
+A coordenação continua com os poderes da gestão (`isAdminReq`): o que muda é o que ela vê. Ela só muda a equipe dos polos em que está.
+Conversas (Atendimento) seguem a regra das filas e setores (`canAccessTicket.ts`), não esta.
 
 ## Públicas (sem login)
 
@@ -78,12 +94,6 @@ Públicas: 40 · logado (qualquer perfil): 327 · gestão: 182 · admin: 37
 - POST /schedules/:id/cancel (extraRoutes.ts)
 - DELETE /schedules/:id (extraRoutes.ts)
 - PUT /me/preferences (extraRoutes.ts)
-- POST /retention/contact/:leadId (extraRoutes.ts)
-- POST /retention/preview (extraRoutes.ts)
-- POST /retention/send (extraRoutes.ts)
-- POST /retention/nps/send/:leadId (extraRoutes.ts)
-- POST /retention/risk/:leadId/message (extraRoutes.ts)
-- POST /retention/rematricula/:leadId (extraRoutes.ts)
 - POST /course-materials/:id/send (extraRoutes.ts)
 - POST /leads (extraRoutes.ts)
 - POST /leads/import (extraRoutes.ts)
@@ -154,8 +164,14 @@ Públicas: 40 · logado (qualquer perfil): 327 · gestão: 182 · admin: 37
 - DELETE /contact-lists/:id → salesStaff, ownList
 - POST /contact-lists/:id/import → salesStaff, notTutor
 - DELETE /contact-lists/:id/items/:itemId → salesStaff, ownList
-- PUT /retention/config → isRetentionOperator
-- POST /retention/run → isRetentionOperator
+- PUT /retention/config → loadCrmPolos, isRetentionOperator
+- POST /retention/run → loadCrmPolos, isRetentionOperator
+- POST /retention/contact/:leadId → loadCrmPolos
+- POST /retention/preview → loadCrmPolos
+- POST /retention/send → loadCrmPolos
+- POST /retention/nps/send/:leadId → loadCrmPolos
+- POST /retention/risk/:leadId/message → loadCrmPolos
+- POST /retention/rematricula/:leadId → loadCrmPolos
 - PUT /leads/:id/documents/:docId → canAccessLead
 - POST /leads/:id/documents/remind → canAccessLead
 - POST /leads/:id/enrollment-form → canAccessLead

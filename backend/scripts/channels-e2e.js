@@ -2914,7 +2914,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.delete(`/payments/efi/wallets/${cb.id}`, auth())).data.informed === false, "admin wallet removal");
       assert((await http.put("/payments/efi/wallets/999999", { payeeCode: "ZZZZ1111YYYY2222" }, auth())).status === 404, "wallet of a missing user");
     });
-    await test("coordinator: manages every polo and sees every lead, creates the team but never administrators, no access to payment credentials", async () => {
+    await test("coordinator: manages the team and sees the leads of its polos only, never administrators, no access to payment credentials", async () => {
       const made = await http.post("/users", { name: "Coord Comercial", email: "coord-c@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
       assert(made.status === 200 && made.data.role === "coordenacao" && made.data.coordArea === "comercial", `create coordinator ${made.status} ${JSON.stringify(made.data).slice(0, 160)}`);
       const academic = (await http.post("/users", { name: "Coord Acadêmica", email: "coord-a@x.com", password: "senha123", role: "coordenacao", coordArea: "academica" }, auth())).data;
@@ -2939,11 +2939,17 @@ const postMeta = (id, payload, secret, badSig) => {
       assert([200, 204].includes((await http.delete(`/users/${throwaway.id}`, as)).status), "coordinator cannot remove a member of the team");
       assert((await http.delete(`/users/${adminId}`, as)).status === 403, "coordinator removed an administrator");
 
-      // every polo and every lead, whatever the polo
+      // the leads of its polos only (middleware/scope): a lead with no polo (or of another polo) stays with the administration
       const lead = (await http.post("/leads", { name: "Lead sem dono", phone: "5569988887771", source: "Site" }, auth())).data.lead;
-      assert((await http.get(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot open any lead");
+      assert((await http.get(`/leads/${lead.id}`, as)).status === 403, "coordinator opened a lead outside its polos");
       assert((await http.get("/polos", as)).status === 200, "polos list");
-      assert((await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as)).status === 201, "coordinator creating a polo");
+      const coordPolo = await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as);
+      assert(coordPolo.status === 201, "coordinator creating a polo");
+      // it does not put itself in a polo it is not part of; the administration does
+      assert((await http.post(`/polos/${coordPolo.data.id}/members/${made.data.id}`, { role: "coordenacao" }, as)).status === 403, "coordinator joined a polo by itself");
+      assert((await http.post(`/polos/${coordPolo.data.id}/members/${made.data.id}`, { role: "coordenacao" }, auth())).status === 200, "administration cannot put the coordinator in the polo");
+      sql(`UPDATE Leads SET poloId = ${Number(coordPolo.data.id)} WHERE id = ${Number(lead.id)}`);
+      assert((await http.get(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot open a lead of its polo");
 
       // the credentials and integration secrets are the administrator's alone (not coordination): payment gateway,
       // API tokens, webhook secrets, AI keys and e-mail/SMTP
@@ -5420,7 +5426,11 @@ const postMeta = (id, payload, secret, badSig) => {
       const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const tutorR = await mkUser("Tutora Retencao", "tutorr@ret.test", "tutor");
       const poloR = (await http.post("/polos", { name: "Polo Retencao", code: "RET1", state: "RO" }, auth())).data;
-      await http.put(`/polos/${poloR.id}/members`, { members: [{ userId: tutorR.id, role: "tutoria" }] }, auth());
+      // the academic coordinator sees the students of the polos it belongs to (middleware/scope): it is in the team of this polo
+      const coordAcId = Number(sql(`SELECT id FROM Users WHERE email = 'coord-a@x.com'`));
+      await http.put(`/polos/${poloR.id}/members`, { members: [{ userId: tutorR.id, role: "tutoria" }, { userId: coordAcId, role: "coordenacao" }] }, auth());
+      await mkUser("Coord Acadêmica sem polo", "coord-a-np@ret.test", "coordenacao");
+      sql(`UPDATE Users SET coordArea = 'academica' WHERE email = 'coord-a-np@ret.test'`);
       const tutorTok = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;
       const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const coordCom = (await http.post("/auth/login", { email: "coord-c@x.com", password: "senha123" })).data.token;
@@ -5501,6 +5511,11 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(rc && rc.days >= 45 && rc.level === "attention" && risk.riskDays === 30, `risk ${JSON.stringify(rc)}`);
       assert(!risk.students.some(x => x.id === ana.leadId), "a student with recent news is at risk");
       assert((await http.get("/retention/risk", asUser(coordAc))).data.students.some(x => x.id === carla.leadId), "the academic coordinator does not see the student at risk");
+      // an academic coordinator outside the polo of the student does not see it, nor acts on it
+      const coordNp = (await http.post("/auth/login", { email: "coord-a-np@ret.test", password: "senha123" })).data.token;
+      const npRisk = await http.get("/retention/risk", asUser(coordNp));
+      assert(npRisk.status === 200 && !npRisk.data.students.some(x => x.id === carla.leadId), "an academic coordinator outside the polo saw the student at risk");
+      assert((await http.post(`/retention/nps/send/${carla.leadId}`, {}, asUser(coordNp))).status === 403, "an academic coordinator outside the polo sent a survey to the student");
       await http.post("/retention/run", {}, auth());
       assert(/Risco de evasão/.test(labelsOf(carla.leadId)), "no risk label");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${carla.leadId} AND title LIKE 'Retenção:%'`)) === 1, "no retention task");
@@ -6817,7 +6832,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const tutorX = await mkUser("Tutor Envios", "tutorx@env.test", "tutor");
       const poloX = (await http.post("/polos", { name: "Polo Envios", code: "ENV1", state: "RO" }, auth())).data;
-      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }] }, auth());
+      // the academic coordinator is in the team of this polo: it sees its students (middleware/scope)
+      const coordAcId = Number(sql(`SELECT id FROM Users WHERE email = 'coord-a@x.com'`));
+      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }, { userId: coordAcId, role: "coordenacao" }] }, auth());
       const tutorTok = (await http.post("/auth/login", { email: "tutorx@env.test", password: "senha123" })).data.token;
       const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
@@ -7173,6 +7190,12 @@ const postMeta = (id, payload, secret, badSig) => {
       const adminNps = (await http.get("/retention/nps", auth())).data;
       assert(adminNps.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the management does not see the answer");
       assert((await http.get("/retention/nps", asUser(tutor))).status === 403 && (await http.get("/retention/nps.csv", asUser(tutor))).status === 403, "a tutor read the satisfaction answers");
+      // the academic coordinator sees the answers of the students of its polos only: outside them, nothing
+      const coordNp = (await http.post("/auth/login", { email: "coord-a-np@ret.test", password: "senha123" })).data.token;
+      assert(!(await http.get("/retention/nps", asUser(coordNp))).data.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "an academic coordinator outside the polo read the answer");
+      const otherPolo = sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id = ${other}`);
+      if (otherPolo) sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) SELECT ${otherPolo}, id, 'coordenacao', NOW(), NOW() FROM Users WHERE email = 'coord-a@x.com' AND NOT EXISTS (SELECT 1 FROM PoloMembers pm WHERE pm.poloId = ${otherPolo} AND pm.userId = Users.id)`);
+      else sql(`UPDATE Leads SET poloId = (SELECT id FROM Polos WHERE code = 'RET1') WHERE id = ${other}`);
       assert((await http.get("/retention/nps", asUser(coordAc))).data.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the academic coordinator does not see the answers");
       assert(Array.isArray(adminNps.series) && adminNps.series.length >= 1 && adminNps.series[0].week && typeof adminNps.commentsTotal === "number", "series by week");
       adminNps.byKind.forEach(k => assert(Object.prototype.hasOwnProperty.call(k, "nps"), "byKind without nps"));

@@ -10,6 +10,7 @@ import User from "../models/User";
 import Lead from "../models/Lead";
 import Ticket from "../models/Ticket";
 import { POLO_FUNCTIONS } from "../helpers/Roles";
+import { poloIdsOf, seesEveryPolo } from "../middleware/scope";
 import { tutorsOfPolo } from "../services/PoloServices/TutorsOfPolo";
 import PoloCoverage from "../models/PoloCoverage";
 import { cityKeyOf, forgetPolos, stateOf } from "../services/PoloServices/ResolvePolo";
@@ -138,10 +139,18 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   return res.json({ message: "deleted" });
 };
 
+// The coordination sees the CRM of its polos only (middleware/scope): it changes the team of the polos it belongs to, never puts itself in
+// another polo. The administration changes any team.
+const assertPoloTeam = async (req: Request, poloId: number): Promise<void> => {
+  if (seesEveryPolo(req)) return;
+  if (!(await poloIdsOf(Number(req.user.id))).includes(poloId)) throw new AppError("ERR_NO_PERMISSION", 403);
+};
+
 // body: { members: [{ userId, role }] } — replaces the whole team of the polo
 export const setMembers = async (req: Request, res: Response): Promise<Response> => {
   const polo = await Polo.findByPk(req.params.id);
   if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  await assertPoloTeam(req, polo.id);
   const list: any[] = Array.isArray(req.body.members) ? req.body.members : [];
   const seen = new Set<string>();
   const rows: { poloId: number; userId: number; role: string }[] = [];
@@ -169,6 +178,7 @@ export const setMembers = async (req: Request, res: Response): Promise<Response>
 export const addMember = async (req: Request, res: Response): Promise<Response> => {
   const polo = await Polo.findByPk(req.params.id);
   if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  await assertPoloTeam(req, polo.id);
   const userId = Number(req.params.userId);
   const role = req.body.role || "comercial";
   if (!userId || !(POLO_FUNCTIONS as readonly string[]).includes(role)) throw new AppError("ERR_POLO_MEMBER_INVALID", 400);
@@ -183,6 +193,7 @@ export const addMember = async (req: Request, res: Response): Promise<Response> 
 export const removeMember = async (req: Request, res: Response): Promise<Response> => {
   const polo = await Polo.findByPk(req.params.id);
   if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  await assertPoloTeam(req, polo.id);
   const userId = Number(req.params.userId);
   if (!userId) throw new AppError("ERR_POLO_MEMBER_INVALID", 400);
   const where: any = { poloId: polo.id, userId };
