@@ -4729,7 +4729,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // the copilot of the consultant reads the same conversation: everything up to the name and CPF is done, the proposal is next, with no model call
       const cop = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(cop.hasLead && cop.current === "proposal", `copilot step: ${JSON.stringify(cop.steps)}`);
-      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,grade,doubts,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
+      // the simple process (11 steps): the tutoring and the faculty count when the agent told them
+      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,tutoria,grade,docentes,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
       assert(cop.suggestion && cop.suggestion.action === "proposal" && /proposta da sua bolsa/.test(cop.suggestion.text) && !emoji.test(cop.suggestion.text), `copilot text: ${JSON.stringify(cop.suggestion)}`);
       assert(anthropic.requests.length === llmMa2, "the copilot called the model");
       assert(cop.course && cop.course.semPratica === false && /Semipresencial: 30% de prática presencial/.test(cop.course.resumo), `copilot course rule: ${JSON.stringify(cop.course)}`);
@@ -4741,7 +4742,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/tickets/${tMA}/take`, {}, auth())).status === 200, "the consultant takes the conversation");
       const copNow = async () => (await http.get(`/tickets/${tMA}/copilot`, auth())).data;
       const consultantSays = async text => { const r = await http.post(`/messages/${tMA}`, { body: text }, auth()); assert(r.status === 200, `consultant message ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`); };
-      assert((await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.some(x => x.key === "objective" && x.optional), "the objective is an optional step");
+      const simple = (await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.map(x => x.key).join(",");
+      assert(simple === "course,entry,city,format,tutoria,grade,docentes,bolsa,proposal,ficha,enroll", `the simple process of 11 steps: ${simple}`);
       await consultantSays("Maira, segue a proposta da sua bolsa para o curso de Biomedicina.");
       let cp = await copNow();
       // the sentence alone is not a proposal: the step waits for a proposal really sent (the PDF)
@@ -4756,14 +4758,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // asked is not sent: the step waits for the form (by the link) or the documents in the conversation, with a reminder meanwhile
       assert(cp.current === "ficha" && cp.suggestion.kind === "waiting", `the form counted as sent when it was only asked: ${cp.current} ${cp.suggestion && cp.suggestion.kind}`);
       await inboundCloud(MA, "wamid.ma-ficha", "Segue o meu RG e o nome da mãe é Maria");
-      await waitFor(async () => (await copNow()).current === "taxa", 15000, "the documents in the conversation completed the form step");
-      cp = await copNow();
-      assert(cp.current === "taxa" && /boleto da taxa de matrícula/.test(cp.suggestion.text) && /comprovante/.test(cp.suggestion.text), `after the form: ${cp.current}`);
-      await consultantSays(cp.suggestion.text);
-      cp = await copNow();
-      assert(cp.current === "comprovante", `after the fee: ${cp.current}`);
-      await inboundCloud(MA, "wamid.ma-pix", "Pix feito, segue o comprovante");
-      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the proof of payment moved the process to the enrollment");
+      // the fee and its proof are part of the enrollment step (no steps of their own any more)
+      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the documents in the conversation completed the form step");
       cp = await copNow();
       assert(cp.suggestion.action === "enroll" && /matrícula/.test(cp.suggestion.text) && /Biomedicina/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `enrollment step: ${JSON.stringify(cp.suggestion)}`);
       // before it is registered in the CRM, the lead is never told the enrollment is confirmed
@@ -7637,7 +7633,7 @@ const postMeta = (id, payload, secret, badSig) => {
       { const off = (await http.get("/copilot/settings", auth())).data; off.aiEnabled = false; await http.put("/copilot/settings", off, auth()); }
       const before = anthropic.requests.length;
       let view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
-      assert(view.enabled && !view.hasLead && view.steps.length === 15 && view.current === "course", "no process for unlinked contact");
+      assert(view.enabled && !view.hasLead && view.steps.length === 11 && view.current === "course", "no process for unlinked contact");
       assert(!view.aiAvailable && anthropic.requests.length === before, "process used paid generation");
       assert((await http.post(`/tickets/${tid}/suggest-reply`, {}, auth())).status === 403, "AI opt-in ignored");
       assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"course",done:true}, auth())).data.current === "entry", "step not saved");
