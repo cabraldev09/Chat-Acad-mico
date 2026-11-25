@@ -1051,12 +1051,14 @@ const postMeta = (id, payload, secret, badSig) => {
       // no personal data: no field that carries it, and no name, phone, e-mail or CPF of any person of the base anywhere in the answer
       const text = JSON.stringify(r.data);
       const keys = new Set();
-      const walk = v => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => { keys.add(k.toLowerCase()); walk(x); }); };
+      const codes = new Set();
+      const walk = v => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => { keys.add(k.toLowerCase()); walk(x); }); else if (typeof v === "string") codes.add(v.toLowerCase()); };
       walk(r.data);
       for (const k of ["name", "nome", "phone", "telefone", "number", "email", "cpf", "rgm", "body", "note", "comment", "lastmessage", "contact", "lead", "aluno"]) assert(!keys.has(k), `the indicators carry the field ${k}`);
       const people = sql(`SELECT name FROM Leads WHERE LENGTH(name) >= 6 UNION SELECT phone FROM Leads WHERE LENGTH(phone) >= 8 UNION SELECT email FROM Leads WHERE LENGTH(email) >= 6 UNION SELECT cpf FROM Leads WHERE cpf IS NOT NULL UNION SELECT rgm FROM Leads WHERE LENGTH(rgm) >= 5 UNION SELECT name FROM Contacts WHERE LENGTH(name) >= 6 UNION SELECT number FROM Contacts WHERE LENGTH(number) >= 8 UNION SELECT name FROM Users WHERE LENGTH(name) >= 6 UNION SELECT email FROM Users WHERE LENGTH(email) >= 6 UNION SELECT name FROM Whatsapps WHERE LENGTH(name) >= 6`).split("\n").map(x => x.trim()).filter(Boolean);
       assert(people.length > 20, "the base has no people to compare");
-      const leak = people.find(p => text.includes(p));
+      // (a value that is itself one of the codes of the answer, like the origin "Instagram" or the channel "instagram", is a code, not a person)
+      const leak = people.filter(p => !codes.has(p.toLowerCase())).find(p => text.toLowerCase().includes(p.toLowerCase()));
       assert(!leak, `the indicators carry personal data: ${leak}`);
       assert(!/Pessoal|joana|pedro|rita|29537914852|5569933330001/i.test(text), "the indicators carry the data of the seeded people");
 

@@ -5837,6 +5837,13 @@ CREATE INDEX commercial_grades_course_name ON public."CommercialGrades" USING bt
 
 
 --
+-- Name: consultant_reviews_day_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX consultant_reviews_day_idx ON public."ConsultantReviews" USING btree (day);
+
+
+--
 -- Name: consultant_reviews_ticket_day; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8196,6 +8203,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261231000001-fix-buritis-entry-ter
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-proposal-template-active.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
