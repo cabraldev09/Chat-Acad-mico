@@ -2606,7 +2606,8 @@ CREATE TABLE public."Messages" (
     "isGif" boolean DEFAULT false NOT NULL,
     transcript text,
     "mediaPurgedAt" timestamp with time zone,
-    "bodyPurgedAt" timestamp with time zone
+    "bodyPurgedAt" timestamp with time zone,
+    "transcribeTriedAt" timestamp with time zone
 );
 
 
@@ -8288,6 +8289,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js')
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000104-api-token-usage.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tried.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
