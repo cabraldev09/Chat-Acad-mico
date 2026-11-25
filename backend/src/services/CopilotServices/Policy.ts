@@ -4,31 +4,34 @@ export const CONFIG_KEY = "consultant_copilot";
 // The order of a real attendance: right after introducing themselves, the consultant finds out what the person is looking for (the course);
 // then whether they already have a degree (it decides the way in: first degree, second degree or transfer); then where they live.
 export const DEFAULT_STEPS = [
-  ["course", "O que procura (curso)", "Logo depois de se apresentar, descubra o que a pessoa procura e qual curso quer fazer."],
-  ["entry", "Já tem graduação? (forma de ingresso)", "Pergunte se já tem uma faculdade concluída ou começada: define primeira graduação, segunda graduação ou transferência."],
+  ["course", "Curso de interesse", "Descubra o que a pessoa procura e qual curso quer fazer."],
+  ["entry", "Já tem graduação?", "Pergunte se já tem faculdade: define primeira graduação, segunda graduação ou transferência."],
   ["city", "Cidade e polo", "Confirme a cidade e o polo de atendimento."],
-  ["objective", "Objetivo com a graduação", "Pergunte o objetivo (concurso, carreira, formação superior) para orientar sem indicar fora dele."],
-  ["format", "Formato e regras do MEC", "Explique o formato real do curso e confirme que a pessoa compreendeu."],
-  ["grade", "Grade, tutoria e estágio", "Apresente a grade do curso, a tutoria e as informações de estágio."],
-  ["doubts", "Dúvidas e objeções", "Responda às dúvidas antes de apresentar a proposta."],
-  ["bolsa", "Dados para a bolsa", "Solicite somente os dados necessários para simular a bolsa."],
-  ["proposal", "Apresentação da proposta", "Confira os valores e condições reais antes de apresentar a proposta."],
-  ["ficha", "Ficha de matrícula e documentos", "Peça a ficha de matrícula e a foto do RG ou CNH (frente e verso)."],
-  ["taxa", "Taxa de matrícula (Pix ou boleto)", "Envie o boleto ou o Pix da taxa de matrícula e peça o comprovante."],
-  ["comprovante", "Comprovante recebido", "Confirme o comprovante e dê baixa junto ao financeiro."],
-  ["enroll", "Matrícula confirmada", "Confirme a matrícula no CRM com o RGM informado pela instituição."],
-  ["comunidade", "Tutoria e Comunidade dos Alunos", "Avise que a tutoria entra em contato e convide para a Comunidade dos Alunos."],
-  ["afiliado", "Programa de afiliados", "Explique o programa de indicação, sem prometer valores."]
-].map(([key, label, instruction]) => ({ key, label, instruction, message: "", optional: key === "objective" || key === "afiliado" || key === "comunidade" }));
-// the order shipped before: a process still saved exactly like it moves to the new order (a process the manager changed is kept as it is)
+  ["format", "Formato e duração do curso", "Explique o formato real do curso (regras do MEC) e quanto tempo dura."],
+  ["tutoria", "Tutoria", "Conte como a tutoria acompanha o aluno desde a matrícula."],
+  ["grade", "Grade do curso", "Envie a grade do curso."],
+  ["docentes", "Corpo docente", "Diga que o corpo docente é formado por mestres e doutores."],
+  ["bolsa", "Dados para a bolsa", "Peça o nome completo e o CPF para simular a bolsa."],
+  ["proposal", "Proposta", "Gere e envie a proposta pelo sistema."],
+  ["ficha", "Ficha e documentos", "Envie o link da ficha de matrícula; o lead preenche e manda a foto do documento."],
+  ["enroll", "Matrícula", "Taxa paga e comprovante recebido: registre a matrícula com o RGM."]
+].map(([key, label, instruction]) => ({ key, label, instruction, message: "", optional: false }));
+// the orders shipped before (15 steps): a process still saved like one of them moves to the simple process of 11 steps (25/11/2026); the
+// message a manager wrote for a step that stays is kept. A process the manager changed in another way is kept as it is.
 export const OLD_DEFAULT_ORDER = ["entry", "objective", "course", "city", "format", "grade", "doubts", "bolsa", "proposal", "ficha", "taxa", "comprovante", "enroll", "comunidade", "afiliado"];
+export const FIFTEEN_STEP_ORDER = ["course", "entry", "city", "objective", "format", "grade", "doubts", "bolsa", "proposal", "ficha", "taxa", "comprovante", "enroll", "comunidade", "afiliado"];
+// a process made only of the steps of the old processes (the 15 of the default, or some of them, like a process of 13 the team trimmed)
+// moves to the simple one; a process with a step the manager created stays as it is
+const OLD_KEYS = new Set([...OLD_DEFAULT_ORDER, ...FIFTEEN_STEP_ORDER]);
+const RETIRED = ["objective", "doubts", "taxa", "comprovante", "comunidade", "afiliado"];
 export const upgradeSteps = (steps: ProcessStep[]): ProcessStep[] => {
-  if (steps.map(s => s.key).join(",") !== OLD_DEFAULT_ORDER.join(",")) return steps;
+  const keys = steps.map(s => s.key);
+  const onlyOld = keys.every(k => OLD_KEYS.has(k));
+  if (!onlyOld || !keys.some(k => RETIRED.includes(k))) return steps;
   const byKey = new Map(steps.map(s => [s.key, s]));
   return DEFAULT_STEPS.map(d => {
-    const saved = byKey.get(d.key)!;
-    const untouched = ["entry", "course"].includes(d.key) && !saved.message;
-    return untouched ? { ...d } : saved;
+    const saved = byKey.get(d.key);
+    return saved && saved.message ? { ...d, message: saved.message } : { ...d };
   });
 };
 export interface ProcessStep { key: string; label: string; instruction: string; message: string; optional?: boolean }

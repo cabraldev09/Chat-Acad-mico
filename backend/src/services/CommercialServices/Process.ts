@@ -21,7 +21,7 @@ import { hydrate, loadState, Slots } from "./Slots";
 // The state is read from the conversation itself (what the lead said, what the consultant already sent), so it keeps up after the handover, when the
 // state saved by the agent no longer changes. Nothing here writes to the lead or sends anything: it only says where the process is and what to say next.
 
-export type StepKey = "entry" | "objective" | "course" | "city" | "format" | "grade" | "doubts" | "bolsa" | "proposal" | "ficha" | "taxa" | "comprovante" | "enroll" | "comunidade" | "afiliado";
+export type StepKey = "entry" | "objective" | "course" | "city" | "format" | "tutoria" | "grade" | "docentes" | "doubts" | "bolsa" | "proposal" | "ficha" | "taxa" | "comprovante" | "enroll" | "comunidade" | "afiliado";
 
 export interface CopilotStep {
   key: string;
@@ -53,8 +53,10 @@ export const STEP_LABEL: Record<StepKey, string> = {
   entry: "Já tem graduação? (forma de ingresso)",
   course: "O que procura (curso)",
   city: "Cidade e polo",
-  format: "Formato e mudanças do MEC explicados",
-  grade: "Grade, tutoria e estágio",
+  format: "Formato e duração do curso",
+  tutoria: "Tutoria",
+  grade: "Grade do curso",
+  docentes: "Corpo docente",
   doubts: "Dúvidas esclarecidas",
   bolsa: "Nome completo e CPF para simular a bolsa",
   proposal: "Proposta enviada",
@@ -95,6 +97,9 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
       if (/reside em qual cidade|qual (e )?a sua cidade|mora em qual cidade/.test(t)) sent("city", at);
       if (/ate aqui voce (compreendeu|conseguiu compreender)|ficou claro como funciona/.test(t)) sent("format", at);
       if (/alguma duvida|tem algo que eu posso/.test(t)) sent("doubts", at);
+      // the tutoring and the faculty, as the consultant (or the agent) tells them
+      if (/\btutoria\b/.test(t) && /acompanha|auxilia|primeiro acesso|desde a matricula|nao fica sozinho/.test(t)) out.tutoringTold = true;
+      if (/mestres e doutores|corpo docente/.test(t)) out.facultyTold = true;
       if (/nome completo e (o )?cpf|falta so o seu (cpf|nome completo)/.test(t)) sent("bolsa", at);
       if (/ficha de matricula|nome completo da mae/.test(t)) sent("ficha", at);
       if (/\b(pix|boleto)\b/.test(t) && /taxa|matricula|copia e cola/.test(t)) sent("taxa", at);
@@ -169,6 +174,8 @@ const textFor = async (key: StepKey, s: Slots, leadName: string, ficha?: FichaLi
     case "grade":
       // "Enviar" sends this line and the grade of the course right after it; the tutoring comes in the next step, on its own
       return { text: "Vou te enviar a *grade do curso* para você visualizar melhor as disciplinas e a estrutura da formação.", action: "send_grade" };
+    case "tutoria": return { text: TUTORING_PITCH, action: null };
+    case "docentes": return { text: "O nosso corpo docente é formado por professores mestres e doutores.", action: null };
     case "doubts": return { text: `${TUTORING_PITCH}\n\n${DOUBTS_QUESTION}`, action: null };
     case "bolsa": return { text: bolsaRequestFor({ name: !s.fullName, cpf: !s.cpfGiven }), action: null };
     case "proposal": {
@@ -252,7 +259,9 @@ export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise
     course: !!(slots.courseName || slots.courseId),
     city: !!(slots.city || slots.poloId),
     format: !!(slots.modalityExplained || slots.mecExplained),
+    tutoria: !!(slots as any).tutoringTold,
     grade: !!slots.gradeSent,
+    docentes: !!(slots as any).facultyTold,
     doubts: !!(slots.doubtsOver || asked.has("bolsa") || (slots.fullName && slots.cpfGiven)),
     bolsa: !!(slots.fullName && slots.cpfGiven),
     proposal: proposals > 0 || proposalSent,

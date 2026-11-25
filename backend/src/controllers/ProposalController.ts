@@ -497,12 +497,12 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   const keepOpen = { userId: uid(req) };
   try {
     if (legacy) {
-      await SendToContact({ contact, whatsapp, body: legacy, mediaUrl: file, keepOpen });
+      await SendToContact({ contact, whatsapp, body: legacy, mediaUrl: file, mediaName: pdfName(lead.name), keepOpen });
     } else {
       // opening line, then the PDF carrying the summary, then the follow-up lines
       const [intro, summary, ...rest] = blocks;
       if (intro) await SendToContact({ contact, whatsapp, body: intro, keepOpen });
-      await SendToContact({ contact, whatsapp, body: summary || "", mediaUrl: file, keepOpen });
+      await SendToContact({ contact, whatsapp, body: summary || "", mediaUrl: file, mediaName: pdfName(lead.name), keepOpen });
       for (const text of rest) {
         // eslint-disable-next-line no-await-in-loop
         await SendToContact({ contact, whatsapp, body: text, keepOpen });
