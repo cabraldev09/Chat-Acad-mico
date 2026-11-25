@@ -1,3 +1,4 @@
+import { poloSql } from "../../helpers/PoloScope";
 import { Op, QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
@@ -248,18 +249,18 @@ export const captureNpsAnswer = async (contactId: number, body: string, whatsapp
 
 // ------------------------------------------------------------------ the numbers
 // every answer of the period, one per line (for the spreadsheet)
-export const npsAnswers = async (from: Date, to: Date, tutorId?: number | null) => {
+export const npsAnswers = async (from: Date, to: Date, tutorId?: number | null, poloIds?: number[] | null) => {
   const where: any = { sentAt: { [Op.between]: [from, to] }, status: "answered" };
-  if (tutorId) where.leadId = { [Op.in]: sequelize.literal(`(SELECT id FROM "Leads" WHERE "onboardingTutorId" = ${Number(tutorId)})`) };
+  if (tutorId || poloIds) where.leadId = { [Op.in]: sequelize.literal(`(SELECT l.id FROM "Leads" l WHERE true ${tutorId ? `AND l."onboardingTutorId" = ${Number(tutorId)}` : ""} ${poloSql(poloIds, 'l."poloId"')})`) };
   const rows = await NpsSurvey.findAll({ where, order: [["answeredAt", "DESC"]], limit: 5000 });
   const leads = await Lead.findAll({ where: { id: { [Op.in]: [...new Set(rows.map(r => r.leadId))] } }, attributes: ["id", "name"] });
   return rows.map(r => ({ at: r.answeredAt, lead: leads.find(l => l.id === r.leadId)?.name || "—", kind: r.kind, score: r.score, category: categoryOf(Number(r.score)), comment: r.comment || "" }));
 };
 
-// `tutorId`: a tutor sees only the surveys of the students they follow
-export const npsSummary = async (from: Date, to: Date, tutorId?: number | null) => {
+// `tutorId`: a tutor sees only the surveys of the students they follow; `poloIds`: the coordination, the students of its polos
+export const npsSummary = async (from: Date, to: Date, tutorId?: number | null, poloIds?: number[] | null) => {
   const where: any = { sentAt: { [Op.between]: [from, to] } };
-  if (tutorId) where.leadId = { [Op.in]: sequelize.literal(`(SELECT id FROM "Leads" WHERE "onboardingTutorId" = ${Number(tutorId)})`) };
+  if (tutorId || poloIds) where.leadId = { [Op.in]: sequelize.literal(`(SELECT l.id FROM "Leads" l WHERE true ${tutorId ? `AND l."onboardingTutorId" = ${Number(tutorId)}` : ""} ${poloSql(poloIds, 'l."poloId"')})`) };
   const rows = await NpsSurvey.findAll({ where, order: [["sentAt", "DESC"]] });
   const answered = rows.filter(r => r.status === "answered" && r.score !== null);
   const count = (c: string) => answered.filter(r => categoryOf(Number(r.score)) === c).length;

@@ -16,6 +16,8 @@ import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import { gradePath, gradeView, importDefaultGrades, publishGrade, removeGrade } from "../analysis/Grades";
 import { gradeSummaryOf } from "../analysis/services/commercial-grades/reader";
+import { safeStoredName } from "../helpers/SafeFile";
+import { withoutGradeTitle } from "../services/CommercialServices/GradeChoice";
 
 const manager = (req: Request): boolean => isManagerRole(roleOf(req.user));
 const mustManage = (req: Request): void => {
@@ -135,17 +137,20 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   // a caption has a size limit, so a longer text goes first as its own message
   const summary = wantSummary ? gradeSummaryOf(g).trim() : "";
   const asCaption = wantPdf && summary.length > 0 && summary.length <= CAPTION_LIMIT && !summary.includes("{{");
+  // with the PDF, the course is the name of the file: the caption starts with the duration, not with the course's name again
+  const captionText = asCaption ? withoutGradeTitle(summary) : summary;
   if (summary && !asCaption) await SendWhatsAppMessage({ body: summary, ticket });
   if (wantPdf) {
     const source = gradePath(g);
     if (!fs.existsSync(source)) throw new AppError("O PDF desta grade não está mais disponível.", 410);
     // SendWhatsAppMedia consumes the file it sends: hand it a copy
-    const copyName = `grade-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.pdf`;
+    // the copy carries the course's name ("Administração (Bacharelado)~k3F9a.pdf"): the lead and the conversation see the course, not a code
+    const copyName = safeStoredName(`${g.courseName || "Grade do curso"}.pdf`, "application/pdf");
     fs.copyFileSync(source, path.join(PUBLIC_DIR, copyName));
     await SendWhatsAppMedia({
       media: { filename: copyName, originalname: `${g.courseName}.pdf`.replace(/[\\/:*?"<>|]/g, "_"), mimetype: "application/pdf", path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
       ticket,
-      body: asCaption ? summary : "",
+      body: asCaption ? captionText : "",
       displayName: `${g.courseName}.pdf`.replace(/[\\/:*?"<>|]/g, "_")
     });
   }

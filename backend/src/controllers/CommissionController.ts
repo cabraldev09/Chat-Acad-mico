@@ -9,6 +9,7 @@ import Payment from "../models/Payment";
 import User from "../models/User";
 import { getSetting } from "../helpers/AppSettings";
 import { roleOf } from "../helpers/Roles";
+import { assertLead, crmPolosOf } from "../middleware/scope";
 
 // Commissions of the enrollment fee. Efí splits the payment to the consultant's wallet at the moment the student pays,
 // so with a wallet registered the commission is "received" as soon as the payment is confirmed. Without a wallet the money
@@ -40,9 +41,11 @@ const fetchRows = async (req: Request) => {
   if (from || to) where.createdAt = { ...(from ? { [Op.gte]: from } : {}), ...(to ? { [Op.lte]: to } : {}) };
 
   const defaultPct = Math.min(100, Math.max(1, Number(await getSetting("efi_consultant_pct", "100")) || 100));
+  // the coordination: the commissions of the leads of its polos only (middleware/scope)
+  const polos = sees(req) === "all" ? await crmPolosOf(req) : null;
   const payments = await Payment.findAll({
     where,
-    include: [{ model: Lead, as: "lead", attributes: ["id", "name"] }],
+    include: [{ model: Lead, as: "lead", attributes: ["id", "name"], ...(polos ? { required: true, where: { poloId: { [Op.in]: polos.length ? polos : [0] } } } : {}) }],
     order: [["createdAt", "DESC"]],
     limit: 5000
   });
@@ -127,6 +130,7 @@ export const settle = async (req: Request, res: Response): Promise<Response> => 
   if (sees(req) !== "all") throw new AppError("ERR_NO_PERMISSION", 403);
   const payment = await Payment.findByPk(req.params.id);
   if (!payment || !payment.recipientUserId) throw new AppError("ERR_NOT_FOUND", 404);
+  if (payment.leadId) await assertLead(req, payment.leadId);
   if (payment.status !== "paid") throw new AppError("ERR_COMMISSION_NOT_PAID", 400);
   if (payment.recipientCode) throw new AppError("ERR_COMMISSION_VIA_WALLET", 400);
   const undo = req.body?.undo === true;

@@ -1,3 +1,4 @@
+import { poloSql } from "../../helpers/PoloScope";
 import { Op, QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
@@ -14,7 +15,7 @@ const q = async (sql: string, replacements: Record<string, any>): Promise<any[]>
   (await sequelize.query(sql, { replacements, type: QueryTypes.SELECT })) as any[];
 
 const num = (v: any): number => Number(v || 0);
-const tutorSql = (scope: Scope, col = 'l."onboardingTutorId"'): string => (scope.tutorId ? `AND ${col} = :tutor` : "");
+const tutorSql = (scope: Scope, col = 'l."onboardingTutorId"'): string => `${scope.tutorId ? `AND ${col} = :tutor` : ""} ${poloSql(scope.poloIds ?? null, 'l."poloId"')}`;
 
 export interface LogFilter {
   from: Date;
@@ -206,7 +207,7 @@ export const retentionAudience = async (scope: Scope, p: AudienceQuery): Promise
          FROM "Leads" l JOIN "LeadStages" st ON st.id = l."stageId"
          LEFT JOIN "Polos" p ON p.id = l."poloId" LEFT JOIN "Users" u ON u.id = l."onboardingTutorId"
         WHERE l."isHistorical" = false AND l.phone IS NOT NULL AND st.type <> 'lost'
-          ${scope.tutorId ? 'AND l."onboardingTutorId" = :tutor AND l."enrolledAt" IS NOT NULL' : ""}
+          ${scope.tutorId ? 'AND l."onboardingTutorId" = :tutor AND l."enrolledAt" IS NOT NULL' : ""} ${poloSql(scope.poloIds ?? null, 'l."poloId"')}
           ${p.stageId ? 'AND l."stageId" = :stageId' : ""}
           ${p.courseId ? 'AND l."courseId" = :courseId' : ""}
           ${p.poloId ? 'AND l."poloId" = :poloId' : ""}

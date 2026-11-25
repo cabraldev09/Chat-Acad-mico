@@ -4,12 +4,13 @@ import AppError from "../errors/AppError";
 import Lead from "../models/Lead";
 import Ticket from "../models/Ticket";
 import { assertTicketAccess } from "./canAccessTicket";
-import { isAdminReq, withLeadScope } from "./scope";
+import { seesEveryPolo, withLeadScope } from "./scope";
 
-// Who may read or change a contact: administration and coordination always; everybody else only when the person is one of their leads
-// (see leadScopeWhere) or when they can read one of the conversations of that contact. Same rule the live updates of a contact follow.
+// Who may read or change a contact: the administration always; everybody else (the coordination included: its polos) only when the person
+// is one of their leads (see leadScopeWhere) or when they can read one of the conversations of that contact. Same rule the live updates
+// of a contact follow.
 export const hasContactAccess = async (req: Request, contactId: number): Promise<boolean> => {
-  if (isAdminReq(req)) return true;
+  if (seesEveryPolo(req)) return true;
   if (await Lead.findOne({ where: await withLeadScope(req, { contactId }), attributes: ["id"] })) return true;
   const tickets = await Ticket.findAll({ where: { contactId }, attributes: ["id"] });
   for (const ticket of tickets) {

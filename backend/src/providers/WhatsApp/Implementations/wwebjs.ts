@@ -57,6 +57,7 @@ import {
   MediaPayload,
   WhatsappContextPayload
 } from "../../../handlers/handleWhatsappEvents";
+import { killLeftoverBrowsers } from "./browserProcesses";
 
 interface Session extends Client {
   id?: number;
@@ -751,6 +752,10 @@ const closeClient = async (id: number): Promise<void> => {
   readySeen.delete(id);
   syncedAt.delete(id);
   if (c) await Promise.race([c.destroy().catch(() => undefined), new Promise(r => setTimeout(r, 15000))]);
+  // a close that timed out (or a browser that crashed half open) leaves Chromium processes alive: they piled up until the container
+  // could not create any process at all
+  const killed = killLeftoverBrowsers(path.join(WWEBJS_AUTH_DIR, `session-bd_${id}`));
+  if (killed) logger.warn(`WhatsApp ${id}: ${killed} processos do navegador que tinham ficado abertos foram encerrados`);
 };
 // the API is stopping (a new version, a restart): every WhatsApp Web closes properly, so the profile of the browser is not left half written
 export const closeAllWwebjsClients = async (): Promise<void> => {
