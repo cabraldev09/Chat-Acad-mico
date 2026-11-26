@@ -20,6 +20,20 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     attributes: ["id", "name", "number", "profilePicUrl", "kind", "communityRole", "communityId", "parentGroupId", "readOnly"],
     order: [["name", "ASC"]]
   });
+  // the community itself may have no conversation on the number (only its groups do): it comes from the groups that point to it
+  if (mineIds) {
+    const known = new Set(related.map(c => c.id));
+    const parentNumbers = Array.from(
+      new Set(related.map(c => String(c.communityId || c.parentGroupId || "").replace(/@g\.us$/, "")).filter(Boolean))
+    );
+    if (parentNumbers.length) {
+      const parents = await Contact.findAll({
+        where: { isGroup: true, number: { [Op.in]: parentNumbers }, [Op.or]: [{ communityRole: "parent" }, { kind: "community" }] } as any,
+        attributes: ["id", "name", "number", "profilePicUrl", "kind", "communityRole", "communityId", "parentGroupId", "readOnly"]
+      });
+      parents.forEach(c => { if (!known.has(c.id)) related.push(c); });
+    }
+  }
   const ids = related.map(c => c.id);
   const tickets = ids.length
     ? await Ticket.findAll({

@@ -160,7 +160,7 @@ const Connections = () => {
 				return;
 			}
 			toast.success(
-				`Conversas de “${d.connection}” copiadas: ${d.chats} conversas (${d.newConversations} novas), ${d.messages} mensagens${d.pinned ? `, ${d.pinned} fixadas` : ""}. Veja em Tickets → Histórico.`,
+				`Conversas de “${d.connection}” copiadas: ${d.chats} conversas (${d.newConversations} novas), ${d.messages} mensagens${d.pinned ? `, ${d.pinned} fixadas` : ""}. As recentes ficam em Atendendo; as mais antigas, em Todas.`,
 				{ autoClose: 15000 }
 			);
 		});

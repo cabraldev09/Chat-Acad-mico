@@ -182,6 +182,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   if (!(await hasContactAccessOrFree(req, Number(contactId)))) throw new AppError("ERR_NO_PERMISSION", 403);
 
   const ticket = await CreateTicketService({ contactId, status, userId });
+  // a contact opened by hand on a QR Code number: its conversation on the phone comes with it (silently), instead of an empty one
+  const { copyChatFromPhone } = await import("../services/WbotServices/ChatHistoryFromPhone");
+  await copyChatFromPhone(ticket.id, "first", 8000).catch(() => 0);
 
   const io = getIO();
   io.to(ticket.status).emit("ticket", {

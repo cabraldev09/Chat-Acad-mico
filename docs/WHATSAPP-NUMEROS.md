@@ -43,6 +43,31 @@
   atualização e quantos processos há; com `executar = sim` encerra as atualizações presas e reinicia só o contêiner da API
   (1 a 2 minutos fora). Depois, rode "Atualizar a VPS".
 
+## Número QR: as conversas do celular vêm sozinhas, sem avisar
+Ao ler o QR Code, o sistema copia o WhatsApp do celular, sem ninguém clicar em nada (`autoImportHistory`, em
+`services/WbotServices/ImportHistoryService.ts`).
+- **Espera o celular:** logo depois da leitura, o WhatsApp Web ainda está recebendo as conversas. A lista é lida a cada 20 s até
+  ficar do mesmo tamanho três vezes, por no máximo 6 minutos (`settledChats`, em `Implementations/chatSync.ts`). Se falhar ou vier
+  vazia, tenta de novo depois de 1, 3 e 10 minutos, e também no próximo "conectado", enquanto `historyImportedAt` estiver vazio.
+- **Rápida, sem travar o celular:** duas conversas por vez (`WHATSAPP_IMPORT_PARALLEL`), com até 25 s cada
+  (`WHATSAPP_IMPORT_CHAT_TIMEOUT_MS`). A que trava é tentada de novo no fim. As últimas 100 mensagens de cada conversa vêm na cópia.
+  As fotos vêm depois, aos poucos. Durante a cópia e nos primeiros 30 minutos (`WHATSAPP_SYNC_GRACE_MS`), a checagem de vida do
+  navegador é mais paciente, para não reabrir a página no meio da sincronização (o celular mostrava "a sincronização parou").
+- **Sem avisar:** tudo o que veio do celular entra como histórico, sem som, sem aviso, sem IA, sem fluxo e sem prazo de resposta.
+  Antes da cópia, a checagem de 5 minutos não traz nada como mensagem nova (`chatBehind`). Só o que chega depois avisa.
+- **Igual ao celular:**
+  - no número de uma pessoa, as conversas com mensagem nos últimos 30 dias (`WHATSAPP_IMPORT_RECENT_DAYS`) e não arquivadas
+    entram em **Atendendo** com o dono, com o contador de não lidas do celular. As mais antigas ficam em **Todas** e na busca;
+  - arquivadas e fixadas ficam iguais ao celular;
+  - todos os grupos e comunidades viram conversa, mesmo sem mensagem recente. A comunidade aparece no chip "Comunidades" do dono;
+  - o contato que só tinha o número recebe o nome salvo na agenda do celular (ou o do perfil). Um nome digitado no sistema não muda.
+  - No número da empresa (sem dono), tudo fica como histórico, sem responsável.
+- **Mensagens mais antigas:** na conversa aberta, ao rolar até o topo, as anteriores vêm do celular, de 100 em 100, até o começo
+  (`ChatHistoryFromPhone.ts`, até 3000 por conversa, `WHATSAPP_HISTORY_MAX_PER_CHAT`).
+- **Contato aberto pelo "+":** a conversa já vem com as últimas mensagens do celular.
+- **Progresso:** o topo de Conversas e a tela Conexões mostram "Trazendo as conversas do WhatsApp: 120 de 340".
+- **De novo:** o botão "Copiar conversas" de Conexões refaz a cópia. O que já está aqui não se repete.
+
 ## Como a carteira funciona
 - **Dono do cliente**: é o **responsável no CRM**, se ele já conversou com o cliente. Se não, é **quem atendeu por último**.
 - **Quando o cliente escreve de novo** num número compartilhado (sem dono), a conversa vai direto para esse consultor: sem robô, sem fluxo e sem rodízio.

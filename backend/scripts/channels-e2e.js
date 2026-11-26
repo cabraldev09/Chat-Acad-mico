@@ -3747,6 +3747,26 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/whatsapp", { name: "x" }, asUser(tc))).status === 403, "a consultant used the management's route");
       for (const id of [mine.data.id, tutors.data.id]) await http.delete(`/whatsapp/${id}`, auth());
     });
+    await test("chats copied from the phone of a person's own QR number: the recent ones in Atendendo with the owner, in nobody else's list", async () => {
+      const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
+      const u1 = await mk("Copia Uma", "copia1@x.com"), u2 = await mk("Copia Dois", "copia2@x.com");
+      const t1 = (await http.post("/auth/login", { email: "copia1@x.com", password: "senha123" })).data.token;
+      const t2 = (await http.post("/auth/login", { email: "copia2@x.com", password: "senha123" })).data.token;
+      const made = (await http.post("/whatsapp", { name: "WhatsApp da Copia", channel: "whatsapp", ownerId: u1.id }, auth())).data;
+      const contact = (name, number) => sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const copied = (cid, status, userId, ago) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageAt, waChatTimestamp, closedAt, createdAt, updatedAt) VALUES ('${status}', ${cid}, ${made.id}, ${userId}, 2, false, 'sales', true, 'oi', 'copia-${cid}', NOW() - INTERVAL '${ago}', NOW() - INTERVAL '${ago}', ${status === "closed" ? "NOW()" : "NULL"}, NOW() - INTERVAL '${ago}', NOW() - INTERVAL '${ago}') RETURNING id`).split("\n")[0];
+      const recent = copied(contact("Amiga do celular", "5569977770001"), "open", u1.id, "1 day");
+      const old = copied(contact("Antiga do celular", "5569977770002"), "closed", u1.id, "90 days");
+      const ids = async (params, token) => (await http.get("/tickets", { params: { status: "open", queueIds: "[]", ...params }, ...asUser(token) })).data.tickets.map(t => String(t.id));
+      const mine = await ids({}, t1);
+      assert(mine.includes(String(recent)), "the recent copied chat is not in the owner's Atendendo");
+      assert(!mine.includes(String(old)), "an old copied chat is in Atendendo");
+      assert(!(await ids({ showAll: "true" }, t2)).includes(String(recent)), "another person sees the owner's copied chat");
+      // the history view still has both, for the owner only
+      const all = (await http.get("/tickets", { params: { historical: "all", queueIds: "[]" }, ...asUser(t1) })).data.tickets.map(t => String(t.id));
+      assert(all.includes(String(recent)) && all.includes(String(old)), "the owner's history view lost a copied chat");
+      await http.delete(`/whatsapp/${made.id}`, auth());
+    });
     await test("a QR Code number given to a person by the management: only its owner sees it in Conexões, reads its QR Code and picks its groups", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
       const u1 = await mk("Dona Um", "dona1@x.com"), u2 = await mk("Dono Dois", "dono2@x.com");

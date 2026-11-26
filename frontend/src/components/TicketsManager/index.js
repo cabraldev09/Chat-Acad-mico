@@ -76,6 +76,10 @@ const useStyles = makeStyles((theme) => {
     },
     chipIcon: { flex: "none", opacity: 0.85 },
     // the row under the tabs: whose conversations "Atendendo" shows, and "mark all as read" in "Não lidas"
+    copyRow: { flex: "none", display: "flex", flexDirection: "column", gap: 6, padding: theme.spacing(0, 1.5, 1), fontSize: 12.5, color: c.textSecondary, minWidth: 0 },
+    copyText: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    copyBar: { display: "block", height: 4, borderRadius: 999, backgroundColor: c.divider || "rgba(0,0,0,.12)", overflow: "hidden" },
+    copyFill: { display: "block", height: "100%", borderRadius: 999, backgroundColor: c.accent, transition: "width .4s ease" },
     subRow: { flex: "none", display: "flex", alignItems: "center", gap: 6, padding: theme.spacing(0, 1.5, 1), fontSize: 12.5, color: c.textSecondary },
     seg: {
       height: 26, padding: "0 10px", borderRadius: 999, border: `1px solid ${c.divider || "rgba(0,0,0,.12)"}`, background: "transparent", color: c.text,
@@ -282,6 +286,17 @@ const TicketsManager = () => {
   }, []);
   const communityUnread = (communities || []).reduce((n, c) => n + (c.unread || 0), 0);
 
+  // the copy of the phone's conversations (WhatsApp by QR Code) running for a number of this person: how far it is
+  const [copying, setCopying] = useState(null);
+  useEffect(() => {
+    const socket = openSocket();
+    socket.on("historyImport", (d) => {
+      if (!d || !user || (d.userId && d.userId !== user.id && !isManager(user))) return;
+      setCopying(d.finished ? null : { name: d.connection, done: d.done || 0, total: d.total || 0 });
+    });
+    return () => socket.disconnect();
+  }, [user]);
+
   const searching = searchParam.length > 0;
   const ICONS = { open: MessageCircle, pending: Clock3, unread: MailOpen, groups: Users, communities: Layers, everything: Inbox };
   const chip = (key, label, count) => {
@@ -398,6 +413,19 @@ const TicketsManager = () => {
             <MenuItem selected={filter === "closed"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("closed"); }}>Resolvidas</MenuItem>
             <MenuItem selected={filter === "archived"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("archived"); }}>Arquivadas</MenuItem>
           </Menu>
+        </div>
+      )}
+
+      {copying && (
+        <div className={classes.copyRow} role="status" aria-live="polite">
+          <span className={classes.copyText}>
+            {copying.total > 0
+              ? `Trazendo as conversas do WhatsApp${copying.name ? ` (${copying.name})` : ""}: ${copying.done} de ${copying.total}`
+              : `Esperando o WhatsApp${copying.name ? ` (${copying.name})` : ""} enviar as conversas…`}
+          </span>
+          <span className={classes.copyBar}>
+            <span className={classes.copyFill} style={{ width: copying.total > 0 ? `${Math.min(100, Math.round((copying.done / copying.total) * 100))}%` : "8%" }} />
+          </span>
         </div>
       )}
 
