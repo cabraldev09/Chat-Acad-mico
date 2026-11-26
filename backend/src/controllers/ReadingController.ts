@@ -13,9 +13,10 @@ export const settings = async (_req: Request, res: Response): Promise<Response> 
   res.json({ ...(await readingSettings()), summary: await readingsSummary() });
 
 export const saveSettings = async (req: Request, res: Response): Promise<Response> => {
-  const { provider, waitHours, maxPerDay } = req.body || {};
+  const { enabled, provider, waitHours, maxPerDay } = req.body || {};
   if (provider !== undefined && !["sistema", "openbot"].includes(provider)) throw new AppError("ERR_INVALID_PARAMETER", 400);
-  return res.json({ ...(await saveReadingSettings({ provider, waitHours, maxPerDay })), summary: await readingsSummary() });
+  if (enabled !== undefined && typeof enabled !== "boolean") throw new AppError("ERR_INVALID_PARAMETER", 400);
+  return res.json({ ...(await saveReadingSettings({ enabled, provider, waitHours, maxPerDay })), summary: await readingsSummary() });
 };
 
 // "Por que vendemos e por que perdemos" of a period: the codes of the readings of the leads the person may see (the coordination: its polos)
@@ -31,6 +32,7 @@ export const outcomes = async (req: Request, res: Response): Promise<Response> =
 
 // "Ler agora": the conversations waiting are put in the queue and the system's AI reads what it should (the same round of the worker)
 export const runNow = async (_req: Request, res: Response): Promise<Response> => {
+  if (!(await readingSettings()).enabled) throw new AppError("ERR_READINGS_DISABLED", 409);
   const { enqueueImported } = await import("../services/ReadingServices/ImportedLeads");
   const { enqueueOutcomes } = await import("../services/ReadingServices/Outcome");
   const { runLocalReadings } = await import("../services/ReadingServices/Queue");

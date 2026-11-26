@@ -708,6 +708,7 @@ const messages = {
         ERR_READING_DONE: "Esta leitura já foi feita.",
         ERR_READING_NOT_CLAIMED: "Esta leitura não está reservada para este token, ou a reserva venceu. Pegue de novo em GET /api/v1/leituras.",
         ERR_READING_BAD_ANSWER: "A resposta da leitura não está no formato pedido nas instruções.",
+        ERR_READINGS_DISABLED: "As leituras das conversas estão desligadas. O administrador liga em Integrações, Leituras das conversas.",
         ERR_HISTORY_COPY_OFF: "A cópia das conversas do celular está desligada em Conexões.",
         ERR_LEAD_NO_PHONE: "Este lead não tem telefone para iniciar a conversa.",
         ERR_LEAD_NEEDS_PHONE_OR_EMAIL: "Informe um telefone ou e-mail válido.",

@@ -47,7 +47,7 @@ export const enqueueImported = async (whatsappId?: number | null): Promise<numbe
   return added;
 };
 
-// the column of the enrollments the reading found but could not prove (no RGM in the conversation): right after "Matrícula em andamento"
+// the column of the enrollments the reading found (always to be confirmed by a person): right after "Matrícula em andamento"
 const confirmStage = async (): Promise<LeadStage> => {
   const found = await LeadStage.findOne({ where: { name: CONFIRM_STAGE } });
   if (found) return found;
@@ -58,7 +58,7 @@ const confirmStage = async (): Promise<LeadStage> => {
   return LeadStage.create({ name: CONFIRM_STAGE, type: "open", color: "#0f766e", position } as any);
 };
 
-export interface ImportOutcome { action: "nao_lead" | "andamento" | "matriculado" | "confirmar" | "recuperar" | "nada"; leadId: number | null }
+export interface ImportOutcome { action: "nao_lead" | "andamento" | "confirmar" | "recuperar" | "nada"; leadId: number | null }
 
 // what a reading of a copied conversation does in the CRM
 export const applyImport = async (reading: ConversationReading, answer: ImportAnswer): Promise<ImportOutcome> => {
@@ -68,9 +68,8 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
   if (!t) return { action: "nada", leadId: null };
   const contact = await Contact.findByPk(t.contactId);
   if (!contact) return { action: "nada", leadId: null };
-  const [times] = await rows(`SELECT MIN(m.createdAt) AS firstAt, MAX(m.createdAt) AS lastAt,
+  const [times] = await rows(`SELECT MAX(m.createdAt) AS lastAt,
       MIN(CASE WHEN m.fromMe = true THEN m.createdAt END) AS firstMine FROM Messages m WHERE m.ticketId = :ticketId`, { ticketId });
-  const firstAt = times?.firstAt ? new Date(times.firstAt) : new Date();
   const lastAt = times?.lastAt ? new Date(times.lastAt) : new Date();
   const firstMine = times?.firstMine ? new Date(times.firstMine) : null;
   let lead = await Lead.findOne({ where: { contactId: contact.id } });
@@ -93,11 +92,9 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
   } else if (lead.isHistorical && !lead.enrolledAt) {
     await lead.update({ isHistorical: false });
   }
-  // the lead came when the conversation began (an old conversation does not swell this month's numbers) and it was answered when the
-  // consultant first wrote (it is not a "new lead to check")
+  // the reading never rewrites the dates the lead already has (createdAt, the enrollment, the loss): it only fills what is empty. The lead
+  // was answered when the consultant first wrote, so it is not a "new lead to check".
   const patch: any = { lastContactAt: lastAt };
-  // (createdAt only changes through the static update; an instance update leaves it as it was)
-  if (lead.createdAt && new Date(lead.createdAt).getTime() > firstAt.getTime() + 864e5) await Lead.update({ createdAt: firstAt } as any, { where: { id: lead.id }, silent: true } as any);
   if (!lead.firstContactAt && firstMine) patch.firstContactAt = firstMine;
   if (!lead.ownerId && t.ownerId) patch.ownerId = Number(t.ownerId);
   if (!lead.courseId && answer.course) {
@@ -123,22 +120,20 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
   }
 
   if (answer.situation === "matriculado") {
+    // The reading NEVER enrolls anyone: a conversation (where anyone can write "RGM 123") is not proof. The lead goes to "Matrícula a
+    // confirmar" with the RGM it found as a suggestion; a person confirms it on the enrollment screen, with the proof. No wonAt, no
+    // enrolledAt, no RGM saved, nothing counted in Matrículas or Metas until then.
     const texts = (await rows(`SELECT m.body FROM Messages m WHERE m.ticketId = :ticketId AND m.body IS NOT NULL ORDER BY m.createdAt DESC LIMIT 200`, { ticketId })).map(m => String(m.body || ""));
     const rgm = findRgm(texts);
-    const taken = rgm ? await Lead.findOne({ where: { rgm, id: { [Op.ne]: lead.id } } as any, attributes: ["id"] }) : null;
-    const won = await LeadStage.findOne({ where: { type: "won" }, order: [["position", "ASC"]] });
-    if (rgm && !taken && won) {
-      // an enrollment of the past, recognised (not a new one): no notice, no tutoring onboarding, no fee tag; it counts on the day it happened
-      await lead.update({ stageId: won.id, wonAt: lastAt, enrolledAt: lastAt, rgm, onboardingStatus: "done", lostAt: null, lostReason: null, lostNote: null, recoveryState: null } as any);
-      await addActivity(lead.id, null, "stage", `${current ? current.name : "—"} → ${won.name} (matrícula reconhecida pela leitura do WhatsApp, RGM na conversa)`);
-      return { action: "matriculado", leadId: lead.id };
-    }
     const stage = await confirmStage();
     if (!current || current.id !== stage.id) await changeStage(lead.id, stage.id, null).catch(() => undefined);
+    await addActivity(lead.id, null, "system", rgm
+      ? `A leitura do WhatsApp indica que a matrícula foi feita. RGM sugerido pela conversa: ${rgm}. Confirme na tela de matrícula, com o comprovante.`
+      : "A leitura do WhatsApp indica que a matrícula foi feita, sem RGM na conversa. Confirme na tela de matrícula, com o comprovante.");
     const owner = Number(lead.ownerId || t.ownerId) || null;
     if (owner) {
       const { ensureTask } = await import("../CrmServices/Tasks");
-      await ensureTask({ key: `confirm-enroll-${lead.id}`, leadId: lead.id, userId: owner, title: "Confirmar a matrícula: informe o RGM", dueAt: new Date(Date.now() + 864e5), type: "documentos" });
+      await ensureTask({ key: `confirm-enroll-${lead.id}`, leadId: lead.id, userId: owner, title: rgm ? `Confirmar a matrícula (RGM sugerido: ${rgm})` : "Confirmar a matrícula: informe o RGM", dueAt: new Date(Date.now() + 864e5), type: "documentos" });
     }
     return { action: "confirmar", leadId: lead.id };
   }

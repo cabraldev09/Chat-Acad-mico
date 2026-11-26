@@ -13,7 +13,9 @@ export const readingRound = async (): Promise<void> => {
   try {
     const { enqueueImported } = await import("../services/ReadingServices/ImportedLeads");
     const { enqueueOutcomes } = await import("../services/ReadingServices/Outcome");
-    const { runLocalReadings } = await import("../services/ReadingServices/Queue");
+    const { readingSettings, runLocalReadings } = await import("../services/ReadingServices/Queue");
+    // the administrator's switch: off, nothing is put in the queue nor read
+    if (!(await readingSettings()).enabled) return;
     const added = await enqueueImported();
     const today = todayInAppTz();
     let outcomes = 0;
@@ -35,6 +37,8 @@ export const readingRound = async (): Promise<void> => {
 // right after the copy of a phone: its conversations are put in the queue and (with the system's AI) read at once
 export const readAfterCopy = async (whatsappId: number): Promise<void> => {
   try {
+    const { readingSettings } = await import("../services/ReadingServices/Queue");
+    if (!(await readingSettings()).enabled) return;
     const { enqueueImported } = await import("../services/ReadingServices/ImportedLeads");
     await enqueueImported(whatsappId);
     await readingRound();
