@@ -3853,7 +3853,16 @@ const postMeta = (id, payload, secret, badSig) => {
       const mine = await ids({ allQueues: "true", attendantId: String(a2.id) }, asUser(t1a));
       assert(!mine.includes(t2), "an attendant saw a colleague's conversation");
       assert(!(await ids({ allQueues: "true" }, asUser(t1a))).includes(t2), "allQueues worked for a non-manager");
-      assert((await http.get("/whatsapp", asUser(tc))).data.length >= 1, "coordinator does not list the connections");
+      // the connections the coordination lists (ESP-011): the ones whose owner is in its polos; one with no owner is the administration's
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${polo}, ${a1.id}, 'comercial', NOW(), NOW())`);
+      const ownConn = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, ownerId, createdAt, updatedAt) VALUES ('Conexão do Atendente Um', 'DISCONNECTED', 'telegram', false, ${a1.id}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      try {
+        const listed = (await http.get("/whatsapp", asUser(tc))).data.map(w => String(w.id));
+        assert(listed.includes(String(ownConn)), "coordinator does not list the connection of a person of its polo");
+        assert(!listed.includes(String(tgId)), "coordinator lists a connection with no owner");
+      } finally {
+        sql(`DELETE FROM Whatsapps WHERE id=${ownConn}`);
+      }
     });
     await test("the last administrator cannot be demoted, and the user form shows the effective role", async () => {
       // the list is paged: look for the administrator by e-mail instead of hoping it is on the first page
@@ -9253,11 +9262,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!graph.sent.slice(tOut).some(x => x.body && x.body.to === "5511944440103" && JSON.stringify(x.body).includes("300,00")), "the offer went to who asked to stop");
       assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${tiago} AND automationKey LIKE 'recovery-%'`) === "0", "a recovery task for who asked to stop");
       assert(sql(`SELECT recoveryState FROM Leads WHERE id=${tiago}`) === "descartada", "who asked to stop is still in Recuperação");
-      // the preview of the offer shows only the leads the person may see: a coordination without polo sees no course nor value
+      // the preview of the offer follows the lists by polo (ESP-001): a coordination without polo does not open a list that is not its own,
+      // so it sees no name, course nor value of it
       await http.post("/users", { name: "Coordenação Sem Polo Oferta", email: "coord-oferta@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
       const coordTok = (await http.post("/auth/login", { email: "coord-oferta@x.com", password: "senha123" })).data.token;
-      const blind = (await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(coordTok))).data;
-      assert(blind.rows.every(r => r.course === null && r.monthly === "o consultor informa"), `the preview crossed leads out of scope ${JSON.stringify(blind.rows)}`);
+      const blind = await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(coordTok));
+      assert(blind.status === 403 && !blind.data.rows, `the preview crossed a list out of scope ${blind.status} ${JSON.stringify(blind.data)}`);
       await http.put("/operations/config", { outbound_allow_marketing: "false" }, auth());
     });
     await test("the conversations copied from a consultant's phone are read once: real leads in the funnel with a summary, enrollments with the RGM, the ones without it to confirm, who gave up in Recuperação with the reason; one notice; OpenBot takes masked readings through the API", async () => {
