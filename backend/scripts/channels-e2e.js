@@ -2096,13 +2096,57 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(row.recipientCpf === undefined && row.recipientCpfMasked === "***.***.247-25", `the list shows the CPF: ${JSON.stringify([row.recipientCpf, row.recipientCpfMasked])}`);
       assert((await find("99911")).some(p => p.id === made.data.id), "search by phone");
       assert(!(await find("bia cont", otherTok)).some(p => p.id === made.data.id), "another consultant found it");
-      // the link went out: the author still deletes it (an avulsa has no lead history); another consultant cannot
+      // the link went out (the person is in the CRM now): the author still deletes the avulsa, the lead stays; another consultant cannot
       const shared = (await http.post(`/proposals/${made.data.id}/send`, { share: true }, asUser(tok))).data;
       assert((await http.delete(`/proposals/${made.data.id}`, asUser(otherTok))).status === 403, "another consultant deleted the avulsa");
       assert((await http.delete(`/proposals/${made.data.id}`, asUser(tok))).status === 200, "the author could not delete the avulsa");
       assert(sql(`SELECT COUNT(*) FROM Proposals WHERE id=${made.data.id}`) === "0", "the avulsa is still there");
       assert((await http.get(`/p/${shared.link.split("/p/")[1]}`)).status === 404, "the link of a deleted avulsa still opens");
       await http.delete(`/proposals/${plain.data.id}`, asUser(tok));
+    });
+
+    await test("avulsa to the CRM: the link, the PDF or the send makes the person a lead in Proposta, of who made it or of the colleague chosen, never doubled, and the enrollment form goes from there", async () => {
+      const tok = (await http.post("/auth/login", { email: "avulsa@polo.test", password: "senha123" })).data.token;
+      const colTok = (await http.post("/auth/login", { email: "avulsa2@polo.test", password: "senha123" })).data.token;
+      const me = Number(sql(`SELECT id FROM Users WHERE email='avulsa@polo.test'`));
+      const colleague = Number(sql(`SELECT id FROM Users WHERE email='avulsa2@polo.test'`));
+      const d = (await http.get("/proposals/defaults", { params: { recipientName: "Caio Amigo", courseId: propCourse.id }, ...asUser(tok) })).data;
+      const due = new Date(Date.now() + 15 * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      const params = { ...d.params, admissionType: "ENEM", firstDueDate: due };
+      // a colleague that does not exist is refused
+      assert((await http.post("/proposals", { recipientName: "Caio Amigo", recipientOwnerId: 999999, courseId: propCourse.id, params }, asUser(tok))).status === 404, "an unknown colleague was accepted");
+      const made = (await http.post("/proposals", { recipientName: "Caio Amigo", recipientCpf: "111.444.777-35", recipientPhone: "(69) 99888-7766", recipientOwnerId: colleague, courseId: propCourse.id, params }, asUser(tok))).data;
+      assert(made.recipientOwnerId === colleague && !made.leadId, `the draft ${JSON.stringify([made.recipientOwnerId, made.leadId])}`);
+      // the link is generated: the person is in the CRM, in Proposta, in the colleague's name, with the proposal in the history
+      const shared = (await http.post(`/proposals/${made.id}/send`, { share: true }, asUser(tok))).data;
+      assert(shared.crm && shared.crm.created && shared.crm.leadId, `no lead from the link ${JSON.stringify(shared.crm)}`);
+      const leadId = shared.crm.leadId;
+      const row = sql(`SELECT l.ownerId || '|' || l.cpf || '|' || COALESCE(l.source,'') || '|' || s.name FROM Leads l JOIN LeadStages s ON s.id = l.stageId WHERE l.id=${leadId}`).split("|");
+      assert(Number(row[0]) === colleague && row[1] === "11144477735" && row[2] === "Proposta avulsa" && /proposta/i.test(row[3]), `the lead ${JSON.stringify(row)}`);
+      assert(sql(`SELECT leadId FROM Proposals WHERE id=${made.id}`) === String(leadId), "the proposal is not in the lead");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Proposta avulsa #${made.id} gerada%'`)) === 1, "no history line");
+      // who made it still finds and opens it; the list says who has it in the CRM
+      const listed = (await http.get("/proposals", { params: { standalone: 1, q: "caio amigo" }, ...asUser(tok) })).data.find(p => p.id === made.id);
+      assert(listed && listed.crm && listed.crm.leadId === leadId && listed.crm.ownerId === colleague && listed.crm.ownerName, `the list ${JSON.stringify(listed && listed.crm)}`);
+      assert((await http.get(`/proposals/${made.id}`, asUser(tok))).status === 200, "who made it cannot open it");
+      // the colleague has the lead and sends the enrollment form from it
+      assert((await http.get(`/leads/${leadId}`, asUser(colTok))).status === 200, "the colleague does not see the lead");
+      const form = await http.post(`/leads/${leadId}/enrollment-form`, {}, asUser(colTok));
+      assert(form.status === 200 && /\/ficha\//.test(form.data.link || ""), `enrollment form ${form.status} ${JSON.stringify(form.data).slice(0, 120)}`);
+      // another avulsa for the same person (same phone, no CPF), in my name: the PDF goes to the same lead, its owner stays
+      const again = (await http.post("/proposals", { recipientName: "Caio A.", recipientPhone: "69998887766", courseId: propCourse.id, params }, asUser(tok))).data;
+      assert((await http.get(`/proposals/${again.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" })).status === 200, "pdf");
+      assert(sql(`SELECT leadId FROM Proposals WHERE id=${again.id}`) === String(leadId), "the second avulsa made another lead");
+      assert(Number(sql(`SELECT COUNT(*) FROM Leads WHERE cpf='11144477735' OR phone IN ('5569998887766','556998887766','69998887766')`)) === 1, "the person was doubled in the CRM");
+      assert(Number(sql(`SELECT ownerId FROM Leads WHERE id=${leadId}`)) === colleague, "the owner changed");
+      // the second PDF of the same proposal changes nothing
+      await http.get(`/proposals/${again.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" });
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Proposta avulsa #${again.id} gerada%'`)) === 1, "the second PDF wrote again");
+      // only a name: the lead is mine (the default)
+      const bare = (await http.post("/proposals", { recipientName: "Nome Solto Avulsa", courseId: propCourse.id, params }, asUser(tok))).data;
+      await http.get(`/proposals/${bare.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" });
+      const bareLead = sql(`SELECT leadId FROM Proposals WHERE id=${bare.id}`);
+      assert(bareLead && Number(sql(`SELECT ownerId FROM Leads WHERE id=${bareLead}`)) === me, "the default owner is not who made it");
     });
 
     // ------------------------------------------- admission, CPF and payments
