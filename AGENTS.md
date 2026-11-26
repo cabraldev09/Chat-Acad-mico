@@ -88,6 +88,23 @@ Para um erro: reproduza antes de corrigir e mostre o mesmo teste passando depois
 - Se algo falhou ou foi pulado, diga isso com clareza. Não afirme que funciona sem ter verificado.
 - Na dúvida entre duas opções, recomende uma e explique o motivo em uma frase.
 
+## Skills
+
+Em `.claude/skills/` (origem e licenças em `.claude/skills/ORIGEM.md`). Em conflito, vale este arquivo: as skills
+falam em "merge" e "PR" de forma genérica, mas aqui o PR só abre a pedido do usuário e o merge segue "Como entregar".
+
+| Skill | Use quando |
+|---|---|
+| `systematic-debugging` | Houver erro, teste falhando ou comportamento estranho: ache a causa antes de corrigir. |
+| `test-driven-development` | For implementar função ou corrigir erro: escreva o teste que falha primeiro. |
+| `verification-before-completion` | For dizer que está pronto, corrigido ou passando: rode os comandos e confira a saída antes. |
+| `requesting-code-review` | Terminar uma tarefa ou funcionalidade, antes de entregar: peça revisão do que mudou. |
+| `receiving-code-review` | Receber comentários de revisão: verifique cada um e responda com fundamento, sem concordar às cegas. |
+| `webapp-testing` | Precisar abrir a tela no navegador (Playwright) para testar, ver erros do console ou tirar captura. |
+| `frontend-design` | Criar ou refazer uma tela: escolha visual com intenção, respeitando as regras de "Telas" acima. |
+| `web-design-guidelines` | Revisar interface quanto a boas práticas e acessibilidade. |
+| `karpathy-guidelines` | Qualquer código: mudança pequena, simples e só no que foi pedido. |
+
 ## Papéis da equipe
 
 | Agente | Cuida de |
