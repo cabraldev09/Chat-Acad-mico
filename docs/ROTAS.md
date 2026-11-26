@@ -18,6 +18,21 @@ realizadas, comissões, Alunos da tutoria e Avisos da tutoria, Retenção e os a
 A coordenação continua com os poderes da gestão (`isAdminReq`): o que muda é o que ela vê. Ela só muda a equipe e os dados (cidades
 atendidas, nome, exclusão, importação) dos polos em que está.
 
+## Análises, alunos do portal e conexões por polo (helpers/PoloAccess.ts)
+
+| Perfil | Análises curriculares e acadêmicas, alunos do portal | Conexões (WhatsApp, Telegram...) e QR Code |
+|---|---|---|
+| admin | todos | todas; vê o QR Code |
+| coordenacao | as dos polos em que está e as que ela mesma fez; análise ou aluno sem polo é da administração. Sem polo, só o que ela fez | só as conexões cujo dono é pessoa dos seus polos (ou ela mesma); conexão sem dono (a da instituição) é da administração; **nunca recebe o QR Code** (só a administração e o dono do número) |
+| tutor, consultor | sem mudança | sem mudança (os números compartilhados e o próprio) |
+
+- A regra vale na lista, na ficha, no arquivo (download), no reenvio de proposta e convite, na edição, na exclusão e nos eventos em tempo real
+  (`whatsapp`, `whatsappSession`, `safety`, `whatsappAlert`).
+- A análise acadêmica segue o aluno do portal ou o lead (o polo vem deles); a curricular tem polo próprio. A coordenação só cria análise ou aluno nos seus polos
+  e só cria ou repassa conexão para pessoas dos seus polos.
+- Os "boletins" do pedido (`/commercial-grades`) são o catálogo de grades dos cursos: não têm pessoa nem polo e não entraram.
+- Fora desta regra: afiliados (não têm polo) e a lista de usuários.
+
 ## Conversas, contatos, metas e painéis por polo (helpers/TicketPoloScope.ts)
 
 | Perfil | Conversas e contatos |

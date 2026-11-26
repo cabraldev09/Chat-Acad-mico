@@ -10,6 +10,7 @@ import { isManagerRole } from "../helpers/Roles";
 import { maskConfig } from "../helpers/Secrets";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
 import { assertLead } from "../middleware/scope";
+import { coordinationReachesConnection, ownerOfConnection } from "../helpers/PoloAccess";
 import { hasContactAccess } from "../middleware/canAccessContact";
 import Ticket from "../models/Ticket";
 import Lead from "../models/Lead";
@@ -80,8 +81,13 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     if (event === "contact") return contactAllowed(req, Number(data.contact?.id || data.contactId));
     if (["whatsapp", "whatsappSession", "whatsappAlert", "safety", "historyImport"].includes(event)) {
       const item = data.session || data.whatsapp || data;
-      // the coordination has the same powers as the administration
-      return manager || Number(item.ownerId || data.userId) === Number(user.id);
+      // the QR Code travels in these events: the administration and the owner of the number; the coordination only for the numbers of people of its polos
+      // (a connection with no owner is the administration's)
+      if (user.role === "admin" || user.profile === "admin") return true;
+      let ownerId = Number(item.ownerId || data.userId) || null;
+      if (!ownerId && user.role === "coordenacao" && (item.id || data.whatsappId)) ownerId = await ownerOfConnection(item.id || data.whatsappId);
+      if (ownerId && ownerId === Number(user.id)) return true;
+      return user.role === "coordenacao" && (await coordinationReachesConnection(req, ownerId));
     }
     if (event === "schedule") {
       const row = data.row || await Schedule.findByPk(data.id);
@@ -165,7 +171,12 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
       if (event === "whatsapp" || event === "whatsappSession") {
         const key = event === "whatsapp" ? "whatsapp" : "session";
         const item = data[key];
-        if (item) outgoing = { ...data, [key]: { ...item, config: maskConfig(item.config) } };
+        if (item) {
+          const masked: any = { ...item, config: maskConfig(item.config) };
+          // the QR Code is the login of the number: only the administration and the owner of the number get it (not the coordination)
+          if (user.role !== "admin" && user.profile !== "admin" && Number(item.ownerId) !== Number(user.id)) { delete masked.qrcode; delete masked.qrCode; }
+          outgoing = { ...data, [key]: masked };
+        }
       }
       const id = data.ticket?.id || data.ticketId || data.message?.ticketId;
       if (id) socket.data.visibleTickets.add(String(id));
