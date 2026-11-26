@@ -10,7 +10,7 @@ import { isManagerRole } from "../helpers/Roles";
 import { maskConfig } from "../helpers/Secrets";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
 import { assertLead, assertLeadRead } from "../middleware/scope";
-import { isQueueLead, redactQueueLead } from "../helpers/LeadQueue";
+import { isQueueLead, maskQueueMessage, maskQueueTicket, queueContactIds, redactQueueLead } from "../helpers/LeadQueue";
 import { hasContactAccess } from "../middleware/canAccessContact";
 import Ticket from "../models/Ticket";
 import Lead from "../models/Lead";
@@ -140,6 +140,8 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
   // open at once) used to repeat the database checks once per connection. Nothing is kept after this event, so a transfer is
   // always judged with fresh data.
   const decisions = new Map<string, Promise<boolean>>();
+  // one read of "is this person still in the common queue" for the event, shared by every consultant who receives it
+  let queuedOf: Promise<Set<number>> | null = null;
   await Promise.all(Array.from(io.sockets.sockets.values()).map(async socket => {
     if (rooms.length && !rooms.some(room => socket.rooms.has(room))) return;
     const token = socket.data.token;
@@ -174,6 +176,13 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
       }
       // a lead nobody owns yet (the common queue) reaches a consultant only as a card: no CPF, notes or e-mail before "Assumir"
       if (event === "lead" && data.lead && user.role === "consultor" && user.profile !== "admin" && isQueueLead(data.lead)) outgoing = { ...data, lead: redactQueueLead(data.lead) };
+      // the conversation of a person still in the common queue reaches a consultant as masked text without attachments, until they assume it
+      if ((event === "appMessage" || event === "ticket") && user.role === "consultor" && user.profile !== "admin" && data.ticket && !data.ticket.userId && !data.ticket.isGroup && data.ticket.contactId) {
+        if (!queuedOf) queuedOf = queueContactIds([Number(data.ticket.contactId)]);
+        if ((await queuedOf).has(Number(data.ticket.contactId))) {
+          outgoing = { ...data, ticket: maskQueueTicket(data.ticket), ...(data.message ? { message: maskQueueMessage(data.message) } : {}) };
+        }
+      }
       const id = data.ticket?.id || data.ticketId || data.message?.ticketId;
       if (id) socket.data.visibleTickets.add(String(id));
       socket.emit(event, outgoing);

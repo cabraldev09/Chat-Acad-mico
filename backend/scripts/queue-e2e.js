@@ -291,6 +291,76 @@ const runSla = () => require("util").promisify(require("child_process").execFile
       assert((await http.put(`/leads/${q1.leadId}`, { notes: "ok" }, as(admin))).status === 200, "admin could not edit");
     });
 
+    // ------------------------------------------------------------ 3b. what is read before assuming (audit A, B, C)
+    console.log("\nAntes de assumir: o que a conversa e o contato mostram");
+    await test("a conversation copied from the phone or closed is never offered by its id (read and claim), only the live pending one of the queue is", async () => {
+      // on the QR number of another person, in a sector the consultant is not in: only the queue exception could open them
+      const mkPlain = status => {
+        seq += 1;
+        const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Sem lead ${seq}', 'tg_${9500 + seq}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        const tid = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, aiActive, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('${status}', ${contactId}, ${qrId}, ${queue2Id}, NULL, false, 0, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return { tid: Number(tid), contactId: Number(contactId) };
+      };
+      const hist = mkPlain("pending");
+      sql(`UPDATE Tickets SET isHistorical = true WHERE id=${hist.tid}`);
+      const closed = mkPlain("closed");
+      const archived = mkPlain("pending");
+      sql(`UPDATE Tickets SET archivedAt = NOW() WHERE id=${archived.tid}`);
+      const live = mkPlain("pending");
+      for (const t of [hist, closed, archived]) {
+        assert((await http.get(`/messages/${t.tid}`, as(joao))).status === 403, `ticket ${t.tid} was readable by its id`);
+        assert((await http.get(`/tickets/${t.tid}`, as(joao))).status === 403, `ticket ${t.tid} was shown by its id`);
+        assert((await http.post(`/tickets/${t.tid}/claim`, {}, as(joao))).status === 403, `ticket ${t.tid} was claimed`);
+        assert(tick(t.tid).userId === null, "the claim took it");
+      }
+      assert((await http.get(`/messages/${live.tid}`, as(joao))).status === 200, "the live pending one is not readable");
+    });
+    await test("before assuming, the conversation is plain text with CPF, e-mail and phones masked and no attachments; after assuming everything is normal", async () => {
+      const l = mkLead();
+      const msg = (id, body, type, url) => sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, mediaUrl, ack, createdAt, updatedAt) VALUES ('${id}', ${l.ticketId}, ${l.contactId}, '${body}', false, false, '${type}', ${url ? `'${url}'` : "NULL"}, 0, NOW(), NOW())`);
+      msg(`m1-${l.ticketId}`, "Meu CPF é 111.444.777-35 e meu email é fulano@exemplo.com, telefone (69) 99999-1234", "chat", null);
+      msg(`m2-${l.ticketId}`, "segue meu RG", "image", "rg-teste.jpg");
+      msg(`m3-${l.ticketId}`, "comprovante.pdf", "document", "comprovante-teste.pdf");
+      const r = await http.get(`/messages/${l.ticketId}`, as(joao));
+      assert(r.status === 200 && r.data.inQueue === true, `read ${r.status}`);
+      const all = JSON.stringify(r.data);
+      ["111.444.777-35", "fulano@exemplo.com", "99999-1234", "rg-teste", "comprovante-teste"].forEach(x => assert(!all.includes(x), `"${x}" reached the consultant before assuming: ${all.slice(0, 400)}`));
+      const text = r.data.messages.find(m => String(m.id) === `m1-${l.ticketId}`);
+      assert(text && /\[CPF\]/.test(text.body) && /\[EMAIL\]/.test(text.body), `not masked: ${text && text.body}`);
+      const image = r.data.messages.find(m => String(m.id) === `m2-${l.ticketId}`);
+      assert(image.mediaUrl === null && image.mediaType === "chat" && /assuma o lead/.test(image.body), `attachment shown: ${JSON.stringify(image)}`);
+      assert((await http.get(`/messages/${l.ticketId}/list?kind=media`, as(joao))).data.length === 0 && (await http.get(`/messages/${l.ticketId}/list?kind=docs`, as(joao))).data.length === 0, "the attachments list is not empty");
+      const shown = (await http.get(`/tickets/${l.ticketId}`, as(joao))).data;
+      assert(shown.inQueue === true && !JSON.stringify(shown.contact).includes("@"), "the conversation card carries the contact whole");
+      const listed = (await http.get(`/tickets?fila=true&status=pending`, as(joao))).data.tickets.find(t => t.id === l.ticketId);
+      assert(listed && listed.inQueue === true, "the queue list is not masked");
+      // the administration reads it whole, and so does the consultant after assuming
+      const adminView = JSON.stringify((await http.get(`/messages/${l.ticketId}`, as(admin))).data);
+      assert(adminView.includes("111.444.777-35") && adminView.includes("rg-teste"), "the administration lost the content");
+      assert((await http.post(`/leads/${l.leadId}/claim`, {}, as(joao))).status === 200, "claim");
+      const after = JSON.stringify((await http.get(`/messages/${l.ticketId}`, as(joao))).data);
+      assert(after.includes("111.444.777-35") && after.includes("fulano@exemplo.com") && after.includes("rg-teste"), "after assuming the content is not whole");
+    });
+    await test("the contact of the queue: name and number only, read-only until the consultant assumes", async () => {
+      const l = mkLead();
+      sql(`UPDATE Contacts SET email='contato-fila@exemplo.com' WHERE id=${l.contactId}`);
+      sql(`UPDATE Leads SET email='contato-fila@exemplo.com' WHERE id=${l.leadId}`);
+      const list = (await http.get("/contacts?searchParam=Pessoa", as(joao))).data.contacts.find(c => c.id === l.contactId);
+      assert(list && list.inQueue === true && list.name && list.number && list.email === undefined, `list ${JSON.stringify(list)}`);
+      const one = await http.get(`/contacts/${l.contactId}`, as(joao));
+      assert(one.status === 200 && one.data.email === undefined && one.data.inQueue === true, `show ${one.status} ${JSON.stringify(one.data)}`);
+      for (const [m, url, body] of [["put", `/contacts/${l.contactId}`, { name: "Trocado" }], ["put", `/contacts/${l.contactId}/staff`, { isStaff: true }], ["put", `/contacts/${l.contactId}/no-reply`, { noReply: true }], ["put", `/contacts/${l.contactId}/relation`, { relation: "friend" }], ["put", `/contacts/${l.contactId}/tags`, { tags: [] }]]) {
+        const r = await http[m](url, body, as(joao));
+        assert(r.status === 403 && code(r) === "ERR_LEAD_CLAIM_FIRST", `${m} ${url}: ${r.status} ${JSON.stringify(r.data)}`);
+      }
+      assert(sql(`SELECT name FROM Contacts WHERE id=${l.contactId}`).startsWith("Pessoa") && sql(`SELECT isStaff FROM Contacts WHERE id=${l.contactId}`) !== "t", "the contact changed");
+      assert((await http.get(`/contacts/${l.contactId}`, as(admin))).data.email === "contato-fila@exemplo.com", "the administration lost the e-mail");
+      assert((await http.post(`/leads/${l.leadId}/claim`, {}, as(joao))).status === 200, "claim");
+      const own = await http.get(`/contacts/${l.contactId}`, as(joao));
+      assert(own.status === 200 && own.data.email === "contato-fila@exemplo.com" && own.data.inQueue === undefined, "after assuming the contact is not whole");
+      assert((await http.put(`/contacts/${l.contactId}`, { name: "Pessoa Renomeada" }, as(joao))).status === 200, "the owner could not edit the contact");
+    });
+
     // ------------------------------------------------------------ 4. assuming
     console.log("\nAssumir");
     await test("Assumir: the lead becomes theirs, the conversation too (one event, one record), and it leaves the others' screens", async () => {

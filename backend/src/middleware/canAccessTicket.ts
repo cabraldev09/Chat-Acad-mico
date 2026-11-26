@@ -50,7 +50,7 @@ export const assertTicketAccess = async (
     }
 
     const ticket = await Ticket.findByPk(ticketId, {
-      attributes: ["id", "userId", "queueId", "segment", "isGroup", "whatsappId", "contactId"]
+      attributes: ["id", "userId", "queueId", "segment", "isGroup", "whatsappId", "contactId", "status", "isHistorical", "archivedAt"]
     });
     if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
 
@@ -60,12 +60,17 @@ export const assertTicketAccess = async (
     // "Assumir" first (the send is refused with ERR_LEAD_CLAIM_FIRST until the lead is theirs)
     let queueTicket = false;
     let queueLead = false;
-    if (role === "consultor" && !ticket.userId && !ticket.isGroup && (!ticket.segment || ticket.segment === "sales") && (await isQueueMode())) {
+    // (the same condition as the Fila list: pending, live, not archived; a conversation copied from the phone or closed is never offered, even by its id)
+    if (role === "consultor" && !ticket.userId && ticket.status === "pending" && !ticket.isHistorical && !ticket.archivedAt && !ticket.isGroup && (!ticket.segment || ticket.segment === "sales") && (await isQueueMode())) {
       const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "ownerId", "enrolledAt", "wonAt", "lostAt", "isHistorical", "onboardingStatus"] });
       queueLead = !!lead && isQueueLead(lead);
       queueTicket = queueLead || (!lead && isPlainPerson(await Contact.findByPk(ticket.contactId, { attributes: ["id", "isStaff", "isPersonal", "kind"] })));
     }
-    if (queueTicket && (mode === "read" || mode === "claim")) return;
+    if (queueTicket && (mode === "read" || mode === "claim")) {
+      // before assuming, the conversation is read as masked text without attachments (see helpers/LeadQueue)
+      if (mode === "read") (req as any).queueView = true;
+      return;
+    }
     if (queueTicket && queueLead && mode === "send") throw new AppError("ERR_LEAD_CLAIM_FIRST", 409);
     // another number's groups and personal chats are not readable, even knowing the id
     if (!ticketVisibleIn(await connectionScopeOf(me, role), ticket, me)) throw new AppError("ERR_NO_PERMISSION", 403);

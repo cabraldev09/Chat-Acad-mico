@@ -1,4 +1,5 @@
 import { hasContactAccessOrFree } from "../middleware/canAccessContact";
+import { maskQueueTicket, queueContactIds } from "../helpers/LeadQueue";
 import { ticketPoloSql, ticketPolosOf } from "../helpers/TicketPoloScope";
 import { chatIdOf } from "../helpers/ChatId";
 import { Request, Response } from "express";
@@ -134,6 +135,11 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     fila
   });
 
+  // the conversations of the common queue show only masked text (helpers/LeadQueue)
+  if (roleOf(req.user) === "consultor") {
+    const queued = await queueContactIds(tickets.filter(t => !t.userId && !t.isGroup).map(t => t.contactId));
+    if (queued.size) return res.status(200).json({ tickets: tickets.map(t => (!t.userId && !t.isGroup && queued.has(t.contactId) ? maskQueueTicket(t) : t)), count, hasMore });
+  }
   return res.status(200).json({ tickets, count, hasMore });
 };
 
@@ -207,6 +213,7 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await ShowTicketService(ticketId);
   const pinned = (await TicketPin.count({ where: { ticketId, userId: Number(req.user.id) } })) > 0;
 
+  if ((req as any).queueView) return res.status(200).json({ ...maskQueueTicket(ticket), pinned });
   return res.status(200).json({ ...ticket.toJSON(), pinned });
 };
 

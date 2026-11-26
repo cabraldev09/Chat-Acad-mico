@@ -5,6 +5,8 @@ import Lead from "../models/Lead";
 import Ticket from "../models/Ticket";
 import { assertTicketAccess } from "./canAccessTicket";
 import { seesEveryPolo, withLeadScope } from "./scope";
+import { roleOf } from "../helpers/Roles";
+import { queueContactIds } from "../helpers/LeadQueue";
 
 // Who may read or change a contact: the administration always; everybody else (the coordination included: its polos) only when the person
 // is one of their leads (see leadScopeWhere) or when they can read one of the conversations of that contact. Same rule the live updates
@@ -35,5 +37,10 @@ export const canAccessContact = async (req: Request, _res: Response, next: NextF
   const id = Number(req.params.contactId);
   if (!Number.isInteger(id) || id <= 0) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
   if (!(await hasContactAccess(req, id))) throw new AppError("ERR_NO_PERMISSION", 403);
+  // THE COMMON QUEUE: the person of a lead nobody assumed yet is only read, as name and number; to change it (name, e-mail, marks, tags) the consultant assumes first
+  if (roleOf(req.user as any) === "consultor" && (await queueContactIds([id])).has(id)) {
+    if (req.method !== "GET") throw new AppError("ERR_LEAD_CLAIM_FIRST", 403);
+    (req as any).contactInQueue = true;
+  }
   next();
 };

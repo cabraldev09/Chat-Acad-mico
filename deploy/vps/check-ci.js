@@ -1,5 +1,5 @@
 // Deployment gate: require the exact revision's unit/build and integration jobs.
-const approved = runs => ['verificar', 'api-ponta-a-ponta (canais e conversas)', 'api-ponta-a-ponta (responsabilidade pela conversa)', 'api-ponta-a-ponta (estatísticas e gestão comercial)', 'telas'].every(name => {
+const approved = runs => ['verificar', 'api-ponta-a-ponta (canais e conversas)', 'api-ponta-a-ponta (responsabilidade pela conversa)', 'api-ponta-a-ponta (estatísticas e gestão comercial)', 'api-ponta-a-ponta (fila comum e carteira)', 'telas'].every(name => {
   const latest = runs.filter(run => run.name === name).sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0];
   return !!latest && latest.status === 'completed' && latest.conclusion === 'success';
 });

@@ -7,10 +7,10 @@ vi.mock("../../src/models/PoloMember", () => ({ default: { findAll: async () => 
 vi.mock("../../src/models/UserQueue", () => ({ default: { findAll: async () => [] } }));
 vi.mock("../../src/models/Queue", () => ({ default: { findAll: async () => [] } }));
 vi.mock("../../src/models/Lead", () => ({ default: { findOne: async () => null, findByPk: async () => null } }));
-vi.mock("../../src/models/Contact", () => ({ default: { findByPk: async () => null } }));
+vi.mock("../../src/models/Contact", () => ({ default: { findByPk: async () => null, findAll: async () => [] } }));
 
 import { Op } from "sequelize";
-import { firstNameOf, isPlainPerson, isQueueLead, queueLeadSql, queueLeadWhere, queueTicketSql, redactQueueLead } from "../../src/helpers/LeadQueue";
+import { HIDDEN_ATTACHMENT, maskQueueMessage, minimalQueueContact, scrubText, firstNameOf, isPlainPerson, isQueueLead, queueLeadSql, queueLeadWhere, queueTicketSql, redactQueueLead } from "../../src/helpers/LeadQueue";
 import { leadReadScopeWhere, leadScopeWhere } from "../../src/middleware/scope";
 import { connectionScopeOf, contactScopeWhere, ticketScopeWhere, ticketVisibleIn } from "../../src/helpers/ConnectionScope";
 
@@ -115,5 +115,36 @@ describe("fila comum: o que o consultor vê do lead antes de assumir", () => {
     expect(card.commercial).toBeNull();
     expect(card.payments).toEqual([]);
     expect(card.tags).toEqual([]);
+  });
+});
+
+describe("fila comum: a conversa e o contato antes de assumir", () => {
+  it("a conversa da fila só vale viva: pendente, não histórica, não arquivada", () => {
+    const sql = queueTicketSql('"Ticket"');
+    expect(sql).toContain(`"Ticket"."status" = 'pending'`);
+    expect(sql).toContain('"Ticket"."isHistorical" = false');
+    expect(sql).toContain('"Ticket"."archivedAt" IS NULL');
+  });
+  it("o texto sai com CPF, e-mail e telefones mascarados", () => {
+    const out = scrubText("CPF 111.444.777-35, fulano@exemplo.com, tel (69) 99999-1234 e protocolo 123456789012");
+    expect(out).not.toMatch(/111\.444|fulano|99999|123456789012/);
+    expect(out).toContain("[CPF]");
+    expect(out).toContain("[EMAIL]");
+  });
+  it("a mensagem perde mídia, anexo e transcrição, e avisa", () => {
+    const m = maskQueueMessage({ id: "1", body: "segue o RG 12.345.678-9", mediaType: "image", mediaUrl: "https://x/rg.jpg", transcript: "texto falado", contact: { id: 1, name: "A", number: "55", email: "a@b.c" } });
+    expect(m.mediaUrl).toBeNull();
+    expect(m.mediaType).toBe("chat");
+    expect(m.transcript).toBeNull();
+    expect(m.body).toContain(HIDDEN_ATTACHMENT);
+    expect(JSON.stringify(m)).not.toMatch(/rg\.jpg|12\.345|a@b\.c/);
+    expect(maskQueueMessage({ id: "2", body: "oi", mediaType: "chat", mediaUrl: null }).body).toBe("oi");
+  });
+  it("o contato da fila é só nome e número", () => {
+    const c = minimalQueueContact({ id: 3, name: "Pessoa", number: "5569", email: "x@y.z", extraInfo: [{ name: "cpf", value: "1" }], tags: [{ id: 1 }], isStaff: false });
+    expect(c).toMatchObject({ id: 3, name: "Pessoa", number: "5569", inQueue: true });
+    expect(c.email).toBeUndefined();
+    expect(c.extraInfo).toEqual([]);
+    expect(c.isStaff).toBeUndefined();
   });
 });

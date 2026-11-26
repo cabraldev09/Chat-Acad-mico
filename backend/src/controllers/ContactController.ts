@@ -11,7 +11,7 @@ import { Op, literal } from "sequelize";
 import { csvAsText, csvDay, csvBody } from "../helpers/Csv";
 import { roleOf } from "../helpers/Roles";
 import { connectionScopeOf, contactScopeWhere } from "../helpers/ConnectionScope";
-import { isQueueMode } from "../helpers/LeadQueue";
+import { isQueueMode, minimalQueueContact, queueContactIds } from "../helpers/LeadQueue";
 import { contactPoloSql, ticketPolosOf } from "../helpers/TicketPoloScope";
 import { portable } from "../helpers/sqlDialect";
 import { hasContactAccessOrFree } from "../middleware/canAccessContact";
@@ -77,6 +77,11 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     kind: kind === "people" || kind === "groups" ? kind : undefined
   });
 
+  // the people of the common queue (nobody assumed them yet) come as name and number only: no e-mail, no extra information
+  if (roleOf(req.user) === "consultor") {
+    const queued = await queueContactIds(contacts.map(c => c.id));
+    if (queued.size) return res.json({ contacts: contacts.map(c => (queued.has(c.id) ? minimalQueueContact(c) : c)), count, hasMore });
+  }
   return res.json({ contacts, count, hasMore });
 };
 
@@ -187,6 +192,8 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   const { contactId } = req.params;
 
   const contact = await ShowContactService(contactId);
+  // the person of the common queue, before it is assumed: only name and number
+  if ((req as any).contactInQueue) return res.status(200).json(minimalQueueContact(contact));
 
   return res.status(200).json(contact);
 };
