@@ -1,4 +1,5 @@
 import { Op } from "sequelize";
+import { lastReplyOf } from "./LastReply";
 import { getSetting } from "../../helpers/AppSettings";
 import AgentTurnLog from "../../models/AgentTurnLog";
 import AiAgent from "../../models/AiAgent";
@@ -250,14 +251,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   const lastBot = [...(d.history || [])].reverse().find(h => h.role === "assistant")?.content || "";
   // the agent's whole last reply: its bubbles can be stored one by one (a slower server keeps them apart), and "nessa área" refers to the
   // bubble that named the area, not only to the last one ("Qual deles te interessa?")
-  const lastBotTurn = (() => {
-    const h = d.history || [];
-    let i = h.length - 1;
-    while (i >= 0 && h[i].role !== "assistant") i -= 1;
-    const parts: string[] = [];
-    while (i >= 0 && h[i].role === "assistant") { parts.unshift(String(h[i].content || "")); i -= 1; }
-    return parts.join("\n");
-  })();
+  const lastBotTurn = lastReplyOf(d.history || [], lastText);
   const fresh = !state.slots.lastOutboundAt || returningSince(state.slots.lastOutboundAt);
   // the question of the course was already asked and nothing came of it: the areas are offered instead of the same question again
   const courseAskOrHelp = async (next: string | null): Promise<string | null> => {
