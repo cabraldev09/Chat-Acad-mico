@@ -20,6 +20,8 @@ permissions:
   contents: read
   checks: read
   pull-requests: read
+  # a trava lê o histórico das publicações para saber qual versão está no ar (deploy/vps/check-ci.js)
+  actions: read
 
 concurrency:
   group: deploy-vps
@@ -46,7 +48,8 @@ jobs:
           EARLY: ${{ github.event_name == 'push' }}
         run: |
           SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
-          # trava de publicação: só vai para produção o commit de um PR mesclado com o rótulo "publicar" (aplicado pela coordenação após a auditoria).
+          # trava de publicação: só vai para produção o commit de um PR mesclado com o rótulo "publicar" (aplicado pela coordenação após a auditoria, depois do último
+          # commit do PR), e só se TODOS os commits da main desde a última versão publicada também vierem de PRs assim (publicar leva a main inteira).
           # Sem o rótulo, o job termina em sucesso e nada é publicado; depois de aplicar o rótulo, rode "Atualizar a VPS" (workflow_dispatch) na main.
           rc=0; node deploy/vps/check-label.js "$SHA" || rc=$?
           if [ "$rc" = "2" ]; then
