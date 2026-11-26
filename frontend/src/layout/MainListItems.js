@@ -13,6 +13,7 @@ import MessagesSquareIcon from "lucide-react/dist/esm/icons/messages-square";
 import PlugIcon from "lucide-react/dist/esm/icons/plug-2";
 import ContactIcon from "lucide-react/dist/esm/icons/contact";
 import ZapIcon from "lucide-react/dist/esm/icons/zap";
+import RotateCcwIcon from "lucide-react/dist/esm/icons/rotate-ccw";
 import CalendarClockIcon from "lucide-react/dist/esm/icons/calendar-clock";
 import MegaphoneIcon from "lucide-react/dist/esm/icons/megaphone";
 import BarChartIcon from "lucide-react/dist/esm/icons/bar-chart-3";
@@ -357,6 +358,10 @@ const MainListItems = (props) => {
         </>
       )}
       {<ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />}
+      {/* the leads that stopped or gave up, with the reason: to be tried again */}
+      {user.role !== "relacionamento" && user.role !== "tutor" && user.role !== "academico" && (
+        <ListItemLink to="/crm/recuperacao" primary="Recuperação" icon={<RotateCcwIcon className="ico" />} collapsed={collapsed} />
+      )}
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}

@@ -54,6 +54,7 @@ const CrmBoard = lazy(() => import("../pages/CRM/Board"));
 const CrmPanel = lazy(() => import("../pages/CRM/Panel"));
 const CrmResults = lazy(() => import("../pages/CRM/Results"));
 const CrmTasks = lazy(() => import("../pages/CRM/Tasks"));
+const CrmRecovery = lazy(() => import("../pages/CRM/Recovery"));
 const CrmCommissions = lazy(() => import("../pages/CRM/Commissions"));
 const Goals = lazy(() => import("../pages/Goals"));
 const PoloGoals = lazy(() => import("../pages/PoloGoals"));
@@ -176,6 +177,7 @@ const Routes = () => {
                 <Route exact path="/crm" component={CrmBoard} isPrivate />
                 <Route exact path="/crm/painel" component={CrmPanel} isPrivate />
                 <Route exact path="/crm/tarefas" component={CrmTasks} isPrivate />
+                <Route exact path="/crm/recuperacao" component={CrmRecovery} isPrivate />
                 <Route exact path="/crm/comissoes" component={CrmCommissions} isPrivate salesOnly />
                 <Route exact path="/configuracoes" component={SettingsHub} isPrivate managerOnly />
                 <Route exact path="/crm/metas" component={Goals} isPrivate />
