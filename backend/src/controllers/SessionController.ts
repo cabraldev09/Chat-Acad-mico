@@ -8,6 +8,7 @@ import AuthUserService from "../services/UserServices/AuthUserService";
 import { SendRefreshToken } from "../helpers/SendRefreshToken";
 import { refreshCookieOptions } from "../helpers/SendRefreshToken";
 import { RefreshTokenService } from "../services/AuthServices/RefreshTokenService";
+import { SerializeUser } from "../helpers/SerializeUser";
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { email, password } = req.body;
@@ -43,7 +44,8 @@ export const update = async (
 
   SendRefreshToken(res, refreshToken);
 
-  return res.json({ token: newToken, user });
+  // the same person the login hands out (role resolved by roleOf, no internal fields): the screen reads user.role after every reload
+  return res.json({ token: newToken, user: SerializeUser(user) });
 };
 
 export const remove = async (
