@@ -2531,7 +2531,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const other = ticketOf("tg_5552");
       const before = tg.sent.length;
       const t0 = Date.now();
-      const f = await http.post("/messages/forward-batch", { messageIds: mine, ticketIds: [Number(other)] }, auth());
+      // a conversation waiting for an attendant is taken by the forward: the person confirms it (the screen asks first)
+      const f = await http.post("/messages/forward-batch", { messageIds: mine, ticketIds: [Number(other)], confirmAssume: true }, auth());
       assert(f.status === 202 && f.data.total === mine.length && f.data.batchId, `batch ${f.status} ${JSON.stringify(f.data)}`);
       assert(Date.now() - t0 < 2500, "the batch waited for the sending");
       await waitFor(() => tg.sent.slice(before).filter(x => /^send(Message|Photo|Document|Video|Audio|Voice)$/.test(x.method) && String(x.body.chat_id) === "5552").length >= mine.length, 15000, "batch delivered").catch(e => { throw new Error(`${e.message}: ${JSON.stringify(tg.sent.slice(before).map(x => [x.method, x.body.chat_id]))} mine=${mine}`); });
@@ -3995,6 +3996,44 @@ const postMeta = (id, payload, secret, badSig) => {
       const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
       const all = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.map(x => String(x.id));
       assert(all.includes(String(t)), "the all view misses a live conversation");
+    });
+    await test("forward: the destinations are searched on the server (conversations with the waiting and 24 h marks, contacts with no conversation), a waiting one is confirmed first, a contact gets a conversation, and Tentar de novo sends only the pairs that failed", async () => {
+      const mine = sql(`SELECT id FROM Messages WHERE ticketId=${tgTicket} AND fromMe=1 AND body <> '' ORDER BY createdAt LIMIT 1`).split("\n").filter(Boolean);
+      const other = Number(ticketOf("tg_5552"));
+      const prior = sql(`SELECT CONCAT(COALESCE(userId::text,''),'|',status) FROM Tickets WHERE id=${other}`);
+      sql(`UPDATE Tickets SET userId=NULL, status='pending' WHERE id=${other}`);
+      const adminId = Number(sql(`SELECT id FROM Users WHERE email='admin@whaticket.com'`));
+      const priorNumber = sql(`SELECT COALESCE(whatsappId::text,'') FROM Users WHERE id=${adminId}`);
+      const fresh = Number(sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Fwd Sem Conversa', 'tg_5559', '', false, 'person', 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      try {
+        // the list comes from the server, with the marks; searching finds the contact with no conversation
+        const all = (await http.get("/forward/targets", { params: { q: "", page: 1 }, ...auth() })).data;
+        const row = all.tickets.find(t => t.id === other);
+        assert(row && row.waiting === true && row.windowClosed === false, `the waiting conversation: ${JSON.stringify(row)}`);
+        const found = (await http.get("/forward/targets", { params: { q: "Fwd Sem" }, ...auth() })).data;
+        assert(found.contacts.some(c => c.id === fresh), `the contact with no conversation is not offered: ${JSON.stringify(found.contacts)}`);
+        assert(!(await http.get("/forward/targets", { params: { q: "Ana Souza" }, ...auth() })).data.contacts.some(c => c.number === "tg_5551"), "a contact with a live conversation was offered as a new one");
+        // taking a waiting conversation needs the confirmation
+        const ask = await http.post("/messages/forward-batch", { messageIds: mine, ticketIds: [other] }, auth());
+        assert(ask.status === 409 && ask.data.error === "ERR_FORWARD_CONFIRM_ASSUME" && ask.data.data && ask.data.data.count === 1, `no confirmation asked: ${ask.status} ${JSON.stringify(ask.data)}`);
+        // a contact with no conversation: it is opened on the person's number and the message goes
+        sql(`UPDATE Users SET whatsappId=${tgId} WHERE id=${adminId}`);
+        const before = tg.sent.length;
+        const toContact = await http.post("/messages/forward-batch", { messageIds: mine, contactIds: [fresh] }, auth());
+        assert(toContact.status === 202 && toContact.data.opened.length === 1, `forward to a contact: ${toContact.status} ${JSON.stringify(toContact.data)}`);
+        assert(sql(`SELECT CONCAT(whatsappId,'|',status,'|',userId) FROM Tickets WHERE id=${toContact.data.opened[0]}`) === `${tgId}|open|${adminId}`, "the new conversation is not on the person's number, with the person");
+        await waitFor(() => tg.sent.slice(before).some(x => /^send/.test(x.method) && String(x.body.chat_id) === "5559"), 10000, "the forward to the new conversation");
+        // Tentar de novo: only the pairs given go
+        const before2 = tg.sent.length;
+        const retry = await http.post("/messages/forward-batch", { pairs: [{ messageId: mine[0], ticketId: toContact.data.opened[0] }, { messageId: mine[0], ticketId: toContact.data.opened[0] }] }, auth());
+        assert(retry.status === 202 && retry.data.total === 1, `retry: ${retry.status} ${JSON.stringify(retry.data)}`);
+        await waitFor(() => tg.sent.slice(before2).filter(x => /^send/.test(x.method) && String(x.body.chat_id) === "5559").length === 1, 10000, "the retry");
+      } finally {
+        const [u, st] = prior.split("|");
+        sql(`UPDATE Tickets SET userId=${u || "NULL"}, status='${st}' WHERE id=${other}`);
+        sql(`UPDATE Users SET whatsappId=${priorNumber || "NULL"} WHERE id=${adminId}`);
+        sql(`UPDATE Tickets SET status='closed' WHERE contactId=${fresh}`);
+      }
     });
     await test("list ticks: the backfill fills old conversations and acks only move forward", async () => {
       const t = ticketOf("tg_5551");

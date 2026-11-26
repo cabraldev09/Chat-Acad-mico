@@ -41,6 +41,13 @@ export const parseVcard = (body) => {
   return { name, number: waid || number };
 };
 
+// every card of a message (WhatsApp sends several contacts in one message, each between BEGIN:VCARD and END:VCARD)
+export const parseVcards = (body) => {
+  const text = String(body || "");
+  const parts = text.split(/END:VCARD/i).map((p) => p.trim()).filter((p) => /BEGIN:VCARD|FN[:;]|TEL[:;]/i.test(p));
+  return (parts.length ? parts : [text]).map(parseVcard).filter((c) => c.name || c.number);
+};
+
 // +55 69 99366-7971, as people read a phone
 const phoneText = (digits) => {
   const d = String(digits || "").replace(/\D/g, "");
@@ -53,7 +60,7 @@ const phoneText = (digits) => {
 
 // A contact shared in the conversation: it shows the name and the phone of the card itself. Nothing is saved just because the card
 // is on the screen; "Conversar" finds the person (or registers them) and opens the conversation.
-const VcardPreview = ({ vcard, contact, numbers }) => {
+const OneCard = ({ vcard, contact, numbers }) => {
   const history = useHistory();
   const { user } = useContext(AuthContext);
   const [busy, setBusy] = useState(false);
@@ -99,6 +106,19 @@ const VcardPreview = ({ vcard, contact, numbers }) => {
           </Button>
         </Grid>
       </Grid>
+    </div>
+  );
+};
+
+// one message can carry several contacts: each one with its name, phone and "Conversar"
+const VcardPreview = ({ vcard, contact, numbers }) => {
+  const cards = useMemo(() => (vcard && (String(vcard).match(/BEGIN:VCARD/gi) || []).length > 1 ? parseVcards(vcard) : null), [vcard]);
+  if (!cards) return <OneCard vcard={vcard} contact={contact} numbers={numbers} />;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {cards.map((c, i) => (
+        <OneCard key={`${c.number}-${i}`} vcard={`BEGIN:VCARD\nFN:${c.name}\nTEL;waid=${c.number}:${c.number}\nEND:VCARD`} />
+      ))}
     </div>
   );
 };

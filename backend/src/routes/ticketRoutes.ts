@@ -26,6 +26,8 @@ ticketRoutes.put("/tickets/read-all", isAuth, TicketController.readAll);
 ticketRoutes.get("/tickets/:ticketId", isAuth, canReadTicket, TicketController.show);
 
 ticketRoutes.get("/tickets/:ticketId/welcome", isAuth, canReadTicket, TicketController.welcome);
+// what a transfer to the tutoring will do (call it on its number, or move this conversation to the tutor's QR Code), shown before confirming
+ticketRoutes.get("/tickets/:ticketId/transfer-preview", isAuth, canReadTicket, TicketController.transferPreview);
 
 ticketRoutes.get("/tickets/:ticketId/automation", isAuth, canReadTicket, TicketController.automation);
 

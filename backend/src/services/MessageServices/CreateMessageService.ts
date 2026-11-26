@@ -22,6 +22,7 @@ interface MessageData {
   ack?: number;
   quotedMsgId?: string;
   createdAt?: Date;
+  isForwarded?: boolean;
 }
 interface Request {
   messageData: MessageData;
