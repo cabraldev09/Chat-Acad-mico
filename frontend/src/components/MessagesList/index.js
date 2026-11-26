@@ -42,6 +42,9 @@ import whatsBackground from "../../assets/wa-background.png";
 import whatsBackgroundDark from "../../assets/wa-background-dark.png";
 import { wa, dayLabel, clock, friendlyBody } from "../chat/chatTheme";
 
+// the day and the time of a message, in full (shown when the pointer is over its time)
+const fullDate = (date) => new Date(date).toLocaleString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
   const dark = theme.palette.type === "dark";
@@ -255,7 +258,8 @@ const useStyles = makeStyles((theme) => {
       zIndex: 2,
     },
     withReactions: { marginBottom: 14 },
-    day: { alignSelf: "center", margin: "12px 0 8px", padding: "5px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 400, color: c.textSecondary, backgroundColor: c.chatChip, boxShadow: c.shadow },
+    // the day stays on top while the conversation scrolls (as on WhatsApp): the next day's label takes its place
+    day: { alignSelf: "center", margin: "12px 0 8px", padding: "5px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 400, color: c.textSecondary, backgroundColor: c.chatChip, boxShadow: c.shadow, position: "sticky", top: 8, zIndex: 3 },
     unreadDivider: {
       alignSelf: "center",
       margin: "14px 0 8px",
@@ -808,13 +812,13 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
             <div className={classes.deleted}>
               <Block style={{ fontSize: 16 }} />
               Mensagem apagada
-              <span className={classes.meta}>{clock(m.createdAt)}</span>
+              <span className={classes.meta} title={fullDate(m.createdAt)}>{clock(m.createdAt)}</span>
             </div>
           ) : m.bodyPurgedAt ? (
             <div className={classes.deleted}>
               <Block style={{ fontSize: 16 }} />
               Conteúdo apagado pela política de retenção
-              <span className={classes.meta}>{clock(m.createdAt)}</span>
+              <span className={classes.meta} title={fullDate(m.createdAt)}>{clock(m.createdAt)}</span>
             </div>
           ) : (
             <>
@@ -822,7 +826,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
               {showText && (
                 <div className={classes.text}>
                   <MarkdownWrapper>{friendlyBody(m.body)}</MarkdownWrapper>
-                  <span className={classes.meta}>
+                  <span className={classes.meta} title={fullDate(m.createdAt)}>
                     {m.starred && <Star style={{ fontSize: 12 }} />}
                     {m.isEdited && <span style={{ fontStyle: "italic" }}>editada</span>}
                     {clock(m.createdAt)}
@@ -831,7 +835,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
                 </div>
               )}
               {!showText && (
-                <span className={clsx(classes.meta, mediaOnly && classes.metaOnMedia)}>
+                <span className={clsx(classes.meta, mediaOnly && classes.metaOnMedia)} title={fullDate(m.createdAt)}>
                   {m.starred && <Star style={{ fontSize: 12 }} />}
                   {clock(m.createdAt)}
                   {ack(m)}
