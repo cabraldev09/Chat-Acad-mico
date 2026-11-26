@@ -50,8 +50,9 @@ const renewOnce = async () => {
 };
 
 // One renewal at a time for the whole screen: the first load (which reads who is signed in) and any request refused meanwhile share the
-// same call, so the server is not asked twice for the same thing. (The server does not rotate or burn the refresh cookie when it renews:
-// two calls at once would both work; sharing one is only to spare the server.)
+// same call, so the server is not asked twice for the same thing. (The login is SLIDING: every renewal makes the server issue a new refresh
+// cookie, but it does NOT rotate: the previous cookie stays valid until it expires or a logout changes the person's tokenVersion. Two calls at
+// once with the same cookie therefore both work; sharing one is only to spare the server.)
 let renewing = null;
 export const refreshSession = () => {
   if (!renewing) {
