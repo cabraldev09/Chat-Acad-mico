@@ -45,3 +45,15 @@ export const chatBehind = (chatTimeMs: number, copiedAtMs: number | null, lastSt
   if (!chatTimeMs || copiedAtMs === null) return false;
   return chatTimeMs > (lastStoredMs !== null ? lastStoredMs : copiedAtMs) + 5000;
 };
+
+// States WhatsApp Web goes through for a moment while it syncs or the phone's network blinks (not a real disconnection)
+const TRANSIENT_STATES = new Set(["OPENING", "PAIRING", "TIMEOUT"]);
+export const isTransientState = (state: string): boolean => TRANSIENT_STATES.has(String(state));
+
+// After a passing state, what goes to the database when the page is asked again: CONNECTED when it says so; the state it still reports; when it
+// does not answer, the state seen before, except during the first sync (a busy page is slow, the heartbeat decides then); nothing otherwise
+export const stateToWrite = (seen: string, nowState: string | null, inGrace: boolean): string | null => {
+  if (nowState === "CONNECTED") return "CONNECTED";
+  if (nowState) return nowState;
+  return inGrace ? null : seen;
+};

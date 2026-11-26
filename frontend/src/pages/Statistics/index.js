@@ -463,7 +463,12 @@ export default function Statistics() {
   const tutor = !!user && ["tutor", "academico"].includes(user.role);
   const wanted = new URLSearchParams(search).get("aba") || "geral";
   const tab = TABS.includes(wanted) ? wanted : "geral";
-  const [period, setPeriod] = useState({ range: "month" });
+  // the period can come in the address (the "Ver por consultor" of the Painel do CRM)
+  const [period, setPeriod] = useState(() => {
+    const q = new URLSearchParams(search);
+    const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : "");
+    return day(q.get("from")) ? { range: "custom", from: day(q.get("from")), to: day(q.get("to")) || day(q.get("from")) } : { range: "month" };
+  });
   const params = useMemo(() => periodParams(period), [period]);
   const [visited, setVisited] = useState(() => new Set([tab]));
   useEffect(() => { setVisited((v) => (v.has(tab) ? v : new Set([...v, tab]))); }, [tab]);

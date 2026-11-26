@@ -10,7 +10,7 @@ vi.mock("../../src/providers/WhatsApp", () => ({ whatsappProvider: {} }));
 vi.mock("../../src/libs/socket", () => ({ getIO: () => ({ emit: () => undefined }) }));
 vi.mock("../../src/helpers/Fire", () => ({ fire: () => undefined }));
 
-import { chatBehind, eachLimited, settledChats } from "../../src/providers/WhatsApp/Implementations/chatSync";
+import { chatBehind, eachLimited, isTransientState, settledChats, stateToWrite } from "../../src/providers/WhatsApp/Implementations/chatSync";
 import { placeOf, RECENT_DAYS } from "../../src/services/WbotServices/ImportHistoryService";
 import { betterNameOf } from "../../src/services/ContactServices/CreateOrUpdateContactService";
 import { chatIdOfContact } from "../../src/services/WbotServices/ChatHistoryFromPhone";
@@ -88,5 +88,19 @@ describe("cópia das conversas do WhatsApp por QR Code", () => {
     expect(chatIdOfContact({ number: "55 (11) 99999-0000" })).toBe("5511999990000@c.us");
     expect(chatIdOfContact({ number: "120363000000000000", isGroup: true })).toBe("120363000000000000@g.us");
     expect(chatIdOfContact({ number: "" })).toBe(null);
+  });
+
+  it("um estado passageiro do WhatsApp Web não derruba a conexão na tela", () => {
+    expect(isTransientState("OPENING")).toBe(true);
+    expect(isTransientState("PAIRING")).toBe(true);
+    expect(isTransientState("TIMEOUT")).toBe(true);
+    expect(isTransientState("CONFLICT")).toBe(false);
+    expect(isTransientState("UNPAIRED")).toBe(false);
+    // perguntado de novo: voltou, continua, ou não respondeu
+    expect(stateToWrite("OPENING", "CONNECTED", false)).toBe("CONNECTED");
+    expect(stateToWrite("OPENING", "TIMEOUT", false)).toBe("TIMEOUT");
+    expect(stateToWrite("OPENING", null, false)).toBe("OPENING");
+    // na primeira sincronização a página ocupada demora: quem decide é a checagem de vida
+    expect(stateToWrite("OPENING", null, true)).toBe(null);
   });
 });

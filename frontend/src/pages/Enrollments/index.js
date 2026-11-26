@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { MenuItem, TextField } from "@material-ui/core";
 import { CheckCircle2, Download, ImagePlus } from "lucide-react";
 
@@ -34,8 +35,11 @@ const card = { border: "1px solid var(--line-strong)", borderRadius: 12, backgro
 export default function Enrollments() {
   const { user } = useContext(AuthContext);
   const now = new Date();
-  const [from, setFrom] = useState(iso(new Date(now.getFullYear(), now.getMonth(), 1)));
-  const [to, setTo] = useState(iso(now));
+  // the period can come in the address (the "Ver matrículas" of the Painel do CRM)
+  const asked = new URLSearchParams(useLocation().search);
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : "");
+  const [from, setFrom] = useState(day(asked.get("from")) || iso(new Date(now.getFullYear(), now.getMonth(), 1)));
+  const [to, setTo] = useState(day(asked.get("to")) || iso(now));
   const [poloId, setPoloId] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [polos, setPolos] = useState([]);

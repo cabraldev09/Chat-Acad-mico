@@ -58,7 +58,7 @@ import {
   WhatsappContextPayload
 } from "../../../handlers/handleWhatsappEvents";
 import { killLeftoverBrowsers } from "./browserProcesses";
-import { chatBehind, eachLimited, settledChats } from "./chatSync";
+import { chatBehind, eachLimited, isTransientState, settledChats, stateToWrite } from "./chatSync";
 
 interface Session extends Client {
   id?: number;
@@ -717,10 +717,14 @@ const RECONNECT_MAX_ATTEMPTS = 6;
 // a number with a long history takes minutes to load WhatsApp Web (it sits at 99% for a while): giving up early restarts the browser and the load begins again
 const READY_TIMEOUT_MS = Number(process.env.WHATSAPP_READY_TIMEOUT_MS) || 10 * 60 * 1000;
 const readyTimers = new Map<number, NodeJS.Timeout>();
+// the wait for "ready" of each number and when it began (it is renewed while the page shows loading progress, up to READY_MAX_MS)
+const READY_MAX_MS = Number(process.env.WHATSAPP_READY_MAX_MS) || 30 * 60 * 1000;
+const readyTimeouts = new Map<number, { fire: () => Promise<void>; since: number }>();
 const clearReadyTimer = (whatsappId: number) => {
   const t = readyTimers.get(whatsappId);
   if (t) clearTimeout(t);
   readyTimers.delete(whatsappId);
+  readyTimeouts.delete(whatsappId);
 };
 const memoryNote = () => `memória do processo ${Math.round(process.memoryUsage().rss / 1048576)} MB`;
 
@@ -809,8 +813,9 @@ const retryLater = async (whatsappId: number, reason: string): Promise<void> => 
 };
 
 // state of the sessions for the watchdog worker
-export const sessionWatch = (whatsappId: number): { hasClient: boolean; live: boolean; initializing: boolean } => ({
+export const sessionWatch = (whatsappId: number): { hasClient: boolean; live: boolean; initializing: boolean; inGrace: boolean } => ({
   hasClient: clients.has(whatsappId),
+  inGrace: inSyncGrace(whatsappId),
   live: sessions.some(s => s.id === whatsappId),
   initializing: initTimers.has(whatsappId) || retrying.has(whatsappId) || readyTimers.has(whatsappId)
 });
@@ -834,6 +839,29 @@ const markAlive = (whatsappId: number): void => {
     .catch(() => undefined);
 };
 
+// A passing state of WhatsApp Web, confirmed before it reaches the screen (see change_state)
+const STATE_CHECK_MS = Number(process.env.WHATSAPP_STATE_CHECK_MS) || 90 * 1000;
+const stateChecks = new Set<number>();
+const confirmStateLater = (whatsapp: Whatsapp, wbot: Session, seen: string): void => {
+  if (stateChecks.has(whatsapp.id)) return;
+  stateChecks.add(whatsapp.id);
+  setTimeout(async () => {
+    if (!stateChecks.delete(whatsapp.id) || clients.get(whatsapp.id) !== wbot) return;
+    const grace = inSyncGrace(whatsapp.id);
+    const now = await withTimeout(wbot.getState() as Promise<string>, grace ? 60000 : 20000).then(String).catch(() => null);
+    const write = stateToWrite(seen, now, grace);
+    if (!write) return;
+    if (write === "CONNECTED") {
+      aliveAt.delete(whatsapp.id);
+      markAlive(whatsapp.id);
+      return;
+    }
+    logger.warn(`Session ${whatsapp.name}: o WhatsApp Web continua em ${write}; status atualizado`);
+    await whatsapp.update({ status: write }).catch(() => undefined);
+    getIO().emit("whatsappSession", { action: "update", session: whatsapp });
+  }, STATE_CHECK_MS);
+};
+
 // What the page of each number looks like from inside: registered for sending, "ready" seen, the state WhatsApp Web reports and whether the helpers of
 // whatsapp-web.js are injected in the page (without them nothing can be read or sent, even when the page says CONNECTED). Logged by the watchdog.
 export interface SessionHealth { id: number; registered: boolean; ready: boolean; state: string | null; injected: boolean | null }
@@ -841,7 +869,7 @@ export const sessionHealth = async (): Promise<SessionHealth[]> => {
   const out: SessionHealth[] = [];
   for (const [id, wbot] of clients) {
     // eslint-disable-next-line no-await-in-loop
-    const state = await withTimeout(wbot.getState() as Promise<string>, 15000).catch(() => null);
+    const state = await withTimeout(wbot.getState() as Promise<string>, inSyncGrace(id) ? 60000 : 15000).catch(() => null);
     // eslint-disable-next-line no-await-in-loop
     const injected = await withTimeout(wbot.pupPage!.evaluate(() => typeof (window as any).WWebJS !== "undefined"), 15000).catch(() => null);
     out.push({ id, registered: sessions.some(s => s.id === id), ready: readySeen.has(id), state: state ? String(state) : null, injected });
@@ -898,7 +926,7 @@ export const reconcileStatuses = async (): Promise<void> => {
       const registered = sessions.some(s => s.id === id);
       if (!row || (row.status === "CONNECTED" && registered)) continue;
       // eslint-disable-next-line no-await-in-loop
-      const state = await withTimeout(wbot.getState(), 15000).catch(() => null);
+      const state = await withTimeout(wbot.getState(), inSyncGrace(id) ? 60000 : 15000).catch(() => null);
       if (state !== "CONNECTED") continue;
       // the page is connected but the "ready" event never came: the session is alive, so it is registered like a ready one.
       // Without this the watchdog saw "connected but no session here" and opened a SECOND browser on the same profile, which failed and restarted everything.
@@ -1582,9 +1610,7 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
           healInjection(whatsapp.id, wbot).catch(() => undefined);
         }
       }, 60000));
-      readyTimers.set(
-        whatsapp.id,
-        setTimeout(async () => {
+      const readyTimeout = async () => {
           readyTimers.delete(whatsapp.id);
           logger.error(
             `Session: ${sessionName} não ficou pronta em ${READY_TIMEOUT_MS / 1000}s depois de autenticar (${memoryNote()}). ` +
@@ -1606,12 +1632,20 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
           }
           if (clients.get(whatsapp.id) !== wbot) return;
           init(whatsapp);
-        }, READY_TIMEOUT_MS)
-      );
+      };
+      readyTimeouts.set(whatsapp.id, { fire: readyTimeout, since: Date.now() });
+      readyTimers.set(whatsapp.id, setTimeout(readyTimeout, READY_TIMEOUT_MS));
     });
 
     wbot.on("loading_screen", (percent: any, message: any) => {
       logger.info(`Session: ${sessionName} carregando ${percent}% ${message || ""}`);
+      // a big history keeps loading for a long time: while the page shows progress, the wait for "ready" starts again (up to READY_MAX_MS)
+      const pending = readyTimeouts.get(whatsapp.id);
+      const timer = readyTimers.get(whatsapp.id);
+      if (pending && timer && Date.now() - pending.since < READY_MAX_MS) {
+        clearTimeout(timer);
+        readyTimers.set(whatsapp.id, setTimeout(pending.fire, READY_TIMEOUT_MS));
+      }
     });
 
     wbot.on("auth_failure", async msg => {
@@ -1723,6 +1757,14 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("change_state", async newState => {
       logger.info(`Monitor session: ${sessionName}, ${newState}`);
+      const state = String(newState);
+      // WhatsApp Web passes through OPENING / PAIRING / TIMEOUT while it syncs or the phone's network blinks; a ready session is not shown as fallen
+      // for that: the page is asked again a little later, and only a state that lasts (and a page that does not answer) is written
+      if (isTransientState(state) && readySeen.has(whatsapp.id)) {
+        confirmStateLater(whatsapp, wbot, state);
+        return;
+      }
+      if (state === "CONNECTED") stateChecks.delete(whatsapp.id);
       try {
         await whatsapp.update({ status: newState });
 

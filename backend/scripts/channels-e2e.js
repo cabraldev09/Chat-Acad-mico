@@ -3053,6 +3053,17 @@ const postMeta = (id, payload, secret, badSig) => {
       const all = (await http.get("/leads", { params: { limit: 500, historical: "1" }, ...auth() })).data.leads.map(l => l.name);
       assert(all.includes("Conversa antiga"), "the historical lead should still be reachable on request");
     });
+    await test("leads of a period (the \"Ver leads\" of the Painel do CRM): from/to filter the list by the day the lead came", async () => {
+      const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
+      sql(`INSERT INTO Leads (name, stageId, isHistorical, createdAt, updatedAt) VALUES ('Periodo Antigo', ${stage}, false, '2025-03-10 12:00:00', NOW()), ('Periodo Dentro', ${stage}, false, '2025-04-15 12:00:00', NOW())`);
+      const names = async (params) => (await http.get("/leads", { params: { limit: 500, ...params }, ...auth() })).data.leads.map(l => l.name);
+      const april = await names({ from: "2025-04-01", to: "2025-04-30" });
+      assert(april.includes("Periodo Dentro") && !april.includes("Periodo Antigo"), `period filter: ${april.filter(n => n.startsWith("Periodo")).join(",")}`);
+      const all = await names({ search: "Periodo" });
+      assert(all.includes("Periodo Dentro") && all.includes("Periodo Antigo"), "without a period both should be listed");
+      // a broken date is ignored, never a server error
+      assert((await http.get("/leads", { params: { from: "abc" }, ...auth() })).status === 200, "a broken date broke the list");
+    });
     await test("working hours: answer time counts only business time, settings and alert threshold are saved", async () => {
       const { businessMinutes, normalizeBusiness } = require("../dist/helpers/BusinessTime");
       const cfg = normalizeBusiness({ enabled: true, days: { "1": [{ start: "08:00", end: "18:00" }], "2": [{ start: "08:00", end: "18:00" }] } });

@@ -49,10 +49,12 @@ const tick = async (): Promise<void> => {
       const recently = now - (lastTry.get(w.id) || 0) < 10 * 60000;
       let why = "";
       if ((w.status === "OPENING" || w.status === "TIMEOUT") && minutes > STUCK_MIN && !watch.initializing) why = `${w.status === "TIMEOUT" ? "sem resposta" : "abrindo"} há ${Math.round(minutes)} min`;
-      else if (w.status === "CONNECTED" && !watch.live && minutes > 5) why = "conectada no banco, mas sem sessão ativa neste servidor";
+      else if (w.status === "CONNECTED" && !watch.live && !watch.inGrace && minutes > 5) why = "conectada no banco, mas sem sessão ativa neste servidor";
       else if (w.status === "DISCONNECTED" && minutes > DEAD_MIN && !watch.initializing && hasLogin(w.id) && now - (lastTry.get(w.id) || 0) > DEAD_MIN * 60000) why = `desconectada há ${Math.round(minutes)} min com o login salvo`;
       // a number that came back clears the count of failed reopenings
       if (w.status === "CONNECTED" && watch.live) failedReopens.delete(w.id);
+      // a live session (registered and answering) or one in its first sync is never reopened here: that would cut the sync it is doing
+      if (watch.live && (watch.inGrace || w.status === "OPENING" || w.status === "TIMEOUT")) continue;
       if (!why || (recently && w.status !== "DISCONNECTED")) continue;
       if ((failedReopens.get(w.id) || 0) >= 3 && now - (lastTry.get(w.id) || 0) < SLOW_MS) continue;
       lastTry.set(w.id, now);
