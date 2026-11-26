@@ -826,6 +826,7 @@ export const triageList = async (req: Request, res: Response): Promise<Response>
     LEFT JOIN Users u ON u.id = COALESCE(t.userId, l.ownerId)
     WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL AND l.isHistorical = false
       AND (:ownerId IS NULL OR COALESCE(t.userId, l.ownerId) = :ownerId) ${polos}
+      AND NOT EXISTS (SELECT 1 FROM ConversationReadings r WHERE r.leadId = l.id AND r.kind = 'importacao' AND r.status = 'feita')
     ORDER BY l.createdAt ASC LIMIT 200`),
     { replacements: { ownerId }, type: QueryTypes.SELECT }
   )) as any[];

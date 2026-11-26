@@ -1,6 +1,6 @@
-# Rotas da API (604)
+# Rotas da API (612)
 
-Públicas: 40 · logado (qualquer perfil): 329 · gestão: 182 · admin: 44
+Públicas: 40 · logado (qualquer perfil): 331 · gestão: 183 · admin: 47
 
 ## Quem vê quais leads no CRM (middleware/scope.ts)
 
@@ -205,6 +205,7 @@ Até lá, não crie usuários de coordenação nem de relacionamento para franqu
 - DELETE /contact-lists/:id → salesStaff, ownList
 - POST /contact-lists/:id/import → salesStaff, notTutor
 - DELETE /contact-lists/:id/items/:itemId → salesStaff, ownList
+- POST /leads/:id/recovery → canAccessLead
 - PUT /retention/config → loadCrmPolos, isRetentionOperator
 - POST /retention/run → loadCrmPolos, isRetentionOperator
 - POST /retention/contact/:leadId → loadCrmPolos

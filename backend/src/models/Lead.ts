@@ -134,6 +134,19 @@ class Lead extends Model<Lead> {
   @Column(DataType.TEXT)
   lostNote: string;
 
+  // "Recuperação": a lead to try again (aberta), one that went back to the funnel (voltou) or one the team gave up on (descartada)
+  @Column
+  recoveryState: string;
+
+  @Column
+  recoveryAt: Date;
+
+  @Column
+  recoveryReason: string;
+
+  @Column
+  recoveryObjection: string;
+
   @Column
   wonAt: Date;
 

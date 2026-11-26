@@ -2,6 +2,7 @@ name: Atualizar a VPS
 
 # A cada mudança do servidor na main, entra na VPS por SSH e roda o update.sh. A VPS não precisa guardar nenhuma senha do GitHub:
 # o repositório é privado, então o fetch usa o token que o próprio GitHub cria para esta execução e que expira ao terminar.
+# Trava: só publica commit de PR com o rótulo "publicar" (deploy/vps/check-label.js). Sem o rótulo o job termina em sucesso, sem publicar.
 # Segredo (Settings > Secrets and variables > Actions): VPS_SSH_KEY (chave privada só para deploy). A identidade pública do servidor fica em deploy/vps/known_hosts.
 on:
   workflow_run:
@@ -44,7 +45,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EARLY: ${{ github.event_name == 'push' }}
         run: |
-          if node deploy/vps/check-ci.js "${{ github.event.workflow_run.head_sha || github.sha }}"; then
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          # trava de publicação: só vai para produção o commit de um PR mesclado com o rótulo "publicar" (aplicado pela coordenação após a auditoria).
+          # Sem o rótulo, o job termina em sucesso e nada é publicado; depois de aplicar o rótulo, rode "Atualizar a VPS" (workflow_dispatch) na main.
+          rc=0; node deploy/vps/check-label.js "$SHA" || rc=$?
+          if [ "$rc" = "2" ]; then
+            echo "::notice::Publicação aguardando o rótulo publicar, aplicado pela coordenação. O código está na main e não foi publicado."
+            echo "Publicação aguardando o rótulo \`publicar\` no PR deste commit (${SHA:0:7}). Nada foi publicado." >> "$GITHUB_STEP_SUMMARY"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [ "$rc" != "0" ]; then
+            exit "$rc"
+          fi
+          if node deploy/vps/check-ci.js "$SHA"; then
             echo "go=true" >> "$GITHUB_OUTPUT"
           elif [ "$EARLY" = "true" ]; then
             echo "Ainda sem testes aprovados para este código: a publicação fica para quando as Verificações da main passarem."
