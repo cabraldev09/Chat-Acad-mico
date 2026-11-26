@@ -15,6 +15,7 @@ import CreateMessageService from "../MessageServices/CreateMessageService";
 import { paceSend, recordSendResult } from "../SafetyServices/SendGuard";
 import { isAudio, toVoiceNote, toMp3 } from "../../helpers/ConvertAudio";
 import { logger } from "../../utils/logger";
+import { mediaOptionsOf } from "../../helpers/MediaSendOptions";
 
 interface Request {
   media: Express.Multer.File;
@@ -24,6 +25,8 @@ interface Request {
   // the same key twice never sends twice (see SendWhatsAppMessage)
   deliveryKey?: string;
   displayName?: string;
+  // how the file goes: a WhatsApp sticker or a GIF (otherwise by its type)
+  kind?: "sticker" | "gif";
 }
 
 const sendMedia = async ({
@@ -31,7 +34,8 @@ const sendMedia = async ({
   ticket,
   body,
   automated = false,
-  displayName
+  displayName,
+  kind
 }: Request): Promise<ProviderMessage> => {
   // Once a provider resolves the send, any later database or filesystem error is
   // ambiguous: the media may already be on the recipient's phone.
@@ -114,11 +118,9 @@ const sendMedia = async ({
     }
 
     const mediaOptions = {
-      caption: hasBody,
+      caption: kind === "sticker" ? undefined : hasBody,
       sendAudioAsVoice: asVoice,
-      sendMediaAsDocument:
-        media.mimetype.startsWith("image/") &&
-        !/^.*\.(jpe?g|png|gif)?$/i.exec(media.filename)
+      ...mediaOptionsOf(media, kind)
     };
 
     const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);

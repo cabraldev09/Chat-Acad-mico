@@ -13,6 +13,7 @@ import Popover from "@material-ui/core/Popover";
 import Switch from "@material-ui/core/Switch";
 import Add from "@material-ui/icons/Add";
 import Mood from "@material-ui/icons/Mood";
+import { Sticker } from "lucide-react";
 import Send from "@material-ui/icons/Send";
 import Mic from "@material-ui/icons/Mic";
 import Close from "@material-ui/icons/Close";
@@ -24,6 +25,7 @@ import Edit from "@material-ui/icons/Edit";
 
 import api from "../../services/api";
 import MediaPreview from "../MediaPreview";
+import StickerPicker from "./StickerPicker";
 import { shrinkImage, isImageFile } from "../../utils/imageTools";
 import { fillQuickVars } from "../../utils/quickVars";
 import RecordingTimer from "./RecordingTimer";
@@ -177,17 +179,47 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
   const [captions, setCaptions] = useState([]);
   const [current, setCurrent] = useState(0);
   const [inputMessage, setInputMessage] = useState("");
-  // other parts of the screen (the tutor's welcome banner) can put a ready text in the box; the person still sends it
+  // other parts of the screen (the tutor's welcome banner, the AI's suggestion) can put a ready text in the box; the person still sends it.
+  // The AI's suggestion ("typing": true) is written word by word, about 1.2 s in all, with "IA escrevendo…" (a click on the box finishes it)
+  const [aiTyping, setAiTyping] = useState(false);
+  const typingTimer = useRef(null);
+  const typingFull = useRef("");
+  const finishTyping = () => {
+    if (!typingTimer.current) return;
+    clearInterval(typingTimer.current);
+    typingTimer.current = null;
+    setInputMessage(typingFull.current);
+    setAiTyping(false);
+  };
   useEffect(() => {
     const fill = (e) => {
       if (!e.detail || String(e.detail.ticketId) !== String(ticketId)) return;
-      setInputMessage(e.detail.text || "");
+      const text = e.detail.text || "";
+      if (typingTimer.current) { clearInterval(typingTimer.current); typingTimer.current = null; }
+      const words = text.split(/(\s+)/);
+      const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!e.detail.typing || reduce || words.length < 4) {
+        setInputMessage(text);
+        setAiTyping(false);
+      } else {
+        typingFull.current = text;
+        setAiTyping(true);
+        setInputMessage("");
+        let i = 0;
+        const step = Math.max(1, Math.ceil(words.length / 40));
+        typingTimer.current = setInterval(() => {
+          i = Math.min(words.length, i + step);
+          setInputMessage(words.slice(0, i).join(""));
+          if (i >= words.length) { clearInterval(typingTimer.current); typingTimer.current = null; setAiTyping(false); }
+        }, 30);
+      }
       setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
     };
     window.addEventListener("fillMessageInput", fill);
-    return () => window.removeEventListener("fillMessageInput", fill);
+    return () => { window.removeEventListener("fillMessageInput", fill); if (typingTimer.current) clearInterval(typingTimer.current); };
   }, [ticketId]);
   const [showEmoji, setShowEmoji] = useState(false);
+  const [showStickers, setShowStickers] = useState(false);
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [quickAnswers, setQuickAnswer] = useState([]);
@@ -352,8 +384,9 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
       formData.append("fromMe", true);
       medias.forEach((media, i) => {
         formData.append("medias", media);
-        // the caption travels with each file (documents keep their own name)
+        // the caption travels with each file (documents keep their own name); a video marked "Enviar como GIF" goes as a GIF
         formData.append("body", captions[i] || "");
+        formData.append("kind", media.sendAsGif ? "gif" : "");
       });
       formData.append("clientKey", newKey());
       await api.post(`/messages/${ticketId}`, formData);
@@ -577,6 +610,21 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
                 </ClickAwayListener>
               </div>
             )}
+            {/* the stickers of the WhatsApp number (QR Code): the ones already received or sent, sent as real stickers */}
+            {(!channel || channel === "whatsapp") && (
+              <IconButton aria-label="Figurinhas" title="Figurinhas" className={classes.icon} onClick={() => setShowStickers((v) => !v)} disabled={loading}>
+                <Sticker size={22} />
+              </IconButton>
+            )}
+            {showStickers && (
+              <div className={classes.emojiBox}>
+                <ClickAwayListener onClickAway={() => setShowStickers(false)}>
+                  <div>
+                    <StickerPicker ticketId={ticketId} onSent={() => setShowStickers(false)} />
+                  </div>
+                </ClickAwayListener>
+              </div>
+            )}
             <IconButton aria-label="Adicionar"
               className={clsx(classes.icon, attachEl && classes.iconOn)}
               onClick={(e) => setAttachEl(e.currentTarget)}
@@ -600,13 +648,19 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
             <input ref={mediaInput} hidden multiple type="file" accept="image/*,video/*" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             <input ref={cameraInput} hidden type="file" accept="image/*" capture="environment" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
 
-            <div className={classes.field}>
+            <div className={classes.field} style={{ position: "relative" }} onMouseDown={aiTyping ? finishTyping : undefined}>
+              {aiTyping && (
+                <span role="status" aria-live="polite" className="ai-typing" title="Clique para mostrar o texto todo"
+                  style={{ position: "absolute", top: -22, left: 12, fontSize: 12, fontWeight: 600, color: "var(--accent, #0b6bcb)", display: "inline-flex", alignItems: "center", gap: 6, pointerEvents: "none" }}>
+                  <span className="ai-typing-dot" aria-hidden="true" />IA escrevendo…
+                </span>
+              )}
               <InputBase
                 inputRef={(el) => {
                   if (el) inputRef.current = el;
                 }}
                 className={classes.input}
-                placeholder={takesOnSend ? "Ao enviar, a conversa passa a ser sua" : "Digite uma mensagem"}
+                placeholder={aiTyping ? "IA escrevendo…" : takesOnSend ? "Ao enviar, a conversa passa a ser sua" : "Digite uma mensagem"}
                 multiline
                 maxRows={6}
                 value={inputMessage}

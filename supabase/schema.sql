@@ -4009,7 +4009,8 @@ CREATE TABLE public."Whatsapps" (
     "pairingPhone" character varying(20),
     "statusNote" text,
     team character varying(20),
-    "institutionId" integer
+    "institutionId" integer,
+    "historyReport" text
 );
 
 
@@ -8429,6 +8430,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000002-recovery-offer.js') O
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000003-recovery-reply-index.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270104000001-proposal-standalone.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000001-lead-course-level.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000001-whatsapp-history-report.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000002-campaign-flow.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000003-sested-bot.js') ON CONFLICT DO NOTHING;
 

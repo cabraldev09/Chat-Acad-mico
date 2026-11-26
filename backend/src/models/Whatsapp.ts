@@ -133,6 +133,10 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   historyImportedAt: Date;
 
+  // JSON of the last full copy (services/WbotServices/ImportHistoryService HistoryReport): phoneTotal, chats, empty, failed...
+  @Column(DataType.TEXT)
+  historyReport: string;
+
   @BelongsTo(() => User, "ownerId")
   owner: User;
 

@@ -37,6 +37,8 @@ const useStyles = makeStyles((theme) => ({
   root: {
     display: "flex",
     height: "100vh",
+    // the page never scrolls as a whole (each panel scrolls inside): otherwise a click moves the window and the menu goes up with it
+    overflow: "hidden",
     [theme.breakpoints.down("sm")]: {
       height: "100dvh",
     },

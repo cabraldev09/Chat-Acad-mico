@@ -150,21 +150,26 @@ function ListItemLink(props) {
   const { icon, primary, to, collapsed, adornment, alsoActive } = props;
   const classes = useStyles();
 
+  // The link component must stay the SAME between renders: a new one (the inline alsoActive arrays are new on every render) unmounts the
+  // <a> the person just clicked, the focus falls to the page and the menu jumps. So it depends on the text of the list, not on the array.
+  const alsoKey = (alsoActive || []).join("|");
   const renderLink = React.useMemo(
-    () =>
-      React.forwardRef((itemProps, ref) => (
+    () => {
+      const also = alsoKey ? alsoKey.split("|") : null;
+      return React.forwardRef((itemProps, ref) => (
         <NavLink
           to={to}
           // "/" and "/crm" are the start of other addresses ("/crm/painel"...): only the exact address lights them
           exact={to === "/" || to === "/crm"}
           // a group stays lit while one of its pages is open (Configurações over Conexões, Usuários...)
-          isActive={alsoActive ? (match, location) => !!match || alsoActive.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`)) : undefined}
+          isActive={also ? (match, location) => !!match || also.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`)) : undefined}
           activeClassName={classes.navItemActive}
           ref={ref}
           {...itemProps}
         />
-      )),
-    [to, classes.navItemActive, alsoActive]
+      ));
+    },
+    [to, classes.navItemActive, alsoKey]
   );
 
   return (

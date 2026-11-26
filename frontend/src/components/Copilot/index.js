@@ -119,10 +119,12 @@ function Panel({ ticket }) {
   const suggest = () => run(async () => {
     const { data: result } = await api.post(`/tickets/${ticket.id}/suggest-reply`, {});
     if (!result.text) { toast.info(result.note || "Sem sugestão neste momento."); return; }
-    window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text: result.text } }));
+    window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text: result.text, typing: true } }));
     if (result.id) api.put(`/tickets/${ticket.id}/copilot/requests/${result.id}/take`).catch(() => undefined);
     toast.info("Sugestão na caixa de mensagem. Revise antes de enviar.", { autoClose: 2500 });
   });
+  const markLead = () => run(async () => { await api.post(`/leads/from-contact/${ticket.contactId}`); toast.success("Lead criado. As etapas do processo aparecem aqui."); setOpen(true); });
+  const markNotLead = () => run(async () => { await api.put(`/contacts/${ticket.contactId}/relation`, { relation: "friend" }); toast.success("Marcado como contato pessoal: fica fora do funil."); });
   // a step marked by hand (the enrollment only by the CRM); the next click gives it back to the automatic reading
   const toggle = s => run(async () => {
     const { data: result } = await api.put(`/tickets/${ticket.id}/copilot/progress`, { key: s.key, done: s.manual && s.done === true ? null : !s.done });
@@ -155,10 +157,16 @@ function Panel({ ticket }) {
       <Button variant="contained" size="small" className={c.primary} disabled={busy || !data.aiAvailable || !canSend} title={data.aiNote || (canSend ? "A IA escreve a resposta para a última mensagem" : "Assuma a conversa para responder")} aria-label="Sugerir resposta" startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <Workflow size={14} />} onClick={suggest}><span className={c.wide}>{busy ? "Aguarde…" : "Sugerir resposta"}</span></Button>
     </div>
     <LinearProgress variant="determinate" value={required.length ? completed / required.length * 100 : 0} style={{ height: 2 }} aria-label="Progresso até a matrícula" />
+    {/* a conversation with nobody in the CRM yet (copied from the phone, or a contact just saved): the person says what it is, in one tap,
+        instead of eleven steps that depend on a lead. The reading of the copied conversations also decides it by itself. */}
+    {!data.hasLead && <div className={c.note} role="status" style={{ flexWrap: "wrap", gap: 8 }}>
+      <span style={{ flex: "1 1 220px" }}>Este contato ainda não está no CRM. É alguém interessado em estudar?</span>
+      <Button size="small" variant="contained" color="primary" disableElevation className={c.button} disabled={busy || !ticket.contactId} onClick={markLead}>É lead</Button>
+      <Button size="small" variant="outlined" className={c.button} disabled={busy || !ticket.contactId} onClick={markNotLead} title="Amigo, família ou colega: sai do funil e das estatísticas">Não é lead</Button>
+    </div>}
     {open && <div className={c.content}>
       {error && <div className={c.note} role="status"><span style={{ flex: 1 }}>O processo pode estar desatualizado.</span><Button size="small" className={c.button} onClick={reload}>Atualizar</Button></div>}
-      {!data.hasLead && <div className={c.body2}>Este contato ainda não tem lead no CRM: as etapas de proposta e matrícula dependem dele.</div>}
-      <ol className={c.steps} aria-label="Etapas do processo">
+      {data.hasLead && <ol className={c.steps} aria-label="Etapas do processo">
         {steps.map((s, i) => {
           const isCurrent = s.key === data.current;
           return <li key={s.key} className={`${c.step} ${isCurrent ? c.selected : ""}`} aria-current={isCurrent ? "step" : undefined}>
@@ -174,7 +182,7 @@ function Panel({ ticket }) {
             </div>}
           </li>;
         })}
-      </ol>
+      </ol>}
     </div>}
     <Dialog open={editor} onClose={() => setEditor(false)} fullWidth maxWidth="md" aria-labelledby="copilot-editor-title">
       <DialogTitle id="copilot-editor-title"><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>Processo da equipe<IconButton aria-label="Fechar editor" onClick={() => setEditor(false)}><X size={18} /></IconButton></div></DialogTitle>

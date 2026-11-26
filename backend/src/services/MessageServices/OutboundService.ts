@@ -30,6 +30,8 @@ export interface OutboundMedia {
   mimetype: string;
   size: number;
   caption?: string;
+  // a sticker or a GIF (see SendWhatsAppMedia.mediaOptionsOf)
+  kind?: "sticker" | "gif";
 }
 
 interface EnqueueInput {
@@ -110,7 +112,7 @@ export const processOutbound = async (id: number): Promise<void> => {
       const medias = payload.medias as OutboundMedia[];
       for (let i = 0; i < medias.length; i += 1) {
         // eslint-disable-next-line no-await-in-loop
-        const sent = await SendWhatsAppMedia({ media: medias[i] as any, ticket, body: (medias[i].caption || "").trim() || undefined, deliveryKey: `outbound:${row.id}:${i}` });
+        const sent = await SendWhatsAppMedia({ media: medias[i] as any, ticket, body: (medias[i].caption || "").trim() || undefined, deliveryKey: `outbound:${row.id}:${i}`, kind: medias[i].kind });
         providerId = sent?.id || providerId;
       }
     } else {
