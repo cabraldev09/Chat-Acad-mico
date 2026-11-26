@@ -162,7 +162,8 @@ export const listByKind = async (req: Request, res: Response): Promise<Response>
       ? { ...base, mediaType: "document" }
       : kind === "starred"
       ? { ...base, starred: true }
-      : { ...base, mediaType: { [Op.in]: ["image", "video"] } };
+      // stickers are kept as images (a .webp file) but they are not "media" of the conversation, as in WhatsApp
+      : { ...base, mediaType: { [Op.in]: ["image", "video"] }, [Op.and]: [{ [Op.or]: [{ mediaUrl: { [Op.is]: null } }, { mediaUrl: { [Op.notILike]: "%.webp" } }] }] };
   const rows = await Message.findAll({ where, attributes, order: [["createdAt", "DESC"]], limit: 200 });
   return res.json(rows);
 };

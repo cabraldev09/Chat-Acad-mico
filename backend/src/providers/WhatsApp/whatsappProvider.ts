@@ -11,6 +11,9 @@ import {
 import { WhatsappWebJsProvider } from "./Implementations/wwebjs";
 import { ZapoProvider } from "./Implementations/zapo";
 
+// what a copy of the phone found: every chat of the phone, the ones considered (no status, no channels), and why some did not come
+export interface ImportSummary { phoneTotal: number; considered: number; empty: number; failed: number }
+
 export interface WhatsappProvider {
   init(whatsapp: Whatsapp): Promise<void>;
   removeSession(whatsappId: number): void;
@@ -62,7 +65,7 @@ export interface WhatsappProvider {
     options: HistoryOptions,
     onChat: (chat: ProviderHistoryChat) => Promise<void>,
     onProgress?: (done: number, total: number) => void
-  ): Promise<void>;
+  ): Promise<void | ImportSummary>;
   // reacts to a message with an emoji ("" removes the reaction)
   sendReaction?(
     sessionId: number,

@@ -37,7 +37,7 @@ import Ticket from "../../../models/Ticket";
 import { Op, QueryTypes } from "sequelize";
 import sequelize from "../../../database";
 import { logger } from "../../../utils/logger";
-import { WhatsappProvider } from "../whatsappProvider";
+import { ImportSummary, WhatsappProvider } from "../whatsappProvider";
 import {
   ProviderMessage,
   ProviderMediaInput,
@@ -1123,7 +1123,7 @@ const importChats = async (
   options: HistoryOptions,
   onChat: (chat: ProviderHistoryChat) => Promise<void>,
   onProgress?: (done: number, total: number) => void
-): Promise<void> => {
+): Promise<ImportSummary> => {
   const wbot = getWbot(sessionId);
   const only = options.onlyChatIds && options.onlyChatIds.length ? new Set(options.onlyChatIds) : null;
   // one or a few chats asked by name are read directly (the whole list of a number with hundreds of chats is heavy)
@@ -1186,6 +1186,8 @@ const importChats = async (
   };
 
   let done = 0;
+  let empty = 0;
+  let failed = 0;
   const later: any[] = [];
   const copy = async (chat: any, lastTry: boolean) => {
     let item: ProviderHistoryChat | null = null;
@@ -1194,14 +1196,20 @@ const importChats = async (
       item = await withTimeout(read(chat), IMPORT_CHAT_TIMEOUT_MS);
     } catch (err) {
       if (!lastTry) { later.push(chat); return; }
+      failed += 1;
       logger.warn(`History: could not copy chat ${chat.id._serialized}: ${err}`);
+      item = undefined as any;
     }
     if (item) {
       try {
         await onChat(item);
       } catch (err) {
+        failed += 1;
         logger.warn(`History: could not save chat ${chat.id._serialized}: ${err}`);
       }
+    } else if (item === null) {
+      // a person's chat with no message in it (only WhatsApp system lines) is left out on purpose
+      empty += 1;
     }
     done += 1;
     if (onProgress && (done % 10 === 0 || done === chats.length)) onProgress(done, chats.length);
@@ -1211,6 +1219,7 @@ const importChats = async (
   await eachLimited(later, 2, chat => copy(chat, true));
   // the pictures come afterwards, in the background
   if (!only) fillPictures(wbot, chats.slice(0, 500)).catch(() => undefined);
+  return { phoneTotal: all.length, considered: chats.length, empty, failed };
 };
 
 const sendReaction = async (

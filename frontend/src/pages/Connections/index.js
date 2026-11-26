@@ -112,6 +112,20 @@ const CustomToolTip = ({ title, content, children }) => {
 	);
 };
 
+// the report of the last full copy of a QR number (saved by the server): "Trazidas 312 de 312 conversas do celular"
+const copyReportOf = (whatsApp) => {
+	let r = null;
+	try { r = whatsApp && whatsApp.historyReport ? JSON.parse(whatsApp.historyReport) : null; } catch (_) { r = null; }
+	if (!r || r.considered === undefined) return null;
+	const all = r.chats >= r.considered;
+	const why = [r.empty ? `${r.empty} sem mensagem` : "", r.failed ? `${r.failed} com erro` : ""].filter(Boolean).join(", ");
+	return {
+		all,
+		text: all ? `Trazidas ${r.chats} de ${r.considered} conversas do celular` : `Trazidas ${r.chats} de ${r.considered} conversas do celular${why ? `: ${why}` : ""}`,
+		when: r.finishedAt ? new Date(r.finishedAt).toLocaleString("pt-BR") : null,
+	};
+};
+
 const Connections = () => {
 	const classes = useStyles();
 
@@ -162,8 +176,10 @@ const Connections = () => {
 				toast.error(text && !text.startsWith("backendErrors.") ? text : "Não foi possível copiar as conversas.");
 				return;
 			}
-			toast.success(
-				`Conversas de “${d.connection}” copiadas: ${d.chats} conversas (${d.newConversations} novas), ${d.messages} mensagens${d.pinned ? `, ${d.pinned} fixadas` : ""}. As recentes ficam em Atendendo; as mais antigas, em Todas.`,
+			// says whether everything came: "Trazidas 312 de 312 conversas do celular" (or how many did not, and why)
+			const all = d.considered === undefined || d.chats >= d.considered;
+			(all ? toast.success : toast.warning)(
+				`“${d.connection}”: ${d.text || `${d.chats} conversas copiadas`} (${d.newConversations} novas, ${d.messages} mensagens${d.pinned ? `, ${d.pinned} fixadas` : ""}). As recentes ficam em Atendendo; as mais antigas, em Todas.`,
 				{ autoClose: 15000 }
 			);
 		});
@@ -372,6 +388,12 @@ const Connections = () => {
 								: "Copiar conversas"}
 						</Button>{" "}
 					</>
+				)}
+				{(!whatsApp.channel || whatsApp.channel === "whatsapp") && copyReportOf(whatsApp) && !copying[whatsApp.id] && (
+					<Typography variant="caption" display="block" style={{ margin: "2px 0 6px", color: copyReportOf(whatsApp).all ? undefined : "#b45309" }}
+						title={copyReportOf(whatsApp).when ? `Última cópia: ${copyReportOf(whatsApp).when}` : undefined}>
+						{copyReportOf(whatsApp).text}
+					</Typography>
 				)}
 				{isSystemAdmin && (!whatsApp.channel || whatsApp.channel === "whatsapp") && whatsApp.historyImportedAt && (
 					<>

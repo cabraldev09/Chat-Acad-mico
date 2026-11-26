@@ -235,3 +235,8 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 .polo-option { background: transparent; transition: background-color .15s ease; }
 .polo-option:hover:not(:disabled) { background: var(--surface-2); }
 .polo-option:disabled { cursor: progress !important; }
+
+/* "IA escrevendo…" over the message box while the suggestion is written */
+.ai-typing-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: ai-typing-pulse 0.9s ease-in-out infinite; }
+@keyframes ai-typing-pulse { 0%, 100% { opacity: .3; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .ai-typing-dot { animation: none; } }
