@@ -46,3 +46,23 @@ describe("propostas avulsas", () => {
     expect(screen.getByLabelText("Telefone com DDD")).toBeTruthy();
   });
 });
+
+describe("avulsa no CRM", () => {
+  it("responsável: quem usa vem primeiro e é o padrão; tutor e acadêmico ficam de fora", async () => {
+    const { teamForOwner } = await import("../pages/CRM/StandaloneProposals");
+    const users = [
+      { id: 3, name: "Zeca", role: "consultor" }, { id: 1, name: "Ana", role: "consultor" },
+      { id: 2, name: "Eu Mesmo", role: "consultor" }, { id: 4, name: "Tutora", role: "tutor" }, { id: 5, name: "Acad", role: "academico" },
+    ];
+    expect(teamForOwner(users, { id: 2, name: "Eu Mesmo" }).map((u) => u.id)).toEqual([2, 1, 3]);
+    expect(teamForOwner([], { id: 9, name: "Só eu" }).map((u) => u.id)).toEqual([9]);
+  });
+
+  it("mostra que a avulsa está no CRM com quem e copia o link da ficha de matrícula", async () => {
+    api.get.mockResolvedValue({ data: [{ id: 11, recipientName: "Caio Amigo", courseName: "Pedagogia", status: "sent", link: "https://x/p/a", crm: { leadId: 70, ownerId: null, ownerName: "Colega Um" } }] });
+    render(<StandaloneProposals open onClose={() => {}} ctx={{}} />);
+    await waitFor(() => expect(screen.getByText("No CRM · com Colega Um")).toBeTruthy());
+    // the form button is only for who has the lead (or the management): here nobody is logged in
+    expect(screen.queryByText("Ficha de matrícula")).toBeNull();
+  });
+});

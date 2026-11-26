@@ -578,7 +578,8 @@ const postMeta = (id, payload, secret, badSig) => {
     global.__backendLog = () => log;
     await waitFor(async () => (await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" }, { validateStatus: () => true })).status === 200, 30000, "backend up");
     token = (await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" })).data.token;
-    // the administrator's access lasts 15 minutes and the suite takes about that: it logs in again every 10 (the same change of #245)
+    // the administrator's access lasts 15 minutes and the suite takes about that: it logs in again every 10, so the last tests do not
+    // meet an expired login (that made "session renewal" fail with 401 on its very first request, creating the user)
     setInterval(async () => {
       const again = await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" }, { validateStatus: () => true }).catch(() => null);
       if (again && again.status === 200 && again.data.token) token = again.data.token;
@@ -2086,8 +2087,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // a wrong CPF or a phone without DDD is refused; nothing is saved
       assert((await http.post("/proposals", { recipientName: "Bia Contato", recipientCpf: "123.456.789-00", courseId: propCourse.id, params }, asUser(tok))).data.error === "ERR_CPF_INVALID", "a wrong CPF was accepted");
       assert((await http.post("/proposals", { recipientName: "Bia Contato", recipientPhone: "9999-1234", courseId: propCourse.id, params }, asUser(tok))).data.error === "ERR_PROPOSAL_RECIPIENT_PHONE", "a phone without DDD was accepted");
-      const made = await http.post("/proposals", { recipientName: "Bia Contato", recipientCpf: "529.982.247-25", recipientPhone: "(69) 99911-2233", courseId: propCourse.id, params }, asUser(tok));
-      assert(made.status === 201 && made.data.recipientCpf === "52998224725" && made.data.recipientPhone === "69999112233", `contact not kept ${JSON.stringify([made.data.recipientCpf, made.data.recipientPhone])}`);
+      const made = await http.post("/proposals", { recipientName: "Bia Contato", recipientCpf: "714.602.380-01", recipientPhone: "(69) 99911-2233", courseId: propCourse.id, params }, asUser(tok));
+      assert(made.status === 201 && made.data.recipientCpf === "71460238001" && made.data.recipientPhone === "69999112233", `contact not kept ${JSON.stringify([made.data.recipientCpf, made.data.recipientPhone])}`);
       // without contact, as before
       const plain = await http.post("/proposals", { recipientName: "Sem Contato Ninguem", courseId: propCourse.id, params }, asUser(tok));
       assert(plain.status === 201 && !plain.data.recipientCpf && !plain.data.recipientPhone, "a proposal without contact got one");
@@ -2095,19 +2096,63 @@ const postMeta = (id, payload, secret, badSig) => {
       const find = async (q, t = tok) => (await http.get("/proposals", { params: { standalone: 1, q }, ...asUser(t) })).data;
       const byName = await find("bia cont");
       assert(byName.some(p => p.id === made.data.id) && !byName.some(p => p.id === plain.data.id), "search by name");
-      const byCpf = await find("529.982");
+      const byCpf = await find("714.602");
       assert(byCpf.length && byCpf.every(p => p.id !== plain.data.id) && byCpf.some(p => p.id === made.data.id), "search by CPF");
       const row = byCpf.find(p => p.id === made.data.id);
-      assert(row.recipientCpf === undefined && row.recipientCpfMasked === "***.***.247-25", `the list shows the CPF: ${JSON.stringify([row.recipientCpf, row.recipientCpfMasked])}`);
+      assert(row.recipientCpf === undefined && row.recipientCpfMasked === "***.***.380-01", `the list shows the CPF: ${JSON.stringify([row.recipientCpf, row.recipientCpfMasked])}`);
       assert((await find("99911")).some(p => p.id === made.data.id), "search by phone");
       assert(!(await find("bia cont", otherTok)).some(p => p.id === made.data.id), "another consultant found it");
-      // the link went out: the author still deletes it (an avulsa has no lead history); another consultant cannot
+      // the link went out (the person is in the CRM now): the author still deletes the avulsa, the lead stays; another consultant cannot
       const shared = (await http.post(`/proposals/${made.data.id}/send`, { share: true }, asUser(tok))).data;
       assert((await http.delete(`/proposals/${made.data.id}`, asUser(otherTok))).status === 403, "another consultant deleted the avulsa");
       assert((await http.delete(`/proposals/${made.data.id}`, asUser(tok))).status === 200, "the author could not delete the avulsa");
       assert(sql(`SELECT COUNT(*) FROM Proposals WHERE id=${made.data.id}`) === "0", "the avulsa is still there");
       assert((await http.get(`/p/${shared.link.split("/p/")[1]}`)).status === 404, "the link of a deleted avulsa still opens");
       await http.delete(`/proposals/${plain.data.id}`, asUser(tok));
+    });
+
+    await test("avulsa to the CRM: the link, the PDF or the send makes the person a lead in Proposta, of who made it or of the colleague chosen, never doubled, and the enrollment form goes from there", async () => {
+      const tok = (await http.post("/auth/login", { email: "avulsa@polo.test", password: "senha123" })).data.token;
+      const colTok = (await http.post("/auth/login", { email: "avulsa2@polo.test", password: "senha123" })).data.token;
+      const me = Number(sql(`SELECT id FROM Users WHERE email='avulsa@polo.test'`));
+      const colleague = Number(sql(`SELECT id FROM Users WHERE email='avulsa2@polo.test'`));
+      const d = (await http.get("/proposals/defaults", { params: { recipientName: "Caio Amigo", courseId: propCourse.id }, ...asUser(tok) })).data;
+      const due = new Date(Date.now() + 15 * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      const params = { ...d.params, admissionType: "ENEM", firstDueDate: due };
+      // a colleague that does not exist is refused
+      assert((await http.post("/proposals", { recipientName: "Caio Amigo", recipientOwnerId: 999999, courseId: propCourse.id, params }, asUser(tok))).status === 404, "an unknown colleague was accepted");
+      const made = (await http.post("/proposals", { recipientName: "Caio Amigo", recipientCpf: "153.509.460-56", recipientPhone: "(69) 99888-7766", recipientOwnerId: colleague, courseId: propCourse.id, params }, asUser(tok))).data;
+      assert(made.recipientOwnerId === colleague && !made.leadId, `the draft ${JSON.stringify([made.recipientOwnerId, made.leadId])}`);
+      // the link is generated: the person is in the CRM, in Proposta, in the colleague's name, with the proposal in the history
+      const shared = (await http.post(`/proposals/${made.id}/send`, { share: true }, asUser(tok))).data;
+      assert(shared.crm && shared.crm.created && shared.crm.leadId, `no lead from the link ${JSON.stringify(shared.crm)}`);
+      const leadId = shared.crm.leadId;
+      const row = sql(`SELECT l.ownerId || '|' || l.cpf || '|' || COALESCE(l.source,'') || '|' || s.name FROM Leads l JOIN LeadStages s ON s.id = l.stageId WHERE l.id=${leadId}`).split("|");
+      assert(Number(row[0]) === colleague && row[1] === "15350946056" && row[2] === "Proposta avulsa" && /proposta/i.test(row[3]), `the lead ${JSON.stringify(row)}`);
+      assert(sql(`SELECT leadId FROM Proposals WHERE id=${made.id}`) === String(leadId), "the proposal is not in the lead");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Proposta avulsa #${made.id} gerada%'`)) === 1, "no history line");
+      // who made it still finds and opens it; the list says who has it in the CRM
+      const listed = (await http.get("/proposals", { params: { standalone: 1, q: "caio amigo" }, ...asUser(tok) })).data.find(p => p.id === made.id);
+      assert(listed && listed.crm && listed.crm.leadId === leadId && listed.crm.ownerId === colleague && listed.crm.ownerName, `the list ${JSON.stringify(listed && listed.crm)}`);
+      assert((await http.get(`/proposals/${made.id}`, asUser(tok))).status === 200, "who made it cannot open it");
+      // the colleague has the lead and sends the enrollment form from it
+      assert((await http.get(`/leads/${leadId}`, asUser(colTok))).status === 200, "the colleague does not see the lead");
+      const form = await http.post(`/leads/${leadId}/enrollment-form`, {}, asUser(colTok));
+      assert(form.status === 200 && /\/ficha\//.test(form.data.link || ""), `enrollment form ${form.status} ${JSON.stringify(form.data).slice(0, 120)}`);
+      // another avulsa for the same person (same phone, no CPF), in my name: the PDF goes to the same lead, its owner stays
+      const again = (await http.post("/proposals", { recipientName: "Caio A.", recipientPhone: "69998887766", courseId: propCourse.id, params }, asUser(tok))).data;
+      assert((await http.get(`/proposals/${again.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" })).status === 200, "pdf");
+      assert(sql(`SELECT leadId FROM Proposals WHERE id=${again.id}`) === String(leadId), "the second avulsa made another lead");
+      assert(Number(sql(`SELECT COUNT(*) FROM Leads WHERE cpf='15350946056' OR phone IN ('5569998887766','556998887766','69998887766')`)) === 1, "the person was doubled in the CRM");
+      assert(Number(sql(`SELECT ownerId FROM Leads WHERE id=${leadId}`)) === colleague, "the owner changed");
+      // the second PDF of the same proposal changes nothing
+      await http.get(`/proposals/${again.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" });
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Proposta avulsa #${again.id} gerada%'`)) === 1, "the second PDF wrote again");
+      // only a name: the lead is mine (the default)
+      const bare = (await http.post("/proposals", { recipientName: "Nome Solto Avulsa", courseId: propCourse.id, params }, asUser(tok))).data;
+      await http.get(`/proposals/${bare.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" });
+      const bareLead = sql(`SELECT leadId FROM Proposals WHERE id=${bare.id}`);
+      assert(bareLead && Number(sql(`SELECT ownerId FROM Leads WHERE id=${bareLead}`)) === me, "the default owner is not who made it");
     });
 
     // ------------------------------------------- admission, CPF and payments
@@ -9355,6 +9400,25 @@ const postMeta = (id, payload, secret, badSig) => {
       const readsBefore = anthropic.readings;
       await http.post("/readings/run", {}, auth());
       assert(anthropic.readings - readsBefore === 1, `only the outcome of Dani should be read now (${anthropic.readings - readsBefore})`);
+      // "Parados" without a new reading: the team's last message 10 days ago, no answer -> Recuperação; the person answers -> out of it
+      const stalledC = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Gil Parado Diario', '5569955550021', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const stalledT = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageFromMe, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${stalledC}, ${qr.id}, ${u.id}, 0, false, 'sales', false, 'Te mandei a proposta', true, NOW() - INTERVAL '10 days', NOW() - INTERVAL '12 days', NOW()) RETURNING id`).split("\n")[0];
+      const stalledL = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Gil Parado Diario', '5569955550021', ${stage1}, ${stalledC}, ${u.id}, 'WhatsApp', false, NOW() - INTERVAL '12 days', NOW()) RETURNING id`).split("\n")[0];
+      const firstRun = (await http.post("/readings/run", {}, auth())).data;
+      assert(firstRun.stalled && firstRun.stalled.marked >= 1, `the daily check did not run ${JSON.stringify(firstRun.stalled)}`);
+      const gil = (await http.get("/crm/recovery", asUser(uTok))).data.items.find(i => String(i.id) === stalledL);
+      assert(gil && gil.tab === "parados" && gil.reason === "Parou de responder", `Gil is not in Parados ${JSON.stringify(gil)}`);
+      // a colleague (team contact) with the same silence never goes to Recuperação
+      const staffC = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, isStaff, createdAt, updatedAt) VALUES ('Colega Parado Diario', '5569955550022', '', false, 'person', 'whatsapp', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageFromMe, lastMessageAt, createdAt, updatedAt) VALUES ('closed', ${staffC}, ${qr.id}, ${u.id}, 0, false, 'sales', false, 'ok', true, NOW() - INTERVAL '10 days', NOW() - INTERVAL '12 days', NOW())`);
+      const staffL = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Colega Parado Diario', '5569955550022', ${stage1}, ${staffC}, ${u.id}, 'WhatsApp', false, NOW() - INTERVAL '12 days', NOW()) RETURNING id`).split("\n")[0];
+      await http.post("/readings/run", {}, auth());
+      assert(sql(`SELECT COALESCE(recoveryState,'') FROM Leads WHERE id = ${staffL}`) === "", "a colleague went to Parados");
+      // the person answers and the consultant answers right after: the last word is the team's again, but the lead came back
+      sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('stall-back-1', ${stalledT}, ${stalledC}, 'Oi, ainda tenho interesse', false, true, 'chat', 0, NOW(), NOW())`);
+      sql(`UPDATE Tickets SET lastMessageFromMe = true, lastMessageAt = NOW() WHERE id = ${stalledT}`);
+      await http.post("/readings/run", {}, auth());
+      assert(sql(`SELECT recoveryState FROM Leads WHERE id = ${stalledL}`) === "voltou", "who answered is still in Parados");
       const why = (await http.get("/analytics/outcomes", { params: { range: "custom", from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
       assert(why.lost >= 1 && why.reasons.some(r => r.reason === "Preço / mensalidade"), `outcomes ${JSON.stringify(why).slice(0, 300)}`);
       // back to the funnel: out of Recuperação, in an open column

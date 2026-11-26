@@ -7,8 +7,23 @@ const q = async (title, sql) => {
 };
 (async () => {
   // Repositório público: só contagens e situações, nunca nome, telefone, polo ou trecho de conversa.
+  // Figurinhas enviadas pela equipe nas últimas 6 h: tipo, tique e se a lista aponta para ela (só ids e códigos)
+  await q("figurinhas enviadas (6 h)", `SELECT m."ticketId" AS conversa, m."mediaType" AS tipo, right(COALESCE(m."mediaUrl",''), 5) AS ext, m.ack AS tique_msg,
+      (t."lastMessageId" = m.id) AS lista_aponta, t."lastMessageAck" AS tique_lista, t."lastMessageType" AS tipo_lista, (left(m.id, 6) = 'true_') AS id_web,
+      to_char(m."createdAt" AT TIME ZONE 'America/Porto_Velho', 'HH24:MI') AS hora
+    FROM "Messages" m JOIN "Tickets" t ON t.id = m."ticketId"
+    WHERE m."fromMe" = true AND m."createdAt" > NOW() - INTERVAL '6 hours' AND (m."mediaType" = 'sticker' OR m."mediaUrl" ILIKE '%.webp%')
+    ORDER BY m."createdAt" DESC LIMIT 15`);
+  await q("mensagens da mesma conversa logo depois da figurinha (mesmo minuto)", `SELECT m2."ticketId" AS conversa, m2."mediaType" AS tipo, m2.ack AS tique, (left(m2.id, 6) = 'true_') AS id_web, length(m2.id) AS tam_id
+    FROM "Messages" m JOIN "Messages" m2 ON m2."ticketId" = m."ticketId" AND m2."fromMe" = true AND m2."createdAt" BETWEEN m."createdAt" - INTERVAL '1 minute' AND m."createdAt" + INTERVAL '1 minute'
+    WHERE m."fromMe" = true AND m."createdAt" > NOW() - INTERVAL '6 hours' AND m."mediaUrl" ILIKE '%.webp%' ORDER BY m2."createdAt" DESC LIMIT 20`);
+  await q("envios pela fila com figurinha, 6 h (a mensagem com o id do envio existe? a lista aponta para ela?)", `SELECT o.status, o."ticketId" AS conversa, regexp_replace(left(COALESCE(o.error,''), 60), '[0-9]{6,}', '#', 'g') AS erro,
+      (m.id IS NOT NULL) AS msg_existe, m.ack AS tique_msg, (t."lastMessageId" = o."providerMsgId") AS lista_aponta, t."lastMessageAck" AS tique_lista,
+      to_char(o."createdAt" AT TIME ZONE 'America/Porto_Velho', 'HH24:MI') AS hora
+    FROM "OutboundMessages" o LEFT JOIN "Messages" m ON m.id = o."providerMsgId" JOIN "Tickets" t ON t.id = o."ticketId"
+    WHERE o."createdAt" > NOW() - INTERVAL '6 hours' AND o.payload::text ILIKE '%sticker%' ORDER BY o."createdAt" DESC LIMIT 15`).catch(e => console.log("outbound: " + e.message));
   // Leitura das conversas copiadas e Recuperação (só números)
-  await q("leituras da cópia por situação", `SELECT status, COALESCE("doneBy",'-') AS feito_por, left(COALESCE(error,''), 80) AS erro, COUNT(*) AS n FROM "ConversationReadings" WHERE kind = 'importacao' GROUP BY 1,2,3 ORDER BY 4 DESC`);
+  await q("leituras da cópia por situação", `SELECT status, COALESCE("doneBy",'-') AS feito_por, regexp_replace(left(COALESCE(error,''), 80), '[0-9]{6,}', '#', 'g') AS erro, COUNT(*) AS n FROM "ConversationReadings" WHERE kind = 'importacao' GROUP BY 1,2,3 ORDER BY 4 DESC`);
   await q("resultado das leituras feitas", `SELECT COALESCE(result::jsonb->>'action','-') AS acao, COUNT(*) AS n FROM "ConversationReadings" WHERE kind = 'importacao' AND status = 'feita' GROUP BY 1 ORDER BY 2 DESC`);
   await q("leituras por situação (todas)", `SELECT kind, status, COUNT(*) AS n FROM "ConversationReadings" GROUP BY 1,2 ORDER BY 1,2`);
   await q("números QR (dono, cópia)", `SELECT id, status, ("ownerId" IS NOT NULL) AS tem_dono, "historyImportedAt" IS NOT NULL AS copiado, to_char("historyImportedAt", 'DD/MM HH24:MI') AS quando, "historyReport" FROM "Whatsapps" WHERE channel = 'whatsapp' ORDER BY id`);

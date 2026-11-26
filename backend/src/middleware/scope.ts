@@ -160,8 +160,10 @@ export const canAccessProposal = async (req: Request, _res: Response, next: Next
   const p = await Proposal.findByPk(req.params.id, { attributes: ["id", "leadId", "createdBy"] });
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
   // a proposal of a lead follows the lead; a loose simulation (no lead) is of who made it, and the coordination may open it
+  // who made it keeps it, also after an avulsa went to the CRM in the name of a colleague
+  if (p.createdBy === Number(req.user.id)) return next();
   if (p.leadId) await assertLead(req, p.leadId);
-  else if (!isAdminReq(req) && p.createdBy !== Number(req.user.id)) throw new AppError("ERR_NO_PERMISSION", 403);
+  else if (!isAdminReq(req)) throw new AppError("ERR_NO_PERMISSION", 403);
   return next();
 };
 

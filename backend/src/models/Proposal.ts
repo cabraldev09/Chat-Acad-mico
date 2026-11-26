@@ -76,6 +76,10 @@ class Proposal extends Model<Proposal> {
   @Column
   recipientPhone: string;
 
+  // who takes the lead in the CRM when the "avulsa" is generated (empty = who made it)
+  @Column
+  recipientOwnerId: number;
+
   @BelongsTo(() => Lead)
   lead: Lead;
 
