@@ -40,7 +40,7 @@ export const setLabel = async (lead: Lead, def: LabelDef, on: boolean): Promise<
         }
         // eslint-disable-next-line no-await-in-loop
         const tags = await (t as any).$get("tags", { attributes: ["id", "name", "color"], joinTableAttributes: [] });
-        getIO().to(t.status).to(String(t.id)).emit("ticket", { action: "tags", ticketId: t.id, tags });
+        getIO().to(t.status).to(String(t.id)).to("notification").emit("ticket", { action: "tags", ticketId: t.id, tags });
       }
     }
     const { loadLead } = await import("./LeadCore");
