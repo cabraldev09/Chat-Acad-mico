@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { approved, isCurrentMainSha, mergedPullFor, sameTree } = require('./check-ci');
-const required = ['verificar', 'api-ponta-a-ponta (canais e conversas)', 'api-ponta-a-ponta (responsabilidade pela conversa)', 'api-ponta-a-ponta (estatísticas e gestão comercial)', 'telas'];
+const required = ['verificar', 'api-ponta-a-ponta (canais e conversas)', 'api-ponta-a-ponta (responsabilidade pela conversa)', 'api-ponta-a-ponta (estatísticas e gestão comercial)', 'api-ponta-a-ponta (fila comum e carteira)', 'telas'];
 const good = name => ({ name, status: 'completed', conclusion: 'success' });
 test('deploy waits for build/unit and integration jobs', () => {
   assert.equal(approved([]), false);

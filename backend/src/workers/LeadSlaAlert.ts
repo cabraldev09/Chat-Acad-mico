@@ -10,6 +10,8 @@ import { getBusinessConfig, isBusinessNow, businessMinutes } from "../helpers/Bu
 import { addActivity } from "../services/CrmServices/LeadCore";
 import AutoAssignTicket from "../services/AutomationServices/AutoAssignTicket";
 import { notify, managerIdsOfPolos } from "../services/NotificationServices/Notify";
+import { isQueueLead, isQueueMode } from "../helpers/LeadQueue";
+import { consultantIds, queueNoticeKey } from "../services/CrmServices/QueueNotices";
 import { logger } from "../utils/logger";
 import { slaDecision, howLong, forgottenNotice } from "../services/NotificationServices/SlaRules";
 
@@ -49,7 +51,8 @@ const tick = async (): Promise<void> => {
     });
     cursor = tickets.length === 200 ? tickets[tickets.length - 1].id : 0;
     const maxAgeHours = Number(await getSetting("crm_sla_max_age_hours", "24"));
-    const leads = new Map((await Lead.findAll({ where: { contactId: [...new Set(tickets.map(t => t.contactId))] } as any, attributes: ["id", "name", "contactId", "ownerId", "poloId"] })).map(l => [l.contactId, l]));
+    const queueMode = await isQueueMode();
+    const leads = new Map((await Lead.findAll({ where: { contactId: [...new Set(tickets.map(t => t.contactId))] } as any, attributes: ["id", "name", "contactId", "ownerId", "poloId", "enrolledAt", "wonAt", "lostAt", "isHistorical", "onboardingStatus"] })).map(l => [l.contactId, l]));
     for (const ticket of tickets) {
       const lead = leads.get(ticket.contactId);
       if (!lead || ticket.contact?.optOut) continue;
@@ -72,6 +75,15 @@ const tick = async (): Promise<void> => {
       }
       const waited = businessMinutes(business, new Date(first.createdAt), now);
       const escalated = waited >= escalate;
+      // THE COMMON QUEUE: a new lead nobody has taken yet. The consultants hear it ONCE each (the notice goes away when somebody assumes the lead);
+      // nobody is "late" for it until the management's deadline, which is the escalation below.
+      const inQueue = queueMode && !ticket.userId && isQueueLead(lead);
+      if (inQueue && !escalated) {
+        if (waited >= minutes * 0.7) {
+          await notify(await consultantIds(), { kind: "queue_lead", level: "warning", title: `Lead novo na fila há ${Math.round(waited)} min: ${lead.name}`, body: "Quem assumir primeiro atende.", link: `/tickets/${ticket.id}`, dedupeKey: queueNoticeKey(lead.id) });
+        }
+        continue;
+      }
       // about to break (70% of the time): the person who answers hears it in the bell, once per message waiting
       if (waited < minutes) {
         const owner = ticket.userId || lead.ownerId;
@@ -83,7 +95,7 @@ const tick = async (): Promise<void> => {
       const field = escalated ? "slaEscalatedMessageId" : "slaAlertedMessageId";
       const [claimed] = await Ticket.update({ [field]: first.id }, { where: { id: ticket.id, [Op.or]: [{ [field]: { [Op.ne]: first.id } }, { [field]: { [Op.is]: null } }] } as any });
       if (!claimed) continue;
-      const note = `${escalated ? "Prazo escalado para a gestão" : "Prazo de resposta excedido"}: ${howLong(waited)} aguardando resposta.${!ticket.userId && !ticket.aiActive ? " Sem atendente disponível: distribuir manualmente." : ""}`;
+      const note = `${escalated ? "Prazo escalado para a gestão" : "Prazo de resposta excedido"}: ${howLong(waited)} aguardando resposta.${!ticket.userId && !ticket.aiActive ? (inQueue ? " Na fila comum: nenhum consultor assumiu." : " Sem atendente disponível: distribuir manualmente.") : ""}`;
       await TicketEvent.create({ ticketId: ticket.id, type: "sla", note });
       await addActivity(lead.id, null, "sla", note);
       getIO().emit("leadAlert", { leadId: lead.id, ticketId: ticket.id, name: lead.name, ownerId: ticket.userId || lead.ownerId, minutes: Math.round(waited), escalated });

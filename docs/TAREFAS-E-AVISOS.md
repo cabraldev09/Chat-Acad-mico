@@ -34,6 +34,7 @@
 | Tarefa em 15 minutos (`task_soon`) | quem tem a tarefa |
 | Lead encaminhado pela IA (`ai_handoff`) | quem atende (ou a gestão, quando ninguém pôde) |
 | Prazo de resposta a 70% (`sla_soon`), excedido (`sla_breached`), escalado (`sla_escalated`) | quem atende; o escalado também para a gestão |
+| Lead novo na fila comum (`queue_lead`, só com a fila ligada) | todos os consultores, uma vez cada; é marcado como lido quando alguém assume |
 | Proposta aberta pelo lead (`proposal_viewed`) | o dono do lead e quem fez a proposta |
 | Taxa paga (`payment_paid`) | o dono do lead e quem recebe a comissão |
 | Ambientação atrasada (`onboarding_late`) | a gestão (e uma tarefa sem responsável, não uma por gestor) |

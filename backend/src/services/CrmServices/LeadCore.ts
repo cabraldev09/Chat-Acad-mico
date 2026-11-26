@@ -14,6 +14,7 @@ import Whatsapp from "../../models/Whatsapp";
 import Ticket from "../../models/Ticket";
 import Payment from "../../models/Payment";
 import { getIO } from "../../libs/socket";
+import { isQueueMode } from "../../helpers/LeadQueue";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import { normalizeEmail, normalizePhone } from "../../helpers/Phone";
 import { brPhoneVariants } from "../../helpers/PhoneVariants";
@@ -82,6 +83,8 @@ export const rescore = async (lead: Lead): Promise<void> => {
 // polos goes to someone of those polos, never to a consultant of another polo); an empty pool = nobody (the management distributes it).
 export const pickOwner = async (pool?: number[]): Promise<number | null> => {
   if ((await getSetting("crm_autoassign", "roundrobin")) === "none") return null;
+  // the common queue: a new lead has no owner until a consultant assumes it (helpers/LeadQueue)
+  if (await isQueueMode()) return null;
   if (pool && !pool.length) return null;
   let ids: number[] = [];
   try {
@@ -526,9 +529,14 @@ export const hookHumanReply = async (contactId: number, userId: number): Promise
       { firstContactAt: now } as any,
       { where: { id: lead.id, firstContactAt: null as any } }
     );
-    const patch: any = { lastContactAt: now };
-    if (!lead.ownerId) patch.ownerId = userId;
-    await lead.update(patch);
+    // a lead nobody owns goes to whoever answers it, decided by a conditional write: two answers at the same time never overwrite each other
+    // (the second one finds the owner already set and leaves it)
+    if (!lead.ownerId) {
+      const [took] = await Lead.update({ ownerId: userId } as any, { where: { id: lead.id, ownerId: { [Op.is]: null } } as any });
+      if (took) lead.set("ownerId", userId);
+      else await lead.reload();
+    }
+    await lead.update({ lastContactAt: now });
     // a person answered: "Atender lead encaminhado pelo agente de IA" is done
     import("./TaskLifecycle").then(m => m.closeTasksFor(lead.id, ["handoff"], "replied")).catch(() => undefined);
     if (claimed) {

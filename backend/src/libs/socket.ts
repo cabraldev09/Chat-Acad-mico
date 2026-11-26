@@ -9,7 +9,8 @@ import { sessionUser } from "../helpers/SessionUser";
 import { isManagerRole } from "../helpers/Roles";
 import { maskConfig } from "../helpers/Secrets";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
-import { assertLead } from "../middleware/scope";
+import { assertLead, assertLeadRead } from "../middleware/scope";
+import { isQueueLead, maskQueueMessage, maskQueueTicket, queueContactIds, redactQueueLead } from "../helpers/LeadQueue";
 import { hasContactAccess } from "../middleware/canAccessContact";
 import Ticket from "../models/Ticket";
 import Lead from "../models/Lead";
@@ -51,10 +52,14 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
       await assertTicketAccess(req, id, "read");
       return true;
     }
+    // a lead of the common queue was taken: the other consultants drop its card (only ids travel in it; the administration and the coordination too)
+    if (event === "lead" && data.action === "claimed") return manager || user.role === "consultor";
     if (["lead", "payment", "leadAlert", "onboardingAlert", "onboardingReminder", "crmReminder"].includes(event)) {
       const id = data.leadId || data.lead?.id;
       if (!id) return manager;
-      await assertLead(req, id);
+      // the consultants also hear of the leads of the common queue (as a card, see send); everything else follows the owner
+      if (event === "lead") await assertLeadRead(req, id);
+      else await assertLead(req, id);
       return true;
     }
     // the conversation the AI agent handed over, and the alert that nobody answered it: the person it was given to, the management and, while
@@ -135,6 +140,8 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
   // open at once) used to repeat the database checks once per connection. Nothing is kept after this event, so a transfer is
   // always judged with fresh data.
   const decisions = new Map<string, Promise<boolean>>();
+  // one read of "is this person still in the common queue" for the event, shared by every consultant who receives it
+  let queuedOf: Promise<Set<number>> | null = null;
   await Promise.all(Array.from(io.sockets.sockets.values()).map(async socket => {
     if (rooms.length && !rooms.some(room => socket.rooms.has(room))) return;
     const token = socket.data.token;
@@ -166,6 +173,15 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
         const key = event === "whatsapp" ? "whatsapp" : "session";
         const item = data[key];
         if (item) outgoing = { ...data, [key]: { ...item, config: maskConfig(item.config) } };
+      }
+      // a lead nobody owns yet (the common queue) reaches a consultant only as a card: no CPF, notes or e-mail before "Assumir"
+      if (event === "lead" && data.lead && user.role === "consultor" && user.profile !== "admin" && isQueueLead(data.lead)) outgoing = { ...data, lead: redactQueueLead(data.lead) };
+      // the conversation of a person still in the common queue reaches a consultant as masked text without attachments, until they assume it
+      if ((event === "appMessage" || event === "ticket") && user.role === "consultor" && user.profile !== "admin" && data.ticket && !data.ticket.userId && !data.ticket.isGroup && data.ticket.contactId) {
+        if (!queuedOf) queuedOf = queueContactIds([Number(data.ticket.contactId)]);
+        if ((await queuedOf).has(Number(data.ticket.contactId))) {
+          outgoing = { ...data, ticket: maskQueueTicket(data.ticket), ...(data.message ? { message: maskQueueMessage(data.message) } : {}) };
+        }
       }
       const id = data.ticket?.id || data.ticketId || data.message?.ticketId;
       if (id) socket.data.visibleTickets.add(String(id));

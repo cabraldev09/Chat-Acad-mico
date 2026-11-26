@@ -20,6 +20,7 @@ const useTickets = ({
     allQueues,
     attendantId,
     connectionId,
+    fila,
 }) => {
     const [loading, setLoading] = useState(true);
     const [hasMore, setHasMore] = useState(false);
@@ -52,6 +53,7 @@ const useTickets = ({
                             allQueues,
                             attendantId,
                             connectionId,
+                            fila,
                         },
                     })
                     setTickets(data.tickets)
@@ -85,6 +87,7 @@ const useTickets = ({
         allQueues,
         attendantId,
         connectionId,
+        fila,
         attempt,
     ])
 
