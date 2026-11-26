@@ -704,6 +704,7 @@ const messages = {
         ERR_INSTITUTION_NOT_FOUND: "Escolha uma universidade ativa para este agente.",
         ERR_INSTITUTION_IN_USE: "Há registros ou configurações ligados a esta universidade. Desative-a para preservar o histórico.",
         ERR_LEAD_NOT_FOUND: "Lead não encontrado.",
+        ERR_HISTORY_COPY_OFF: "A cópia das conversas do celular está desligada em Conexões.",
         ERR_LEAD_NO_PHONE: "Este lead não tem telefone para iniciar a conversa.",
         ERR_LEAD_NEEDS_PHONE_OR_EMAIL: "Informe um telefone ou e-mail válido.",
         ERR_LOST_REASON_REQUIRED: "Escolha o motivo da perda.",

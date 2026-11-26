@@ -45,6 +45,18 @@ No fim ele mostra a linha para `deploy/vps/known_hosts`.
    - senha de e-mail.
 6. **Contabo:** cancele a VPS antiga e o saldo em aberto.
 
+## Trava de publicação (rótulo `publicar`)
+
+O workflow "Atualizar a VPS" só publica o commit da `main` que veio de um PR **mesclado com o rótulo `publicar`** (`deploy/vps/check-label.js`; `check-ci.js` repete a conferência).
+
+- **Quem aplica:** só a coordenação (Maestro), depois da auditoria e da aprovação do dono. Nenhuma outra frente aplica o rótulo.
+- **Mesclar sem o rótulo:** o código fica na `main`, o workflow termina em sucesso com o aviso "Publicação aguardando o rótulo publicar" e o `/health` continua na versão anterior.
+- **Rótulo aplicado depois do merge:** rode "Atualizar a VPS" (`workflow_dispatch`) na `main`. A regra é a mesma: só publica a ponta da `main`, e só se o PR dela tiver o rótulo. (Escolhido no lugar de disparar por evento de rótulo: é mais simples e deixa a hora da publicação sob controle da coordenação.)
+- **Commit sem PR** (push direto): não publica.
+- **Se a API do GitHub não responder:** o job falha (vermelho) e nada é publicado; reexecute depois.
+- **Limite conhecido:** o rótulo é só um filtro do workflow; quem tem escrita no repositório pode aplicá-lo ou criar outro workflow. A proteção real de branch não existe no plano atual para repositório privado.
+- **Reverter:** reverta o commit da trava; o deploy volta a publicar todo merge.
+
 ## Custos de referência (nov/2026)
 | Opção | Preço |
 |---|---|

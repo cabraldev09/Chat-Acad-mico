@@ -18,6 +18,8 @@ import {
 	Tooltip,
 	Typography,
 	CircularProgress,
+	FormControlLabel,
+	Switch,
 } from "@material-ui/core";
 import {
 	Edit,
@@ -40,6 +42,7 @@ import WhatsAppModal from "../../components/WhatsAppModal";
 import MyNumberDialog from "./MyNumberDialog";
 import InstagramDialog from "./InstagramDialog";
 import ConfirmationModal from "../../components/ConfirmationModal";
+import { confirmDialog } from "../../components/ConfirmDialog";
 import QrcodeModal from "../../components/QrcodeModal";
 import { i18n } from "../../translate/i18n";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
@@ -166,6 +169,40 @@ const Connections = () => {
 		});
 		return () => socket.disconnect();
 	}, [user]);
+	// the switch of the copy of the phones (the management) and the erasing of what was copied (only the administrator)
+	const isSystemAdmin = !!user && user.profile === "admin";
+	const [copyOn, setCopyOn] = useState(null);
+	useEffect(() => {
+		if (!isAdmin) return;
+		api.get("/settings").then(({ data }) => {
+			const row = (data || []).find(x => x.key === "whatsapp_copy_enabled");
+			setCopyOn(!row || row.value !== "false");
+		}).catch(() => setCopyOn(null));
+	}, [isAdmin]);
+	const toggleCopy = async on => {
+		try {
+			await api.put("/settings/whatsapp_copy_enabled", { value: on ? "true" : "false" });
+			setCopyOn(on);
+			toast.success(on ? "A cópia das conversas do celular está ligada." : "A cópia das conversas do celular está desligada.");
+		} catch (err) {
+			toastError(err);
+		}
+	};
+	const eraseCopied = async whatsApp => {
+		const ok = await confirmDialog({
+			title: "Apagar o que foi copiado?",
+			message: `As conversas copiadas do celular de "${whatsApp.name}" que ninguém usou saem do sistema, com as mensagens. As conversas em atendimento ficam. A cópia não roda de novo sozinha para este número.`,
+			confirmText: "Apagar a cópia",
+			tone: "danger",
+		});
+		if (!ok) return;
+		try {
+			const { data } = await api.delete(`/whatsapp/${whatsApp.id}/copied-history`);
+			toast.success(`${data.conversations} conversas copiadas apagadas.`);
+		} catch (err) {
+			toastError(err);
+		}
+	};
 	const handleCopyHistory = async id => {
 		try {
 			await api.post(`/whatsapp/${id}/import-history`, {});
@@ -336,6 +373,13 @@ const Connections = () => {
 						</Button>{" "}
 					</>
 				)}
+				{isSystemAdmin && (!whatsApp.channel || whatsApp.channel === "whatsapp") && whatsApp.historyImportedAt && (
+					<>
+						<Button size="small" variant="outlined" onClick={() => eraseCopied(whatsApp)} title="Apaga as conversas copiadas do celular que ninguém usou">
+							Apagar cópia
+						</Button>{" "}
+					</>
+				)}
 				{(whatsApp.status === "CONNECTED" ||
 					whatsApp.status === "PAIRING" ||
 					whatsApp.status === "TIMEOUT") && (
@@ -487,6 +531,13 @@ const Connections = () => {
 						</button>
 					)}
 				</div>
+			)}
+			{isAdmin && copyOn !== null && (
+				<FormControlLabel
+					style={{ padding: "0 16px 6px" }}
+					control={<Switch color="primary" checked={copyOn} onChange={e => toggleCopy(e.target.checked)} />}
+					label="Copiar as conversas do celular ao conectar um número por QR Code (e as anteriores ao rolar a conversa)"
+				/>
 			)}
 			<Typography variant="caption" color="textSecondary" component="div" style={{ padding: "0 16px 10px" }}>
 				Dica: o WhatsApp desconecta os aparelhos vinculados quando o celular fica cerca de 14 dias sem internet. Abra o WhatsApp no celular pelo menos uma vez por semana. Se desconectar, as mensagens que já chegaram continuam guardadas aqui, e as que chegaram enquanto estava desconectado são recuperadas depois que você ler o QR Code de novo.
