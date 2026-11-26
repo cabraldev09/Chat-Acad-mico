@@ -1,6 +1,6 @@
 import React from "react";
 import { TextField, MenuItem, Chip, makeStyles } from "@material-ui/core";
-import { formatCpf, isValidCpf, onlyDigits } from "./cpf";
+import { CpfField, PhoneField, EmailField, NameField, CityField } from "../../components/MaskedFields";
 
 const useStyles = makeStyles((theme) => ({
   section: { marginBottom: theme.spacing(2.5) },
@@ -37,8 +37,6 @@ const LeadFields = ({ lead, onChange, options, courses, users, tags }) => {
   const course = courses.find((c) => c.id === lead.courseId);
   const needsSemester = (options.admissionNeedsSemester || []).includes(lead.admissionType);
   const maxSemester = (course && course.semesters) || 12;
-  const cpf = formatCpf(lead.cpf);
-  const cpfBad = onlyDigits(lead.cpf).length === 11 && !isValidCpf(lead.cpf);
 
   // intake periods: the administrator's list, plus whatever this lead already has
   // the periods offered by the CRM and those of the polo goals in force (a late enrollment of the previous semester)
@@ -49,16 +47,18 @@ const LeadFields = ({ lead, onChange, options, courses, users, tags }) => {
       <div className={classes.section}>
         <div className={classes.head}>Contato</div>
         <div className={classes.grid}>
-          <div className={classes.full}>{text("name", "Nome completo", { required: true, autoFocus: !lead.id })}</div>
-          {text("phone", "WhatsApp / telefone", { placeholder: "(11) 99999-0000" })}
-          {text("email", "E-mail", { type: "email" })}
-          <TextField fullWidth variant="outlined" margin="dense" label="CPF" value={cpf} placeholder="000.000.000-00"
-            onChange={(e) => set("cpf")(onlyDigits(e.target.value))} error={cpfBad}
-            helperText={cpfBad ? "CPF inválido" : "Necessário para gerar a cobrança da taxa de matrícula"}
-            inputProps={{ inputMode: "numeric", autoComplete: "off" }} />
+          <div className={classes.full}>
+            <NameField id="lead-name" fullWidth variant="outlined" margin="dense" label="Nome completo" required autoFocus={!lead.id}
+              value={lead.name ?? ""} onChange={set("name")} />
+          </div>
+          <PhoneField id="lead-phone" fullWidth variant="outlined" margin="dense" label="WhatsApp / telefone" value={lead.phone ?? ""} onChange={set("phone")} />
+          <EmailField id="lead-email" fullWidth variant="outlined" margin="dense" label="E-mail" value={lead.email ?? ""} onChange={set("email")} />
+          <CpfField id="lead-cpf" fullWidth variant="outlined" margin="dense" label="CPF" value={lead.cpf ?? ""} onChange={set("cpf")}
+            helperText="Necessário para gerar a cobrança da taxa de matrícula" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 72px", gap: 8 }}>
-            {text("city", "Cidade")}
-            {text("state", "UF", { inputProps: { maxLength: 2 } })}
+            <CityField id="lead-city" fullWidth variant="outlined" margin="dense" label="Cidade" value={lead.city ?? ""} onChange={set("city")} />
+            <TextField fullWidth variant="outlined" margin="dense" label="UF" value={lead.state ?? ""}
+              onChange={(e) => set("state")(e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 2))} inputProps={{ maxLength: 2 }} />
           </div>
         </div>
       </div>

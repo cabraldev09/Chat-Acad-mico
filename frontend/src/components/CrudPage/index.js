@@ -32,6 +32,7 @@ import ConfirmationModal from "../ConfirmationModal";
 import IconAction from "../IconAction";
 import openSocket from "../../services/socket-io";
 import api from "../../services/api";
+import { CurrencyField } from "../MaskedFields";
 import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles((theme) => ({
@@ -198,6 +199,11 @@ const CrudPage = ({
       if (f.type === "number" && payload[f.name] !== "") {
         payload[f.name] = Number(payload[f.name]);
       }
+      // money in reais: a number, or null when the field was left empty (never "")
+      if (f.type === "currency") {
+        const empty = payload[f.name] === "" || payload[f.name] === null || payload[f.name] === undefined;
+        payload[f.name] = empty ? (f.default !== undefined ? f.default : null) : Number(payload[f.name]);
+      }
     });
     return mapOut ? mapOut(payload, editing) : payload;
   };
@@ -251,6 +257,16 @@ const CrudPage = ({
     // free-form field: f.render(value, setValue, allValues) returns the element
     if (f.type === "custom") {
       return <div key={f.name} className={classes.field}>{f.render(values[f.name], (v) => set(f.name, v), values)}</div>;
+    }
+    // money in reais typed from the right (12145 = R$ 121,45)
+    if (f.type === "currency") {
+      const raw = values[f.name];
+      return (
+        <div key={f.name} className={classes.field}>
+          <CurrencyField label={f.label} variant="outlined" margin="dense" fullWidth required={f.required} helperText={f.helper}
+            value={raw === "" || raw === null || raw === undefined ? null : Number(raw)} onChange={(n) => set(f.name, n === null ? "" : n)} />
+        </div>
+      );
     }
     if (f.type === "switch") {
       return (

@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useCallback, useEffect, useState } from "react";
-import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from "@material-ui/core";
+import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from "@material-ui/core";
+import { NameField } from "../../components/MaskedFields";
 import { toast } from "react-toastify";
 
 import api from "../../services/api";
@@ -36,7 +37,7 @@ const StandaloneProposals = ({ open, onClose, ctx }) => {
             Para quem não é lead seu: um colega envia ao lead dele, ou uma simulação. Não muda nada no CRM. No fim, copie o link ou baixe o PDF.
           </Typography>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <TextField size="small" variant="outlined" label="Nome de quem vai receber" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: "1 1 240px" }} inputProps={{ maxLength: 120 }} />
+            <NameField id="standalone-name" size="small" variant="outlined" label="Nome de quem vai receber" value={name} onChange={setName} style={{ flex: "1 1 240px" }} inputProps={{ maxLength: 120 }} />
             <Button variant="contained" color="primary" disableElevation style={{ height: 40 }} disabled={!name.trim()} onClick={() => setStudio({ name: name.trim() })}>Montar proposta</Button>
           </div>
           {rows === null && !failed && <CircularProgress size={20} />}
