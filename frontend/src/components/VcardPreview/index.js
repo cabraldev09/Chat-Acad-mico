@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useContext, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import toastError from "../../errors/toastError";
 import api from "../../services/api";
@@ -9,79 +9,98 @@ import Grid from "@material-ui/core/Grid";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 
-import { Button, Divider, } from "@material-ui/core";
+import { Button, Divider } from "@material-ui/core";
 
-const VcardPreview = ({ contact, numbers }) => {
-    const history = useHistory();
-    const { user } = useContext(AuthContext);
+// A Brazilian number written without the country code (DDD + number, 10 or 11 digits) gets 55; anything else stays as written
+const withCountry = (digits) => (/^\d{10,11}$/.test(digits) ? `55${digits}` : digits);
 
-    const [selectedContact, setContact] = useState({
-        name: "",
-        number: 0,
-        profilePicUrl: ""
-    });
-
-    useEffect(() => {
-        const delayDebounceFn = setTimeout(() => {
-            const fetchContacts = async () => {
-                // a card without a number or a name cannot become a contact: nothing to ask the server, nothing to show
-                const digits = typeof numbers === "string" ? numbers.replace(/\D/g, "") : "";
-                if (!digits || !String(contact || "").trim()) return;
-                try {
-                    const { data } = await api.post("/contact", { name: contact, number: digits, email: "" });
-                    setContact(data);
-                } catch (err) {
-                    // opening a conversation must not fill the screen with errors because of a shared card
-                    // eslint-disable-next-line no-console
-                    console.warn("Contact card not saved:", err && err.message);
-                }
-            };
-            fetchContacts();
-        }, 500);
-        return () => clearTimeout(delayDebounceFn);
-    }, [contact, numbers]);
-
-    const handleNewChat = async () => {
-        try {
-            const { data: ticket } = await api.post("/tickets", {
-                contactId: selectedContact.id,
-                userId: user.id,
-                status: "open",
-            });
-            history.push(`/tickets/${ticket.id}`);
-        } catch (err) {
-            toastError(err);
-        }
+// The name (FN) and the number of a shared contact card, read in the browser. The number WhatsApp gives in "waid=" wins; else the
+// first TEL, with or without "+", spaces or dashes.
+export const parseVcard = (body) => {
+  const lines = String(body || "").split(/\r?\n/);
+  let name = "";
+  let number = "";
+  let waid = "";
+  lines.forEach((line) => {
+    const idx = line.indexOf(":");
+    if (idx === -1) return;
+    const key = line.slice(0, idx).toUpperCase();
+    const value = line.slice(idx + 1).trim();
+    if (!name && (key === "FN" || key.startsWith("FN;"))) name = value;
+    if (key === "TEL" || key.startsWith("TEL;")) {
+      const w = /WAID=(\d+)/i.exec(line.slice(0, idx));
+      if (w && !waid) waid = w[1];
+      const digits = value.replace(/\D/g, "");
+      if (digits && !number) number = withCountry(digits);
     }
+  });
+  if (!name) {
+    const n = lines.find((l) => /^N[:;]/i.test(l));
+    if (n) name = n.slice(n.indexOf(":") + 1).split(";").filter(Boolean).reverse().join(" ").trim();
+  }
+  return { name, number: waid || number };
+};
 
-    return (
-        <>
-            <div style={{
-                minWidth: "min(250px, 100%)",
-            }}>
-                <Grid container spacing={1}>
-                    <Grid item xs={2}>
-                        <Avatar src={selectedContact.profilePicUrl} />
-                    </Grid>
-                    <Grid item xs={9}>
-                        <Typography style={{ marginTop: "12px", marginLeft: "10px" }} variant="subtitle1" color="primary" gutterBottom>
-                            {selectedContact.name}
-                        </Typography>
-                    </Grid>
-                    <Grid item xs={12}>
-                        <Divider />
-                        <Button
-                            fullWidth
-                            color="primary"
-                            onClick={handleNewChat}
-                            disabled={!selectedContact.number}
-                        >Conversar</Button>
-                    </Grid>
-                </Grid>
-            </div>
-        </>
-    );
+// +55 69 99366-7971, as people read a phone
+const phoneText = (digits) => {
+  const d = String(digits || "").replace(/\D/g, "");
+  if (/^55\d{10,11}$/.test(d)) {
+    const rest = d.slice(4);
+    return `+55 ${d.slice(2, 4)} ${rest.slice(0, rest.length - 4)}-${rest.slice(-4)}`;
+  }
+  return d ? `+${d}` : "";
+};
 
+// A contact shared in the conversation: it shows the name and the phone of the card itself. Nothing is saved just because the card
+// is on the screen; "Conversar" finds the person (or registers them) and opens the conversation.
+const VcardPreview = ({ vcard, contact, numbers }) => {
+  const history = useHistory();
+  const { user } = useContext(AuthContext);
+  const [busy, setBusy] = useState(false);
+
+  const card = useMemo(() => {
+    if (vcard) return parseVcard(vcard);
+    // older callers pass the name and the number already read
+    const digits = typeof numbers === "string" ? withCountry(numbers.replace(/\D/g, "")) : "";
+    return { name: String(contact || "").trim(), number: digits };
+  }, [vcard, contact, numbers]);
+
+  const handleNewChat = async () => {
+    if (!card.number) return;
+    setBusy(true);
+    try {
+      const { data: found } = await api.post("/contact", { name: card.name || phoneText(card.number), number: card.number, email: "" });
+      const { data: ticket } = await api.post("/tickets", { contactId: found.id, userId: user.id, status: "open" });
+      history.push(`/tickets/${ticket.id}`);
+    } catch (err) {
+      toastError(err);
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ minWidth: "min(250px, 100%)" }}>
+      <Grid container spacing={1}>
+        <Grid item xs={2}>
+          <Avatar>{(card.name || "?").charAt(0).toUpperCase()}</Avatar>
+        </Grid>
+        <Grid item xs={9}>
+          <Typography style={{ marginTop: 4, marginLeft: 10 }} variant="subtitle1" color="primary">
+            {card.name || phoneText(card.number) || "Contato"}
+          </Typography>
+          <Typography style={{ marginLeft: 10, opacity: 0.75 }} variant="body2">
+            {card.number ? phoneText(card.number) : "Contato sem telefone no cartão"}
+          </Typography>
+        </Grid>
+        <Grid item xs={12}>
+          <Divider />
+          <Button fullWidth color="primary" onClick={handleNewChat} disabled={!card.number || busy}>
+            Conversar
+          </Button>
+        </Grid>
+      </Grid>
+    </div>
+  );
 };
 
 export default VcardPreview;

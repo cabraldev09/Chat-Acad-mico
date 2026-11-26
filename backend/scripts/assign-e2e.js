@@ -537,6 +537,29 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(s.userId === ids.joao, `the conversation went to the tutor: ${JSON.stringify(s)}`);
       assert(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${r.data.teamHandoff.ticketId} AND type='team_handoff_in'`) === "1", "no call on the tutoring side");
     });
+    await test("a transfer to the tutoring with a tutor chosen goes to that tutor (only one of that queue), and Avisar o cliente tells the client where the conversation continues", async () => {
+      const tq = Number(sql(`SELECT id FROM Queues WHERE role='tutoria' ORDER BY id DESC LIMIT 1`));
+      const chosen = (await http.post("/users", { name: "Tutor Escolhido", email: `tutor-escolhido-${seq}@x.com`, password: "senha123", profile: "user", role: "tutor" }, as(admin))).data;
+      sql(`INSERT INTO UserQueues (userId, queueId, createdAt, updatedAt) VALUES (${chosen.id}, ${tq}, NOW(), NOW()) ON CONFLICT DO NOTHING`);
+      const outsider = (await http.post("/users", { name: "Tutor de Fora", email: `tutor-fora-${seq}@x.com`, password: "senha123", profile: "user", role: "tutor" }, as(admin))).data;
+      const t = student();
+      const refused = await http.put(`/tickets/${t.ticketId}`, { queueId: tq, userId: outsider.id }, as(joao));
+      assert(refused.status === 422 && refused.data.error === "ERR_USER_NOT_IN_QUEUE", `a tutor of no queue was accepted: ${refused.status} ${JSON.stringify(refused.data)}`);
+      const sentBefore = Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${t.ticketId} AND fromMe=true`));
+      const r = await http.put(`/tickets/${t.ticketId}`, { queueId: tq, userId: chosen.id, note: "prefere a tarde", notifyClient: true }, as(joao));
+      assert(r.status === 200 && r.data.teamHandoff && r.data.teamHandoff.userId === chosen.id, `the chosen tutor did not get the student: ${r.status} ${JSON.stringify(r.data.teamHandoff)}`);
+      assert(sql(`SELECT userId FROM Tickets WHERE id=${r.data.teamHandoff.ticketId}`) === String(chosen.id), "the tutoring conversation is not with the chosen tutor");
+      assert(row(t.ticketId).userId === ids.joao, "the consultant's conversation changed hands");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${t.ticketId} AND fromMe=true`)) > sentBefore, 10000, "the client was not told");
+      assert(/encaminhado para \*Tutor Escolhido\*/.test(sql(`SELECT body FROM Messages WHERE ticketId=${t.ticketId} AND fromMe=true ORDER BY createdAt DESC LIMIT 1`)), "the notice does not say who answers");
+      // without a choice and without asking to tell the client: the student's tutor, and nothing is sent to the client
+      const t2 = student();
+      const before2 = Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${t2.ticketId} AND fromMe=true`));
+      const r2 = await http.put(`/tickets/${t2.ticketId}`, { queueId: tq }, as(joao));
+      assert(r2.status === 200 && r2.data.teamHandoff && r2.data.teamHandoff.userId === ids.tania, `without a choice: ${JSON.stringify(r2.data.teamHandoff)}`);
+      await new Promise(res => setTimeout(res, 800));
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${t2.ticketId} AND fromMe=true`)) === before2, "the client was told without being asked");
+    });
     await test("each profile answers on its own side: a tutor cannot receive or answer a consultant's conversation; the management can", async () => {
       const t = student();
       const refused = await http.put(`/tickets/${t.ticketId}`, { userId: ids.tania }, as(joao));

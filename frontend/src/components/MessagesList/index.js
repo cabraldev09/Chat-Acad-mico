@@ -645,7 +645,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           if (v.indexOf("FN") !== -1) contact = values[i + 1];
         });
       });
-      return <VcardPreview contact={contact} numbers={numbers[0]?.number} />;
+      return <VcardPreview vcard={m.body} contact={contact} numbers={numbers[0]?.number} />;
     }
     if (m.mediaType === "image") {
       return (
