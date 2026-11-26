@@ -214,3 +214,22 @@ export const indicators = async (req: Request, res: Response): Promise<Response>
   const cacheKey = ["indicadores", tokenKey, (caller?.scopes || []).slice().sort().join(","), (query.tokenPolos || ["all"]).join(","), query.from, query.to, query.poloId || ""].join("|");
   return res.json(await remember(cacheKey, INDICATORS_CACHE_MS, () => buildIndicators(query, new Date(), tokenKey)));
 };
+
+// THE QUEUE OF READINGS for an outside worker: up to `limite` conversations (masked: no name, phone, CPF, e-mail or number), reserved for 30
+// minutes to this token; the answer is the JSON the instructions of each one ask for. A token of some polos takes only readings of them.
+const claimKeyOf = (req: Request): string => {
+  const caller: any = apiCaller(req);
+  return `token:${caller.id || "legacy"}`;
+};
+export const takeReadings = async (req: Request, res: Response): Promise<Response> => {
+  const { claimReadings } = await import("../services/ReadingServices/Queue");
+  const leituras = await claimReadings(claimKeyOf(req), Math.min(Number(req.query.limite) || 10, 50), polosOf(req));
+  return res.json({ leituras });
+};
+export const answerReading = async (req: Request, res: Response): Promise<Response> => {
+  const { completeReading } = await import("../services/ReadingServices/Queue");
+  const body = req.body?.resposta ?? req.body;
+  const text = typeof body === "string" ? body : JSON.stringify(body || {});
+  const result = await completeReading(Number(req.params.id), text, { who: "openbot", claimKey: claimKeyOf(req), model: req.body?.modelo ? String(req.body.modelo).slice(0, 60) : "openbot", tokens: null });
+  return res.json({ ok: true, resultado: result });
+};

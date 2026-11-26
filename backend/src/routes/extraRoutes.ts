@@ -19,6 +19,8 @@ import * as Preferences from "../controllers/PreferencesController";
 import canManageWhatsapp from "../middleware/canManageWhatsapp";
 import isAdmin from "../middleware/isAdmin";
 import isManager from "../middleware/isManager";
+import * as Recovery from "../controllers/RecoveryController";
+import * as Readings from "../controllers/ReadingController";
 import isSystemAdmin from "../middleware/isSystemAdmin";
 import { canReadTicket, canWriteTicket } from "../middleware/canAccessTicket";
 import { canAccessLead, canAccessOnboarding, canAccessProposal, canAccessPayment, loadCrmPolos } from "../middleware/scope";
@@ -357,6 +359,15 @@ r.get("/crm/options", isAuth, cached(), Lead.options);
 r.get("/crm/board", isAuth, Lead.board);
 r.get("/crm/metrics", isAuth, Lead.metrics);
 r.get("/crm/triage", isAuth, Lead.triageList);
+// "Recuperação": the leads that stopped or gave up, with the reason (each one sees the ones it may see; see RecoveryController)
+r.get("/crm/recovery", isAuth, Recovery.index);
+r.post("/leads/:id/recovery", isAuth, canAccessLead, Recovery.act);
+// the readings of conversations (who reads them, the counts): the administration sees; only the administrator (not the coordination)
+// turns them on or off, chooses who reads and runs a round now
+r.get("/readings/settings", isAuth, isAdmin, Readings.settings);
+r.put("/readings/settings", isAuth, isSystemAdmin, Readings.saveSettings);
+r.post("/readings/run", isAuth, isSystemAdmin, Readings.runNow);
+r.get("/analytics/outcomes", isAuth, isManager, Readings.outcomes);
 r.get("/crm/report", isAuth, crmReport);
 r.get("/me/preferences", isAuth, Preferences.show);
 r.put("/me/preferences", isAuth, Preferences.update);

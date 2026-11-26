@@ -32,6 +32,7 @@ Rotas em `/api/v1` (`backend/src/routes/apiV1Routes.ts`), autenticadas por token
 | `GET /connections` | `connections:read` | todas (sem dado pessoal) |
 | `POST /messages/send` | `messages:send` | só para número de lead desses polos (`403 ERR_API_TOKEN_POLO`) |
 | `GET /indicadores?de=&ate=&polo=` | `indicators:read` | só esses polos; `polo` fora deles: `403 ERR_API_TOKEN_POLO` |
+| `GET /leituras?limite=` e `POST /leituras/:id` | `readings:work` | só leituras de leads desses polos (as sem polo ficam para tokens de todos os polos) |
 
 As respostas trazem só os campos que a integração usa: lead sem CPF, endereço, notas nem histórico; conversa sem texto.
 Tokens de todos os polos (sem polo escolhido) continuam com as respostas de antes em `POST /leads` (`201/200` com `id`) e
@@ -105,6 +106,38 @@ alguém digite como origem ou etapa.
 `conexoes`: id, canal, função (`atendimento`, `tutoria`, `pessoal`…), conectado, estado, qualidade (verde/amarela/vermelha, lida do
 aviso da conexão) e validade do token da Meta (data e dias). Nunca o nome da conexão nem o token. Com polos no token, só as conexões
 que atendem filas desses polos.
+
+## Fila de leituras (`GET /leituras`, `POST /leituras/:id`): o OpenBot faz o trabalho que gastaria tokens
+Em Integrações, "Leituras das conversas", a administração escolhe quem lê as conversas: a IA do sistema (o modelo mais barato) ou o
+OpenBot pela API. Com o OpenBot, a IA do sistema lê só o que ficar esperando mais do que as horas escolhidas (padrão 6).
+
+As leituras são de três tipos:
+- `importacao`: uma conversa copiada do celular de um consultor (WhatsApp por QR Code). Diz se é lead, se já se matriculou, se parou ou desistiu e por quê.
+- `resultado`: a conversa de um lead que se matriculou ou se perdeu. Diz o motivo, as objeções, o que ajudou e o que faltou.
+- `revisao`: a revisão diária da conversa de um consultor. Diz as objeções e as etapas com dificuldade ou puladas.
+
+**Pegar:** `GET /api/v1/leituras?limite=10` (até 50) devolve `{"leituras": [{"id", "tipo", "instrucoes", "conversa", "reservadaAte"}]}`.
+- Cada leitura fica reservada para o token por 30 minutos.
+- `conversa` vem pseudonimizada: nomes viram `[NOME]`; CPF, telefone, e-mail e qualquer número longo viram marcadores.
+- Com as leituras desligadas (Integrações), a lista vem vazia.
+- O texto não é guardado no sistema.
+
+**Responder:** `POST /api/v1/leituras/:id` com `{"resposta": {...}, "modelo": "nome do modelo"}`, onde a resposta é o JSON que `instrucoes` pede.
+- A resposta passa pela mesma validação e faz o mesmo que a resposta da IA do sistema: lead no funil com o resumo, matrícula com o RGM, "Matrícula a confirmar", Recuperação.
+- Respostas de erro:
+  - `422 ERR_READING_BAD_ANSWER`: a resposta está fora do formato; a leitura volta para a fila e, depois de 3 tentativas, é descartada;
+  - `409 ERR_READING_NOT_CLAIMED`: a reserva venceu ou é de outro token;
+  - `409 ERR_READING_DONE`: a leitura já foi respondida.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$API/api/v1/leituras?limite=5"
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"resposta":{"e_lead":true,"situacao":"em_andamento","curso":"Pedagogia","etapa":"proposal","objecao":"nenhuma","motivo":"","resumo":"Quer Pedagogia e pediu a proposta.","proximo_passo":"Enviar a proposta"}}' \
+  "$API/api/v1/leituras/123"
+```
+
+A tela de Integrações mostra quantas leituras cada um fez e quantos tokens o OpenBot economizou: a média de tokens das leituras da IA do
+sistema vezes as leituras feitas pelo OpenBot. Mandar as conversas pseudonimizadas ao OpenBot é decisão do dono registrada pela coordenação em 26/11 (issue #201 e PR #205; ver `AGENTS.md`).
 
 ## Testes
 

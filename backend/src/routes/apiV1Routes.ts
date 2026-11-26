@@ -1,6 +1,6 @@
 import express from "express";
 import isAuthApi from "../middleware/isAuthApi";
-import { canReadConnections, canReadContacts, canReadIndicators, canReadLeads, canReadTickets, canSendMessages, canWriteContacts, canWriteLeads } from "../middleware/apiScope";
+import { canReadConnections, canReadContacts, canReadIndicators, canReadLeads, canReadTickets, canSendMessages, canWorkReadings, canWriteContacts, canWriteLeads } from "../middleware/apiScope";
 import * as ApiV1 from "../controllers/ApiV1Controller";
 import rateLimit from "../middleware/rateLimit";
 
@@ -23,6 +23,9 @@ router.post("/contacts", isAuthApi, perToken, canWriteContacts, ApiV1.upsertCont
 router.get("/connections", isAuthApi, perToken, canReadConnections, ApiV1.connections);
 router.get("/leads", isAuthApi, perToken, canReadLeads, ApiV1.leads);
 router.post("/leads", isAuthApi, perToken, canWriteLeads, ApiV1.createLead);
+// the queue of readings: an outside worker (OpenBot) takes masked conversations and gives back the codes (docs/API-V1.md)
+router.get("/leituras", isAuthApi, perToken, canWorkReadings, ApiV1.takeReadings);
+router.post("/leituras/:id", isAuthApi, perToken, canWorkReadings, ApiV1.answerReading);
 router.get("/indicadores", isAuthApi, perToken, perTokenIndicators, canReadIndicators, ApiV1.indicators);
 
 export default router;
