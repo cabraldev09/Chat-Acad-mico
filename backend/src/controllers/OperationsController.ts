@@ -35,8 +35,6 @@ export const saveConfig = async (req: Request, res: Response): Promise<Response>
     if (FINANCIAL_KEYS.includes(k) && req.user.profile !== "admin") throw new AppError("ERR_NO_PERMISSION", 403);
     try { return [k, validateOperationSetting(k, v)] as const; } catch (_) { throw new AppError("ERR_OPERATION_SETTING", 400); }
   });
-  const fallback = values.find(([k]) => k === "crm_fallback_queue_id")?.[1];
-  if (Number(fallback) && !(await Queue.findByPk(Number(fallback)))) throw new AppError("ERR_NO_QUEUE_FOUND", 404);
   await sequelize.transaction(async () => { for (const [k, v] of values) await setSetting(k, v); });
   return config(req, res);
 };

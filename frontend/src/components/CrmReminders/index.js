@@ -46,7 +46,7 @@ const CrmReminders = () => {
     });
     socket.on("budgetAlert", (a) => {
       if (user.profile !== "admin" && user.role !== "admin") return;
-      toast.warn(a.text, { toastId: `budget:${a.key}:${a.level}`, autoClose: 30000, onClick: () => history.push("/configuracoes?secao=meta") });
+      toast.warn(a.text, { toastId: `budget:${a.key}:${a.level}`, autoClose: 30000, onClick: () => history.push("/configuracoes?secao=limites") });
     });
     // a lead nobody answered in time: the owner and the managers are warned. Several in the same minute become one pop-up with the
     // count (the server already leaves out "obrigado", stickers and waits that started days ago), and a conversation already open
