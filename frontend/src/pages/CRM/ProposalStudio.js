@@ -117,6 +117,14 @@ const percentTyping = (v) => {
 };
 
 // backend params -> text inputs
+// one scholarship, three places: "Bolsa aplicada", "Bolsa no 1º semestre" and the fee with the scholarship are the same number. Changing
+// one changes the others; "Bolsa dos demais" follows too while it cannot be different (fee fixed until the end, or no change after the 1st)
+export const followBolsa = (p, v) => ({
+  bolsa: v,
+  bolsaFirst: v,
+  ...(p.fixedUntilEnd || !p.hasRegression ? { bolsaNext: v } : {}),
+});
+
 const toForm = (p, calendar) => ({
   turma: keyOf(calendar, p), entryTurma: p.entryTurma || "", releaseDate: p.releaseDate || "", grossUnlocked: !!p.grossUnlocked,
   gross: money(p.gross), first: money(baseOf(p)), bolsa: p.gross ? money(r2((1 - baseOf(p) / p.gross) * 100)) : "",
@@ -126,7 +134,10 @@ const toForm = (p, calendar) => ({
   enrollmentFee: money(p.enrollmentFee), dueDay: String(p.dueDay), installments: String(p.installments), firstDueDate: p.firstDueDate || "",
   entryTerm: `${p.startYear}/${p.startSemester}`, entrySemester: p.entrySemester || 1, courseSemesters: p.courseSemesters || p.semesters, admissionType: p.admissionType || "",
   attend: String(p.semesters), attendAuto: true,
-  bolsaFirst: money(p.bolsaFirst), bolsaNext: money(p.bolsaNext),
+  // the scholarship of the 1st semester IS the applied one (it comes from the fee with the scholarship); with the fee fixed until the end
+  // (or no change after the 1st semester) the others have the same one
+  bolsaFirst: p.gross ? money(r2((1 - baseOf(p) / p.gross) * 100)) : money(p.bolsaFirst),
+  bolsaNext: p.gross && (p.fixedUntilEnd || p.hasRegression === false) ? money(r2((1 - baseOf(p) / p.gross) * 100)) : money(p.bolsaNext),
   punctualityPct: String(p.punctualityPct), lateFee1Pct: String(p.lateFee1Pct), lateFee2Pct: String(p.lateFee2Pct),
   annualMin: money(p.annualMin), annualMax: money(p.annualMax),
   schedule: (p.semestralSchedule || []).map((s) => ({ from: String(s.from), pct: money(s.pct) })),
@@ -296,7 +307,8 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
     const v = percentTyping(e.target.value);
     setF((p) => {
       const b = toNum(v);
-      return v !== "" && b >= 0 && b <= 100 ? { ...p, bolsa: v, first: money(r2(toNum(p.gross) * (1 - b / 100))) } : { ...p, bolsa: v };
+      if (!(v !== "" && b >= 0 && b <= 100)) return { ...p, bolsa: v, bolsaFirst: v };
+      return { ...p, ...followBolsa(p, v), first: money(r2(toNum(p.gross) * (1 - b / 100))) };
     });
   };
   const problems = problemsOf(f);
@@ -366,7 +378,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
   const setFirst = (n) => setF((p) => {
     const v = n === null ? "" : money(n);
     const g = toNum(p.gross);
-    return n > 0 && g > 0 && n <= g ? { ...p, first: v, bolsa: money(r2((1 - n / g) * 100)) } : { ...p, first: v };
+    return n > 0 && g > 0 && n <= g ? { ...p, first: v, ...followBolsa(p, money(r2((1 - n / g) * 100))) } : { ...p, first: v };
   });
   const setGross = (n) => setF((p) => {
     const b = toNum(p.bolsa);
@@ -463,6 +475,14 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
   const terms = f ? [...new Set([...(options.entryTerms || []), f.entryTerm])] : [];
   const turma = f && f.turma ? calendar.find((x) => x.key === f.turma) : null;
   const missing = f ? missingOf(f, courseId) : [];
+  // the warning takes the person to the field that is missing (the form is long and the field may be scrolled away)
+  const goToMissing = (list) => {
+    if (!list.includes("forma de ingresso")) return;
+    const el = document.getElementById("proposal-admission");
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.focus();
+  };
   const grossLocked = f && !f.grossUnlocked && !!coursePrice;
   const blocked = !f || !!busy || !!locked || !!error;
 
@@ -511,7 +531,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
                   .map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
               </TextField>
               <div className={classes.grid2}>
-                {f.planType !== "parcelado" && <TextField select fullWidth required variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
+                {f.planType !== "parcelado" && <TextField id="proposal-admission" select fullWidth required variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
                   error={!locked && !f.admissionType} helperText={!locked && !f.admissionType ? "Obrigatório para gerar" : " "}
                   onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => {
                     const entry = (options.admissionNeedsSemester || []).includes(e.target.value) ? p.entrySemester : 1;
@@ -613,13 +633,13 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
               {f.planType === "parcelado" ? parcelado() : (<>
               {field("installmentsFixed", "Total de parcelas do curso (vazio = até o fim do curso)", { disabled: !!locked, type: "number", inputProps: { min: 1, max: 120 } })}
               <FormControlLabel
-                control={<Switch color="primary" checked={!!f.fixedUntilEnd} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, fixedUntilEnd: e.target.checked }))); }} />}
+                control={<Switch color="primary" checked={!!f.fixedUntilEnd} disabled={!!locked} onChange={(e) => { const on = e.target.checked; setF((p) => ({ ...p, fixedUntilEnd: on, ...(on ? { bolsaNext: p.bolsaFirst } : {}) })); }} />}
                 label="Mensalidade fixa até o fim do curso"
               />
               {!f.fixedUntilEnd && (
                 <>
                   <FormControlLabel
-                    control={<Switch color="primary" checked={!!f.hasRegression} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, hasRegression: e.target.checked }))); }} />}
+                    control={<Switch color="primary" checked={!!f.hasRegression} disabled={!!locked} onChange={(e) => { const on = e.target.checked; setF((p) => ({ ...p, hasRegression: on, ...(!on ? { bolsaNext: p.bolsaFirst } : {}) })); }} />}
                     label="Tem regressão da bolsa (cai após o 1º semestre)"
                   />
                   <FormControlLabel
@@ -655,8 +675,10 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
               <Collapse in={advanced}>
                 <div style={{ paddingTop: 12 }}>
                   <div className={classes.grid2}>
-                    {field("bolsaFirst", "Bolsa no 1º semestre (%)", { disabled: !!locked })}
-                    {field("bolsaNext", "Bolsa dos demais (%)", { disabled: !!locked })}
+                    {field("bolsaFirst", "Bolsa no 1º semestre (%)", { disabled: !!locked, onChange: setBolsa, error: !!problems.bolsa, helperText: problems.bolsa || "A mesma da bolsa aplicada", inputProps: { inputMode: "decimal" } })}
+                    {field("bolsaNext", "Bolsa dos demais (%)", f.fixedUntilEnd || !f.hasRegression
+                      ? { disabled: true, helperText: f.fixedUntilEnd ? "Mensalidade fixa até o fim: a bolsa não muda" : "Sem regressão: a bolsa não muda" }
+                      : { disabled: !!locked, helperText: "A partir do 2º semestre", inputProps: { inputMode: "decimal" } })}
                   </div>
                   <div className={classes.grid3}>
                     {field("punctualityPct", "Pontualidade (%)", { disabled: !!locked })}
@@ -727,7 +749,12 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
 
       <div className={classes.foot}>
         <div className={classes.footInfo}>
-          {!locked && missing.length > 0 && <span className={classes.missing}><AlertTriangle size={15} style={{ flex: "none" }} /> Falta para gerar o PDF ou enviar: {missing.join(", ")}.</span>}
+          {!locked && missing.length > 0 && (
+            <button type="button" className={classes.missing} style={{ border: 0, background: "transparent", cursor: "pointer", font: "inherit", padding: 0, textAlign: "left" }}
+              title="Ir até o campo" onClick={() => goToMissing(missing)}>
+              <AlertTriangle size={15} style={{ flex: "none" }} /> Falta para gerar o PDF ou enviar: <u>{missing.join(", ")}</u>.
+            </button>
+          )}
           {!locked && (dirty
             ? <span className={classes.savedAt}>Alterações não salvas</span>
             : savedAt ? <span className={classes.savedAt}><Check size={14} /> Salvo às {savedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span> : null)}

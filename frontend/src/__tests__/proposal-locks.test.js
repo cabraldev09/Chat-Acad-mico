@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../services/api", () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
-import { problemsOf } from "../pages/CRM/ProposalStudio";
+import { problemsOf, followBolsa } from "../pages/CRM/ProposalStudio";
 
 const base = { gross: "1073,80", first: "214,76", bolsa: "80,00", firstExempt: false, firstSame: true, firstPay: "214,76" };
 
@@ -22,5 +22,15 @@ describe("travas da proposta", () => {
   it("a 1ª mensalidade com valor próprio não passa da bruta", () => {
     expect(problemsOf({ ...base, firstSame: false, firstPay: "2000,00" }).firstPay).toMatch(/Não pode passar/);
     expect(problemsOf({ ...base, firstExempt: true, firstSame: false, firstPay: "2000,00" }).firstPay).toBeUndefined();
+  });
+});
+
+describe("uma bolsa só, em três lugares", () => {
+  it("mudar a bolsa aplicada ou a do 1º semestre muda as duas (o caso do print: 30% no 1º semestre não mexia na proposta)", () => {
+    expect(followBolsa({ hasRegression: true, fixedUntilEnd: false }, "30,00")).toEqual({ bolsa: "30,00", bolsaFirst: "30,00" });
+  });
+  it("com a mensalidade fixa até o fim, ou sem regressão, a bolsa dos demais acompanha", () => {
+    expect(followBolsa({ hasRegression: true, fixedUntilEnd: true }, "30,00")).toEqual({ bolsa: "30,00", bolsaFirst: "30,00", bolsaNext: "30,00" });
+    expect(followBolsa({ hasRegression: false, fixedUntilEnd: false }, "25,00").bolsaNext).toBe("25,00");
   });
 });

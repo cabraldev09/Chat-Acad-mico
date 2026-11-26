@@ -132,8 +132,8 @@ ${i.texts.disclaimer ? `<div class="note">${esc(i.texts.disclaimer)}</div>` : ""
 
 <h2>Produtos ou serviços</h2>
 <table class="prod"><thead><tr><th>Produto</th><th>Preço</th><th>Desconto</th><th class="r">Sub-total</th></tr></thead>
-<tbody><tr><td><b>${esc(i.title)}</b>${i.modalityLabel ? `<div class="muted">${esc(i.modalityLabel)}</div>` : ""}</td>
-<td>${brl(p.gross)}</td><td>${pct2(firstDiscount)}</td><td class="r">${brl(first)}</td></tr></tbody></table>
+<tbody><tr><td><b>${esc(i.title)}</b>${i.modalityLabel ? `<div class="muted">${esc(i.modalityLabel)}</div>` : ""}<div class="muted">${p.firstExempt ? "1ª mensalidade isenta" : "1ª mensalidade"}</div></td>
+<td>${brl(p.gross)}</td><td>${p.firstExempt ? "Isenta" : pct2(firstDiscount)}</td><td class="r">${brl(first)}</td></tr></tbody></table>
 <div class="total"><span>Valor total do pedido</span><span>${brl(first)}</span></div>
 
 `;
