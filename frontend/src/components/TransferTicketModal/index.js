@@ -71,6 +71,10 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketSegment }) =>
 	// to the tutoring a lead that did not enroll yet: the consultant says whether the student enrolled (and then confirms it with the RGM) or it is support to a student
 	const [enrollAsk, setEnrollAsk] = useState(null);
 	const [enrollLead, setEnrollLead] = useState(null);
+	// the transfer moves the conversation of the official number to the tutor's QR Code: the person confirms it first
+	const [moveAsk, setMoveAsk] = useState(null);
+	// another destination is another move: asked again
+	useEffect(() => { setMoveAsk(null); }, [selectedQueue, selectedUser, modalOpen]);
 	const classes = useStyles();
 	const { findAll: findAllQueues } = useQueues();
 
@@ -151,6 +155,15 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketSegment }) =>
 				}
 			} catch (err) {
 				// without the lead the transfer goes as before
+			}
+		}
+		// a conversation of the official number that goes on the tutor's WhatsApp: the student starts receiving from a new number
+		if (selectedQueue && !moveAsk) {
+			try {
+				const { data: preview } = await api.get(`/tickets/${ticketid}/transfer-preview`, { params: { queueId: selectedQueue, userId: selectedUser ? selectedUser.id : undefined } });
+				if (preview && preview.kind === "move") { setMoveAsk(preview); return; }
+			} catch (err) {
+				// without the preview the transfer goes as before
 			}
 		}
 		setLoading(true);
@@ -305,6 +318,11 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketSegment }) =>
 						}
 						label={i18n.t("transferTicketModal.notifyClient")}
 					/>
+					{moveAsk && (
+						<div role="alert" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: "rgba(217,119,6,.12)", fontSize: 14 }}>
+							A conversa vai continuar pelo número {moveAsk.connectionName} (QR Code). O aluno vai receber mensagens de um número novo.
+						</div>
+					)}
 					{selectedUser && (
 						<FormControlLabel
 							control={
@@ -333,7 +351,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketSegment }) =>
 						color="primary"
 						loading={loading}
 					>
-						{i18n.t("transferTicketModal.buttons.ok")}
+						{moveAsk ? "Confirmar transferência" : i18n.t("transferTicketModal.buttons.ok")}
 					</ButtonWithSpinner>
 				</DialogActions>
 			</form>

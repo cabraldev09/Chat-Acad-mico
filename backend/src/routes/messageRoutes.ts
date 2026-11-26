@@ -15,6 +15,8 @@ const upload = multer({ ...uploadConfig, limits: { fileSize: 64 * 1024 * 1024, f
 
 // before the routes with a :ticketId, which would take "forward-batch" for an id
 messageRoutes.post("/messages/forward-batch", isAuth, MessageController.forwardMany);
+// where to forward: conversations the person may write in and contacts without one (search on the server, no limit of 40)
+messageRoutes.get("/forward/targets", isAuth, MessageController.forwardTargetsIndex);
 messageRoutes.get("/messages/:ticketId", isAuth, canReadTicket, MessageController.index);
 
 messageRoutes.post("/messages/:ticketId/contact", isAuth, canSendTicket, MessageController.sendContact);

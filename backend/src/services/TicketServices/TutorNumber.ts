@@ -42,11 +42,34 @@ export const tutorMoveFor = async (ticket: Pick<Ticket, "whatsappId">, tutorId: 
 // Moves the conversation to the tutor's number, assigned to the tutor. When the student already has an open conversation there, that one is used
 // (assigned to the tutor) and the conversation of the official number is closed, each with a note saying where the other one is.
 export const moveToTutorNumber = async (ticketId: number, whatsappId: number, tutorId: number, actorId: number | null, queueId?: number | null): Promise<Ticket | null> => {
-  const ticket = await Ticket.findByPk(ticketId);
-  if (!ticket) return null;
   const tutor = await User.findByPk(tutorId, { attributes: ["id", "name"] });
   const to = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "name"] });
   if (!tutor || !to) return null;
+  const note = `Conversa do número oficial passou para a tutoria no WhatsApp de ${tutor.name} (conexão ${to.name}).`;
+  // one move at a time for this conversation (two transfers at once must not leave two conversations on the tutor's number), and
+  // the conversation the student already has there, live or closed, is the one that continues (never a second one beside it)
+  // the database is loaded only here: the pure helpers of this file are unit tested without a database configuration
+  const { default: sequelize } = await import("../../database");
+  const result = await sequelize.transaction(async transaction => {
+    const ticket = await Ticket.findByPk(ticketId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!ticket) return null;
+    const fromStatus = ticket.status;
+    const other =
+      (await Ticket.findOne({ where: { contactId: ticket.contactId, whatsappId, status: { [Op.in]: ["open", "pending"] }, id: { [Op.ne]: ticket.id } } as any, order: [["updatedAt", "DESC"]], transaction, lock: transaction.LOCK.UPDATE })) ||
+      (await Ticket.findOne({ where: { contactId: ticket.contactId, whatsappId, status: "closed", isHistorical: false, id: { [Op.ne]: ticket.id } } as any, order: [["updatedAt", "DESC"]], transaction, lock: transaction.LOCK.UPDATE }));
+    if (other) {
+      const wasClosed = other.status === "closed";
+      await other.update({ userId: tutor.id, status: "open", ...(queueId ? { queueId } : {}), aiActive: false, chatbotNodeId: -1, ...(wasClosed ? { closedAt: null } : {}) } as any, { transaction });
+      await TicketEvent.create({ ticketId: other.id, type: "transfer", actorId, toUserId: tutor.id, toQueueId: queueId || other.queueId || null, note: `${note} A conversa anterior (nº ${ticket.id}) está no histórico do contato.` } as any, { transaction });
+      await ticket.update({ status: "closed", closedAt: new Date(), aiActive: false, chatbotNodeId: -1 }, { transaction });
+      await TicketEvent.create({ ticketId: ticket.id, type: "transfer", actorId, toUserId: tutor.id, note: `${note} Continua na conversa nº ${other.id}.` } as any, { transaction });
+      return { kept: other, closedId: ticket.id, fromStatus };
+    }
+    await ticket.update({ whatsappId, userId: tutor.id, status: "open", ...(queueId ? { queueId } : {}), aiActive: false, chatbotNodeId: -1 }, { transaction });
+    await TicketEvent.create({ ticketId: ticket.id, type: "transfer", actorId, toUserId: tutor.id, toQueueId: queueId || ticket.queueId || null, note } as any, { transaction });
+    return { kept: ticket, closedId: null as number | null, fromStatus };
+  });
+  if (!result) return null;
   const io = getIO();
   const emit = async (id: number, action = "update") => {
     try {
@@ -56,21 +79,8 @@ export const moveToTutorNumber = async (ticketId: number, whatsappId: number, tu
       logger.warn(`Ticket ${id} update not sent: ${err}`);
     }
   };
-  const fromStatus = ticket.status;
-  const other = await Ticket.findOne({ where: { contactId: ticket.contactId, whatsappId, status: { [Op.in]: ["open", "pending"] }, id: { [Op.ne]: ticket.id } } as any });
-  const note = `Conversa do número oficial passou para a tutoria no WhatsApp de ${tutor.name} (conexão ${to.name}).`;
-  if (other) {
-    await other.update({ userId: tutor.id, status: "open", ...(queueId ? { queueId } : {}), aiActive: false, chatbotNodeId: -1 });
-    await TicketEvent.create({ ticketId: other.id, type: "transfer", actorId, toUserId: tutor.id, toQueueId: queueId || other.queueId || null, note: `${note} A conversa anterior (nº ${ticket.id}) está no histórico do contato.` } as any);
-    await ticket.update({ status: "closed", closedAt: new Date(), aiActive: false, chatbotNodeId: -1 });
-    await TicketEvent.create({ ticketId: ticket.id, type: "transfer", actorId, toUserId: tutor.id, note: `${note} Continua na conversa nº ${other.id}.` } as any);
-    io.to(fromStatus).emit("ticket", { action: "delete", ticketId: ticket.id });
-    await emit(other.id);
-    return other;
-  }
-  await ticket.update({ whatsappId, userId: tutor.id, status: "open", ...(queueId ? { queueId } : {}), aiActive: false, chatbotNodeId: -1 });
-  await TicketEvent.create({ ticketId: ticket.id, type: "transfer", actorId, toUserId: tutor.id, toQueueId: queueId || ticket.queueId || null, note } as any);
-  if (fromStatus !== "open") io.to(fromStatus).emit("ticket", { action: "delete", ticketId: ticket.id });
-  await emit(ticket.id);
-  return ticket;
+  if (result.closedId) io.to(result.fromStatus).emit("ticket", { action: "delete", ticketId: result.closedId });
+  else if (result.fromStatus !== "open") io.to(result.fromStatus).emit("ticket", { action: "delete", ticketId: result.kept.id });
+  await emit(result.kept.id);
+  return result.kept;
 };

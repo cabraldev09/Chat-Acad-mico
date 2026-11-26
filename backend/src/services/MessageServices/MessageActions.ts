@@ -215,24 +215,38 @@ export const forwardMessage = async (req: Request, id: string, ticketIds: number
   return sent;
 };
 
-// Forwards several messages to several conversations. The checks happen now (so a mistake is answered at once); the
-// sending itself runs in the background, one queue per connection (the pacing of each number is kept) with the
-// different numbers working side by side. The person sees the progress on the screen instead of waiting.
+// Forwards several messages to several conversations. The checks happen now (so a mistake is answered at once): who may send there,
+// the 24 h window of the official number, and the conversations waiting for an attendant (the person confirms they take them). A
+// contact with no open conversation gets one (the same as "Nova conversa"). The sending runs in the background, one queue per
+// connection, with the progress on the screen; each pair that does not go says why, and "Tentar de novo" sends only those.
+// Between two chats of the same number by QR Code the phone forwards it itself ("Encaminhada", no new upload).
 export interface ForwardProgress {
   batchId: string;
   done: number;
   failed: number;
   total: number;
   finished: boolean;
-  // each pair that did not go, with the reason (an error code the screen translates)
-  failedPairs: Array<{ messageId: string; ticketId: number; reason?: string }>;
+  // each pair that did not go, with the reason (an error code the screen translates) and who it was for
+  failedPairs: Array<{ messageId: string; ticketId: number; reason?: string; name?: string }>;
 }
 
-export const forwardBatch = async (req: Request, messageIds: string[], ticketIds: number[]): Promise<{ batchId: string; total: number }> => {
-  const mids = [...new Set(messageIds.map(String))].filter(Boolean).slice(0, 50);
-  const tids = [...new Set(ticketIds.map(Number))].filter(Boolean).slice(0, 10);
+export interface ForwardBatchOptions {
+  contactIds?: number[];
+  pairs?: Array<{ messageId: string; ticketId: number }>;
+  confirmAssume?: boolean;
+}
+
+const planOf = (m: Message) => forwardBodyOf({ ...m.get({ plain: true }), mediaUrl: m.getDataValue("mediaUrl") as string | null });
+
+export const forwardBatch = async (req: Request, messageIds: string[], ticketIds: number[], options: ForwardBatchOptions = {}): Promise<{ batchId: string; total: number; opened: number[] }> => {
+  const { retryPairs, nativeForwardable } = await import("./ForwardPlan");
+  const pairs = options.pairs ? retryPairs(options.pairs) : [];
+  const mids = (pairs.length ? [...new Set(pairs.map(p => p.messageId))] : [...new Set(messageIds.map(String))].filter(Boolean)).slice(0, 50);
+  const tids = (pairs.length ? [...new Set(pairs.map(p => p.ticketId))] : [...new Set(ticketIds.map(Number))].filter(Boolean)).slice(0, 10);
+  const contactIds = pairs.length ? [] : [...new Set((options.contactIds || []).map(Number))].filter(Boolean).slice(0, 10);
   if (!mids.length) throw new AppError("ERR_NO_MESSAGE_FOUND", 404);
-  if (!tids.length) throw new AppError("ERR_FORWARD_NO_TARGET", 400);
+  if (!tids.length && !contactIds.length) throw new AppError("ERR_FORWARD_NO_TARGET", 400);
+  if (tids.length + contactIds.length > 10) throw new AppError("ERR_FORWARD_TOO_MANY_TARGETS", 400);
 
   const messages = await Message.findAll({ where: { id: { [Op.in]: mids } } });
   const byId = new Map(messages.map(m => [m.id, m]));
@@ -241,15 +255,19 @@ export const forwardBatch = async (req: Request, messageIds: string[], ticketIds
   if (!ordered.length) throw new AppError("ERR_NO_MESSAGE_FOUND", 404);
   ordered.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   // the person must be allowed to read where the messages come from
+  const sources = new Map<number, Ticket>();
   for (const sourceTicketId of [...new Set(ordered.map(m => m.ticketId))]) {
     // eslint-disable-next-line no-await-in-loop
     await assertTicketAccess(req, sourceTicketId, "read");
+    // eslint-disable-next-line no-await-in-loop
+    sources.set(sourceTicketId, await ShowTicketService(sourceTicketId));
   }
 
   const tickets: Ticket[] = [];
   for (const ticketId of tids) {
+    // the same rule as writing in that conversation (the tutor's, the attendant's): sending, not only reading
     // eslint-disable-next-line no-await-in-loop
-    await assertTicketAccess(req, ticketId, "write");
+    await assertTicketAccess(req, ticketId, "send");
     // eslint-disable-next-line no-await-in-loop
     const ticket = await ShowTicketService(ticketId);
     if (ticket.status === "closed") throw new AppError("ERR_FORWARD_CLOSED_TICKET", 400);
@@ -259,62 +277,154 @@ export const forwardBatch = async (req: Request, messageIds: string[], ticketIds
     const raw = m.getDataValue("mediaUrl") as string | null;
     if (raw && !fs.existsSync(path.join(PUBLIC_DIR, raw))) throw new AppError("ERR_MEDIA_NOT_FOUND", 404);
   }
-  // what each one sends; one that cannot go (a file never downloaded, removed content) counts as a failure with its reason, and when
-  // none can go the person is answered at once
-  const plan = new Map(ordered.map(m => [m.id, forwardBodyOf({ ...m.get({ plain: true }), mediaUrl: m.getDataValue("mediaUrl") as string | null })]));
+  // what each one sends; one that cannot go counts as a failure with its reason, and when none can go the person is answered at once
+  const plan = new Map(ordered.map(m => [m.id, planOf(m)]));
   const first = [...plan.values()].find(p => !p.ok);
   if (first && !first.ok && [...plan.values()].every(p => !p.ok)) throw new AppError(first.reason, 400);
 
+  // checked before anything goes: the 24 h window of the official number (outside it, only a model may go) ...
+  const { forwardFlags } = await import("./ForwardTargets");
+  const flags = await forwardFlags(tickets, Number(req.user.id));
+  const closed = tickets.filter(t => flags.get(t.id)?.windowClosed);
+  if (closed.length && !pairs.length) {
+    throw new AppError("ERR_FORWARD_WINDOW_CLOSED", 409, { ticketIds: closed.map(t => t.id), names: closed.map(t => (t.contact && t.contact.name) || "") });
+  }
+  // ... and the conversations waiting for an attendant: forwarding there takes them, which the person confirms first
+  const waiting = tickets.filter(t => flags.get(t.id)?.waiting);
+  if (waiting.length && !options.confirmAssume) {
+    throw new AppError("ERR_FORWARD_CONFIRM_ASSUME", 409, { count: waiting.length, ticketIds: waiting.map(t => t.id) });
+  }
+
+  // a contact with no open conversation: the conversation is opened for the person, as "Nova conversa" does, on their number
+  const opened: number[] = [];
+  if (contactIds.length) {
+    const { connectionScopeOf, contactScopeWhere } = await import("../../helpers/ConnectionScope");
+    const { roleOf } = await import("../../helpers/Roles");
+    const scope = await connectionScopeOf(req.user.id, roleOf(req.user));
+    const scoped = contactScopeWhere(scope, req.user.id);
+    const { default: CreateTicketService } = await import("../TicketServices/CreateTicketService");
+    const { default: GetDefaultWhatsApp } = await import("../../helpers/GetDefaultWhatsApp");
+    const { lastInboundAt } = await import("../OutboundServices/LastInbound");
+    const { inMessagingWindow } = await import("../OutboundServices/Policy");
+    const number = await GetDefaultWhatsApp(Number(req.user.id));
+    const found: Contact[] = [];
+    for (const contactId of contactIds) {
+      // eslint-disable-next-line no-await-in-loop
+      const contact = await Contact.findOne({ where: scoped ? { [Op.and]: [{ id: contactId, isGroup: false }, scoped] } : { id: contactId, isGroup: false } } as any);
+      if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+      found.push(contact);
+    }
+    // the new conversation is on the person's number: on the official one, outside the 24 h, nothing but a model could go
+    if (["whatsapp_cloud", "instagram", "messenger"].includes(number.channel || "")) {
+      const outside: Contact[] = [];
+      for (const contact of found) {
+        // eslint-disable-next-line no-await-in-loop
+        if (!inMessagingWindow(number.channel, await lastInboundAt(contact.id, number.id))) outside.push(contact);
+      }
+      if (outside.length) throw new AppError("ERR_FORWARD_WINDOW_CLOSED", 409, { contactIds: outside.map(c => c.id), names: outside.map(c => c.name || "") });
+    }
+    for (const { id: contactId } of found) {
+      // eslint-disable-next-line no-await-in-loop
+      const created = await CreateTicketService({ contactId, status: "open", userId: Number(req.user.id) } as any);
+      opened.push(created.id);
+      // eslint-disable-next-line no-await-in-loop
+      tickets.push(await ShowTicketService(created.id));
+    }
+  }
+
+  const work: Array<{ message: Message; ticket: Ticket }> = [];
+  if (pairs.length) {
+    const ticketById = new Map(tickets.map(t => [t.id, t]));
+    pairs.forEach(p => { const message = byId.get(p.messageId); const ticket = ticketById.get(p.ticketId); if (message && ticket && !message.isDeleted) work.push({ message, ticket }); });
+  } else {
+    tickets.forEach(ticket => ordered.forEach(message => work.push({ message, ticket })));
+  }
+
   const batchId = `fb${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-  const total = ordered.length * tickets.length;
+  const total = work.length;
   const progress: ForwardProgress = { batchId, done: 0, failed: 0, total, finished: false, failedPairs: [] };
   const userId = Number(req.user.id);
   const tell = (): void => {
     try { getIO().to(`user:${userId}`).emit("forwardProgress", progress); } catch (e) { /* no socket: nobody to tell */ }
   };
 
-  const sendOne = async (message: Message, target: Ticket): Promise<void> => {
-    // the same rule as any message a person sends: the first one claims a conversation nobody attends, a conversation of someone else refuses
-    const what = plan.get(message.id);
-    if (!what || !what.ok) throw new AppError(what && !what.ok ? what.reason : "ERR_NO_MESSAGE_FOUND", 400);
-    const ticket = await ActivateForSending(target, userId);
-    const rawMedia = what.media;
-    if (rawMedia) {
+  const resend = async (message: Message, ticket: Ticket, what: { body: string; media: string | null }): Promise<void> => {
+    if (what.media) {
       // SendWhatsAppMedia consumes the file it sends: hand it a copy
-      const copyName = `fwd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${path.extname(rawMedia)}`;
-      fs.copyFileSync(path.join(PUBLIC_DIR, rawMedia), path.join(PUBLIC_DIR, copyName));
-      const caption = what.body;
+      const copyName = `fwd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${path.extname(what.media)}`;
+      fs.copyFileSync(path.join(PUBLIC_DIR, what.media), path.join(PUBLIC_DIR, copyName));
       await SendWhatsAppMedia({
-        media: { filename: copyName, originalname: rawMedia, mimetype: mimeFromName(rawMedia), path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
+        media: { filename: copyName, originalname: what.media, mimetype: mimeFromName(what.media), path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
         ticket,
-        body: caption
+        body: what.body
       });
     } else {
       await SendWhatsAppMessage({ body: what.body, ticket });
     }
   };
 
+  // the phone forwards it ("Encaminhada"): the copy is stored here at once when its id is found (else it arrives by the connection)
+  const native = async (message: Message, source: Ticket, ticket: Ticket, what: { body: string; media: string | null }): Promise<boolean> => {
+    const { deliver } = await import("../OutboundServices/Deliver");
+    let found: { id: string | null } | null = null;
+    try {
+      found = await deliver(ticket, {}, async () => {
+        const r = await whatsappProvider.forwardMessage!(source.whatsappId, chatIdOf(source.contact, source.isGroup), message.id, message.fromMe, chatIdOf(ticket.contact, ticket.isGroup));
+        // not on the phone: nothing went, the copy is sent the usual way
+        if (!r) throw new AppError("ERR_PROVIDER_REFUSED", 409);
+        return { id: r.id || `fwd-native-${message.id}-${ticket.id}`, stored: !!r.id } as any;
+      });
+    } catch (err) {
+      if (err instanceof AppError && err.message === "ERR_PROVIDER_REFUSED") return false;
+      throw err;
+    }
+    if (found && (found as any).stored && found.id) {
+      let mediaUrl: string | undefined;
+      if (what.media) {
+        const copyName = `fwd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${path.extname(what.media)}`;
+        try { fs.copyFileSync(path.join(PUBLIC_DIR, what.media), path.join(PUBLIC_DIR, copyName)); mediaUrl = copyName; } catch (e) { /* the screen shows the placeholder */ }
+      }
+      const { default: CreateMessageService } = await import("./CreateMessageService");
+      await CreateMessageService({ messageData: { id: found.id, ticketId: ticket.id, body: what.body || (message.body || ""), fromMe: true, read: true, mediaType: message.mediaType, mediaUrl, ack: 1, isForwarded: true } });
+      await ticket.update({ lastMessage: previewOf(what.body || message.body || "") }).catch(() => undefined);
+    }
+    return true;
+  };
+
+  const sendOne = async (message: Message, target: Ticket): Promise<void> => {
+    const what = plan.get(message.id);
+    if (!what || !what.ok) throw new AppError(what && !what.ok ? what.reason : "ERR_NO_MESSAGE_FOUND", 400);
+    // the same rule as any message a person sends: the first one claims a conversation nobody attends, a conversation of someone else refuses
+    const ticket = await ActivateForSending(target, userId);
+    const source = sources.get(message.ticketId);
+    const canNative = !!source && nativeForwardable(
+      { whatsappId: source.whatsappId, channel: source.whatsapp?.channel },
+      { whatsappId: ticket.whatsappId, channel: ticket.whatsapp?.channel },
+      typeof whatsappProvider.forwardMessage === "function"
+    );
+    if (canNative && source && (await native(message, source, ticket, what))) return;
+    await resend(message, ticket, what);
+  };
+
   // one queue per connection: the same number never sends two at once, different numbers do
-  const lanes = new Map<number, Ticket[]>();
-  tickets.forEach(t => lanes.set(t.whatsappId, [...(lanes.get(t.whatsappId) || []), t]));
+  const lanes = new Map<number, Array<{ message: Message; ticket: Ticket }>>();
+  work.forEach(w => lanes.set(w.ticket.whatsappId, [...(lanes.get(w.ticket.whatsappId) || []), w]));
   setImmediate(() => {
     tell();
     Promise.all(
-      [...lanes.values()].map(async laneTickets => {
-        for (const ticket of laneTickets) {
-          for (const message of ordered) {
-            try {
-              // eslint-disable-next-line no-await-in-loop
-              await sendOne(message, ticket);
-              progress.done += 1;
-            } catch (err) {
-              logger.warn(`forward batch ${batchId}: message ${message.id} to ticket ${ticket.id} failed: ${(err as Error).message}`);
-              progress.failed += 1;
-              const reason = err instanceof AppError ? String(err.message) : "ERR_SENDING_WAPP_MSG";
-              progress.failedPairs.push({ messageId: message.id, ticketId: ticket.id, reason });
-            }
-            tell();
+      [...lanes.values()].map(async lane => {
+        for (const { message, ticket } of lane) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await sendOne(message, ticket);
+            progress.done += 1;
+          } catch (err) {
+            logger.warn(`forward batch ${batchId}: message ${message.id} to ticket ${ticket.id} failed: ${(err as Error).message}`);
+            progress.failed += 1;
+            const reason = err instanceof AppError ? String(err.message) : "ERR_SENDING_WAPP_MSG";
+            progress.failedPairs.push({ messageId: message.id, ticketId: ticket.id, reason, name: (ticket.contact && ticket.contact.name) || "" });
           }
+          tell();
         }
       })
     ).then(() => {
@@ -322,7 +432,7 @@ export const forwardBatch = async (req: Request, messageIds: string[], ticketIds
       tell();
     });
   });
-  return { batchId, total };
+  return { batchId, total, opened };
 };
 
 // Downloads the file of a message that arrived without it (or that came from the copied history) and attaches it.

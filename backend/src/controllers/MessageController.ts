@@ -135,8 +135,17 @@ export const forward = async (req: Request, res: Response): Promise<Response> =>
 export const forwardMany = async (req: Request, res: Response): Promise<Response> => {
   const messageIds = Array.isArray(req.body.messageIds) ? req.body.messageIds : [];
   const ticketIds = Array.isArray(req.body.ticketIds) ? req.body.ticketIds : [];
-  const out = await forwardBatch(req, messageIds, ticketIds);
+  const contactIds = Array.isArray(req.body.contactIds) ? req.body.contactIds : [];
+  const out = await forwardBatch(req, messageIds, ticketIds, { contactIds, pairs: Array.isArray(req.body.pairs) ? req.body.pairs : undefined, confirmAssume: req.body.confirmAssume === true });
   return res.status(202).json(out);
+};
+
+// Where a message can be forwarded (search on the server): open and waiting conversations with the 24 h and "waiting" flags, and
+// contacts with no open conversation
+export const forwardTargetsIndex = async (req: Request, res: Response): Promise<Response> => {
+  const { forwardTargets } = await import("../services/MessageServices/ForwardTargets");
+  const page = Math.max(1, Math.min(50, Number(req.query.page) || 1));
+  return res.json(await forwardTargets(req, String(req.query.q || ""), page));
 };
 
 // What the conversation drawer lists, like WhatsApp's "Mídia, links e docs" and "Mensagens favoritas".

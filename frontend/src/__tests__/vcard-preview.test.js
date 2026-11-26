@@ -44,3 +44,16 @@ describe("contato compartilhado", () => {
     expect(screen.getByText("Conversar").closest("button").disabled).toBe(true);
   });
 });
+
+import { parseVcards } from "../components/VcardPreview";
+
+describe("vários contatos numa mensagem", () => {
+  it("lê todos os cartões e mostra cada um com o botão Conversar", () => {
+    const body = `${card("TEL;waid=5569911110001:+55 69 91111-0001")}\n${card("TEL:+55 69 92222-0002").replace(/Maria Souza/g, "João Lima")}`;
+    expect(parseVcards(body)).toEqual([{ name: "Maria Souza", number: "5569911110001" }, { name: "João Lima", number: "5569922220002" }]);
+    mount(body);
+    expect(screen.getByText("Maria Souza")).toBeTruthy();
+    expect(screen.getByText("João Lima")).toBeTruthy();
+    expect(screen.getAllByText("Conversar")).toHaveLength(2);
+  });
+});

@@ -98,6 +98,8 @@ export interface WhatsappProvider {
     chatId: string,
     messageId: string
   ): Promise<{ delivery: PersonSeen[]; read: PersonSeen[]; played: PersonSeen[]; deliveryRemaining: number; readRemaining: number; playedRemaining: number } | null>;
+  // forwards a message of the phone to another chat of the same number, as the phone does (QR Code only); null = not on the phone
+  forwardMessage?(sessionId: number, fromChatId: string, messageId: string, fromMe: boolean, toChatId: string): Promise<{ id: string | null } | null>;
   fetchChatMessages(
     sessionId: number,
     chatId: string,
