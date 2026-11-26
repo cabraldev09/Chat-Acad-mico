@@ -1,4 +1,5 @@
 import { remember } from "../../../helpers/BoundedMap";
+import { ackOfCreated, mapMessageAck } from "../../../helpers/MessageAck";
 import { watchChatState } from "../../../services/WbotServices/ChatState";
 import { syncChatRead } from "../../../services/MessageServices/SyncReadState";
 import qrCode from "qrcode-terminal";
@@ -90,18 +91,6 @@ const mapMessageType = (wbotType: any): MessageType => {
     location: "location"
   };
   return typeMap[wbotType] || "chat";
-};
-
-const mapMessageAck = (wbotAck: any): MessageAck => {
-  const ackMap: Record<number, MessageAck> = {
-    "-1": -1,
-    0: 0,
-    1: 1,
-    2: 2,
-    3: 3,
-    4: 4
-  };
-  return ackMap[wbotAck] ?? 0;
 };
 
 const convertToProviderMessage = (
@@ -435,7 +424,9 @@ const convertToMessagePayload = async (
     hasQuotedMsg: processedMsg.hasQuotedMsg,
     isGif: !!(processedMsg as any)._data?.isGif,
     isForwarded: !!(processedMsg as any).isForwarded,
-    quotedMsgId
+    quotedMsgId,
+    // the tick it already has (a message sent from the phone arrives as sent or delivered): without it the list shows a clock
+    ack: ackOfCreated(processedMsg)
   };
 };
 
