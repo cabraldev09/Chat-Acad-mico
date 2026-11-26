@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 
 import Notification from "../../models/Notification";
 import User from "../../models/User";
+import PoloMember from "../../models/PoloMember";
 import { getIO } from "../../libs/socket";
 import { logger } from "../../utils/logger";
 
@@ -48,5 +49,23 @@ export const notify = async (userIds: Array<number | null | undefined>, notice: 
 // the administration and the coordination (the management of the team)
 export const managerIds = async (): Promise<number[]> =>
   (await User.findAll({ where: { [Op.or]: [{ profile: "admin" }, { role: { [Op.in]: ["admin", "coordenacao"] } }] } as any, attributes: ["id"] })).map(u => u.id);
+
+// The management that may see a person's data: the administration, and the coordination only of the polos involved (a lead, a conversation
+// or a consultant of another polo is not shown to another polo's coordination; with no polo, the administration only)
+const adminIds = async (): Promise<number[]> =>
+  (await User.findAll({ where: { [Op.or]: [{ profile: "admin" }, { role: "admin" }] } as any, attributes: ["id"] })).map(u => u.id);
+export const managerIdsOfPolos = async (poloIds: Array<number | null | undefined>): Promise<number[]> => {
+  const polos = [...new Set(poloIds.map(Number).filter(n => Number.isInteger(n) && n > 0))];
+  const coord = polos.length
+    ? (await User.findAll({
+        where: { role: "coordenacao", id: { [Op.in]: (await PoloMember.findAll({ where: { poloId: { [Op.in]: polos } }, attributes: ["userId"] })).map(m => m.userId) } } as any,
+        attributes: ["id"]
+      })).map(u => u.id)
+    : [];
+  return [...new Set([...(await adminIds()), ...coord])];
+};
+// the management of the polos a consultant works in
+export const managerIdsOfUser = async (userId: number): Promise<number[]> =>
+  managerIdsOfPolos((await PoloMember.findAll({ where: { userId }, attributes: ["poloId"] })).map(m => m.poloId));
 
 export const notifyManagers = async (notice: NoticeInput): Promise<number> => notify(await managerIds(), notice);

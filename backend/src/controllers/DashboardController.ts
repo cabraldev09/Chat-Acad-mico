@@ -11,6 +11,7 @@ import { portable } from "../helpers/sqlDialect";
 import { remember } from "../helpers/TtlCache";
 import { getSetting } from "../helpers/AppSettings";
 import { buildInsights, pairGaps, summarize } from "../helpers/ResponseTimes";
+import { ticketPoloSql, ticketPolosOf } from "../helpers/TicketPoloScope";
 
 const q = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
   (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
@@ -32,9 +33,11 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   // many people open the home screen at the same moment and every message asks for a refresh: one computation per
   // few seconds and per view is shared by all of them
   const me = Number(req.user.id);
-  // the coordination sees what the administration sees
-  const admin = isManagerRole(roleOf(req.user));
-  const key = `dashboard:${admin ? "all" : `u${me}:${roleOf(req.user)}`}:${req.query.date || ""}:${req.query.days || ""}`;
+  // the administration sees the whole institution; the coordination the conversations of its polos (one computation per set of polos)
+  const role = roleOf(req.user);
+  const polos = await ticketPolosOf(role, me);
+  const who = role === "admin" ? "all" : role === "coordenacao" ? `polos:${(polos || []).slice().sort((a, b) => a - b).join(",")}:u${me}` : `u${me}:${role}`;
+  const key = `dashboard:${who}:${req.query.date || ""}:${req.query.days || ""}`;
   return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 8000), () => build(req)));
 };
 
@@ -57,7 +60,11 @@ const build = async (req: Request): Promise<any> => {
   const admin = isManagerRole(role);
 
   const base = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person'))`;
-  const scope = admin
+  // the coordination: the conversations given to it and the ones of its polos (helpers/TicketPoloScope)
+  const coordPolos = role === "coordenacao" ? (await ticketPolosOf(role, me)) || [] : null;
+  const scope = coordPolos
+    ? `AND (t.userId = :me OR ${ticketPoloSql(coordPolos, false, "t", true)})`
+    : admin
     ? ""
     : `AND (t.userId = :me OR (t.userId IS NULL AND (t.queueId IS NULL OR t.queueId IN (:queueIds))))`;
   const queueIdsPromise = admin ? Promise.resolve([] as number[]) : UserQueue.findAll({ where: { userId: me } }).then(r => r.map(u => u.queueId));
@@ -66,7 +73,7 @@ const build = async (req: Request): Promise<any> => {
   const live = `${base} ${scope} AND t.archivedAt IS NULL`;
   const tz = getAppTz();
   const since = `COALESCE(t.lastMessageAt, t.updatedAt)`;
-  const leadScope = role === "consultor" ? "AND l.ownerId = :me" : "";
+  const leadScope = role === "consultor" ? "AND l.ownerId = :me" : coordPolos ? `AND l.poloId IN (${coordPolos.length ? coordPolos.map(Number).join(",") : "0"})` : "";
 
   // everything below is independent: ask the database for all of it at once instead of one answer after another
   const countsP = q(

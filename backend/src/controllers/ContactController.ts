@@ -7,10 +7,13 @@ import { getIO } from "../libs/socket";
 import ListContactsService, { contactsSearchWhere } from "../services/ContactServices/ListContactsService";
 import ContactTag from "../models/ContactTag";
 import Tag from "../models/Tag";
-import { Op } from "sequelize";
+import { Op, literal } from "sequelize";
 import { csvAsText, csvDay, csvBody } from "../helpers/Csv";
 import { roleOf } from "../helpers/Roles";
 import { connectionScopeOf, contactScopeWhere } from "../helpers/ConnectionScope";
+import { contactPoloSql, ticketPolosOf } from "../helpers/TicketPoloScope";
+import { portable } from "../helpers/sqlDialect";
+import { hasContactAccessOrFree } from "../middleware/canAccessContact";
 import { RELATIONS, Relation, applyRelation } from "../services/CrmServices/Relation";
 import CreateContactService from "../services/ContactServices/CreateContactService";
 import ShowContactService from "../services/ContactServices/ShowContactService";
@@ -47,6 +50,20 @@ interface ContactData {
   extraInfo?: ExtraInfo[];
 }
 
+// The list the person may see: the connection rule (helpers/ConnectionScope) and, for the coordination, only the contacts of its polos
+// (a lead there, or a conversation in a queue there) plus the ones in conversations given to it (helpers/TicketPoloScope)
+const contactsScopeOf = async (req: Request): Promise<any | null> => {
+  const role = roleOf(req.user);
+  const me = Number(req.user.id) || 0;
+  const byConnection = contactScopeWhere(await connectionScopeOf(me, role), me);
+  const polos = role === "coordenacao" ? await ticketPolosOf(role, me) : null;
+  const byPolo = polos
+    ? literal(portable(`(EXISTS (SELECT 1 FROM Tickets mt WHERE mt.contactId = Contact.id AND mt.userId = ${me}) OR ${contactPoloSql(polos, false, "Contact", true)})`))
+    : null;
+  const parts = [byConnection, byPolo].filter(Boolean);
+  return parts.length ? (parts.length === 1 ? parts[0] : { [Op.and]: parts }) : null;
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { searchParam, pageNumber } = req.query as IndexQuery;
   // kind=people: only persons and companies (a group is not somebody to start a conversation with); kind=groups: only groups and communities
@@ -55,7 +72,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const { contacts, count, hasMore } = await ListContactsService({
     searchParam,
     pageNumber,
-    scope: contactScopeWhere(await connectionScopeOf(req.user.id, roleOf(req.user)), req.user.id),
+    scope: await contactsScopeOf(req),
     kind: kind === "people" || kind === "groups" ? kind : undefined
   });
 
@@ -71,7 +88,7 @@ export const exportCsv = async (req: Request, res: Response): Promise<Response> 
   if (!["admin", "coordenacao", "consultor"].includes(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
   const searchParam = String(req.query.searchParam || "");
   const withGroups = req.query.groups === "1";
-  const groupScope = contactScopeWhere(await connectionScopeOf(req.user.id, roleOf(req.user)), req.user.id);
+  const groupScope = await contactsScopeOf(req);
   const where: any = {
     [Op.and]: [contactsSearchWhere(searchParam), ...(groupScope ? [groupScope] : []), ...(withGroups ? [] : [{ isGroup: false }, { kind: { [Op.in]: ["person", "business"] } }])]
   };
@@ -124,6 +141,8 @@ export const getContact = async (
     name,
     number
   });
+  // looking a number up never hands over a contact of somebody else's work (another polo, another consultant)
+  if (!(await hasContactAccessOrFree(req, contact.id))) throw new AppError("ERR_NO_PERMISSION", 403);
 
   return res.status(200).json(contact);
 };

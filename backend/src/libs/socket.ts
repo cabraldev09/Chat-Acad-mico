@@ -60,7 +60,13 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     // the conversation the AI agent handed over, and the alert that nobody answered it: the person it was given to, the management and, while
     // it waits in a queue with nobody assigned, the consultors of that queue (the commercial team of the polo)
     if (event === "aiHandoff" || event === "handoffAlert") {
-      if (manager || Number(data.userId) === Number(user.id)) return true;
+      if (user.role === "admin" || Number(data.userId) === Number(user.id)) return true;
+      // the coordination: only the conversations of its polos (the same rule of the conversation itself)
+      if (manager) {
+        if (!data.ticketId) return false;
+        await assertTicketAccess(req, data.ticketId, "read");
+        return true;
+      }
       return !data.userId && !!data.queueId && user.role === "consultor" && (await inQueue(user.id, data.queueId));
     }
     // the dissatisfied student of the survey: the tutor and the consultant of that student, and the management

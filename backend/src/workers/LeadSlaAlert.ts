@@ -9,7 +9,7 @@ import { getSetting } from "../helpers/AppSettings";
 import { getBusinessConfig, isBusinessNow, businessMinutes } from "../helpers/BusinessTime";
 import { addActivity } from "../services/CrmServices/LeadCore";
 import AutoAssignTicket from "../services/AutomationServices/AutoAssignTicket";
-import { notify, managerIds } from "../services/NotificationServices/Notify";
+import { notify, managerIdsOfPolos } from "../services/NotificationServices/Notify";
 import { logger } from "../utils/logger";
 
 let running = false;
@@ -36,7 +36,7 @@ const tick = async (): Promise<void> => {
       order: [["id", "ASC"]], limit: 200
     });
     cursor = tickets.length === 200 ? tickets[tickets.length - 1].id : 0;
-    const leads = new Map((await Lead.findAll({ where: { contactId: [...new Set(tickets.map(t => t.contactId))] } as any, attributes: ["id", "name", "contactId", "ownerId"] })).map(l => [l.contactId, l]));
+    const leads = new Map((await Lead.findAll({ where: { contactId: [...new Set(tickets.map(t => t.contactId))] } as any, attributes: ["id", "name", "contactId", "ownerId", "poloId"] })).map(l => [l.contactId, l]));
     for (const ticket of tickets) {
       const lead = leads.get(ticket.contactId);
       if (!lead || ticket.contact?.optOut) continue;
@@ -67,7 +67,7 @@ const tick = async (): Promise<void> => {
       await addActivity(lead.id, null, "sla", note);
       getIO().emit("leadAlert", { leadId: lead.id, ticketId: ticket.id, name: lead.name, ownerId: ticket.userId || lead.ownerId, minutes: Math.round(waited), escalated });
       // kept in the bell: the person who answers; when escalated, the management too
-      const who = [ticket.userId || lead.ownerId, ...(escalated ? await managerIds() : [])];
+      const who = [ticket.userId || lead.ownerId, ...(escalated ? await managerIdsOfPolos([lead.poloId]) : [])];
       await notify(who, { kind: escalated ? "sla_escalated" : "sla_breached", level: escalated ? "urgent" : "warning", title: `${escalated ? "Prazo escalado" : "Prazo de resposta excedido"}: ${lead.name}`, body: `${Math.round(waited)} min aguardando resposta.`, link: `/tickets/${ticket.id}`, dedupeKey: `sla:${ticket.id}:${first.id}:${escalated ? "esc" : "alert"}` });
 
     }
