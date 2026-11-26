@@ -265,14 +265,14 @@ const useStyles = makeStyles((theme) => {
     withReactions: { marginBottom: 14 },
     // the day stays on top while the conversation scrolls (as on WhatsApp): the next day's label takes its place
     day: { alignSelf: "center", margin: "12px 0 8px", padding: "5px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 400, color: c.textSecondary, backgroundColor: c.chatChip, boxShadow: c.shadow, position: "sticky", top: 8, zIndex: 3 },
-    // a band across the whole conversation (as on WhatsApp), drawn above the floating day label: when both meet, it stays readable
+    // the rounded pill in the middle of the conversation (as it was before #232), drawn above the floating day label: when both meet, it stays readable
     unreadDivider: {
-      alignSelf: "stretch",
+      alignSelf: "center",
       position: "relative",
       zIndex: 4,
-      margin: "14px -8px 8px",
-      padding: "6px 16px",
-      borderRadius: 0,
+      margin: "14px 0 8px",
+      padding: "5px 16px",
+      borderRadius: 999,
       textAlign: "center",
       fontSize: 12,
       fontWeight: 700,
