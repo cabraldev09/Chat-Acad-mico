@@ -12,39 +12,30 @@ export const STALLED_REASON = "Parou de responder";
 const CONFIRM_STAGE = "Matrícula a confirmar";
 const days = (n: number) => n * 864e5;
 
-const isTrue = (v: any): boolean => v === true || v === 1 || v === "1" || v === "t" || v === "true";
-export const isStalled = (lastFromMe: any, lastAt: Date | string | null, now = Date.now(), stalledDays = 7, windowDays = 90): boolean => {
-  if (!lastAt) return false;
-  const fromMe = isTrue(lastFromMe);
-  const age = now - new Date(lastAt).getTime();
-  return fromMe && age >= days(stalledDays) && age <= days(windowDays);
-};
-
-// the last message is the person's, and came after the lead was marked as stalled
-export const answeredAfter = (lastFromMe: any, lastAt: Date | string | null, markedAt: Date | string | null): boolean =>
-  !!lastAt && lastFromMe !== null && lastFromMe !== undefined && !isTrue(lastFromMe) && new Date(lastAt).getTime() > new Date(markedAt || 0).getTime();
-
 export const markStalled = async (now = Date.now()): Promise<{ marked: number; released: number }> => {
   const stalledDays = Number(process.env.READING_STALLED_DAYS || 7);
   const last = `(SELECT t.lastMessageFromMe FROM Tickets t WHERE t.contactId = l.contactId AND t.isGroup = false AND t.lastMessageAt IS NOT NULL ORDER BY t.lastMessageAt DESC LIMIT 1)`;
   const lastAt = `(SELECT MAX(t.lastMessageAt) FROM Tickets t WHERE t.contactId = l.contactId AND t.isGroup = false)`;
-  const open = (await sequelize.query(
-    portable(`SELECT l.id, ${last} AS lastFromMe, ${lastAt} AS lastAt FROM Leads l JOIN LeadStages s ON s.id = l.stageId
-      WHERE l.isHistorical = false AND l.enrolledAt IS NULL AND l.recoveryState IS NULL AND l.contactId IS NOT NULL AND s.type = 'open' AND s.name <> :confirm
-      LIMIT 5000`),
-    { replacements: { confirm: CONFIRM_STAGE }, type: QueryTypes.SELECT }
+  // only a real person in the funnel (never the team, a personal contact, a channel or a broadcast list: the same rule of LeadQueue),
+  // filtered in the database before the limit, so every stalled lead is reached whatever the size of the funnel
+  const rows = (await sequelize.query(
+    portable(`SELECT x.id FROM (
+        SELECT l.id, ${last} AS lastFromMe, ${lastAt} AS lastAt FROM Leads l JOIN LeadStages s ON s.id = l.stageId JOIN Contacts ct ON ct.id = l.contactId
+        WHERE l.isHistorical = false AND l.enrolledAt IS NULL AND l.recoveryState IS NULL AND s.type = 'open' AND s.name <> :confirm
+          AND ct.isStaff = false AND ct.isPersonal = false AND COALESCE(ct.kind, 'person') = 'person' AND COALESCE(ct.noReply, false) = false
+      ) x WHERE x.lastFromMe = true AND x.lastAt <= :until AND x.lastAt >= :since LIMIT 5000`),
+    { replacements: { confirm: CONFIRM_STAGE, until: new Date(now - days(stalledDays)), since: new Date(now - days(90)) }, type: QueryTypes.SELECT }
   )) as any[];
-  const stalled = open.filter(r => isStalled(r.lastFromMe, r.lastAt, now, stalledDays)).map(r => r.id);
+  const stalled = rows.map(r => r.id);
   if (stalled.length) {
     await Lead.update({ recoveryState: "aberta", recoveryAt: new Date(now), recoveryReason: STALLED_REASON } as any, { where: { id: stalled, recoveryState: null } as any });
   }
-  // who answered after being marked leaves "Parados"
-  const marked = (await sequelize.query(
-    portable(`SELECT l.id, l.recoveryAt, ${last} AS lastFromMe, ${lastAt} AS lastAt FROM Leads l
-      WHERE l.recoveryState = 'aberta' AND l.recoveryReason = :reason AND l.contactId IS NOT NULL LIMIT 5000`),
+  // the person wrote anything after being marked (even if the team answered after it): out of "Parados"
+  const back = ((await sequelize.query(
+    portable(`SELECT l.id FROM Leads l WHERE l.recoveryState = 'aberta' AND l.recoveryReason = :reason AND l.contactId IS NOT NULL
+      AND EXISTS (SELECT 1 FROM Messages m WHERE m.contactId = l.contactId AND m.fromMe = false AND m.createdAt > l.recoveryAt) LIMIT 5000`),
     { replacements: { reason: STALLED_REASON }, type: QueryTypes.SELECT }
-  )) as any[];
-  const back = marked.filter(r => answeredAfter(r.lastFromMe, r.lastAt, r.recoveryAt)).map(r => r.id);
+  )) as any[]).map(r => r.id);
   if (back.length) await Lead.update({ recoveryState: "voltou" } as any, { where: { id: back, recoveryState: "aberta" } as any });
   if (stalled.length || back.length) logger.info(`Recuperação: ${stalled.length} leads parados há ${stalledDays} dias ou mais; ${back.length} voltaram a responder`);
   return { marked: stalled.length, released: back.length };

@@ -9358,7 +9358,15 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(firstRun.stalled && firstRun.stalled.marked >= 1, `the daily check did not run ${JSON.stringify(firstRun.stalled)}`);
       const gil = (await http.get("/crm/recovery", asUser(uTok))).data.items.find(i => String(i.id) === stalledL);
       assert(gil && gil.tab === "parados" && gil.reason === "Parou de responder", `Gil is not in Parados ${JSON.stringify(gil)}`);
-      sql(`UPDATE Tickets SET lastMessageFromMe = false, lastMessageAt = NOW() WHERE id = ${stalledT}`);
+      // a colleague (team contact) with the same silence never goes to Recuperação
+      const staffC = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, isStaff, createdAt, updatedAt) VALUES ('Colega Parado Diario', '5569955550022', '', false, 'person', 'whatsapp', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageFromMe, lastMessageAt, createdAt, updatedAt) VALUES ('closed', ${staffC}, ${qr.id}, ${u.id}, 0, false, 'sales', false, 'ok', true, NOW() - INTERVAL '10 days', NOW() - INTERVAL '12 days', NOW())`);
+      const staffL = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Colega Parado Diario', '5569955550022', ${stage1}, ${staffC}, ${u.id}, 'WhatsApp', false, NOW() - INTERVAL '12 days', NOW()) RETURNING id`).split("\n")[0];
+      await http.post("/readings/run", {}, auth());
+      assert(sql(`SELECT COALESCE(recoveryState,'') FROM Leads WHERE id = ${staffL}`) === "", "a colleague went to Parados");
+      // the person answers and the consultant answers right after: the last word is the team's again, but the lead came back
+      sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('stall-back-1', ${stalledT}, ${stalledC}, 'Oi, ainda tenho interesse', false, true, 'chat', 0, NOW(), NOW())`);
+      sql(`UPDATE Tickets SET lastMessageFromMe = true, lastMessageAt = NOW() WHERE id = ${stalledT}`);
       await http.post("/readings/run", {}, auth());
       assert(sql(`SELECT recoveryState FROM Leads WHERE id = ${stalledL}`) === "voltou", "who answered is still in Parados");
       const why = (await http.get("/analytics/outcomes", { params: { range: "custom", from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
