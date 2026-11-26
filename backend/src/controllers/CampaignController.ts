@@ -122,6 +122,13 @@ const crud = makeCrud(Campaign, {
         data.approach = (APPROACHES as readonly string[]).includes(approach) ? approach : "ia";
         // the proposal made by the system needs the first due date: the start of the offer
         if (data.approach === "proposta" && !JSON.parse(data.offer).startDate) throw new AppError("ERR_OFFER_START", 400);
+        // a Utility template never carries the values of an offer (the Meta moves it to Marketing): the offer goes after the reply
+        const tplName = data.templateName !== undefined ? data.templateName : existing?.templateName;
+        const tplParams = String(data.templateParams !== undefined ? data.templateParams : existing?.templateParams || "");
+        if (tplName && /oferta_/.test(tplParams)) {
+          const { categoryOf } = await import("../services/CampaignServices/Templates");
+          if ((await categoryOf(String(tplName))) === "UTILITY") throw new AppError("ERR_OFFER_UTILITY_VALUES", 400);
+        }
       } else if (data.approach !== undefined) {
         const { APPROACHES } = await import("../services/CampaignServices/Offer");
         if (!(APPROACHES as readonly string[]).includes(data.approach)) throw new AppError("ERR_OFFER_INVALID", 400);

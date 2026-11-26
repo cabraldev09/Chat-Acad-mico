@@ -77,7 +77,11 @@ const OfferEditor = ({ value, setValue, contactListId }) => {
             <RadioGroup value={v.approach} onChange={(e) => set({ approach: e.target.value })}>
               {APPROACHES.map(([k, label]) => <FormControlLabel key={k} value={k} control={<Radio color="primary" size="small" />} label={label} />)}
             </RadioGroup>
-            <Typography variant="caption" color="textSecondary">No modelo aprovado, use as variáveis da oferta (mensalidade, taxa, início e prazo). A IA só diz esses valores; qualquer outro continua bloqueado.</Typography>
+            <Typography variant="caption" color="textSecondary">
+              Use um modelo de Utilidade já aprovado (por exemplo, solicitacao_em_aberto ou proposta_pronta), sem valores: ele só retoma o contato, e a oferta
+              vai quando a pessoa responder (a IA diz a oferta na primeira resposta, o sistema manda a oferta antes do consultor, ou envia a proposta). Valores
+              no modelo só num modelo de Marketing aprovado. A IA só diz os valores desta oferta; qualquer outro continua bloqueado.
+            </Typography>
           </div>
           <div style={{ display: "grid", gap: 8 }}>
             <Button variant="outlined" size="small" onClick={look} disabled={loading || !contactListId} style={{ justifySelf: "start" }}>{loading ? "Calculando…" : "Ver o valor de cada pessoa"}</Button>

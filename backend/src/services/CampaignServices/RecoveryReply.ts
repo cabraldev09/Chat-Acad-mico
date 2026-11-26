@@ -98,6 +98,21 @@ export const onRecoveryReply = async (ticket: Ticket, contact: Contact): Promise
   if (owner && approach !== "ia") {
     await ensureTask({ key: `recovery-reply-${campaign.id}-${lead.id}`, leadId: lead.id, userId: owner, title: approach === "proposta" ? "Proposta de recuperação enviada: acompanhe a resposta" : "Respondeu à campanha de recuperação: retome a conversa", dueAt: new Date(Date.now() + 2 * 3600000), type: "whatsapp" });
   }
+  // the consultant takes it: the offer goes now, in the window the reply opened (the Utility template carried no value), then the consultant
+  if (approach === "consultor" && (values.monthly || values.exempt || values.fee)) {
+    const ticketId = ticket.id;
+    setTimeout(async () => {
+      try {
+        const { offerIntro } = await import("./Offer");
+        const fresh = await Ticket.findByPk(ticketId, { include: ["contact", "whatsapp"] as any });
+        if (!fresh || !(fresh as any).contact || !(fresh as any).whatsapp) return;
+        const SendToContact = (await import("../ChannelServices/SendToContact")).default;
+        await SendToContact({ contact: (fresh as any).contact, whatsapp: (fresh as any).whatsapp, body: offerIntro(values).replace(/ Quer que eu chame o consultor para fazer a sua matrícula\?$/, " O seu consultor já vai falar com você."), keepOpen: owner ? { userId: owner } : undefined } as any);
+      } catch (err) {
+        logger.warn(`Recuperação: a oferta para o lead ${lead.id} não saiu: ${err}`);
+      }
+    }, Number(process.env.RECOVERY_PROPOSAL_DELAY_MS || 3000)).unref?.();
+  }
   if (approach === "proposta" && owner) {
     // after the person's message is stored, so the proposal comes after it in the conversation
     setTimeout(() => {

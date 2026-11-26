@@ -15,7 +15,7 @@ import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
 import { todayInAppTz } from "../../helpers/AppTime";
-import { OfferValues, offerAnswer, offerTokens, offerValid } from "../CampaignServices/Offer";
+import { OfferValues, offerIntro, offerTokens, offerValid } from "../CampaignServices/Offer";
 import { DOUBTS_QUESTION, ENTRY_LABEL, modalityShortOf, PRESENT_BRIDGE, REUSE_TEXT, PRESENT_BRIDGE_PLAIN, ENROLL_BRIDGE, PRICE_ASKS, THINK_PROBE, THINK_BYE, laneAsksName, lanePending, personName, affirms, asksSomething, asksForTime, saysNoInterest, cityCandidateOf, priorStudy, afterCourseChange, formatPending, reuseAlreadySaid, VALUE_BRIDGE, VALUE_BRIDGE_SHORT, holdsProposal, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, modalityMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion, oneQuestion, RESUME_QUESTION, wantsAnotherCourse } from "./Rules";
 import { coreOf, foldCourse, sameCourseName } from "./CourseMatch";
 import { is20, offer20Text, previousFrom, regularText, routeFor, text20, twinOf } from "./Graduacao2";
@@ -490,9 +490,11 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     // everything the consultant needs is known: the conversation goes to them now
     return run(`${head}${scriptTexts(d).handoff || FIXED.toProposal}`.trim(), {}, false);
   };
-  // a recovery campaign answered: the price asked is the offer the management set (only its values), once; asked again, the consultant
-  if (recoveryOffer && fast && (fast.intent === "price" || fast.intent === "proposal") && !state.slots.offerTold) {
-    return answered(offerAnswer(recoveryOffer), null, "price", { fast: undefined, patch: { offerTold: true } });
+  // a recovery campaign answered: the offer the management set (only its values), once; the price asked again, the consultant
+  // (the template that went out is a Utility one, with no value: the first answer to the person's reply is the offer, whatever they wrote;
+  // the price asked afterwards goes the usual way, to the consultant)
+  if (recoveryOffer && d.input !== null && !state.slots.offerTold) {
+    return answered(offerIntro(recoveryOffer), null, "price", { fast: undefined, patch: { offerTold: true } });
   }
   if (fast && fast.intent !== "human") {
     // (the price asked again: the consultant now, with what is known; "quero me matricular" is never "insisting on the price")

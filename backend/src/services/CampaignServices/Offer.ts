@@ -80,3 +80,7 @@ export const offerAnswer = (v: OfferValues): string => {
 
 // the values the AI may write (anything else with money, a percentage or a date stays blocked)
 export const offerTokens = (v: OfferValues): string[] => [v.text.oferta_mensalidade, v.exempt ? "" : v.text.oferta_taxa, v.text.oferta_inicio, v.text.oferta_prazo].filter(Boolean);
+
+// the first answer after the person replies to a recovery campaign (the template, Utility, carried no value: the offer comes now, inside
+// the 24 h window opened by the reply)
+export const offerIntro = (v: OfferValues): string => `Que bom falar com você de novo! Separamos uma condição para você retomar os estudos. ${offerAnswer(v)}`;

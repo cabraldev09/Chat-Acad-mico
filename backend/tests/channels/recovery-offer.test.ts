@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cleanOffer, offerAnswer, offerFor, offerTokens, offerValid } from "../../src/services/CampaignServices/Offer";
+import { cleanOffer, offerAnswer, offerFor, offerIntro, offerTokens, offerValid } from "../../src/services/CampaignServices/Offer";
 import { unsafeAnswer } from "../../src/services/CommercialServices/Guards";
 
 describe("campanha de recuperação: a oferta do gestor", () => {
@@ -35,5 +35,12 @@ describe("campanha de recuperação: a oferta do gestor", () => {
     expect(unsafeAnswer(text, "").unsafe).toBe(true);
     // um valor diferente do da oferta é bloqueado mesmo com a oferta
     expect(unsafeAnswer("A mensalidade fica em R$ 250,00.", "", offerTokens(v)).unsafe).toBe(true);
+  });
+
+  it("a primeira resposta depois do modelo de Utilidade já é a oferta, só com os valores dela", () => {
+    const v = offerFor(cleanOffer({ monthlyMode: "fixo", monthly: 250, enrollmentExempt: true, validUntil: "2026-12-15" }), null);
+    const text = offerIntro(v);
+    expect(text).toMatch(/^Que bom falar com você de novo!.*R\$ 250,00.*isenta.*15\/12\/2026/);
+    expect(unsafeAnswer(text, "", offerTokens(v)).unsafe).toBe(false);
   });
 });

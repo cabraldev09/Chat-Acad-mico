@@ -713,6 +713,7 @@ const messages = {
         ERR_OFFER_START: "Informe a data de início da oferta: a proposta usa como primeiro vencimento.",
         ERR_OFFER_REVIEW: "Confira o valor de cada pessoa e marque \"Revisei a oferta\" antes de salvar.",
         ERR_OFFER_MANAGER_ONLY: "Só a gestão define a oferta de uma campanha.",
+        ERR_OFFER_UTILITY_VALUES: "Um modelo de Utilidade não pode levar os valores da oferta (a Meta passa para Marketing). Tire as variáveis da oferta do modelo: a oferta vai quando a pessoa responder.",
         ERR_READING_DONE: "Esta leitura já foi feita.",
         ERR_READING_NOT_CLAIMED: "Esta leitura não está reservada para este token, ou a reserva venceu. Pegue de novo em GET /api/v1/leituras.",
         ERR_READING_BAD_ANSWER: "A resposta da leitura não está no formato pedido nas instruções.",

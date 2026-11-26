@@ -8587,7 +8587,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(list.imported === 2, `recovery list ${JSON.stringify(list)}`);
       const until = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);
       const offer = { monthlyMode: "bolsa", bolsaPct: 40, enrollmentExempt: true, startDate: "2027-02-10", validUntil: until };
-      const base = { objective: "Recuperar quem achou caro", name: "Recuperação com oferta", contactListId: list.id, whatsappId: cid, templateName: "recuperacao_oferta", templateLanguage: "pt_BR", templateParams: JSON.stringify(["primeiro_nome", "oferta_mensalidade", "oferta_prazo"]), intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 };
+      const base = { objective: "Recuperar quem achou caro", name: "Recuperação com oferta", message: "Oi {{name}}, a sua solicitação segue em aberto.", contactListId: list.id, whatsappId: cid, templateName: "recuperacao_oferta", templateLanguage: "pt_BR", templateParams: JSON.stringify(["primeiro_nome", "oferta_mensalidade", "oferta_prazo"]), intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 };
       // only the management sets an offer, and only after reviewing it
       assert((await http.post("/campaigns", { ...base, offer, approach: "proposta", offerReviewed: true }, asUser(cTok))).status === 403, "a consultant set an offer");
       const unreviewed = await http.post("/campaigns", { ...base, offer, approach: "proposta" }, auth());
@@ -8620,6 +8620,25 @@ const postMeta = (id, payload, secret, badSig) => {
       await postMeta(cid, cloudEvent([{ from: "5511944440101", id: "wamid.recovery.2", type: "text", text: { body: "Pode mandar de novo?" } }]), cloudCfg.appSecret);
       await new Promise(r => setTimeout(r, 4500));
       assert(sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${rafa}`) === "1", "a second proposal was made");
+      // a Utility template (approved, cheaper) never carries the values: the offer goes when the person answers
+      sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('meta_template_categories', '{"solicitacao_em_aberto":"UTILITY"}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
+      const sara = sql(`SELECT id FROM Leads WHERE phone='5511944440102'`);
+      const saraList = (await http.post("/contact-lists/from-leads", { audience: "recovery", name: "Recuperação Sara", leadIds: [Number(sara)] }, auth())).data;
+      const utility = { ...base, name: "Recuperação por Utilidade", contactListId: saraList.id, templateName: "solicitacao_em_aberto", offer, approach: "consultor", offerReviewed: true };
+      const withValues = await http.post("/campaigns", { ...utility, templateParams: JSON.stringify(["primeiro_nome", "oferta_mensalidade"]) }, auth());
+      assert(withValues.status === 400 && withValues.data.error === "ERR_OFFER_UTILITY_VALUES", `the values went in a Utility template ${withValues.status}`);
+      const u = (await http.post("/campaigns", { ...utility, templateParams: JSON.stringify(["primeiro_nome", "curso"]) }, auth())).data;
+      const uBefore = graph.sent.length;
+      assert((await http.post(`/campaigns/${u.id}/start`, {}, auth())).status === 200, "start the Utility campaign");
+      const uSent = await waitFor(() => graph.sent.slice(uBefore).find(x => x.body && x.body.type === "template" && x.body.to === "5511944440102"), 20000, "the Utility template");
+      assert(!JSON.stringify(uSent.body).includes("300,00"), "a value went in the Utility template");
+      const sOut = graph.sent.length;
+      await postMeta(cid, cloudEvent([{ from: "5511944440102", id: "wamid.recovery.sara", type: "text", text: { body: "Oi, ainda tenho interesse" } }]), cloudCfg.appSecret);
+      // the offer goes in the window her reply opened, then the consultant follows (a task)
+      const offerMsg = await waitFor(() => graph.sent.slice(sOut).find(x => x.body && x.body.to === "5511944440102" && x.body.text && /R\$ 300,00/.test(x.body.text.body)), 20000, "the offer after the reply");
+      assert(/isenta/.test(offerMsg.body.text.body) && offerMsg.body.text.body.includes(until.split("-").reverse().join("/")), `the offer text ${offerMsg.body.text.body}`);
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${sara} AND automationKey='recovery-reply-${u.id}-${sara}'`) === "1", "the consultant has no task for Sara");
+      assert(sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${sara}`) === "0", "a proposal was made in the consultant approach");
       await http.put("/operations/config", { outbound_allow_marketing: "false" }, auth());
     });
     await test("the conversations copied from a consultant's phone are read once: real leads in the funnel with a summary, enrollments with the RGM, the ones without it to confirm, who gave up in Recuperação with the reason; one notice; OpenBot takes masked readings through the API", async () => {

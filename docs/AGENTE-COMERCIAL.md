@@ -200,15 +200,16 @@ recuperação": a lista sai com o motivo e a objeção filtrados. Em Campanhas, 
   - ou o consultor retoma a conversa.
 - **"Ver o valor de cada pessoa"** mostra a mensalidade e a taxa de cada um. O servidor só salva depois de "Revisei a oferta" (`ERR_OFFER_REVIEW`).
 
-O modelo aprovado pela Meta usa as variáveis `oferta_mensalidade`, `oferta_taxa`, `oferta_inicio` e `oferta_prazo`, com os valores de cada pessoa.
-Uma oferta é Marketing para a Meta: o envio precisa de `outbound_allow_marketing` e de um modelo aprovado nessa categoria (o sistema não
-cria nem envia o modelo sozinho).
+**Modelo do disparo (decisão do dono, 26/11):** usar um modelo de **Utilidade** já aprovado, sem valores (por exemplo `solicitacao_em_aberto`
+ou `proposta_pronta`). Ele só retoma o contato; a oferta vai quando a pessoa responde, dentro da janela de 24 h. O servidor recusa variáveis
+da oferta num modelo de Utilidade (`ERR_OFFER_UTILITY_VALUES`), porque a Meta passaria o modelo para Marketing. As variáveis
+`oferta_mensalidade`, `oferta_taxa`, `oferta_inicio` e `oferta_prazo` só valem num modelo de Marketing aprovado (com `outbound_allow_marketing`).
 
 Quando a pessoa responde, em até 7 dias e com a oferta valendo, o sistema age **uma vez por campanha e pessoa**:
 - O lead sai da Recuperação (`recoveryState = voltou`) e o histórico registra a resposta.
 - **IA:**
   - a conversa não volta direto ao consultor;
-  - à pergunta de preço, a IA responde só com os valores da oferta (`offerAnswer`), sem modelo. As travas (`Guards.unsafeAnswer`) deixam
+  - a primeira resposta da IA, seja qual for a mensagem da pessoa, é a oferta (`offerIntro`), sem modelo. As travas (`Guards.unsafeAnswer`) deixam
     passar só esses valores e datas, e qualquer outro valor continua bloqueado;
   - se a pessoa pergunta de novo ou quer se matricular, a conversa passa ao consultor;
   - sem agente de IA no número, vale "consultor".
@@ -217,7 +218,7 @@ Quando a pessoa responde, em até 7 dias e com a oferta valendo, o sistema age *
     último dia (`Proposals.validUntil`, "A condição desta proposta vale até dd/mm/aaaa");
   - ela é enviada na conversa e o consultor recebe uma tarefa;
   - se faltar a forma de ingresso, a proposta fica em rascunho e a tarefa pede que o consultor envie.
-- **Consultor:** a conversa volta ao consultor, com uma tarefa.
+- **Consultor:** o sistema manda a oferta na hora (`offerIntro`), e a conversa volta ao consultor, com uma tarefa.
 
 ## Simulador de leads (`backend/scripts/lead-sim`)
 
