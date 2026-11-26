@@ -5,7 +5,8 @@ import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { confirmDialog } from "../../components/ConfirmDialog";
-import { SetCard, SaveBar, Fields } from "./ui";
+import { SetCard, SaveBar, Fields, Fold } from "./ui";
+import MetaCosts from "./MetaCosts";
 
 // The rules of the operation live in one endpoint; each part is shown in the group where it belongs:
 // "prazos" in Horário e prazos, "acompanhamento" and "equipe" in Distribuição e lembretes, "limites" in Limites e orçamento,
@@ -40,7 +41,7 @@ export default function Operations({ part = "acompanhamento" }) {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState("");
-  const needsSummary = part === "entregas" || part === "equipe";
+  const needsSummary = part === "entregas" || part === "equipe" || part === "limites";
   const load = () => {
     setFailed(false);
     return Promise.all([api.get("/operations/config"), needsSummary ? api.get("/operations/summary") : Promise.resolve({ data: null })])
@@ -99,6 +100,14 @@ export default function Operations({ part = "acompanhamento" }) {
   if (part === "equipe") {
     const change = (i, patch) => setSummary((cur) => ({ ...cur, users: cur.users.map((u, j) => (j === i ? { ...u, ...patch } : u)) }));
     return (
+      <>
+      {(summary.unassigned || []).length > 0 && (
+        <SetCard title="Atendimentos sem responsável" sub="Conversas abertas que ninguém assumiu. Abra para distribuir.">
+          <div style={{ display: "grid", gap: 4 }}>
+            {summary.unassigned.map((t) => <Button key={t.id} component={Link} to={`/tickets/${t.id}`} style={{ justifyContent: "flex-start", textTransform: "none" }}>{t.contact?.name || `Atendimento ${t.id}`}</Button>)}
+          </div>
+        </SetCard>
+      )}
       <SetCard title="Disponibilidade da equipe" sub="Quem recebe conversas novas e quantas pode ter abertas ao mesmo tempo (0 = sem limite).">
         <div style={{ display: "grid", gap: 8 }}>
           {summary.users.map((user, i) => (
@@ -110,6 +119,7 @@ export default function Operations({ part = "acompanhamento" }) {
           ))}
         </div>
       </SetCard>
+      </>
     );
   }
 
@@ -160,7 +170,20 @@ export default function Operations({ part = "acompanhamento" }) {
             {bar(month)}
           </SetCard>
         )}
-        <Typography variant="body2" color="textSecondary">O gasto de cada dia fica em <Link to="/estatisticas?aba=disparos">Estatísticas → Disparos</Link> (WhatsApp) e em <Link to="/ai-agents">Agentes de IA</Link> (IA).</Typography>
+        {admin && summary && summary.spend && (
+          <SetCard title="Consumo de hoje" sub="Estimado pelo sistema com os preços acima (não é a fatura).">
+            <Typography variant="body2">IA: US$ {summary.spend.aiEstimatedUsd.toFixed(4)} · {summary.spend.aiUnpricedCalls} chamadas sem preço cadastrado · {summary.spend.aiReservedTokens} tokens reservados.</Typography>
+            <Typography variant="body2">WhatsApp oficial: {summary.spend.messages} envios · US$ {summary.spend.metaEstimatedUsd.toFixed(4)} · {summary.spend.metaUnpricedMessages} mensagens sem preço.</Typography>
+            <Typography variant="body2">Custo estimado por matrícula hoje: {summary.spend.enrollments ? `US$ ${((summary.spend.aiEstimatedUsd + summary.spend.metaEstimatedUsd) / summary.spend.enrollments).toFixed(4)}` : "sem matrícula hoje"}.</Typography>
+          </SetCard>
+        )}
+        {/* the real bill of the Meta: the management sees it (GET /meta/costs is of the management) */}
+        <SetCard>
+          <Fold label="Gasto real do WhatsApp oficial (cobrado pela Meta)">
+            <MetaCosts />
+          </Fold>
+        </SetCard>
+        <Typography variant="body2" color="textSecondary">O gasto da IA por uso e por modelo fica em <Link to="/ai-agents">Agentes de IA</Link>.</Typography>
       </>
     );
   }

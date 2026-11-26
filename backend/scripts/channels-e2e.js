@@ -8303,6 +8303,22 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put("/operations/config",{ai_openai_key:"not-allowed"},auth())).status===400,"arbitrary key");
       assert((await http.get("/operations/summary",asUser(agentToken))).status===403,"consultant saw spend");
       assert((await http.get("/operations/summary",auth())).status===200,"summary failed");
+      // Configurações by profile: the coordination keeps the operation and the bill of the Meta, never the money limits nor the accounts
+      await http.post("/users", { name: "Coordenação Configurações", email: "coord-config@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
+      const coordTok = (await http.post("/auth/login", { email: "coord-config@x.com", password: "senha123" })).data.token;
+      const asCoord = asUser(coordTok);
+      const coordConfig = (await http.get("/operations/config", asCoord)).data;
+      assert(coordConfig.send_quota_monthly !== undefined && Object.keys(coordConfig).every(k => !k.startsWith("ai_") && !k.startsWith("outbound_")), `coordination saw the money limits ${Object.keys(coordConfig)}`);
+      assert((await http.put("/operations/config", { ai_daily_usd_cap: "5" }, asCoord)).status === 403, "coordination changed a money limit");
+      assert((await http.put("/operations/config", { send_quota_monthly: String(coordConfig.send_quota_monthly) }, asCoord)).status === 200, "coordination could not save the quota");
+      assert((await http.get("/operations/summary", asCoord)).data.spend == null, "coordination saw the spending of the day");
+      assert((await http.get("/meta/costs", asCoord)).status !== 403, "coordination lost the bill of the Meta");
+      for (const url of ["/payments/efi/settings", "/mail/settings", "/data-retention"]) assert((await http.get(url, asCoord)).status === 403, `coordination opened ${url}`);
+      // the days before the due date to make the boleto: empty or invalid stays 3; 0 only typed on purpose
+      for (const [typed, saved] of [["", 3], ["abc", 3], [0, 0], ["7", 7]]) {
+        assert((await http.put("/payments/efi/settings", { chargeDaysBefore: typed }, auth())).data.chargeDaysBefore === saved, `boleto days ${JSON.stringify(typed)}`);
+      }
+      await http.put("/payments/efi/settings", { chargeDaysBefore: 3 }, auth());
     });
     await test("task hooks synchronize bulk, completed and deleted follow-ups", async () => {
       inDb(`const Lead=require("./dist/models/Lead").default, Task=require("./dist/models/LeadTask").default;
