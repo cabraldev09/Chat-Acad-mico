@@ -146,6 +146,11 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // never the consultants' number (atendimento): their side does not see the tutoring
   if (!whatsapp) whatsapp = await Whatsapp.findOne({ where: { ownerId: null as any, channel: salesConn.channel, [Op.or]: [{ team: null }, { team: { [Op.ne]: "atendimento" } }] } as any, order: [["isDefault", "DESC"], ["id", "ASC"]] });
   if (!whatsapp) whatsapp = salesConn;
+  // nothing else to talk from: the tutoring stays on the number of the sale. When it is a consultant's own phone (QR Code), the tutor
+  // would answer through that phone; the person who confirms is told how to give the tutoring its own number
+  if (whatsapp.id === salesConn.id && salesConn.ownerId && salesConn.ownerId !== tutor?.id) {
+    warnings.push("Não há número da Tutoria: a ambientação ficou no número do consultor. Em Conexões, escolha a função Tutoria para um número.");
+  }
 
   // 0) the picture of the sales process as it stood before the enrollment (afterwards ficha, taxa and comprovante count as done
   //    by themselves, so what was skipped could no longer be seen): read by Estatísticas → Comercial
