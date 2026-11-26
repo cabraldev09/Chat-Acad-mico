@@ -28,6 +28,13 @@ const MEDIA_KIND: Record<string, string> = {
 
 export const isHistoryRunning = (whatsappId: number): boolean => running.has(whatsappId);
 
+// THE SWITCH OF THE COPY (Conexões, administration): off, no copy runs (automatic on connecting, the button, the older messages on scroll,
+// the conversation of a contact opened by hand). On by default.
+export const copyEnabled = async (): Promise<boolean> => {
+  const { getSetting } = await import("../../helpers/AppSettings");
+  return (await getSetting("whatsapp_copy_enabled", "true")) !== "false";
+};
+
 // On a person's own number (QR Code), the chats with activity in the last days come into "Atendendo" with that person, as on the phone;
 // older ones stay as history (in "Todas" and in the search). Everything copied stays HISTORY for the numbers of the system (dashboards,
 // CRM, response times), whatever list it shows in.
@@ -52,6 +59,7 @@ export const importHistory = async (
   onProgress?: (done: number, total: number) => void
 ): Promise<HistoryReport> => {
   if (!whatsappProvider.importChats) throw new AppError("ERR_WAPP_NOT_INITIALIZED");
+  if (!(await copyEnabled())) throw new AppError("ERR_HISTORY_COPY_OFF", 409);
   if (running.has(connection.id)) throw new AppError("ERR_HISTORY_RUNNING", 409);
   running.add(connection.id);
 
@@ -79,7 +87,9 @@ export const importHistory = async (
           number: chat.contact.number,
           lid: chat.contact.lid,
           isGroup: chat.isGroup,
-          community: chat.community
+          community: chat.community,
+          // copied history: no "Novo contato" trigger, no socket event per contact
+          silent: true
         });
 
         // a group can come with no message copied (it is part of the number all the same): its time is the chat's
@@ -131,7 +141,8 @@ export const importHistory = async (
               name: m.author.name,
               number: m.author.number,
               lid: m.author.lid,
-              isGroup: false
+              isGroup: false,
+              silent: true
             }).catch(() => null);
             if (person) people.set(key, person.id);
           }
@@ -218,6 +229,8 @@ export const startHistoryImport = (
 // times, waiting longer each time) when it fails or finds nothing. A number already copied is never copied again here.
 export const autoImportHistory = async (connection: Whatsapp, waits: number[] = [60000, 180000, 600000]): Promise<HistoryReport | null> => {
   for (let attempt = 0; attempt <= waits.length; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await copyEnabled())) return null;
     // eslint-disable-next-line no-await-in-loop
     const fresh = await Whatsapp.findByPk(connection.id);
     if (!fresh || fresh.historyImportedAt || fresh.status !== "CONNECTED") return null;

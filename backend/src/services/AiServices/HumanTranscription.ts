@@ -75,7 +75,7 @@ export const pendingVoiceNotes = async (limit = BATCH): Promise<Array<{ id: stri
     WHERE m."createdAt" > :since AND m."createdAt" < :until AND m.transcript IS NULL AND m."transcribeTriedAt" IS NULL AND m."isDeleted" = false
       AND m."mediaUrl" IS NOT NULL AND lower(m."mediaUrl") !~ '\\.(pdf|webp)$'
       AND (m."mediaType" IN ('audio', 'ptt') OR lower(m."mediaUrl") ~ '\\.(ogg|opus|mp3|m4a|wav|oga|aac)$')
-      AND t."isGroup" = false AND w.channel IN ('whatsapp', 'whatsapp_cloud')
+      AND t."isGroup" = false AND t."isHistorical" = false AND w.channel IN ('whatsapp', 'whatsapp_cloud')
     ORDER BY m."createdAt" ASC LIMIT :limit`, {
     replacements: { since: new Date(Date.now() - MAX_AGE_MS), until: new Date(Date.now() - MIN_AGE_MS), limit },
     type: QueryTypes.SELECT
