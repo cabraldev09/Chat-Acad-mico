@@ -1,3 +1,4 @@
+import { takePendingAck } from "../../helpers/PendingAcks";
 import { Op } from "sequelize";
 import { getIO } from "../../libs/socket";
 import Message from "../../models/Message";
@@ -39,6 +40,9 @@ const CreateMessageService = async ({
       messageData.ack = current.ack;
     }
   }
+  // a tick that arrived before this message was stored (see helpers/PendingAcks)
+  const early = takePendingAck(messageData.id);
+  if (early !== null && (early < 0 || early > (messageData.ack || 0))) messageData.ack = early;
   // a reply to a message that is not in our history (older than what was synced) would break the insert and lose the reply itself: it is saved without the quote
   if (messageData.quotedMsgId && !(await Message.count({ where: { id: messageData.quotedMsgId } }))) messageData.quotedMsgId = undefined;
   await Message.upsert(messageData);
