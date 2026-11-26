@@ -1,7 +1,6 @@
 import { Op } from "sequelize";
 
 import { getSetting } from "../../helpers/AppSettings";
-import sequelize from "../../database";
 import { getIO } from "../../libs/socket";
 import Ticket from "../../models/Ticket";
 import TicketEvent from "../../models/TicketEvent";
@@ -49,6 +48,8 @@ export const moveToTutorNumber = async (ticketId: number, whatsappId: number, tu
   const note = `Conversa do número oficial passou para a tutoria no WhatsApp de ${tutor.name} (conexão ${to.name}).`;
   // one move at a time for this conversation (two transfers at once must not leave two conversations on the tutor's number), and
   // the conversation the student already has there, live or closed, is the one that continues (never a second one beside it)
+  // the database is loaded only here: the pure helpers of this file are unit tested without a database configuration
+  const { default: sequelize } = await import("../../database");
   const result = await sequelize.transaction(async transaction => {
     const ticket = await Ticket.findByPk(ticketId, { transaction, lock: transaction.LOCK.UPDATE });
     if (!ticket) return null;
