@@ -8720,6 +8720,25 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/isenta/.test(offerMsg.body.text.body) && offerMsg.body.text.body.includes(until.split("-").reverse().join("/")), `the offer text ${offerMsg.body.text.body}`);
       assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${sara} AND automationKey='recovery-reply-${u.id}-${sara}'`) === "1", "the consultant has no task for Sara");
       assert(sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${sara}`) === "0", "a proposal was made in the consultant approach");
+      // "SAIR" to the campaign: the opt-out as always, and nothing of the offer (no proposal, no offer text, no task); out of Recuperação
+      const tiago = lead("Tiago Oferta", "5511944440103");
+      const tiagoList = (await http.post("/contact-lists/from-leads", { audience: "recovery", name: "Recuperação Tiago", leadIds: [Number(tiago)] }, auth())).data;
+      const t = (await http.post("/campaigns", { ...base, name: "Recuperação que pede para sair", contactListId: tiagoList.id, offer, approach: "proposta", offerReviewed: true }, auth())).data;
+      assert((await http.post(`/campaigns/${t.id}/start`, {}, auth())).status === 200, "start the campaign of Tiago");
+      await waitFor(() => sql(`SELECT COUNT(*) FROM CampaignShippings WHERE campaignId=${t.id} AND sentAt IS NOT NULL`) === "1", 20000, "the shipping to Tiago");
+      const tOut = graph.sent.length;
+      await postMeta(cid, cloudEvent([{ from: "5511944440103", id: "wamid.recovery.sair", type: "text", text: { body: "SAIR" } }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT COUNT(*) FROM Contacts WHERE number='5511944440103' AND optOut = true`) === "1", 10000, "the opt-out of Tiago");
+      await new Promise(r => setTimeout(r, 4500));
+      assert(sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${tiago}`) === "0", "a proposal went to who asked to stop");
+      assert(!graph.sent.slice(tOut).some(x => x.body && x.body.to === "5511944440103" && JSON.stringify(x.body).includes("300,00")), "the offer went to who asked to stop");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${tiago} AND automationKey LIKE 'recovery-%'`) === "0", "a recovery task for who asked to stop");
+      assert(sql(`SELECT recoveryState FROM Leads WHERE id=${tiago}`) === "descartada", "who asked to stop is still in Recuperação");
+      // the preview of the offer shows only the leads the person may see: a coordination without polo sees no course nor value
+      await http.post("/users", { name: "Coordenação Sem Polo Oferta", email: "coord-oferta@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
+      const coordTok = (await http.post("/auth/login", { email: "coord-oferta@x.com", password: "senha123" })).data.token;
+      const blind = (await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(coordTok))).data;
+      assert(blind.rows.every(r => r.course === null && r.monthly === "o consultor informa"), `the preview crossed leads out of scope ${JSON.stringify(blind.rows)}`);
       await http.put("/operations/config", { outbound_allow_marketing: "false" }, auth());
     });
     await test("the conversations copied from a consultant's phone are read once: real leads in the funnel with a summary, enrollments with the RGM, the ones without it to confirm, who gave up in Recuperação with the reason; one notice; OpenBot takes masked readings through the API", async () => {

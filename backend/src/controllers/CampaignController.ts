@@ -759,11 +759,15 @@ export const offerPreview = async (req: Request, res: Response): Promise<Respons
   if (!listId) throw new AppError("ERR_FIELD_REQUIRED_contactListId", 400);
   const items = await ContactListItem.findAll({ where: { contactListId: listId }, attributes: ["name", "number"], limit: 2000 });
   const Course = (await import("../models/Course")).default;
+  // only the leads the person may see (the coordination: its polos); a number outside shows only the name the list already has
+  const { leadScopeWhere } = await import("../middleware/scope");
+  const scope = await leadScopeWhere(req);
   const rows: Array<{ name: string; course: string | null; monthly: string; fee: string }> = [];
   let noPrice = 0;
   for (const it of items) {
     // eslint-disable-next-line no-await-in-loop
-    const lead = await Lead.findOne({ where: { phone: { [Op.in]: brPhoneVariants(it.number) } } as any, attributes: ["courseId"], order: [["updatedAt", "DESC"]] });
+    const byPhone = { phone: { [Op.in]: brPhoneVariants(it.number) } };
+    const lead = await Lead.findOne({ where: (scope ? { [Op.and]: [byPhone, scope] } : byPhone) as any, attributes: ["courseId"], order: [["updatedAt", "DESC"]] });
     // eslint-disable-next-line no-await-in-loop
     const course = lead?.courseId ? await Course.findByPk(lead.courseId, { attributes: ["name", "monthlyFee"] }) : null;
     const v = offerFor(offer, course ? Number((course as any).monthlyFee) || null : null);

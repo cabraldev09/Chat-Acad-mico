@@ -46,7 +46,9 @@ const FindOrCreateTicketService = async (
   contact: Contact,
   whatsappId: number,
   unreadMessages: number,
-  groupContact?: Contact
+  groupContact?: Contact,
+  // the text of the message that arrived (an answer "SAIR" to a recovery campaign is never followed by the offer)
+  inboundBody?: string
 ): Promise<Ticket> => {
   let ticket = await Ticket.findOne({
     where: {
@@ -224,7 +226,7 @@ const FindOrCreateTicketService = async (
   // not wait for a "returning" one; once per campaign and person (RecoveryReply keeps that).
   if (unreadMessages > 0 && !groupContact) {
     const { onRecoveryReply } = await import("../CampaignServices/RecoveryReply");
-    const approach = await onRecoveryReply(ticket, contact).catch(() => null);
+    const approach = await onRecoveryReply(ticket, contact, inboundBody).catch(() => null);
     if (approach === "ia") returning = false;
   }
 

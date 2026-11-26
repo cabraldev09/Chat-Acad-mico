@@ -65,8 +65,20 @@ export const sendOfferProposal = async (leadId: number, ownerId: number, campaig
 };
 
 // returns the approach applied (the caller skips the usual return to the consultant when it is "ia"), or null
-export const onRecoveryReply = async (ticket: Ticket, contact: Contact): Promise<Approach | null> => {
+// the same lead answering twice at once (two quick messages) makes one proposal and one offer, never two
+const handling = new Set<string>();
+
+// a person who asked to stop receiving messages ("SAIR", "PARAR"), now or before, gets nothing of the campaign
+const stopped = async (contactId: number): Promise<boolean> => {
+  const fresh = await Contact.findByPk(contactId, { attributes: ["id", "optOut"] });
+  return !fresh || !!(fresh as any).optOut;
+};
+
+export const onRecoveryReply = async (ticket: Ticket, contact: Contact, body?: string): Promise<Approach | null> => {
   if (ticket.isGroup || contact.isGroup) return null;
+  if ((contact as any).optOut) return null;
+  const { optKeyword } = await import("../SafetyServices/SendGuard");
+  const saysStop = !!body && optKeyword(body) === "out";
   const found = await recoveryShippingOf(contact.number);
   if (!found) return null;
   const { campaign } = found;
@@ -74,6 +86,19 @@ export const onRecoveryReply = async (ticket: Ticket, contact: Contact): Promise
   const lead = (await Lead.findOne({ where: { contactId: contact.id }, order: [["updatedAt", "DESC"]] }))
     || (contact.number ? await Lead.findOne({ where: { phone: { [Op.in]: brPhoneVariants(contact.number) } } as any, order: [["updatedAt", "DESC"]] }) : null);
   if (!lead || lead.enrolledAt) return null;
+  if (saysStop) {
+    // the answer to the campaign was "SAIR": out of Recuperação, nothing is sent (the opt-out itself is handled as always)
+    if (lead.recoveryState === "aberta" || lead.recoveryState === "voltou") {
+      await lead.update({ recoveryState: "descartada" } as any);
+      const { addActivity } = await import("../CrmServices/LeadCore");
+      await addActivity(lead.id, null, "system", `Pediu para não receber mais mensagens ao responder a campanha de recuperação "${campaign.name}": saiu da Recuperação.`);
+    }
+    return null;
+  }
+  const lockKey = `${campaign.id}-${lead.id}`;
+  if (handling.has(lockKey)) return null;
+  handling.add(lockKey);
+  setTimeout(() => handling.delete(lockKey), 60000).unref?.();
   let offer: any;
   try { offer = JSON.parse(campaign.offer); } catch { return null; }
   if (!offerValid(offer.validUntil, todayInAppTz())) return null;
@@ -103,6 +128,7 @@ export const onRecoveryReply = async (ticket: Ticket, contact: Contact): Promise
     const ticketId = ticket.id;
     setTimeout(async () => {
       try {
+        if (await stopped(contact.id)) return;
         const { offerIntro } = await import("./Offer");
         const fresh = await Ticket.findByPk(ticketId, { include: ["contact", "whatsapp"] as any });
         if (!fresh || !(fresh as any).contact || !(fresh as any).whatsapp) return;
@@ -115,7 +141,8 @@ export const onRecoveryReply = async (ticket: Ticket, contact: Contact): Promise
   }
   if (approach === "proposta" && owner) {
     // after the person's message is stored, so the proposal comes after it in the conversation
-    setTimeout(() => {
+    setTimeout(async () => {
+      if (await stopped(contact.id).catch(() => true)) return;
       const failed = async () => {
         await addActivity(lead.id, null, "system", "A proposta da campanha de recuperação não saiu sozinha (falta a forma de ingresso ou o vencimento): ficou em rascunho para o consultor.").catch(() => undefined);
         await ensureTask({ key: `recovery-proposal-${campaign.id}-${lead.id}`, leadId: lead.id, userId: owner, title: "Envie a proposta da campanha de recuperação (ficou em rascunho)", dueAt: new Date(Date.now() + 3600000), type: "proposta" }).catch(() => undefined);
