@@ -43,7 +43,7 @@ import whatsBackgroundDark from "../../assets/wa-background-dark.png";
 import { wa, dayLabel, clock, friendlyBody } from "../chat/chatTheme";
 
 // the day and the time of a message, in full (shown when the pointer is over its time)
-const fullDate = (date) => new Date(date).toLocaleString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const fullDate = (date) => new Date(date).toLocaleString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
@@ -691,7 +691,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
             // GIFs loop silently, like on WhatsApp
             <video onError={renewMediaElement} className={classes.video} src={m.mediaUrl} autoPlay loop muted playsInline />
           ) : (
-            <video onError={renewMediaElement} className={classes.video} src={m.mediaUrl} controls preload="metadata" />
+            <video onError={renewMediaElement} className={classes.video} src={m.mediaUrl && !m.mediaUrl.includes("#") ? `${m.mediaUrl}#t=0.1` : m.mediaUrl} controls preload="metadata" playsInline />
           )}
         </div>
       );
