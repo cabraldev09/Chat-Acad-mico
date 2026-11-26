@@ -1407,6 +1407,154 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(!lineB || (!lineB.unanswered && !lineB.onboardingLate && !lineB.atRisk), `the manager overview counts what is stuck in polo B: ${JSON.stringify(lineB)}`);
       void cNone;
     });
+
+    // Schedules, campaigns and contact lists by polo (ESP-001): the coordination sees, creates and fires only what involves the people of its polos;
+    // the administration sees everything; a person with no polo (or nobody's number) is the administration's.
+    console.log("\nAgendamentos, campanhas e listas por polo");
+    const poloF = {};
+    await test("schedules, contact lists and campaigns: the coordination of polo A reaches only its people; the sockets follow the same rule", async () => {
+      const { io } = require("socket.io-client");
+      const pA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('F2A', 'Polo F2 A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const pB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('F2B', 'Polo F2 B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cA = await mkUser("Coordenação F2 A", "coord-f2a@x.com", "coordenacao");
+      const cNone = await mkUser("Coordenação F2 sem polo", "coord-f2n@x.com", "coordenacao");
+      const idA = userId("coord-f2a@x.com");
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${pA}, ${idA}, 'coordenacao', NOW(), NOW())`);
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      // three people: one of polo A, one of polo B, one of nobody (no polo); each with a contact and a lead
+      const person = (tag, polo, phone) => {
+        const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Pessoa ${tag}', '${phone}', '', false, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, poloId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Lead ${tag}', '${phone}', 'Escopo', ${open}, ${ids.joao}, ${polo || "NULL"}, ${contactId}, false, NOW(), NOW())`);
+        return { contactId: Number(contactId), phone };
+      };
+      const pa = person("F2A", pA, "5569988110001");
+      const pb = person("F2B", pB, "5569988110002");
+      const pn = person("F2N", null, "5569988110003");
+      const unknown = "5569988119999";
+      const when = () => new Date(Date.now() + 86400000).toISOString();
+      const ex = (r, label) => assert(r.status === 403 || r.status === 404, `${label}: ${r.status}`);
+
+      // ---- schedules
+      const mkSchedule = async p => {
+        const r = await http.post("/schedules", { body: "Lembrete", sendAt: when(), contactId: p.contactId }, as(admin));
+        assert(r.status === 201, `schedule ${r.status} ${JSON.stringify(r.data)}`);
+        return r.data.id;
+      };
+      const sA = await mkSchedule(pa), sB = await mkSchedule(pb), sN = await mkSchedule(pn);
+      const seenBy = async t => (await http.get("/schedules", as(t))).data.map(s => s.id);
+      let got = await seenBy(cA);
+      assert(got.includes(sA) && !got.includes(sB) && !got.includes(sN), `coordination A lists ${JSON.stringify(got)}`);
+      assert((await seenBy(cNone)).length === 0, "the coordination with no polo sees schedules");
+      got = await seenBy(admin);
+      assert([sA, sB, sN].every(i => got.includes(i)), "administration misses a schedule");
+      assert((await seenBy(joao)).length === 0, "a consultant sees the schedules of others");
+      for (const id of [sB, sN]) {
+        ex(await http.put(`/schedules/${id}`, { body: "outra" }, as(cA)), `PUT schedule ${id}`);
+        ex(await http.post(`/schedules/${id}/cancel`, {}, as(cA)), `cancel schedule ${id}`);
+        ex(await http.delete(`/schedules/${id}`, as(cA)), `DELETE schedule ${id}`);
+      }
+      assert((await http.post(`/schedules/${sA}/cancel`, {}, as(cA))).status === 200, "coordination A cannot cancel the schedule of its polo");
+      assert((await http.get("/schedules?status=pending", as(cA))).data.every(s => s.id !== sA), "the status filter lost the scope");
+
+      // ---- contact lists
+      const mkList = async (name, numbers, token = admin) => {
+        const l = await http.post("/contact-lists", { name }, as(token));
+        assert(l.status === 201, `list ${l.status}`);
+        const r = await http.post(`/contact-lists/${l.data.id}/import`, { items: numbers.map(n => ({ name: n, number: n })) }, as(token));
+        assert(r.status === 200, `import ${r.status} ${JSON.stringify(r.data)}`);
+        return l.data.id;
+      };
+      const LA = await mkList("Lista só A", [pa.phone]);
+      const LB = await mkList("Lista só B", [pb.phone]);
+      const LM = await mkList("Lista mista", [pa.phone, pb.phone]);
+      const LU = await mkList("Lista com número desconhecido", [pa.phone, unknown]);
+      const LN = await mkList("Lista sem polo", [pn.phone]);
+      const listsOf = async t => (await http.get("/contact-lists", as(t))).data.map(l => l.id);
+      got = await listsOf(cA);
+      assert(got.includes(LA) && [LB, LM, LU, LN].every(i => !got.includes(i)), `coordination A lists ${JSON.stringify(got)}`);
+      got = await listsOf(admin);
+      assert([LA, LB, LM, LU, LN].every(i => got.includes(i)), "administration misses a list");
+      assert((await listsOf(cNone)).length === 0, "coordination with no polo sees lists");
+      assert((await http.get(`/contact-lists/${LA}/items`, as(cA))).status === 200, "coordination A cannot read the list of its polo");
+      for (const id of [LB, LM, LU, LN]) {
+        ex(await http.get(`/contact-lists/${id}/items`, as(cA)), `items of list ${id}`);
+        ex(await http.get(`/contact-lists/${id}/export.csv`, as(cA)), `export of list ${id}`);
+        ex(await http.put(`/contact-lists/${id}`, { name: "tomada" }, as(cA)), `PUT list ${id}`);
+        ex(await http.delete(`/contact-lists/${id}`, as(cA)), `DELETE list ${id}`);
+        ex(await http.post(`/contact-lists/${id}/import`, { items: [{ number: pa.phone }] }, as(cA)), `import into list ${id}`);
+      }
+      // what it builds itself: only people of its polos get in (from the CRM, and pasted numbers)
+      const mine = await http.post("/contact-lists/from-leads", { name: "Funil da A", source: "Escopo" }, as(cA));
+      assert(mine.status === 200 && mine.data.imported === 1, `from-leads of coordination A: ${mine.status} ${JSON.stringify(mine.data)}`);
+      assert((await http.get(`/contact-lists/${mine.data.id}/items`, as(cA))).data.every(i => i.number === pa.phone), "the list of coordination A has someone else");
+      const own = (await http.post("/contact-lists", { name: "Colada pela A" }, as(cA))).data.id;
+      const pasted = await http.post(`/contact-lists/${own}/import`, { items: [pa.phone, pb.phone, pn.phone, unknown].map(n => ({ name: n, number: n })) }, as(cA));
+      assert(pasted.status === 200 && pasted.data.imported === 1 && pasted.data.outOfScope === 3, `pasted numbers: ${pasted.status} ${JSON.stringify(pasted.data)}`);
+      assert((await http.post(`/contact-lists/${own}/import`, { items: [{ number: pb.phone }] }, as(cA))).status === 403, "coordination A pasted only a number of polo B");
+      assert((await http.post("/contact-lists/from-leads", { name: "Do B", poloId: Number(pB) }, as(cA))).status === 400, "coordination A built a list from polo B");
+      // the old behaviour for the others
+      assert((await http.get(`/contact-lists/${LB}/items`, as(joao))).status === 200, "the consultant lost the lists (regression)");
+
+      // ---- campaigns
+      const mkCampaign = (token, listId, extra = {}) => http.post("/campaigns", { name: `Campanha ${listId}`, objective: "Teste de escopo", message: "Oi!", contactListId: listId, ...extra }, as(token));
+      const cOk = await mkCampaign(cA, LA);
+      assert(cOk.status === 201, `campaign of coordination A on its list: ${cOk.status} ${JSON.stringify(cOk.data)}`);
+      for (const id of [LB, LM, LU, LN]) ex(await mkCampaign(cA, id), `campaign on list ${id}`);
+      const cB = await mkCampaign(admin, LB);
+      assert(cB.status === 201, `admin campaign ${cB.status}`);
+      const campaignsOf = async t => (await http.get("/campaigns", as(t))).data.map(c => c.id);
+      got = await campaignsOf(cA);
+      assert(got.includes(cOk.data.id) && !got.includes(cB.data.id), `coordination A lists campaigns ${JSON.stringify(got)}`);
+      assert((await campaignsOf(admin)).includes(cB.data.id), "administration misses a campaign");
+      const id = cB.data.id;
+      ex(await http.get(`/campaigns/${id}`, as(cA)), "open campaign of B");
+      ex(await http.put(`/campaigns/${id}`, { name: "tomada" }, as(cA)), "edit campaign of B");
+      ex(await http.delete(`/campaigns/${id}`, as(cA)), "delete campaign of B");
+      for (const [m, p] of [["get", "report"], ["post", "start"], ["post", "pause"], ["post", "cancel"], ["post", "duplicate"], ["post", "test"], ["get", "preflight"], ["post", "retry-failed"], ["post", "remove-no-consent"]]) {
+        ex(await http[m](`/campaigns/${id}/${p}`, ...(m === "post" ? [{}, as(cA)] : [as(cA)])), `${m} ${p} of the campaign of B`);
+      }
+      ex(await http.post("/campaigns/preflight", { contactListId: LB }, as(cA)), "preflight draft on the list of B");
+      assert((await http.get(`/campaigns/${cOk.data.id}/preflight`, as(cA))).status === 200, "coordination A cannot check its own campaign");
+      assert((await http.get(`/campaigns/${id}`, as(joao))).status === 200, "the consultant lost the campaigns (regression)");
+      // a list that changed after the campaign was made: the send leaves out the people outside its creator's polos
+      const own2 = (await http.post("/contact-lists", { name: "Mudou depois" }, as(cA))).data.id;
+      assert((await http.post(`/contact-lists/${own2}/import`, { items: [{ number: pa.phone }] }, as(cA))).status === 200, "own2 import");
+      const late = await mkCampaign(cA, own2, { scheduledAt: new Date(Date.now() + 3600000).toISOString() });
+      assert(late.status === 201, `late campaign ${late.status} ${JSON.stringify(late.data)}`);
+      assert((await http.post(`/contact-lists/${own2}/import`, { items: [{ number: pb.phone }, { number: unknown }] }, as(admin))).status === 200, "admin added people of B");
+      const started = await http.post(`/campaigns/${late.data.id}/start`, {}, as(cA));
+      assert(started.status === 200, `start ${started.status} ${JSON.stringify(started.data)}`);
+      const shipped = sql(`SELECT string_agg(number, ',' ORDER BY number) FROM CampaignShippings WHERE campaignId=${late.data.id}`);
+      assert(shipped === pa.phone, `the campaign of coordination A would send to ${shipped}`);
+
+      // ---- the live events of schedules, campaigns and lists
+      const listen = async token => {
+        const socket = io(API, { auth: { token }, transports: ["websocket"] });
+        const seen = [];
+        await new Promise((res, rej) => { socket.on("connect", res); socket.on("connect_error", rej); });
+        ["schedule", "campaign", "contactList"].forEach(ev => socket.on(ev, p => seen.push([ev, p])));
+        return { socket, seen };
+      };
+      const [forA, forNone, forAdmin, forJoao] = [await listen(cA), await listen(cNone), await listen(admin), await listen(joao)];
+      await sleep(400);
+      await mkSchedule(pb);
+      const sA2 = await mkSchedule(pa);
+      const LB2 = await mkList("Nova só B", [pb.phone]);
+      const LA2 = await mkList("Nova só A", [pa.phone]);
+      await mkCampaign(admin, LB2);
+      await waitFor(() => forAdmin.seen.filter(([e]) => e === "schedule").length >= 2 && forAdmin.seen.some(([e, p]) => e === "contactList" && p.row && p.row.id === LB2), 8000, "events for the administration");
+      await waitFor(() => forA.seen.some(([e, p]) => e === "schedule" && p.row && p.row.id === sA2), 8000, "events for coordination A");
+      await sleep(600);
+      const rowsOf = (x, ev) => x.seen.filter(([e]) => e === ev).map(([, p]) => (p.row || {}).id);
+      assert(!rowsOf(forA, "contactList").includes(LB2), "coordination A heard of a list of polo B");
+      assert(forA.seen.filter(([e, p]) => e === "schedule" && p.row && p.row.contactId === pb.contactId).length === 0, "coordination A heard of a schedule of polo B");
+      assert(forA.seen.filter(([e]) => e === "campaign").every(([, p]) => p.row && p.row.contactListId !== LB2), "coordination A heard of a campaign of polo B");
+      assert(forNone.seen.length === 0, `the coordination with no polo heard ${forNone.seen.length} events`);
+      assert(forJoao.seen.some(([e]) => e === "campaign" || e === "contactList"), "the consultant stopped hearing campaigns (regression)");
+      [forA, forNone, forAdmin, forJoao].forEach(x => x.socket.close());
+      poloF.ok = true;
+      void cNone; void LN;
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);
