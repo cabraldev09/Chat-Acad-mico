@@ -2,9 +2,8 @@ import { shownText } from "../../utils/mediaLabel";
 import React, { useState, useEffect, useContext, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "react-toastify";
-import EmojiPicker from "../EmojiPicker";
 import clsx from "clsx";
-import { makeStyles, useTheme } from "@material-ui/core/styles";
+import { makeStyles } from "@material-ui/core/styles";
 import InputBase from "@material-ui/core/InputBase";
 import IconButton from "@material-ui/core/IconButton";
 import CircularProgress from "@material-ui/core/CircularProgress";
@@ -25,7 +24,7 @@ import Edit from "@material-ui/icons/Edit";
 
 import api from "../../services/api";
 import MediaPreview from "../MediaPreview";
-import StickerPicker from "./StickerPicker";
+import ExpressionPanel from "./ExpressionPanel";
 import { shrinkImage, isImageFile } from "../../utils/imageTools";
 import { fillQuickVars } from "../../utils/quickVars";
 import RecordingTimer from "./RecordingTimer";
@@ -84,6 +83,7 @@ const useStyles = makeStyles((theme) => {
     },
     icon: { color: c.textSecondary, padding: 9, transition: "color .15s, background-color .15s", "&:hover": { color: c.accent, backgroundColor: c.hover } },
     iconOn: { color: c.accent, transform: "rotate(45deg)" },
+    iconActive: { color: c.accent },
     field: {
       flex: 1,
       minWidth: 0,
@@ -119,6 +119,7 @@ const useStyles = makeStyles((theme) => {
       transformOrigin: "bottom left",
       animation: "emojiIn .16s ease-out",
       maxWidth: "calc(100vw - 24px)",
+      [theme.breakpoints.down("xs")]: { left: 12 },
       borderRadius: 18,
       overflow: "hidden",
       boxShadow: c.float,
@@ -172,7 +173,6 @@ const newKey = () => (window.crypto && window.crypto.randomUUID ? window.crypto.
 
 const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName, channel, readOnly, ticketUserId, ticketUserName }) => {
   const classes = useStyles();
-  const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
 
   const [medias, setMedias] = useState([]);
@@ -218,8 +218,9 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
     window.addEventListener("fillMessageInput", fill);
     return () => { window.removeEventListener("fillMessageInput", fill); if (typingTimer.current) clearInterval(typingTimer.current); };
   }, [ticketId]);
-  const [showEmoji, setShowEmoji] = useState(false);
-  const [showStickers, setShowStickers] = useState(false);
+  // the panel of emojis, GIFs and stickers (one, like on WhatsApp): null when closed, or the tab that is open
+  const [panel, setPanel] = useState(null);
+  const setShowEmoji = (v) => setPanel(v ? "emoji" : null);
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [quickAnswers, setQuickAnswer] = useState([]);
@@ -598,29 +599,21 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
           </div>
         ) : (
           <>
-            <IconButton aria-label="Emojis" className={classes.icon} onClick={() => setShowEmoji((v) => !v)} disabled={loading}>
+            <IconButton aria-label="Emojis" data-panel-toggle className={clsx(classes.icon, panel === "emoji" && classes.iconActive)} onClick={() => setPanel((v) => (v === "emoji" ? null : "emoji"))} disabled={loading}>
               <Mood />
             </IconButton>
-            {showEmoji && (
-              <div className={classes.emojiBox}>
-                <ClickAwayListener onClickAway={() => setShowEmoji(false)}>
-                  <div>
-                    <EmojiPicker dark={emojiDark} onSelect={(emoji) => setInputMessage((s) => s + emoji)} />
-                  </div>
-                </ClickAwayListener>
-              </div>
-            )}
-            {/* the stickers of the WhatsApp number (QR Code): the ones already received or sent, sent as real stickers */}
+            {/* the stickers and GIFs of the WhatsApp number: the ones already received or sent, sent as real stickers and GIFs */}
             {(!channel || channel === "whatsapp") && (
-              <IconButton aria-label="Figurinhas" title="Figurinhas" className={classes.icon} onClick={() => setShowStickers((v) => !v)} disabled={loading}>
+              <IconButton aria-label="Figurinhas" title="Figurinhas" data-panel-toggle className={clsx(classes.icon, (panel === "stickers" || panel === "gif") && classes.iconActive)} onClick={() => setPanel((v) => (v === "stickers" || v === "gif" ? null : "stickers"))} disabled={loading}>
                 <Sticker size={22} />
               </IconButton>
             )}
-            {showStickers && (
+            {panel && (
               <div className={classes.emojiBox}>
-                <ClickAwayListener onClickAway={() => setShowStickers(false)}>
+                <ClickAwayListener onClickAway={(e) => { if (!(e.target && e.target.closest && e.target.closest("[data-panel-toggle]"))) setPanel(null); }}>
                   <div>
-                    <StickerPicker ticketId={ticketId} onSent={() => setShowStickers(false)} />
+                    <ExpressionPanel ticketId={ticketId} tab={panel} onTab={setPanel} showMedia={!channel || channel === "whatsapp"}
+                      onEmoji={(emoji) => setInputMessage((s) => s + emoji)} onSent={() => setPanel(null)} />
                   </div>
                 </ClickAwayListener>
               </div>

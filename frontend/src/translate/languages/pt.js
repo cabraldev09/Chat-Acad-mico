@@ -613,6 +613,7 @@ const messages = {
         ERR_TEMPLATE_EXAMPLES: "Preencha um exemplo para cada variável ({{1}}, {{2}}...) do modelo.",
         ERR_TEMPLATE_VARIABLE_EDGE: "A Meta não aceita modelo que começa ou termina com uma variável ({{1}}). Comece e termine o texto com palavras, por exemplo: \"Matrícula confirmada, {{1}}: ...\".",
         ERR_MEDIA_NOT_FOUND: "O arquivo anexado não foi encontrado no servidor. Anexe de novo.",
+        ERR_STICKER_IMAGE: "Não foi possível transformar esta imagem em figurinha. Escolha uma foto JPG, PNG ou WebP.",
         ERR_QUEUE_INVALID_NAME: "Nome do setor inválido. Use pelo menos 2 caracteres.",
         ERR_QUEUE_NAME_ALREADY_EXISTS: "Já existe um setor com este nome.",
         ERR_QUEUE_INVALID_COLOR: "Cor do setor inválida.",
