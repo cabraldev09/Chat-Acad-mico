@@ -33,7 +33,8 @@ export const handleAckByExternalId = async (
         { model: Whatsapp, as: "whatsapp", attributes: ["name", "channel"] }
       ]
     });
-    if (fresh) io.to(fresh.status).to(String(fresh.id)).emit("ticket", { action: "update", ticket: fresh });
+    // the "Todas" list hears only the notification room: without it the tick stays a clock there until a reload
+    if (fresh) io.to(fresh.status).to(String(fresh.id)).to("notification").emit("ticket", { action: "update", ticket: fresh });
   }
 };
 
