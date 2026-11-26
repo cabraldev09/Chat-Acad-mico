@@ -10,7 +10,34 @@ const mergedPullFor = (pulls, sha, repo) => (pulls || []).find(pull =>
   !!pull && !!pull.merged_at && pull.merge_commit_sha === sha && !!pull.base && pull.base.ref === 'main' &&
   !!pull.head && /^[a-f0-9]{40}$/.test(pull.head.sha || '') && !!pull.head.repo && pull.head.repo.full_name === repo) || null;
 const sameTree = (a, b) => /^[a-f0-9]{40}$/.test(a || '') && a === b;
-module.exports = { approved, isCurrentMainSha, mergedPullFor, sameTree };
+// Publication lock: only a commit that came from a merged pull request carrying the label below goes to production.
+// The label is applied by the coordination after the audit (docs/VPS-HOSTINGER.md). Merging without it leaves the code on main, unpublished.
+const PUBLISH_LABEL = 'publicar';
+const mergedFor = (pulls, sha) => (pulls || []).filter(pull => !!pull && !!pull.merged_at && pull.merge_commit_sha === sha && !!pull.base && pull.base.ref === 'main');
+const publishDecision = (pulls, sha) => {
+  const merged = mergedFor(pulls, sha);
+  const pull = merged.find(item => Array.isArray(item.labels) && item.labels.some(label => !!label && label.name === PUBLISH_LABEL));
+  if (pull) return { ok: true, number: pull.number, reason: `PR #${pull.number} com o rótulo ${PUBLISH_LABEL}.` };
+  const why = merged.length ? `o PR #${merged[0].number} não tem o rótulo ${PUBLISH_LABEL}` : 'este commit não veio de um PR mesclado na main';
+  return { ok: false, reason: `Publicação aguardando o rótulo ${PUBLISH_LABEL}, aplicado pela coordenação (${why}).` };
+};
+const API = () => process.env.GITHUB_API_URL || 'https://api.github.com';
+const apiHeaders = () => {
+  const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'Chat-Academico-Deploy' };
+  if (process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GH_TOKEN}`;
+  return headers;
+};
+// fails closed: when the pull requests of the commit cannot be read, nothing is published (throws; the caller decides what that means)
+const publishDecisionFor = async (sha, repo, fetchImpl = fetch) => {
+  const result = await fetchImpl(`${API()}/repos/${repo}/commits/${sha}/pulls?per_page=100`, { headers: apiHeaders(), signal: AbortSignal.timeout(15000) });
+  if (!result.ok) throw new Error(`Não foi possível consultar os PRs do commit (HTTP ${result.status}).`);
+  return publishDecision(await result.json(), sha);
+};
+const validArgs = (sha, repo) => {
+  if (!/^[a-f0-9]{40}$/.test(sha || '')) throw new Error('Revisão de publicação inválida.');
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Repositório inválido.');
+};
+module.exports = { approved, isCurrentMainSha, mergedPullFor, sameTree, PUBLISH_LABEL, publishDecision, publishDecisionFor, validArgs };
 if (require.main === module || process.argv[1] === "-") {
   (async () => {
     const sha = process.argv[2] || process.argv[1];
@@ -19,17 +46,20 @@ if (require.main === module || process.argv[1] === "-") {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Repositório inválido.');
     const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'Chat-Academico-Deploy' };
     if (process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GH_TOKEN}`;
-    const mainResult = await fetch(`https://api.github.com/repos/${repo}/git/ref/heads/main`, { headers, signal: AbortSignal.timeout(15000) });
+    const mainResult = await fetch(`${API()}/repos/${repo}/git/ref/heads/main`, { headers, signal: AbortSignal.timeout(15000) });
     if (!mainResult.ok) throw new Error(`Não foi possível confirmar a revisão atual da main (HTTP ${mainResult.status}).`);
     const mainBody = await mainResult.json();
     if (!isCurrentMainSha(sha, mainBody.object && mainBody.object.sha)) throw new Error('Publicação adiada: a revisão não é a ponta atual da main.');
-    const result = await fetch(`https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100`, { headers, signal: AbortSignal.timeout(15000) });
+    // second lock, for any caller of this file (the server's update.sh runs it too): without the label, nothing is published
+    const decision = await publishDecisionFor(sha, repo);
+    if (!decision.ok) throw new Error(decision.reason);
+    const result = await fetch(`${API()}/repos/${repo}/commits/${sha}/check-runs?per_page=100`, { headers, signal: AbortSignal.timeout(15000) });
     if (!result.ok) throw new Error(`Não foi possível consultar as verificações (HTTP ${result.status}).`);
     const body = await result.json();
     if (approved(body.check_runs || [])) { console.log(`Verificações aprovadas para ${sha.slice(0, 7)}.`); return; }
     // not approved on main yet: the green of the pull request counts when the merged code is identical to the tested one
     const get = async path => {
-      const answer = await fetch(`https://api.github.com/repos/${repo}/${path}`, { headers, signal: AbortSignal.timeout(15000) });
+      const answer = await fetch(`${API()}/repos/${repo}/${path}`, { headers, signal: AbortSignal.timeout(15000) });
       return answer.ok ? answer.json() : null;
     };
     const pull = mergedPullFor(await get(`commits/${sha}/pulls?per_page=100`), sha, repo);

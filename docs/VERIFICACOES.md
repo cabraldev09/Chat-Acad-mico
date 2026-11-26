@@ -10,6 +10,7 @@ Rode tudo isto antes de enviar ao GitHub e de atualizar a VPS. Qualquer falha im
 | Responsabilidade pela conversa (visualizar não assume; enviar atribui de forma atômica; ninguém toma a conversa de outro; IA silenciada; concorrência e idempotência) | `NODE_ENV=test npm run test:assign` | `backend` |
 | Fila comum + carteira (lead sem dono visível a todos os consultores, "Assumir" com um só vencedor, concorrência, avisos, desempenho) | `NODE_ENV=test npm run test:queue` | `backend` |
 | Estatísticas e Centro de Gestão Comercial (mesmos números nas duas telas, permissões, tempo real) e o CRM por polo (coordenação e relacionamento só nos seus polos) | `NODE_ENV=test npm run test:analytics` | `backend` |
+| Bloqueio de publicação (conferência dos testes e do rótulo `publicar`) | `node --test deploy/vps/check-ci.test.js deploy/vps/check-label.test.js` | raiz |
 | Textos em português e códigos de erro traduzidos | `node scripts/i18n-check.js` | `backend` |
 | Esquema do banco (depois de criar uma migração) | `node scripts/build-schema.js` | `backend` |
 | Auditoria de rotas por perfil | `node scripts/audit-routes.js` | `backend` |

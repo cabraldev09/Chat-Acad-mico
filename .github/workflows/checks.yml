@@ -34,7 +34,7 @@ jobs:
           npm run test:ai
           npm run test:security
       - name: Bloqueio de publicação
-        run: node --test deploy/vps/check-ci.test.js
+        run: node --test deploy/vps/check-ci.test.js deploy/vps/check-label.test.js
       - name: Tudo em português
         working-directory: backend
         run: node scripts/i18n-check.js

@@ -16,7 +16,6 @@ import MoreVert from "@material-ui/icons/MoreVert";
 import ClearIcon from "@material-ui/icons/Clear";
 import ArrowBack from "@material-ui/icons/ArrowBack";
 import FilterList from "@material-ui/icons/FilterList";
-import { Archive, CheckCircle2, Clock3, Inbox, Layers, MailOpen, MessageCircle, UserPlus, Users } from "lucide-react";
 import Keyboard from "@material-ui/icons/Keyboard";
 
 import NewTicketModal from "../NewTicketModal";
@@ -67,33 +66,34 @@ const useStyles = makeStyles((theme) => {
       "& svg": { fontSize: 20, color: c.textSecondary },
     },
     searchInput: { flex: 1, fontSize: 14, color: c.text },
+    // one row that slides sideways, like WhatsApp's filters (never three rows of buttons over the list)
     chips: {
       flex: "none",
       display: "flex",
       gap: theme.spacing(0.75),
-      flexWrap: "wrap",
+      flexWrap: "nowrap",
+      overflowX: "auto",
+      overflowY: "hidden",
+      scrollbarWidth: "none",
+      "&::-webkit-scrollbar": { display: "none" },
+      WebkitOverflowScrolling: "touch",
       padding: theme.spacing(0, 1.5, 1),
     },
-    chipIcon: { flex: "none", opacity: 0.85 },
     // the row under the tabs: whose conversations "Atendendo" shows, and "mark all as read" in "Não lidas"
     copyRow: { flex: "none", display: "flex", flexDirection: "column", gap: 6, padding: theme.spacing(0, 1.5, 1), fontSize: 12.5, color: c.textSecondary, minWidth: 0 },
     copyText: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     copyBar: { display: "block", height: 4, borderRadius: 999, backgroundColor: c.divider || "rgba(0,0,0,.12)", overflow: "hidden" },
     copyFill: { display: "block", height: "100%", borderRadius: 999, backgroundColor: c.accent, transition: "width .4s ease" },
     subRow: { flex: "none", display: "flex", alignItems: "center", gap: 6, padding: theme.spacing(0, 1.5, 1), fontSize: 12.5, color: c.textSecondary },
-    seg: {
-      height: 26, padding: "0 10px", borderRadius: 999, border: `1px solid ${c.divider || "rgba(0,0,0,.12)"}`, background: "transparent", color: c.text,
-      cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, "&:focus-visible": { outline: `2px solid ${c.accent}`, outlineOffset: 2 },
-    },
-    segOn: { backgroundColor: c.chipOn, color: c.chipOnText, borderColor: "transparent", fontWeight: 600 },
     subLink: { marginLeft: "auto", border: 0, background: "none", color: c.accent, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600, padding: 0 },
     chip: {
       flex: "none",
       display: "inline-flex",
       alignItems: "center",
       gap: 6,
-      height: 30,
-      padding: theme.spacing(0, 1.4),
+      height: 32,
+      padding: theme.spacing(0, 1.5),
+      whiteSpace: "nowrap",
       borderRadius: 999,
       border: "1px solid transparent",
       cursor: "pointer",
@@ -108,17 +108,8 @@ const useStyles = makeStyles((theme) => {
       "&:focus-visible": { outline: `2px solid ${c.accent}`, outlineOffset: 2 },
     },
     chipOn: { backgroundColor: c.chipOn, color: c.chipOnText, fontWeight: 600, "&:hover": { backgroundColor: c.chipOn } },
-    chipCount: {
-      minWidth: 18,
-      padding: "0 5px",
-      borderRadius: 999,
-      fontSize: 11,
-      lineHeight: "18px",
-      fontWeight: 700,
-      textAlign: "center",
-      backgroundColor: c.badge,
-      color: c.badgeText,
-    },
+    // the count is plain text next to the name, as in WhatsApp ("Não lidas 30")
+    chipCount: { fontSize: 13, fontWeight: 600, opacity: 0.85, fontVariantNumeric: "tabular-nums" },
     filters: {
       flex: "none",
       display: "flex",
@@ -127,18 +118,6 @@ const useStyles = makeStyles((theme) => {
       padding: theme.spacing(0, 1.5, 1),
     },
     body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" },
-    fab: {
-      position: "absolute",
-      right: theme.spacing(2),
-      bottom: theme.spacing(2),
-      width: 52,
-      height: 52,
-      borderRadius: 16,
-      backgroundColor: c.accent,
-      color: "#fff",
-      boxShadow: "0 4px 12px rgba(11,20,26,.25)",
-      "&:hover": { backgroundColor: c.accent, filter: "brightness(1.08)" },
-    },
     menuSwitch: { marginLeft: theme.spacing(1) },
   };
 });
@@ -301,9 +280,7 @@ const TicketsManager = () => {
   }, [user]);
 
   const searching = searchParam.length > 0;
-  const ICONS = { open: MessageCircle, pending: Clock3, queue: UserPlus, unread: MailOpen, groups: Users, communities: Layers, everything: Inbox };
   const chip = (key, label, count) => {
-    const Icon = ICONS[key];
     return (
     <button
       key={key}
@@ -315,7 +292,6 @@ const TicketsManager = () => {
         setFilter(key);
       }}
     >
-      {Icon && <Icon size={14} className={classes.chipIcon} />}
       {label}
       {count > 0 && <span className={classes.chipCount}>{count > 99 ? "99+" : count}</span>}
     </button>
@@ -397,6 +373,11 @@ const TicketsManager = () => {
       {!searching && (
         <div className={classes.chips}>
           {chip("open", "Atendendo", openCount)}
+          {filter === "open" && isAdmin && (
+            <button type="button" className={clsx(classes.chip, showAllTickets && classes.chipOn)} aria-pressed={showAllTickets} onClick={() => setShowAllTickets((v) => !v)} title="Mostrar também as conversas da equipe">
+              Da equipe
+            </button>
+          )}
           {/* nobody waiting: the chip would only be noise (it comes back, with a number, when someone does) */}
           {(pendingCount > 0 || filter === "pending") && chip("pending", "Aguardando", pendingCount)}
           {(queueCount > 0 || filter === "queue") && chip("queue", "Fila", queueCount)}
@@ -409,7 +390,6 @@ const TicketsManager = () => {
             className={clsx(classes.chip, (filter === "closed" || filter === "archived") && !searching && classes.chipOn)}
             onClick={(e) => setMoreEl(e.currentTarget)}
           >
-            {filter === "closed" ? <CheckCircle2 size={14} className={classes.chipIcon} /> : filter === "archived" ? <Archive size={14} className={classes.chipIcon} /> : null}
             {filter === "closed" ? "Resolvidas" : filter === "archived" ? "Arquivadas" : "Mais"} ▾
           </button>
           <Menu anchorEl={moreEl} open={Boolean(moreEl)} onClose={() => setMoreEl(null)} getContentAnchorEl={null}
@@ -433,12 +413,6 @@ const TicketsManager = () => {
         </div>
       )}
 
-      {!searching && filter === "open" && isAdmin && (
-        <div className={classes.subRow} role="group" aria-label="De quem são as conversas">
-          <button type="button" className={clsx(classes.seg, !showAllTickets && classes.segOn)} aria-pressed={!showAllTickets} onClick={() => setShowAllTickets(false)}>Minhas</button>
-          <button type="button" className={clsx(classes.seg, showAllTickets && classes.segOn)} aria-pressed={showAllTickets} onClick={() => setShowAllTickets(true)}>Da equipe</button>
-        </div>
-      )}
       {!searching && filter === "unread" && dmUnread > 0 && (
         <div className={classes.subRow}>
           <span>{dmUnread} não lida{dmUnread === 1 ? "" : "s"}</span>
@@ -472,11 +446,6 @@ const TicketsManager = () => {
             {filter === "everything" && <TicketsList tagId={tagId} everything showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />}
           </>
         )}
-        <Tooltip title="Nova conversa">
-          <IconButton className={classes.fab} onClick={() => setNewTicketModalOpen(true)} aria-label="Nova conversa">
-            <AddIcon />
-          </IconButton>
-        </Tooltip>
       </div>
     </div>
   );
