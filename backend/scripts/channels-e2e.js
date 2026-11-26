@@ -5054,7 +5054,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // "Quero me matricular hoje": straight to the consultant, even with nothing else known
       const Q3 = "5511920000242";
       // "Quero me matricular hoje": the agent first asks the course to present it; insisting goes to the consultant
-      out = await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor do seu polo/.test(x)), "enrollment worked first");
+      // (the answer comes in more than one balloon: the bridge to the consultant first, then the question of the course; both are waited for)
+      out = await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor do seu polo/.test(x)) && /curso/i.test(t.join(" ")), "enrollment worked first");
       assert(/curso/i.test(out.join(" ")) && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "1", `the course was not asked: ${out}`);
       await say(Q3, "wamid.qs-3b", "Quero me matricular agora mesmo", t => t.some(x => /consultor/.test(x)), "enrollment handed over");
       await waitFor(() => handoffOf(Q3) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "0", 15000, "the AI is out after the handoff");
