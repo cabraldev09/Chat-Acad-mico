@@ -7,7 +7,9 @@ import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
 import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes, standardWeek } from "../helpers/BusinessTime";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
-import { withLeadScope, withOnboardingScope, isAdminReq, reqRole, crmPolosOf, poloSql } from "../middleware/scope";
+import { withLeadScope, withLeadReadScope, withOnboardingScope, isAdminReq, reqRole, crmPolosOf, poloSql } from "../middleware/scope";
+import { redactQueueLead } from "../helpers/LeadQueue";
+import claimLead from "../services/CrmServices/ClaimLead";
 import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
 import { Op, literal } from "sequelize";
 import { randomBytes } from "crypto";
@@ -110,11 +112,16 @@ const withTag = (tagId?: string, ready?: string) =>
     return i;
   });
 
+// a consultant reads the leads of the common queue only as a card (name, phone, course, city, origin): CPF, documents, notes and the rest
+// come after "Assumir" (the lead of someone else never reaches them: the scope already left it out)
+const queueCards = (req: Request, rows: Lead[]): any[] =>
+  reqRole(req) === "consultor" ? rows.map(l => (l.ownerId === uid(req) ? l : redactQueueLead(l))) : rows;
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const limit = Math.min(Number(req.query.limit) || 50, 500);
   const offset = Number(req.query.offset) || 0;
   const { rows, count } = await Lead.findAndCountAll({
-    where: await withLeadScope(req, buildWhere(req.query)),
+    where: await withLeadReadScope(req, buildWhere(req.query)),
     include: withTag(req.query.tagId as string, req.query.ready as string),
     // one column of the board is ordered by score first: the next page ("Carregar mais") must follow the same order,
     // or leads repeat and others are skipped
@@ -123,12 +130,12 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     offset,
     distinct: true
   });
-  return res.json({ leads: rows, count, hasMore: count > offset + rows.length });
+  return res.json({ leads: queueCards(req, rows), count, hasMore: count > offset + rows.length });
 };
 
 export const board = async (req: Request, res: Response): Promise<Response> => {
   const stages = await LeadStage.findAll({ order: [["position", "ASC"]] });
-  const where = await withLeadScope(req, buildWhere({ ...req.query, stageId: undefined }));
+  const where = await withLeadReadScope(req, buildWhere({ ...req.query, stageId: undefined }));
   const include = withTag(req.query.tagId as string, req.query.ready as string);
   const perStage = Math.min(Number(req.query.perStage) || 30, 100);
 
@@ -144,7 +151,7 @@ export const board = async (req: Request, res: Response): Promise<Response> => {
         limit: perStage,
         distinct: true
       });
-      return { ...stage.toJSON(), count, leads: rows };
+      return { ...stage.toJSON(), count, leads: queueCards(req, rows) };
     })
   );
   return res.json({ stages: out });
@@ -153,8 +160,17 @@ export const board = async (req: Request, res: Response): Promise<Response> => {
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const lead = await loadLead(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  // a lead still in the common queue: only its card (the rest after "Assumir")
+  if ((req as any).leadInQueue) return res.json(redactQueueLead(lead));
   // the CPF is hidden from every list; only the detail view returns it
   return res.json({ ...lead.toJSON(), cpf: lead.cpf });
+};
+
+// "Assumir": the first consultant to take a lead of the common queue becomes its owner; the second one gets 409 (see services/CrmServices/ClaimLead)
+export const claim = async (req: Request, res: Response): Promise<Response> => {
+  const { lead, changed, ticketIds } = await claimLead(Number(req.params.id), uid(req));
+  const fresh = (await loadLead(lead.id)) as Lead;
+  return res.json({ ...fresh.toJSON(), cpf: fresh.cpf, changed, ticketIds });
 };
 
 const FIELDS = [
@@ -503,10 +519,10 @@ export const tasksCounts = async (req: Request, res: Response): Promise<Response
 // ------------------------------------------------------------ chat bridge
 export const byContact = async (req: Request, res: Response): Promise<Response> => {
   const lead = await Lead.findOne({
-    where: await withLeadScope(req, { contactId: req.params.contactId }),
+    where: await withLeadReadScope(req, { contactId: req.params.contactId }),
     include: leadInclude as any
   });
-  return res.json(lead || null);
+  return res.json(lead ? queueCards(req, [lead])[0] : null);
 };
 
 export const fromContact = async (req: Request, res: Response): Promise<Response> => {
@@ -729,6 +745,8 @@ export const options = async (_req: Request, res: Response): Promise<Response> =
 export const getSettings = async (_req: Request, res: Response): Promise<Response> =>
   res.json({
     autoassign: await getSetting("crm_autoassign", "roundrobin"),
+    // the common queue: a new lead has no owner until a consultant assumes it (helpers/LeadQueue); off by default
+    queueMode: (await getSetting("crm_queue_mode", "false")) === "true",
     autocreate: (await getSetting("crm_autocreate", "true")) !== "false",
     autoadvance: (await getSetting("crm_autoadvance", "true")) !== "false",
     // the client who writes again goes straight back to their consultant (see ReturningClient)
@@ -759,6 +777,9 @@ export const getSettings = async (_req: Request, res: Response): Promise<Respons
 export const putSettings = async (req: Request, res: Response): Promise<Response> => {
   const b = req.body;
   if (b.autoassign !== undefined) await setSetting("crm_autoassign", b.autoassign === "none" ? "none" : "roundrobin");
+  // only the administration turns the common queue on or off (it changes what every consultant sees)
+  if (b.queueMode !== undefined && reqRole(req) !== "admin") throw new AppError("ERR_NO_PERMISSION", 403);
+  if (b.queueMode !== undefined) await setSetting("crm_queue_mode", b.queueMode === true || b.queueMode === "true" ? "true" : "false");
   if (b.autocreate !== undefined) await setSetting("crm_autocreate", b.autocreate ? "true" : "false");
   if (b.autoadvance !== undefined) await setSetting("crm_autoadvance", b.autoadvance ? "true" : "false");
   if (b.returnToOwner !== undefined) await setSetting("return_to_owner", b.returnToOwner ? "true" : "false");

@@ -15,6 +15,7 @@ import { Role, SEGMENTS_OF, isManagerRole } from "../../helpers/Roles";
 import { connectionScopeOf, ticketScopeWhere } from "../../helpers/ConnectionScope";
 import { remember } from "../../helpers/TtlCache";
 import { ticketPoloSql, ticketPolosOf } from "../../helpers/TicketPoloScope";
+import { isQueueMode, queueTicketSql } from "../../helpers/LeadQueue";
 
 // who sees which numbers and sectors changes rarely: the lists of one person read it from memory for a few seconds
 // (each new message makes every open screen count its chips again)
@@ -42,6 +43,9 @@ interface Request {
   communities?: string;
   attendantId?: string;
   connectionId?: string;
+  // "true": the common queue's own list (consultants and the administration; helpers/LeadQueue): the conversations nobody attends yet of the
+  // people who are in the queue, whichever sector or number they came to
+  fila?: string;
 }
 
 interface Response {
@@ -68,7 +72,8 @@ const ListTicketsService = async ({
   allQueues,
   communities,
   attendantId,
-  connectionId
+  connectionId,
+  fila
 }: Request): Promise<Response> => {
   let whereCondition: Filterable["where"] =
     historical === "true"
@@ -115,6 +120,32 @@ const ListTicketsService = async ({
       ...(tagId ? { where: { id: tagId } } : {})
     }
   ];
+
+  const queueMode = await remember("scope:queue-mode", 2000, () => isQueueMode());
+  // (off, or a profile that does not take from it: an empty queue, never the ordinary list)
+  if (fila === "true" && !(queueMode && (role === "consultor" || role === "admin"))) return { tickets: [], count: 0, hasMore: false };
+  if (fila === "true") {
+    const queueWhere: any = {
+      [Op.and]: [
+        { status: "pending", archivedAt: { [Op.is]: null }, isHistorical: false },
+        literal(queueTicketSql('"Ticket"')),
+        literal(`NOT EXISTS (SELECT 1 FROM "Contacts" kc WHERE kc."id" = "Ticket"."contactId" AND kc."kind" = 'channel')`)
+      ]
+    };
+    if (countOnly) return { tickets: [], count: await Ticket.count({ where: queueWhere }), hasMore: false };
+    const qLimit = 40;
+    const qOffset = qLimit * (+pageNumber - 1);
+    const { count: qCount, rows: qTickets } = await Ticket.findAndCountAll({
+      where: queueWhere,
+      include: includeCondition,
+      distinct: true,
+      limit: qLimit,
+      offset: qOffset,
+      // the oldest first: who waited longest is answered first
+      order: [["createdAt", "ASC"], ["id", "ASC"]]
+    });
+    return { tickets: qTickets, count: qCount, hasMore: qCount > qOffset + qTickets.length };
+  }
 
   const manager = isManagerRole(role);
   // the whole team in one place: a manager is not limited to the sectors they belong to
@@ -239,7 +270,7 @@ const ListTicketsService = async ({
   }
 
   // groups, communities and private chats follow the connection: nobody reads another number's groups or personal chats
-  const byConnection = ticketScopeWhere(await remember(`scope:connections:${userId}:${role || ""}`, SCOPE_TTL, () => connectionScopeOf(userId, role)), userId);
+  const byConnection = ticketScopeWhere(await remember(`scope:connections:${userId}:${role || ""}`, SCOPE_TTL, () => connectionScopeOf(userId, role)), userId, queueMode);
   if (byConnection) whereCondition = { [Op.and]: [whereCondition, byConnection] } as any;
 
   // pins come first: the ones this person made in the system, and the ones pinned on the phone's WhatsApp

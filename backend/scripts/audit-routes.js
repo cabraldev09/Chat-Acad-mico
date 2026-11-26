@@ -28,7 +28,7 @@ console.log(`## Quem vê quais leads no CRM (middleware/scope.ts)
 |---|---|
 | admin | todos os leads, de todos os polos |
 | coordenacao | só os leads dos polos em que está (Polos e equipes); sem polo, nenhum. Um lead ainda sem polo fica com a administração |
-| consultor | só os leads em que é o responsável |
+| consultor | só os leads em que é o responsável. Com a **fila comum** ligada (\`crm_queue_mode\`, desligada por padrão) também lê, como cartão sem CPF/documentos/anotações, os leads novos sem dono; para agir neles precisa **assumir** antes (\`POST /leads/:id/claim\`) |
 | tutor, academico | os leads em que é o responsável e os alunos dados a ele (Ambientação e Alunos da tutoria: também os do seu polo ainda sem tutor) |
 | relacionamento | só os matriculados dos polos em que está; sem polo, nenhum |
 

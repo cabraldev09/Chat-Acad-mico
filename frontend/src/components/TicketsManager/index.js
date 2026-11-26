@@ -16,7 +16,7 @@ import MoreVert from "@material-ui/icons/MoreVert";
 import ClearIcon from "@material-ui/icons/Clear";
 import ArrowBack from "@material-ui/icons/ArrowBack";
 import FilterList from "@material-ui/icons/FilterList";
-import { Archive, CheckCircle2, Clock3, Inbox, Layers, MailOpen, MessageCircle, Users } from "lucide-react";
+import { Archive, CheckCircle2, Clock3, Inbox, Layers, MailOpen, MessageCircle, UserPlus, Users } from "lucide-react";
 import Keyboard from "@material-ui/icons/Keyboard";
 
 import NewTicketModal from "../NewTicketModal";
@@ -149,7 +149,7 @@ const TicketsManager = () => {
   const [searchText, setSearchText] = useState("");
   const location = useLocation();
   const asked = new URLSearchParams(location.search).get("filtro");
-  const [filter, setFilter] = useState(["open", "pending", "unread", "everything", "groups", "communities", "closed", "archived"].includes(asked) ? asked : "open");
+  const [filter, setFilter] = useState(["open", "pending", "queue", "unread", "everything", "groups", "communities", "closed", "archived"].includes(asked) ? asked : "open");
   const [moreEl, setMoreEl] = useState(null);
   const [newTicketModalOpen, setNewTicketModalOpen] = useState(false);
   const [showAllTickets, setShowAllTickets] = useState(false);
@@ -161,6 +161,8 @@ const TicketsManager = () => {
   const { user } = useContext(AuthContext);
   const [openCount, setOpenCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
+  // the common queue (only when the administration turned it on): conversations of new people nobody assumed yet
+  const [queueCount, setQueueCount] = useState(0);
   const userQueueIds = (user.queues || []).map((q) => q.id);
   const [selectedQueueIds, setSelectedQueueIds] = useState(userQueueIds || []);
   const manager = isManager(user);
@@ -246,6 +248,7 @@ const TicketsManager = () => {
             if (!alive) return;
             setOpenCount(data.open || 0);
             setPendingCount(data.pending || 0);
+            setQueueCount(data.queue || 0);
             setDmUnread(data.unread || 0);
             setGroupUnread(data.groupUnread || 0);
           })
@@ -298,7 +301,7 @@ const TicketsManager = () => {
   }, [user]);
 
   const searching = searchParam.length > 0;
-  const ICONS = { open: MessageCircle, pending: Clock3, unread: MailOpen, groups: Users, communities: Layers, everything: Inbox };
+  const ICONS = { open: MessageCircle, pending: Clock3, queue: UserPlus, unread: MailOpen, groups: Users, communities: Layers, everything: Inbox };
   const chip = (key, label, count) => {
     const Icon = ICONS[key];
     return (
@@ -396,6 +399,7 @@ const TicketsManager = () => {
           {chip("open", "Atendendo", openCount)}
           {/* nobody waiting: the chip would only be noise (it comes back, with a number, when someone does) */}
           {(pendingCount > 0 || filter === "pending") && chip("pending", "Aguardando", pendingCount)}
+          {(queueCount > 0 || filter === "queue") && chip("queue", "Fila", queueCount)}
           {chip("unread", "Não lidas", dmUnread)}
           {chip("groups", "Grupos", groupUnread)}
           {((communities || []).length > 0 || filter === "communities") && chip("communities", "Comunidades", communityUnread)}
@@ -455,6 +459,7 @@ const TicketsManager = () => {
             <div style={{ display: filter === "pending" ? "flex" : "none", flex: 1, minHeight: 0 }}>
               <TicketsList tagId={tagId} status="pending" groups="exclude" selectedQueueIds={selectedQueueIds} {...scope} />
             </div>
+            {filter === "queue" && <TicketsList tagId={tagId} status="pending" groups="exclude" fila showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />}
             {filter === "groups" && (
               <TicketsList tagId={tagId} groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />
             )}

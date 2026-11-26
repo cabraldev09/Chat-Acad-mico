@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
@@ -13,6 +13,7 @@ import MainHeader from "../../components/MainHeader";
 import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper";
 import Title from "../../components/Title";
 import api from "../../services/api";
+import { AuthContext } from "../../context/Auth/AuthContext";
 import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
 import LeadDrawer, { LostDialog } from "./LeadDrawer";
@@ -103,23 +104,31 @@ const useStyles = makeStyles((theme) => ({
   tableWrap: { flex: 1, overflowY: "auto", overflowX: "auto", ...theme.scrollbarStyles, "& table": { minWidth: 760 } },
 }));
 
-const LeadCard = ({ lead, stage, onOpen, onDragStart, onDragEnd, dragging, onMenu }) => {
+const LeadCard = ({ lead, stage, onOpen, onDragStart, onDragEnd, dragging, onMenu, onClaim }) => {
   const classes = useStyles();
   const color = (stage && stage.color) || (lead.stage && lead.stage.color) || null;
   return (
-    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`}  draggable role="button" tabIndex={0} aria-label={`Abrir o lead ${lead.name}`}
+    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`}  draggable={!lead.inQueue} role="button" tabIndex={0} aria-label={`Abrir o lead ${lead.name}`}
       onClick={() => onOpen(lead.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(lead.id); } }}
       onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(lead.id)); e.dataTransfer.effectAllowed = "move"; setTimeout(() => onDragStart(lead), 0); }} onDragEnd={onDragEnd}>
       <div className={classes.cardTop}>
         <div className={classes.cardName}>{lead.name}</div>
         <ScoreRing value={lead.score} />
-        {onMenu && (
+        {onMenu && !lead.inQueue && (
           <IconButton size="small" className={classes.cardMenu} aria-label="Mover para outra etapa" title="Mover para outra etapa"
             onClick={(e) => { e.stopPropagation(); onMenu(lead, e.currentTarget); }} onDragStart={(e) => e.preventDefault()} draggable={false}>
             <MoreHorizontal size={16} />
           </IconButton>
         )}
       </div>
+      {lead.inQueue && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span className={`${classes.chip} ${classes.chipHot}`} title="Ninguém assumiu este lead ainda: o primeiro que assumir atende">Na fila comum</span>
+          {onClaim && <Button size="small" variant="contained" color="primary" disableElevation style={{ minHeight: 30, textTransform: "none", fontWeight: 600 }}
+            onClick={(e) => { e.stopPropagation(); onClaim(lead); }} onDragStart={(e) => e.preventDefault()}>Assumir</Button>}
+        </div>
+      )}
+      {lead.city && lead.inQueue && <div className={classes.cardCourse}>{lead.city}{lead.state ? `/${lead.state}` : ""}</div>}
       {lead.course && <div className={classes.cardCourse}>{lead.course.name}{lead.course.modality ? ` · ${lead.course.modality}` : ""}</div>}
       {lead.tags && lead.tags.length > 0 && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -207,6 +216,7 @@ const Board = () => {
   const history = useHistory();
   const location = useLocation();
   const ctx = useCrmOptions();
+  const { user } = useContext(AuthContext);
   // a period in the address opens the list (the leads of that period, newest first)
   const [view, setView] = useState(() => (new URLSearchParams(location.search).get("from") ? "list" : "board"));
   const phone = useMediaQuery((t) => t.breakpoints.down("xs"));
@@ -230,6 +240,9 @@ const Board = () => {
   const [importOpen, setImportOpen] = useState(false);
   const [lostFor, setLostFor] = useState(null);
   const [enrollFor, setEnrollFor] = useState(null);
+  // a lead of the common queue (nobody assumed it yet): the card opens a small sheet with "Assumir", not the whole file
+  const [queueFor, setQueueFor] = useState(null);
+  const [claiming, setClaiming] = useState(false);
   const timer = useRef(null);
 
   const params = useCallback(() => {
@@ -252,6 +265,32 @@ const Board = () => {
 
   useEffect(() => { const t = setTimeout(load, filters.search ? 350 : 0); return () => clearTimeout(t); }, [load, filters.search]);
 
+  // the lead left the queue (somebody assumed it): its card leaves the screen at once, without reloading
+  const dropFromScreen = useCallback((leadId) => {
+    setBoard((prev) => prev && prev.map((st) => (st.leads.some((l) => l.id === leadId) ? { ...st, count: Math.max(0, st.count - 1), leads: st.leads.filter((l) => l.id !== leadId) } : st)));
+    setList((prev) => ({ ...prev, leads: prev.leads.filter((l) => l.id !== leadId), count: Math.max(0, prev.count - 1) }));
+    setQueueFor((cur) => (cur && cur.id === leadId ? null : cur));
+  }, []);
+
+  // "Assumir": decided by the server in one step; the second person to click is told who has it
+  const claim = async (lead) => {
+    if (claiming) return;
+    setClaiming(true);
+    try {
+      await api.post(`/leads/${lead.id}/claim`);
+      toast.success("Lead assumido: agora ele está na sua carteira");
+      setQueueFor(null);
+      await load();
+      setOpenId(lead.id);
+    } catch (err) {
+      const e = err && err.response && err.response.data;
+      if (e && e.error === "ERR_LEAD_ALREADY_ASSIGNED") {
+        toast.info(`${(e.data && e.data.ownerName) || "Outro consultor"} já assumiu este lead.`);
+        dropFromScreen(lead.id);
+      } else toastError(err);
+    } finally { setClaiming(false); }
+  };
+
   // A change of a lead that is on the board and stays in the same column updates only its card. Anything else (a new lead, a change of
   // column, a removal) reloads the board, at most once every few seconds: the AI and the automations touch leads all day, and the
   // whole board (two queries per column) used to be read again by every open screen on each of those touches.
@@ -266,6 +305,8 @@ const Board = () => {
       timer.current = setTimeout(() => { lastFull.current = Date.now(); load(); }, wait);
     };
     socket.on("lead", (data) => {
+      // (the one who assumed it reloads by themselves: the card is theirs now)
+      if (data && data.action === "claimed" && data.leadId) { if (!user || Number(data.ownerId) !== Number(user.id)) dropFromScreen(Number(data.leadId)); return; }
       const lead = data && data.lead;
       const stages = boardNow.current;
       if (view === "board" && stages && lead && data.action === "update") {
@@ -286,7 +327,7 @@ const Board = () => {
       reload();
     });
     return () => { clearTimeout(timer.current); socket.disconnect(); };
-  }, [load, view]);
+  }, [load, view, dropFromScreen, user]);
 
   const moveLead = async (leadId, stage, e, extra = {}) => { e && e.persist && e.persist();
     // optimistic update so the card lands instantly
@@ -356,6 +397,8 @@ const Board = () => {
   };
 
   const activeFilters = ["ownerId", "courseId", "source", "affiliate", "tagId", "ready", "followUp", "from"].filter((k) => filters[k]).length;
+  // the leads of the common queue on the screen (only a consultant gets them as cards)
+  const queueCount = view === "board" ? (board || []).reduce((a, s) => a + s.leads.filter((l) => l.inQueue).length, 0) : (list.leads || []).filter((l) => l.inQueue).length;
   const totalOpen = board ? board.filter((s) => s.type === "open").reduce((a, s) => a + s.count, 0) : 0;
 
   return (
@@ -378,11 +421,31 @@ const Board = () => {
       </Menu>
       <NewLeadDialog open={newOpen} onClose={() => setNewOpen(false)} ctx={ctx} onCreated={(id) => { setOpenId(id); load(); }} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      <Dialog open={!!queueFor} onClose={() => setQueueFor(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Lead na fila comum</DialogTitle>
+        {queueFor && (
+          <DialogContent>
+            <Typography variant="subtitle1" style={{ fontWeight: 700 }}>{queueFor.name}</Typography>
+            <Typography variant="body2">{queueFor.phone || "Sem telefone"}</Typography>
+            {queueFor.course && <Typography variant="body2">Curso: {queueFor.course.name}</Typography>}
+            {queueFor.city && <Typography variant="body2">Cidade: {queueFor.city}{queueFor.state ? `/${queueFor.state}` : ""}</Typography>}
+            <Typography variant="body2">Origem: {queueFor.source || "—"}</Typography>
+            <Typography variant="caption" color="textSecondary" style={{ display: "block", marginTop: 12 }}>
+              Ninguém assumiu este lead ainda. O primeiro que assumir passa a atendê-lo e ele sai da fila dos outros. CPF, documentos e anotações aparecem depois de assumir.
+            </Typography>
+          </DialogContent>
+        )}
+        <DialogActions>
+          <Button variant="outlined" color="secondary" onClick={() => setQueueFor(null)}>Fechar</Button>
+          <Button variant="contained" color="primary" disabled={claiming} onClick={() => claim(queueFor)}>{claiming ? "Assumindo..." : "Assumir"}</Button>
+        </DialogActions>
+      </Dialog>
       <LeadDrawer leadId={openId} ctx={ctx} onClose={() => { setOpenId(null); if (location.search) history.replace("/crm"); }} onChanged={load} />
 
       <MainHeader>
         <Title>Funil de captação</Title>
         {board && <Chip size="small" label={`${totalOpen} em andamento`} />}
+        {queueCount > 0 && <Chip size="small" color="primary" clickable onClick={() => setFilters((f) => ({ ...f, ownerId: f.ownerId === "none" ? "" : "none" }))} label={`${queueCount} na fila comum`} title="Leads novos que ninguém assumiu ainda: clique para filtrar" />}
         <MainHeaderButtonsWrapper>
           <ButtonGroup size="small">
             <Button onClick={() => setView("board")} variant={view === "board" ? "contained" : "outlined"} color={view === "board" ? "primary" : "default"} startIcon={<LayoutGrid size={15} />}>Funil</Button>
@@ -532,7 +595,7 @@ const Board = () => {
               </div>
               <div className={classes.colBody} data-colbody="1">
                 {stage.leads.map((l) => (
-                  <LeadCard key={l.id} lead={l} stage={stage} onOpen={setOpenId} dragging={drag && drag.id === l.id} onMenu={(lead, el) => setMoveMenu({ lead, el })}
+                  <LeadCard key={l.id} lead={l} stage={stage} onOpen={() => (l.inQueue ? setQueueFor(l) : setOpenId(l.id))} onClaim={claim} dragging={drag && drag.id === l.id} onMenu={(lead, el) => setMoveMenu({ lead, el })}
                     onDragStart={setDrag} onDragEnd={() => { setDrag(null); setOver(null); }} />
                 ))}
                 {stage.count === 0 && <div className={classes.empty}>{phone ? "Nenhum lead nesta etapa" : "Arraste um lead para cá"}</div>}
@@ -554,12 +617,12 @@ const Board = () => {
             </TableHead>
             <TableBody>
               {list.leads.map((l) => (
-                <TableRow key={l.id} hover style={{ cursor: "pointer" }} onClick={() => setOpenId(l.id)}>
+                <TableRow key={l.id} hover style={{ cursor: "pointer" }} onClick={() => (l.inQueue ? setQueueFor(l) : setOpenId(l.id))}>
                   <TableCell><b>{l.name}</b><div style={{ fontSize: 12, opacity: 0.7 }}>{l.phone || l.email}</div></TableCell>
                   <TableCell>{l.course ? l.course.name : "—"}</TableCell>
                   <TableCell><StagePill stage={l.stage} /></TableCell>
                   <TableCell><span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><SourceIcon source={l.source} />{l.source}</span></TableCell>
-                  <TableCell>{l.owner ? l.owner.name : <i>sem responsável</i>}</TableCell>
+                  <TableCell>{l.owner ? l.owner.name : l.inQueue ? <Button size="small" variant="contained" color="primary" disableElevation style={{ textTransform: "none", fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); claim(l); }}>Assumir</Button> : <i>sem responsável</i>}</TableCell>
                   <TableCell align="center"><ScoreRing value={l.score} size={28} /></TableCell>
                   <TableCell>{ago(l.lastContactAt || l.createdAt)}</TableCell>
                   <TableCell style={{ color: isOverdue(l.nextFollowUpAt) ? "#dc2626" : undefined }}>{l.nextFollowUpAt ? format(parseISO(l.nextFollowUpAt), "dd/MM HH:mm") : "—"}</TableCell>

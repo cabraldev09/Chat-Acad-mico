@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
   Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, Tooltip, IconButton, makeStyles,
@@ -13,6 +13,8 @@ import Title from "../../components/Title";
 import ImportWizard from "../../components/ImportWizard";
 import ColorSwatchPicker from "../../components/ColorSwatchPicker";
 import api from "../../services/api";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isStrictAdmin } from "../../utils/access";
 import { getBackendUrl } from "../../config";
 import { publicApiBase } from "../../utils/publicApiBase";
 import toastError from "../../errors/toastError";
@@ -402,6 +404,7 @@ const EntryCalendar = ({ s, save }) => {
 
 export const Automation = ({ s, setS, save, users }) => {
   const classes = useStyles();
+  const { user } = useContext(AuthContext);
   const [busy, setBusy] = useState(false);
   return (
     <Paper variant="outlined" className={classes.pane}>
@@ -468,6 +471,17 @@ export const Automation = ({ s, setS, save, users }) => {
         <MenuItem value="roundrobin">Rodízio entre os consultores</MenuItem>
         <MenuItem value="none">Sem responsável (o primeiro a atender assume)</MenuItem>
       </TextField>
+      {isStrictAdmin(user) && (
+        <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16 }}>
+          <FormControlLabel control={<Switch color="primary" checked={!!s.queueMode} onChange={(e) => save({ queueMode: e.target.checked })} />}
+            label="Fila comum: lead novo sem dono, todos os consultores veem e o primeiro que assumir atende" />
+          <Typography className={classes.hint}>
+            Ligada, o lead novo não vai para o rodízio nem para o dono do número: fica na fila (aba Fila das Conversas e filtro “Sem responsável” do funil) até um
+            consultor clicar em Assumir. Os leads que já estão sem responsável também entram na fila: confira a lista antes de ligar. CPF, documentos e anotações só aparecem depois de assumir.
+            Desligada, nada muda e os leads já assumidos continuam com seus donos.
+          </Typography>
+        </div>
+      )}
       {s.autoassign !== "none" && (
         <TextField select variant="outlined" size="small" label="Consultores no rodízio" SelectProps={{ multiple: true }} value={s.ownerIds || []}
           onChange={(e) => save({ ownerIds: e.target.value })} helperText="Vazio = todos os usuários" style={{ maxWidth: 360 }}>

@@ -10,6 +10,7 @@ import Queue from "../models/Queue";
 import UserQueue from "../models/UserQueue";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { poloSql } from "../helpers/PoloScope";
+import { isQueueLead, isQueueMode, queueLeadWhere } from "../helpers/LeadQueue";
 
 // What each job role may see of the CRM (leads and what hangs from them):
 //   admin          everything (every polo)
@@ -87,8 +88,35 @@ export const withOnboardingScope = async (req: Request, where: any): Promise<any
   return scope ? { [Op.and]: [where, scope] } : where;
 };
 
+// THE COMMON QUEUE (helpers/LeadQueue; setting crm_queue_mode). The consultant READS the leads nobody owns yet (the queue) beside their own, but
+// everything that acts on a lead (every other route, the messages, the proposals, the payments...) stays with leadScopeWhere above: the
+// consultant has to "assume" the lead first (POST /leads/:id/claim). With the mode off this is exactly leadScopeWhere.
+export const leadReadScopeWhere = async (req: Request): Promise<any | null> => {
+  if (reqRole(req) === "consultor" && (await isQueueMode())) return { [Op.or]: [{ ownerId: Number(req.user.id) }, queueLeadWhere()] };
+  return leadScopeWhere(req);
+};
+export const withLeadReadScope = async (req: Request, where: any): Promise<any> => {
+  const scope = await leadReadScopeWhere(req);
+  return scope ? { [Op.and]: [where, scope] } : where;
+};
+
+// a consultant reaching for a lead of the queue (not theirs yet): the way is "Assumir", not a refusal with no explanation
+const refuseLead = async (req: Request, leadId: number | string): Promise<never> => {
+  const lead = await Lead.findByPk(leadId, { attributes: ["id", "ownerId", "enrolledAt", "wonAt", "lostAt", "isHistorical", "onboardingStatus"] });
+  if (lead && reqRole(req) === "consultor" && isQueueLead(lead) && (await isQueueMode())) throw new AppError("ERR_LEAD_CLAIM_FIRST", 403);
+  throw new AppError(lead ? "ERR_NO_PERMISSION" : "ERR_LEAD_NOT_FOUND", lead ? 403 : 404);
+};
+
 export const assertLead = async (req: Request, leadId: number | string, scopeOf = leadScopeWhere): Promise<void> => {
   const scope = await scopeOf(req);
+  if (!scope) return;
+  const lead = await Lead.findOne({ where: { [Op.and]: [{ id: leadId }, scope] }, attributes: ["id"] });
+  if (!lead) await refuseLead(req, leadId);
+};
+
+// reading only (the socket's lead events, the card of the queue): the leads of the queue count
+export const assertLeadRead = async (req: Request, leadId: number | string): Promise<void> => {
+  const scope = await leadReadScopeWhere(req);
   if (!scope) return;
   const lead = await Lead.findOne({ where: { [Op.and]: [{ id: leadId }, scope] }, attributes: ["id"] });
   if (!lead) {
@@ -99,6 +127,26 @@ export const assertLead = async (req: Request, leadId: number | string, scopeOf 
 
 export const canAccessLead = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   await assertLead(req, req.params.id);
+  next();
+};
+
+// POST /leads/:id/claim: who may take a lead of the common queue: the consultants (only while the queue is on) and the management (the coordination: its polos)
+export const canClaimLead = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  const role = reqRole(req);
+  if (!["admin", "coordenacao", "consultor"].includes(role)) throw new AppError("ERR_NO_PERMISSION", 403);
+  if (role === "consultor") await assertLeadRead(req, req.params.id);
+  else await assertLead(req, req.params.id);
+  next();
+};
+
+// GET /leads/:id: the lead of the queue is readable by every consultant, but only its card (req.leadInQueue: the screen hides the rest)
+export const canReadLead = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  const scope = await leadReadScopeWhere(req);
+  if (scope) {
+    const lead = await Lead.findOne({ where: { [Op.and]: [{ id: req.params.id }, scope] }, attributes: ["id", "ownerId", "enrolledAt", "wonAt", "lostAt", "isHistorical", "onboardingStatus"] });
+    if (!lead) await refuseLead(req, req.params.id);
+    else if (reqRole(req) === "consultor" && lead.ownerId !== Number(req.user.id)) (req as any).leadInQueue = true;
+  }
   next();
 };
 // the actions of the onboarding (start, checklist, access data): the tutor may act on a student of their polo still waiting

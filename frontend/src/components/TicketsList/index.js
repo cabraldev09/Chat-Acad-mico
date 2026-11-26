@@ -187,7 +187,7 @@ const reducer = (state, action) => {
 };
 
 	const TicketsList = (props) => {
-		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups, communities, archived, historical, everything, tagId, allQueues, attendantId, connectionId } =
+		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups, communities, archived, historical, everything, tagId, allQueues, attendantId, connectionId, fila } =
 			props;
 	const classes = useStyles();
 	const [pageNumber, setPageNumber] = useState(1);
@@ -202,7 +202,7 @@ const reducer = (state, action) => {
 	useEffect(() => {
 		dispatch({ type: "RESET" });
 		setPageNumber(1);
-	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups, archived, historical, everything, tagId, allQueues, attendantId, connectionId]);
+	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups, archived, historical, everything, tagId, allQueues, attendantId, connectionId, fila]);
 
 	const { tickets, hasMore, loading, error, retry } = useTickets({
 		pageNumber,
@@ -219,6 +219,8 @@ const reducer = (state, action) => {
 		allQueues: allQueues ? "true" : undefined,
 		attendantId: attendantId || undefined,
 		connectionId: connectionId || undefined,
+		// the common queue: the conversations nobody attends yet of the people nobody assumed (any number, any sector)
+		fila: fila ? "true" : undefined,
 		reloadKey,
 	});
 
@@ -243,14 +245,15 @@ const reducer = (state, action) => {
 		// archived conversations live only in their own view
 		const archiveOk = ticket => !!ticket.archivedAt === !!archived;
 
-		const shouldUpdateTicket = ticket => !historical && !searchParam && groupOk(ticket) && archiveOk(ticket) &&
+		// the queue list holds only conversations nobody attends: one that got an attendant leaves it
+		const shouldUpdateTicket = ticket => fila ? !ticket.userId && ticket.status === "pending" && !ticket.isGroup && archiveOk(ticket) : !historical && !searchParam && groupOk(ticket) && archiveOk(ticket) &&
 			(!ticket.userId || ticket.userId === user?.id || showAll) &&
 			(allQueues || !ticket.queueId || selectedQueueIds.indexOf(ticket.queueId) > -1) &&
 			(!attendantId || ticket.userId === Number(attendantId)) &&
 			(!connectionId || ticket.whatsappId === Number(connectionId));
 
 		const notBelongsToUserQueues = ticket =>
-			!allQueues && ticket.queueId && selectedQueueIds.indexOf(ticket.queueId) === -1;
+			!fila && !allQueues && ticket.queueId && selectedQueueIds.indexOf(ticket.queueId) === -1;
 
 		socket.on("connect", () => {
 			if (status) {
@@ -282,6 +285,10 @@ const reducer = (state, action) => {
 					type: "UPDATE_TICKET",
 					payload: data.ticket,
 				});
+			}
+
+			if (fila && data.action === "update" && (data.ticket.userId || data.ticket.status !== "pending")) {
+				dispatch({ type: "DELETE_TICKET", payload: data.ticket.id });
 			}
 
 			if (data.action === "update" && !archiveOk(data.ticket)) {
@@ -325,7 +332,7 @@ const reducer = (state, action) => {
 		return () => {
 			socket.disconnect();
 		};
-	}, [status, searchParam, showAll, user, selectedQueueIds, groups, communities, archived]);
+	}, [status, searchParam, showAll, user, selectedQueueIds, groups, communities, archived, fila]);
 
 	useEffect(() => {
 		// the connection came back: the list reads what it missed, quietly (the rows stay on screen) and at most

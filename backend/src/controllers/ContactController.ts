@@ -11,6 +11,7 @@ import { Op, literal } from "sequelize";
 import { csvAsText, csvDay, csvBody } from "../helpers/Csv";
 import { roleOf } from "../helpers/Roles";
 import { connectionScopeOf, contactScopeWhere } from "../helpers/ConnectionScope";
+import { isQueueMode } from "../helpers/LeadQueue";
 import { contactPoloSql, ticketPolosOf } from "../helpers/TicketPoloScope";
 import { portable } from "../helpers/sqlDialect";
 import { hasContactAccessOrFree } from "../middleware/canAccessContact";
@@ -55,7 +56,7 @@ interface ContactData {
 const contactsScopeOf = async (req: Request): Promise<any | null> => {
   const role = roleOf(req.user);
   const me = Number(req.user.id) || 0;
-  const byConnection = contactScopeWhere(await connectionScopeOf(me, role), me);
+  const byConnection = contactScopeWhere(await connectionScopeOf(me, role), me, await isQueueMode());
   const polos = role === "coordenacao" ? await ticketPolosOf(role, me) : null;
   const byPolo = polos
     ? literal(portable(`(EXISTS (SELECT 1 FROM Tickets mt WHERE mt.contactId = Contact.id AND mt.userId = ${me}) OR ${contactPoloSql(polos, false, "Contact", true)})`))

@@ -14,6 +14,7 @@ import User from "../../models/User";
 import ShowTicketService from "./ShowTicketService";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
+import claimLeadOfTicket from "../CrmServices/ClaimLeadOfTicket";
 
 // ChatbotNode state meaning "flow already finished for this ticket"
 const FLOW_DONE = -1;
@@ -76,6 +77,11 @@ const ClaimTicketService = async ({ ticketId, userId, reason, force = false, all
   let changed = false;
 
   const work = async (transaction: Transaction) => {
+    // the common queue: taking the conversation of someone who is still in it takes the lead too (lock order: the lead, then the conversation)
+    if (!force && (reason === "accept" || reason === "send")) {
+      const head = await Ticket.findByPk(ticketId, { attributes: ["id", "contactId", "isGroup", "segment", "userId"], transaction });
+      if (head && !head.userId && !head.isGroup && (!head.segment || head.segment === "sales")) await claimLeadOfTicket(head.contactId, userId, transaction);
+    }
     const row = await Ticket.findByPk(ticketId, { transaction, lock: transaction.LOCK.UPDATE });
     if (!row) throw new AppError("ERR_NO_TICKET_FOUND", 404);
 

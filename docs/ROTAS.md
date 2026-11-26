@@ -1,6 +1,6 @@
-# Rotas da API (603)
+# Rotas da API (604)
 
-Públicas: 40 · logado (qualquer perfil): 329 · gestão: 182 · admin: 43
+Públicas: 40 · logado (qualquer perfil): 330 · gestão: 182 · admin: 43
 
 ## Quem vê quais leads no CRM (middleware/scope.ts)
 
@@ -8,7 +8,7 @@ Públicas: 40 · logado (qualquer perfil): 329 · gestão: 182 · admin: 43
 |---|---|
 | admin | todos os leads, de todos os polos |
 | coordenacao | só os leads dos polos em que está (Polos e equipes); sem polo, nenhum. Um lead ainda sem polo fica com a administração |
-| consultor | só os leads em que é o responsável |
+| consultor | só os leads em que é o responsável. Com a **fila comum** ligada (`crm_queue_mode`, desligada por padrão) também lê, como cartão sem CPF/documentos/anotações, os leads novos sem dono; para agir neles precisa **assumir** antes (`POST /leads/:id/claim`) |
 | tutor, academico | os leads em que é o responsável e os alunos dados a ele (Ambientação e Alunos da tutoria: também os do seu polo ainda sem tutor) |
 | relacionamento | só os matriculados dos polos em que está; sem polo, nenhum |
 
@@ -218,6 +218,7 @@ Até lá, não crie usuários de coordenação nem de relacionamento para franqu
 - POST /leads/:id/enrollment-form → canAccessLead
 - POST /leads/:id/enrollment-form/send → canAccessLead
 - POST /tickets/:ticketId/enrollment-form → canWriteTicket
+- POST /leads/:id/claim → canClaimLead
 - PUT /leads/:id → canAccessLead
 - PUT /leads/:id/stage → canAccessLead
 - POST /leads/:id/relation → canAccessLead
@@ -263,7 +264,7 @@ Até lá, não crie usuários de coordenação nem de relacionamento para franqu
 - PUT /tickets/:ticketId/copilot/requests/:requestId/feedback → canReadTicket
 - PUT /tickets/:ticketId/copilot/requests/:requestId/take → canSendTicket
 - PUT /tickets/:ticketId/pin → canReadTicket
-- POST /tickets/:ticketId/claim → canWriteTicket
+- POST /tickets/:ticketId/claim → canClaimTicket
 - POST /tickets/:ticketId/take → canReadTicket
 - POST /tickets/:ticketId/ai → canWriteTicket
 - POST /tickets/:ticketId/reply-dismiss → canWriteTicket

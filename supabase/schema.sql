@@ -6354,6 +6354,13 @@ CREATE INDEX leads_polo_id_idx ON public."Leads" USING btree ("poloId") WHERE ("
 
 
 --
+-- Name: leads_queue_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_queue_idx ON public."Leads" USING btree ("updatedAt" DESC) WHERE (("ownerId" IS NULL) AND ("enrolledAt" IS NULL) AND ("wonAt" IS NULL) AND ("lostAt" IS NULL) AND ("isHistorical" = false) AND (("onboardingStatus")::text = 'none'::text));
+
+
+--
 -- Name: leads_rgm; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8290,6 +8297,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') 
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000104-api-token-usage.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tried.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000301-leads-queue-index.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;

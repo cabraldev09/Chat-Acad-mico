@@ -9,7 +9,8 @@ import { sessionUser } from "../helpers/SessionUser";
 import { isManagerRole } from "../helpers/Roles";
 import { maskConfig } from "../helpers/Secrets";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
-import { assertLead } from "../middleware/scope";
+import { assertLead, assertLeadRead } from "../middleware/scope";
+import { isQueueLead, redactQueueLead } from "../helpers/LeadQueue";
 import { hasContactAccess } from "../middleware/canAccessContact";
 import Ticket from "../models/Ticket";
 import Lead from "../models/Lead";
@@ -51,10 +52,14 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
       await assertTicketAccess(req, id, "read");
       return true;
     }
+    // a lead of the common queue was taken: the other consultants drop its card (only ids travel in it; the administration and the coordination too)
+    if (event === "lead" && data.action === "claimed") return manager || user.role === "consultor";
     if (["lead", "payment", "leadAlert", "onboardingAlert", "onboardingReminder", "crmReminder"].includes(event)) {
       const id = data.leadId || data.lead?.id;
       if (!id) return manager;
-      await assertLead(req, id);
+      // the consultants also hear of the leads of the common queue (as a card, see send); everything else follows the owner
+      if (event === "lead") await assertLeadRead(req, id);
+      else await assertLead(req, id);
       return true;
     }
     // the conversation the AI agent handed over, and the alert that nobody answered it: the person it was given to, the management and, while
@@ -167,6 +172,8 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
         const item = data[key];
         if (item) outgoing = { ...data, [key]: { ...item, config: maskConfig(item.config) } };
       }
+      // a lead nobody owns yet (the common queue) reaches a consultant only as a card: no CPF, notes or e-mail before "Assumir"
+      if (event === "lead" && data.lead && user.role === "consultor" && user.profile !== "admin" && isQueueLead(data.lead)) outgoing = { ...data, lead: redactQueueLead(data.lead) };
       const id = data.ticket?.id || data.ticketId || data.message?.ticketId;
       if (id) socket.data.visibleTickets.add(String(id));
       socket.emit(event, outgoing);
