@@ -17,6 +17,7 @@ import Queue from "../../models/Queue";
 import User from "../../models/User";
 import TicketEvent from "../../models/TicketEvent";
 import { foldTutoringTwins } from "./TutoringTwin";
+import { queueHolds } from "../../helpers/LeadQueue";
 
 // the affiliate of this number (if any) and where their conversation goes: their consultant, or the queue without the robot
 const routeAffiliate = async (ticket: Ticket, contact: Contact): Promise<{ owner: User | null } | null> => {
@@ -200,7 +201,8 @@ const FindOrCreateTicketService = async (
   // Groups too: nobody "accepts" a group, whoever is in it already took part
   // unless the number also works as an attendance number ("aiFirst"): then the AI agent answers first and the owner follows like everyone else
   const connection = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId", "aiFirst"] });
-  if (connection?.ownerId && !connection.aiFirst && ticket.status === "pending" && !ticket.userId) {
+  // (with the common queue on, the conversation of a person in the queue waits for a consultant to assume it, whichever number it came to)
+  if (connection?.ownerId && !connection.aiFirst && ticket.status === "pending" && !ticket.userId && !(!groupContact && (await queueHolds(contact.id)))) {
     await ticket.update({ status: "open", userId: connection.ownerId });
     changed = true;
   }

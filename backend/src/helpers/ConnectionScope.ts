@@ -2,6 +2,7 @@ import { Op, literal } from "sequelize";
 
 import Whatsapp from "../models/Whatsapp";
 import { isManagerRole } from "./Roles";
+import { queueLeadSql, queueTicketSql } from "./LeadQueue";
 
 // WHICH CONNECTIONS A PERSON MAY SEE INTO. A number belongs to who connected it (Whatsapp.ownerId; no owner = the institution's).
 //   groups and communities: only those of the connections the person owns (they are that number's own life, not the sector's);
@@ -21,26 +22,29 @@ export const connectionScopeOf = async (userId: number | string, role: string | 
 };
 
 // the ticket where-clause that applies the scope (the person's own conversations always stay)
-export const ticketScopeWhere = (scope: ConnectionScope, userId: number | string): any | null => {
+// (queueMode: the common queue is on: the conversations nobody attends yet of the people in the queue are everybody's to read, see LeadQueue)
+export const ticketScopeWhere = (scope: ConnectionScope, userId: number | string, queueMode = false): any | null => {
   if (scope.all) return null;
   // the tutoring and support conversations belong to the team's work whichever number they live on; the rule is about sales chats and groups
   const privateOk: any = scope.others.length
     ? { isGroup: false, [Op.or]: [{ segment: { [Op.in]: TEAM_SEGMENTS } }, { whatsappId: { [Op.is]: null } }, { whatsappId: { [Op.notIn]: scope.others } }] }
     : { isGroup: false };
   const groupOk: any = scope.own.length ? { isGroup: true, whatsappId: { [Op.in]: scope.own } } : { id: 0 };
-  return { [Op.or]: [{ userId: Number(userId) }, privateOk, groupOk] };
+  return { [Op.or]: [{ userId: Number(userId) }, privateOk, groupOk, ...(queueMode ? [literal(queueTicketSql('"Ticket"'))] : [])] };
 };
 
 // contacts: management sees the whole list. Everybody else sees THEIR contacts: the ones with a conversation assigned to them, the ones that live in a
 // connection they own and the ones whose lead they own. A group (or community) is listed only when the person owns a connection it lives in.
-export const contactScopeWhere = (scope: ConnectionScope, userId: number | string): any | null => {
+export const contactScopeWhere = (scope: ConnectionScope, userId: number | string, queueMode = false): any | null => {
   if (scope.all) return null;
   const me = Number(userId) || 0;
   const ids = (scope.own.length ? scope.own : [0]).map(Number).join(",");
+  // the person of a lead in the common queue is everybody's to read (only the person, never a group)
+  const inQueue = queueMode ? ` OR ("Contact"."isGroup" = false AND EXISTS (SELECT 1 FROM "Leads" ql WHERE ql."contactId" = "Contact"."id" AND ${queueLeadSql("ql")}))` : "";
   return literal(
-    `(("Contact"."isGroup" = false OR EXISTS (SELECT 1 FROM "Tickets" gt WHERE gt."contactId" = "Contact"."id" AND gt."whatsappId" IN (${ids})))` +
+    `((("Contact"."isGroup" = false OR EXISTS (SELECT 1 FROM "Tickets" gt WHERE gt."contactId" = "Contact"."id" AND gt."whatsappId" IN (${ids})))` +
       ` AND (EXISTS (SELECT 1 FROM "Tickets" ot WHERE ot."contactId" = "Contact"."id" AND (ot."userId" = ${me} OR ot."whatsappId" IN (${ids})))` +
-      ` OR EXISTS (SELECT 1 FROM "Leads" ol WHERE ol."contactId" = "Contact"."id" AND ol."ownerId" = ${me})))`
+      ` OR EXISTS (SELECT 1 FROM "Leads" ol WHERE ol."contactId" = "Contact"."id" AND ol."ownerId" = ${me})))${inQueue})`
   );
 };
 

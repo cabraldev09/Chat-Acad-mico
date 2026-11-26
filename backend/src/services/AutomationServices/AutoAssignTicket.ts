@@ -13,6 +13,7 @@ import Whatsapp from "../../models/Whatsapp";
 import Ticket from "../../models/Ticket";
 import User from "../../models/User";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
+import { queueHolds } from "../../helpers/LeadQueue";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import { logger } from "../../utils/logger";
 import TicketEvent from "../../models/TicketEvent";
@@ -59,6 +60,8 @@ export const pickUserForQueue = async (queue: Queue, force = false, dryRun = fal
 const assign = async (ticket: Ticket): Promise<boolean> => {
   await ticket.reload();
   if (!ticket.queueId || ticket.userId || ticket.isGroup) return false;
+  // the common queue: the conversation of a person nobody owns yet waits for a consultant to assume it (helpers/LeadQueue)
+  if ((ticket.segment || "sales") === "sales" && (await queueHolds(ticket.contactId))) return false;
 
   const queue = await Queue.findByPk(ticket.queueId, {
     include: [{ model: User, as: "users", attributes: ["id", "name", "acceptsNewTickets", "maxOpenTickets"] }]

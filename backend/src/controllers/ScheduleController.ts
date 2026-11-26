@@ -1,4 +1,8 @@
-import { isManagerRole } from "../helpers/Roles";
+import { Op, literal } from "sequelize";
+import { isManagerRole, roleOf } from "../helpers/Roles";
+import { hasContactAccess } from "../middleware/canAccessContact";
+import { crmPolosOf } from "../middleware/scope";
+import { contactPoloSql } from "../helpers/TicketPoloScope";
 import { assertOutboundTarget } from "../middleware/outboundScope";
 import { publicFile } from "../helpers/PublicFile";
 import { Request, Response } from "express";
@@ -8,8 +12,14 @@ import AppError from "../errors/AppError";
 import makeCrud from "./crudFactory";
 import { cleanSteps } from "../helpers/CampaignText";
 
+// The administration: every scheduled message. The coordination: the ones it made and the ones for people of its polos (a lead there, or a conversation
+// in a queue there; a person with no polo is the administration's). The others: only their own.
 const authorize = async (req: Request, row: Schedule): Promise<void> => {
-  if (!isManagerRole(req.user.role) && row.userId !== Number(req.user.id)) throw new AppError("ERR_NO_PERMISSION", 403);
+  if (roleOf(req.user as any) === "coordenacao") {
+    if (row.userId === Number(req.user.id) || (await hasContactAccess(req, row.contactId))) return;
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+  if (!isManagerRole(roleOf(req.user as any)) && row.userId !== Number(req.user.id)) throw new AppError("ERR_NO_PERMISSION", 403);
 };
 
 const crud = makeCrud(Schedule, {
@@ -50,12 +60,17 @@ const crud = makeCrud(Schedule, {
     });
     return data;
   },
-  where: req => {
-    const where: any = isManagerRole(req.user.role) ? {} : { userId: Number(req.user.id) };
-    if (req.query.contactId) where.contactId = req.query.contactId;
-    if (req.query.ticketId) where.ticketId = req.query.ticketId;
-    if (req.query.status) where.status = req.query.status;
-    return where;
+  where: async (req: Request) => {
+    const polos = await crmPolosOf(req);
+    // in the SQL of the list (never after the page): the coordination's own plus the ones for contacts of its polos
+    const where: any = polos
+      ? { [Op.or]: [{ userId: Number(req.user.id) }, literal(`EXISTS (SELECT 1 FROM "Contacts" "sc" WHERE "sc"."id" = "Schedule"."contactId" AND ${contactPoloSql(polos, false, "sc")})`)] }
+      : isManagerRole(roleOf(req.user as any)) ? {} : { userId: Number(req.user.id) };
+    const extra: any = {};
+    if (req.query.contactId) extra.contactId = req.query.contactId;
+    if (req.query.ticketId) extra.ticketId = req.query.ticketId;
+    if (req.query.status) extra.status = req.query.status;
+    return Object.keys(extra).length ? { [Op.and]: [where, extra] } : where;
   }
 });
 

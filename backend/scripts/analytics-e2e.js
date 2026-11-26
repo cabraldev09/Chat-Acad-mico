@@ -201,6 +201,136 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       }
     });
 
+    // The channel OpenBot → management (docs/API-V1.md, POST /api/v1/insights): a token with the scope writes warnings with no personal data;
+    // the administrators (only) get one notice in the bell and see them in the commercial center; the same subject lives once; a panel
+    // holds at most 20; the coordination, the consultant and the tutor neither see nor get anything.
+    await test("OpenBot → management channel: scope, no personal data, once per subject, only the administrators, dismiss, limits", async () => {
+      const mkToken = async (scopes, poloIds) => { const r = await http.post("/api-tokens", { name: `insights ${scopes.join("+")}`, scopes, ...(poloIds ? { poloIds } : {}) }, as(admin)); assert(r.status === 201, `token ${r.status} ${JSON.stringify(r.data)}`); return r.data.token; };
+      const call = (tok, body) => http.post("/api/v1/insights", body, { headers: { Authorization: `Bearer ${tok}` } });
+      const rows = () => Number(sql(`SELECT COUNT(*) FROM OpenbotInsights`));
+      const bell = async tok => ((await http.get("/notifications", as(tok))).data.notifications || []).filter(n => n.kind === "openbot");
+      const panel = async tok => (await http.get("/analytics/team", { ...as(tok), params: { range: "today" } }));
+      const base = { kind: "indicador", level: "warning", title: "Origem Instagram caiu 40% na semana", body: "Os contatos da origem Instagram caíram 40% em relação à semana anterior.", link: "/estatisticas", dedupeKey: "origem-instagram:2026-11-26" };
+
+      // scope: without insights:write, 403 and nothing written; with only insights:write the token writes but reads nothing else
+      const reader = await mkToken(["indicators:read"]);
+      const noScope = await call(reader, base);
+      assert(noScope.status === 403 && noScope.data.error === "ERR_API_TOKEN_SCOPE" && rows() === 0, `token without insights:write: ${noScope.status} ${JSON.stringify(noScope.data)}`);
+      const writer = await mkToken(["insights:write"]);
+      assert((await http.get("/api/v1/indicadores", { headers: { Authorization: `Bearer ${writer}` } })).status === 403, "a token with only insights:write read the indicators");
+
+      // a valid body: 201 with no id; one notice for each administrator, marked OpenBot; shown in the panel with the origin
+      const first = await call(writer, base);
+      assert(first.status === 201 && JSON.stringify(first.data) === JSON.stringify({ aceito: true }), `valid insight: ${first.status} ${JSON.stringify(first.data)}`);
+      assert(rows() === 1, "the insight was not recorded");
+      const notices = await bell(admin);
+      assert(notices.length === 1 && notices[0].title === `OpenBot: ${base.title}` && notices[0].level === "warning" && notices[0].link === "/estatisticas", `the administrator's bell: ${JSON.stringify(notices)}`);
+      const adminPanel = await panel(admin);
+      assert(adminPanel.status === 200 && adminPanel.data.openbotInsights.length === 1 && adminPanel.data.openbotInsights[0].source === "OpenBot" && adminPanel.data.openbotInsights[0].title === base.title, `the administrator's panel: ${JSON.stringify(adminPanel.data.openbotInsights)}`);
+      assert(!("tokenId" in adminPanel.data.openbotInsights[0]) && !("dedupeKey" in adminPanel.data.openbotInsights[0]), "the panel leaked internal fields");
+
+      // the coordination, the consultant and the tutor: no notice, no block (the coordination reads the panel, with an empty list)
+      const coordPanel = await panel(coord);
+      assert(coordPanel.status === 200 && Array.isArray(coordPanel.data.openbotInsights) && coordPanel.data.openbotInsights.length === 0, `the coordination saw the block: ${JSON.stringify(coordPanel.data.openbotInsights)}`);
+      assert((await panel(joao)).status === 403, "a consultant read the management panel");
+      for (const [who, tok] of [["coordination", coord], ["consultant", joao], ["tutor", tutor]]) assert((await bell(tok)).length === 0, `${who} got the notice of the OpenBot`);
+      assert((await http.put("/openbot-insights/1/resolve", {}, as(coord))).status === 403 && (await http.put("/openbot-insights/1/resolve", {}, as(joao))).status === 403, "someone other than the administrator dismissed it");
+
+      // the same subject again: 200 duplicate, one row, one notice (nothing new)
+      const again = await call(writer, { ...base, title: "Outro texto", body: "Outro corpo" });
+      assert(again.status === 200 && JSON.stringify(again.data) === JSON.stringify({ duplicado: true }) && rows() === 1 && (await bell(admin)).length === 1, `duplicate: ${again.status} ${JSON.stringify(again.data)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE title = 'Outro texto'`)) === 0, "the duplicate changed the content");
+
+      // no personal data (fictitious cases): 400 and nothing written; an external or unknown link: 400
+      const refused = [
+        { title: "Ligar para 69999990000" }, { body: "Falar com fulano@exemplo.com" }, { body: "CPF 000.000.000-00 pediu bolsa" },
+        { title: "Contato (69) 99999-0000" }, { body: "RGM 1234567 desistiu" }, { body: "veja https://exemplo.com/painel" }
+      ];
+      for (const [i, extra] of refused.entries()) {
+        const r = await call(writer, { ...base, dedupeKey: `pessoal-${i}`, ...extra });
+        assert(r.status === 400 && r.data.error === "ERR_INSIGHT_PERSONAL_DATA", `personal data ${JSON.stringify(extra)}: ${r.status} ${JSON.stringify(r.data)}`);
+      }
+      for (const link of ["https://exemplo.com", "javascript:alert(1)", "/users", "//exemplo.com"]) {
+        const r = await call(writer, { ...base, dedupeKey: "link-ruim", link });
+        assert(r.status === 400 && r.data.error === "ERR_INSIGHT_INVALID_LINK", `link ${link}: ${r.status} ${JSON.stringify(r.data)}`);
+      }
+      assert(rows() === 1, "a refused insight was written");
+      // HTML in the text is kept as plain text (the screen does not read HTML; a unit test of the screen proves it)
+      const html = await call(writer, { ...base, dedupeKey: "html-1", title: "<b>Atenção</b>", body: "<img src=x onerror=alert(1)>" });
+      assert(html.status === 201 && sql(`SELECT title FROM OpenbotInsights WHERE dedupeKey = 'html-1'`) === "<b>Atenção</b>", "HTML was not stored as plain text");
+
+      // a token of some polos writes too, and the insights are not filtered by polo (they are about the whole operation)
+      const poloId = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('INS', 'Polo Insights', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const ofPolo = await mkToken(["insights:write"], [Number(poloId)]);
+      assert((await call(ofPolo, { ...base, dedupeKey: "do-polo-1", title: "Matrículas do mês abaixo da meta" })).status === 201, "a token of one polo could not write");
+      assert((await panel(admin)).data.openbotInsights.length === 3, "the insights of a token of one polo were filtered or lost");
+
+      // dismiss: the administrator hides it; the row stays with resolvedAt; the subject can come back as a new one
+      const mine = (await panel(admin)).data.openbotInsights.find(i => i.title === base.title);
+      assert((await http.put(`/openbot-insights/${mine.id}/resolve`, {}, as(admin))).status === 200, "the administrator could not dismiss");
+      assert(!(await panel(admin)).data.openbotInsights.some(i => i.id === mine.id) && Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE id = ${mine.id} AND resolvedAt IS NOT NULL`)) === 1, "dismiss did not hide it and keep the row");
+      assert((await http.put("/openbot-insights/999999/resolve", {}, as(admin))).status === 404, "dismissing an unknown insight was not a 404");
+      assert((await call(writer, base)).status === 201, "a dismissed subject could not come back");
+      // an expired one leaves the panel and frees its subject
+      sql(`UPDATE OpenbotInsights SET expiresAt = NOW() - INTERVAL '1 day' WHERE dedupeKey = 'html-1'`);
+      assert(!(await panel(admin)).data.openbotInsights.some(i => i.title === "<b>Atenção</b>"), "an expired insight stayed in the panel");
+      assert((await call(writer, { ...base, dedupeKey: "html-1", title: "De novo", body: "Texto novo" })).status === 201, "an expired subject could not come back");
+
+      // validity: at most 7 days
+      assert((await call(writer, { ...base, dedupeKey: "valid-8", expiresInDays: 8 })).data.error === "ERR_INSIGHT_INVALID_EXPIRY", "8 days were accepted");
+      assert((await call(writer, { ...base, dedupeKey: "valid-30", expiresInDays: 30 })).data.error === "ERR_INSIGHT_INVALID_EXPIRY", "30 days were accepted");
+
+      // the bell rings once for each OCCURRENCE: the subject that comes back after being dismissed or after expiring rings again
+      sql(`UPDATE OpenbotInsights SET resolvedAt = NOW() WHERE resolvedAt IS NULL`);
+      const ringing = await mkToken(["insights:write"]);
+      const bellBefore = (await bell(admin)).length;
+      assert((await call(ringing, { ...base, dedupeKey: "volta:semana", title: "Assunto que volta" })).status === 201, "occurrence 1");
+      assert((await call(ringing, { ...base, dedupeKey: "volta:semana", title: "Assunto que volta" })).status === 200, "the duplicate in force");
+      assert((await bell(admin)).length === bellBefore + 1, "the duplicate in force rang the bell again");
+      const back = (await panel(admin)).data.openbotInsights.find(i => i.title === "Assunto que volta");
+      assert((await http.put(`/openbot-insights/${back.id}/resolve`, {}, as(admin))).status === 200, "dismiss before the return");
+      assert((await call(ringing, { ...base, dedupeKey: "volta:semana", title: "Assunto que volta" })).status === 201, "occurrence 2");
+      assert((await bell(admin)).length === bellBefore + 2, "the subject that came back did not ring the bell again");
+
+      // one definition of administrator: the profile admin (with another role) gets the notice AND sees the block; the bell and the screens agree
+      const adm2 = await http.post("/users", { name: "Admin Dois", email: "admin2@x.com", password: "senha123", profile: "admin", role: "consultor", queueIds: [queueId] }, as(admin));
+      assert(adm2.status === 200, `second administrator ${adm2.status} ${JSON.stringify(adm2.data)}`);
+      // (the screen creates people as profile "user"; an old account can still carry profile admin with another role)
+      sql(`UPDATE Users SET profile = 'admin' WHERE email = 'admin2@x.com'`);
+      const admin2 = (await http.post("/auth/login", { email: "admin2@x.com", password: "senha123" })).data.token;
+      assert((await call(ringing, { ...base, dedupeKey: "para-admin-2", title: "Para os dois administradores" })).status === 201, "insight for two administrators");
+      assert((await bell(admin2)).some(n => n.title === "OpenBot: Para os dois administradores"), `the administrator by profile got no notice: user ${sql("SELECT CONCAT(profile, '|', role) FROM Users WHERE email = 'admin2@x.com'")}, notices ${JSON.stringify((await bell(admin2)).map(n => n.title))}`);
+      assert((await panel(admin2)).data.openbotInsights.some(i => i.title === "Para os dois administradores"), "the administrator by profile did not see the block");
+      assert((await http.put("/openbot-insights/resolve-all", {}, as(admin2))).status === 200, "the administrator by profile could not dismiss");
+
+      // "dispensar todos": only the administrator; clears everything in force, the rows stay
+      assert((await call(ringing, { ...base, dedupeKey: "todos-1", title: "Um" })).status === 201 && (await call(ringing, { ...base, dedupeKey: "todos-2", title: "Dois" })).status === 201, "two to dismiss");
+      assert((await http.put("/openbot-insights/resolve-all", {}, as(coord))).status === 403 && (await http.put("/openbot-insights/resolve-all", {}, as(joao))).status === 403, "someone other than the administrator dismissed all");
+      const dismissedAll = await http.put("/openbot-insights/resolve-all", {}, as(admin));
+      assert(dismissedAll.status === 200 && dismissedAll.data.dismissed === 2, `dismiss all: ${dismissedAll.status} ${JSON.stringify(dismissedAll.data)}`);
+      assert((await panel(admin)).data.openbotInsights.length === 0 && Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE dedupeKey IN ('todos-1', 'todos-2') AND resolvedAt IS NOT NULL`)) === 2, "dismiss all did not clear the block and keep the rows");
+
+      // limits: at most 8 in force for each token (429 ERR_INSIGHT_TOKEN_LIMIT), 20 in all (429 ERR_INSIGHT_LIMIT with Retry-After) and, apart,
+      // 30 calls an hour per token (429 of the limiter)
+      sql(`UPDATE OpenbotInsights SET resolvedAt = NOW() WHERE resolvedAt IS NULL`);
+      const busy = await mkToken(["insights:write"]);
+      for (let i = 0; i < 8; i++) { const r = await call(busy, { ...base, dedupeKey: `lote-${i}`, title: `Recomendação ${i}` }); assert(r.status === 201, `fill ${i}: ${r.status} ${JSON.stringify(r.data)}`); }
+      const perToken = await call(busy, { ...base, dedupeKey: "lote-8", title: "Recomendação 8" });
+      assert(perToken.status === 429 && perToken.data.error === "ERR_INSIGHT_TOKEN_LIMIT" && perToken.headers["retry-after"], `the 9th of one token: ${perToken.status} ${JSON.stringify(perToken.data)}`);
+      assert((await call(busy, { ...base, dedupeKey: "lote-3", title: "Recomendação 3" })).status === 200, "a duplicate was refused by the token limit");
+      // another token still has room: the panel is not taken by one token
+      const second = await mkToken(["insights:write"]), third = await mkToken(["insights:write"]);
+      for (let i = 0; i < 8; i++) assert((await call(second, { ...base, dedupeKey: `s-${i}`, title: `Segundo ${i}` })).status === 201, `second token ${i}`);
+      for (let i = 0; i < 4; i++) assert((await call(third, { ...base, dedupeKey: `t-${i}`, title: `Terceiro ${i}` })).status === 201, `third token ${i}`);
+      const over = await call(third, { ...base, dedupeKey: "t-4", title: "Terceiro 4" });
+      assert(over.status === 429 && over.data.error === "ERR_INSIGHT_LIMIT" && over.headers["retry-after"], `the 21st in force: ${over.status} ${JSON.stringify(over.data)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE resolvedAt IS NULL AND expiresAt > NOW()`)) === 20, "more than 20 in force");
+      // 30 calls an hour: the 31st call of the token `busy` (8 + 1 refused + 1 duplicate so far) is limited by the limiter itself
+      for (let i = 0; i < 20; i++) assert((await call(busy, { ...base, dedupeKey: `x-${i}` })).status === 429, "a limit let one in");
+      const limited = await call(busy, { ...base, dedupeKey: "lote-y" });
+      assert(limited.status === 429 && limited.data.error === "ERR_TOO_MANY_REQUESTS" && limited.headers["retry-after"], `the 31st call in an hour: ${limited.status} ${JSON.stringify(limited.data)}`);
+    });
+
     await test("polo supervisor feedback skips OpenAI when the sample is insufficient", async () => {
       const response = await http.post("/dashboard/management/feedback", { days: 31 }, as(admin));
       assert(response.status === 200, `management feedback ${response.status} ${JSON.stringify(response.data)}`);
@@ -1277,6 +1407,269 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(!lineB || (!lineB.unanswered && !lineB.onboardingLate && !lineB.atRisk), `the manager overview counts what is stuck in polo B: ${JSON.stringify(lineB)}`);
       void cNone;
     });
+
+    // Schedules, campaigns and contact lists by polo (ESP-001): the coordination sees, creates and fires only what involves the people of its polos;
+    // the administration sees everything; a person with no polo (or nobody's number) is the administration's.
+    console.log("\nAgendamentos, campanhas e listas por polo");
+    const poloF = {};
+    await test("schedules, contact lists and campaigns: the coordination of polo A reaches only its people; the sockets follow the same rule", async () => {
+      const { io } = require("socket.io-client");
+      const pA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('F2A', 'Polo F2 A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const pB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('F2B', 'Polo F2 B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cA = await mkUser("Coordenação F2 A", "coord-f2a@x.com", "coordenacao");
+      const cNone = await mkUser("Coordenação F2 sem polo", "coord-f2n@x.com", "coordenacao");
+      const idA = userId("coord-f2a@x.com");
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${pA}, ${idA}, 'coordenacao', NOW(), NOW())`);
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      // three people: one of polo A, one of polo B, one of nobody (no polo); each with a contact and a lead
+      const person = (tag, polo, phone) => {
+        const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Pessoa ${tag}', '${phone}', '', false, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, poloId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Lead ${tag}', '${phone}', 'Escopo', ${open}, ${ids.joao}, ${polo || "NULL"}, ${contactId}, false, NOW(), NOW())`);
+        return { contactId: Number(contactId), phone };
+      };
+      const pa = person("F2A", pA, "5569988110001");
+      const pb = person("F2B", pB, "5569988110002");
+      const pn = person("F2N", null, "5569988110003");
+      const unknown = "5569988119999";
+      const when = () => new Date(Date.now() + 86400000).toISOString();
+      const ex = (r, label) => assert(r.status === 403 || r.status === 404, `${label}: ${r.status}`);
+
+      // ---- schedules
+      const mkSchedule = async p => {
+        const r = await http.post("/schedules", { body: "Lembrete", sendAt: when(), contactId: p.contactId }, as(admin));
+        assert(r.status === 201, `schedule ${r.status} ${JSON.stringify(r.data)}`);
+        return r.data.id;
+      };
+      const sA = await mkSchedule(pa), sB = await mkSchedule(pb), sN = await mkSchedule(pn);
+      const seenBy = async t => (await http.get("/schedules", as(t))).data.map(s => s.id);
+      let got = await seenBy(cA);
+      assert(got.includes(sA) && !got.includes(sB) && !got.includes(sN), `coordination A lists ${JSON.stringify(got)}`);
+      assert((await seenBy(cNone)).length === 0, "the coordination with no polo sees schedules");
+      got = await seenBy(admin);
+      assert([sA, sB, sN].every(i => got.includes(i)), "administration misses a schedule");
+      assert((await seenBy(joao)).length === 0, "a consultant sees the schedules of others");
+      for (const id of [sB, sN]) {
+        ex(await http.put(`/schedules/${id}`, { body: "outra" }, as(cA)), `PUT schedule ${id}`);
+        ex(await http.post(`/schedules/${id}/cancel`, {}, as(cA)), `cancel schedule ${id}`);
+        ex(await http.delete(`/schedules/${id}`, as(cA)), `DELETE schedule ${id}`);
+      }
+      assert((await http.post(`/schedules/${sA}/cancel`, {}, as(cA))).status === 200, "coordination A cannot cancel the schedule of its polo");
+      assert((await http.get("/schedules?status=pending", as(cA))).data.every(s => s.id !== sA), "the status filter lost the scope");
+
+      // ---- contact lists
+      const mkList = async (name, numbers, token = admin) => {
+        const l = await http.post("/contact-lists", { name }, as(token));
+        assert(l.status === 201, `list ${l.status}`);
+        const r = await http.post(`/contact-lists/${l.data.id}/import`, { items: numbers.map(n => ({ name: n, number: n })) }, as(token));
+        assert(r.status === 200, `import ${r.status} ${JSON.stringify(r.data)}`);
+        return l.data.id;
+      };
+      const LA = await mkList("Lista só A", [pa.phone]);
+      const LB = await mkList("Lista só B", [pb.phone]);
+      const LM = await mkList("Lista mista", [pa.phone, pb.phone]);
+      const LU = await mkList("Lista com número desconhecido", [pa.phone, unknown]);
+      const LN = await mkList("Lista sem polo", [pn.phone]);
+      const listsOf = async t => (await http.get("/contact-lists", as(t))).data.map(l => l.id);
+      got = await listsOf(cA);
+      assert(got.includes(LA) && [LB, LM, LU, LN].every(i => !got.includes(i)), `coordination A lists ${JSON.stringify(got)}`);
+      got = await listsOf(admin);
+      assert([LA, LB, LM, LU, LN].every(i => got.includes(i)), "administration misses a list");
+      assert((await listsOf(cNone)).length === 0, "coordination with no polo sees lists");
+      assert((await http.get(`/contact-lists/${LA}/items`, as(cA))).status === 200, "coordination A cannot read the list of its polo");
+      for (const id of [LB, LM, LU, LN]) {
+        ex(await http.get(`/contact-lists/${id}/items`, as(cA)), `items of list ${id}`);
+        ex(await http.get(`/contact-lists/${id}/export.csv`, as(cA)), `export of list ${id}`);
+        ex(await http.put(`/contact-lists/${id}`, { name: "tomada" }, as(cA)), `PUT list ${id}`);
+        ex(await http.delete(`/contact-lists/${id}`, as(cA)), `DELETE list ${id}`);
+        ex(await http.post(`/contact-lists/${id}/import`, { items: [{ number: pa.phone }] }, as(cA)), `import into list ${id}`);
+      }
+      // what it builds itself: only people of its polos get in (from the CRM, and pasted numbers)
+      const mine = await http.post("/contact-lists/from-leads", { name: "Funil da A", source: "Escopo" }, as(cA));
+      assert(mine.status === 200 && mine.data.imported === 1, `from-leads of coordination A: ${mine.status} ${JSON.stringify(mine.data)}`);
+      assert((await http.get(`/contact-lists/${mine.data.id}/items`, as(cA))).data.every(i => i.number === pa.phone), "the list of coordination A has someone else");
+      const own = (await http.post("/contact-lists", { name: "Colada pela A" }, as(cA))).data.id;
+      const pasted = await http.post(`/contact-lists/${own}/import`, { items: [pa.phone, pb.phone, pn.phone, unknown].map(n => ({ name: n, number: n })) }, as(cA));
+      assert(pasted.status === 200 && pasted.data.imported === 1 && pasted.data.outOfScope === 3, `pasted numbers: ${pasted.status} ${JSON.stringify(pasted.data)}`);
+      assert((await http.post(`/contact-lists/${own}/import`, { items: [{ number: pb.phone }] }, as(cA))).status === 403, "coordination A pasted only a number of polo B");
+      assert((await http.post("/contact-lists/from-leads", { name: "Do B", poloId: Number(pB) }, as(cA))).status === 400, "coordination A built a list from polo B");
+      // the old behaviour for the others
+      assert((await http.get(`/contact-lists/${LB}/items`, as(joao))).status === 200, "the consultant lost the lists (regression)");
+
+      // ---- campaigns
+      const mkCampaign = (token, listId, extra = {}) => http.post("/campaigns", { name: `Campanha ${listId}`, objective: "Teste de escopo", message: "Oi!", contactListId: listId, ...extra }, as(token));
+      const cOk = await mkCampaign(cA, LA);
+      assert(cOk.status === 201, `campaign of coordination A on its list: ${cOk.status} ${JSON.stringify(cOk.data)}`);
+      for (const id of [LB, LM, LU, LN]) ex(await mkCampaign(cA, id), `campaign on list ${id}`);
+      const cB = await mkCampaign(admin, LB);
+      assert(cB.status === 201, `admin campaign ${cB.status}`);
+      const campaignsOf = async t => (await http.get("/campaigns", as(t))).data.map(c => c.id);
+      got = await campaignsOf(cA);
+      assert(got.includes(cOk.data.id) && !got.includes(cB.data.id), `coordination A lists campaigns ${JSON.stringify(got)}`);
+      assert((await campaignsOf(admin)).includes(cB.data.id), "administration misses a campaign");
+      const id = cB.data.id;
+      ex(await http.get(`/campaigns/${id}`, as(cA)), "open campaign of B");
+      ex(await http.put(`/campaigns/${id}`, { name: "tomada" }, as(cA)), "edit campaign of B");
+      ex(await http.delete(`/campaigns/${id}`, as(cA)), "delete campaign of B");
+      for (const [m, p] of [["get", "report"], ["post", "start"], ["post", "pause"], ["post", "cancel"], ["post", "duplicate"], ["post", "test"], ["get", "preflight"], ["post", "retry-failed"], ["post", "remove-no-consent"]]) {
+        ex(await http[m](`/campaigns/${id}/${p}`, ...(m === "post" ? [{}, as(cA)] : [as(cA)])), `${m} ${p} of the campaign of B`);
+      }
+      ex(await http.post("/campaigns/preflight", { contactListId: LB }, as(cA)), "preflight draft on the list of B");
+      assert((await http.get(`/campaigns/${cOk.data.id}/preflight`, as(cA))).status === 200, "coordination A cannot check its own campaign");
+      assert((await http.get(`/campaigns/${id}`, as(joao))).status === 200, "the consultant lost the campaigns (regression)");
+      // a list that changed after the campaign was made: the send leaves out the people outside its creator's polos
+      const own2 = (await http.post("/contact-lists", { name: "Mudou depois" }, as(cA))).data.id;
+      assert((await http.post(`/contact-lists/${own2}/import`, { items: [{ number: pa.phone }] }, as(cA))).status === 200, "own2 import");
+      const late = await mkCampaign(cA, own2, { scheduledAt: new Date(Date.now() + 3600000).toISOString() });
+      assert(late.status === 201, `late campaign ${late.status} ${JSON.stringify(late.data)}`);
+      assert((await http.post(`/contact-lists/${own2}/import`, { items: [{ number: pb.phone }, { number: unknown }] }, as(admin))).status === 200, "admin added people of B");
+      const started = await http.post(`/campaigns/${late.data.id}/start`, {}, as(cA));
+      assert(started.status === 200, `start ${started.status} ${JSON.stringify(started.data)}`);
+      const shipped = sql(`SELECT string_agg(number, ',' ORDER BY number) FROM CampaignShippings WHERE campaignId=${late.data.id}`);
+      assert(shipped === pa.phone, `the campaign of coordination A would send to ${shipped}`);
+
+      // ---- the live events of schedules, campaigns and lists
+      const listen = async token => {
+        const socket = io(API, { auth: { token }, transports: ["websocket"] });
+        const seen = [];
+        await new Promise((res, rej) => { socket.on("connect", res); socket.on("connect_error", rej); });
+        ["schedule", "campaign", "contactList"].forEach(ev => socket.on(ev, p => seen.push([ev, p])));
+        return { socket, seen };
+      };
+      const [forA, forNone, forAdmin, forJoao] = [await listen(cA), await listen(cNone), await listen(admin), await listen(joao)];
+      await sleep(400);
+      await mkSchedule(pb);
+      const sA2 = await mkSchedule(pa);
+      const LB2 = await mkList("Nova só B", [pb.phone]);
+      const LA2 = await mkList("Nova só A", [pa.phone]);
+      await mkCampaign(admin, LB2);
+      await waitFor(() => forAdmin.seen.filter(([e]) => e === "schedule").length >= 2 && forAdmin.seen.some(([e, p]) => e === "contactList" && p.row && p.row.id === LB2), 8000, "events for the administration");
+      await waitFor(() => forA.seen.some(([e, p]) => e === "schedule" && p.row && p.row.id === sA2), 8000, "events for coordination A");
+      await sleep(600);
+      const rowsOf = (x, ev) => x.seen.filter(([e]) => e === ev).map(([, p]) => (p.row || {}).id);
+      assert(!rowsOf(forA, "contactList").includes(LB2), "coordination A heard of a list of polo B");
+      assert(forA.seen.filter(([e, p]) => e === "schedule" && p.row && p.row.contactId === pb.contactId).length === 0, "coordination A heard of a schedule of polo B");
+      assert(forA.seen.filter(([e]) => e === "campaign").every(([, p]) => p.row && p.row.contactListId !== LB2), "coordination A heard of a campaign of polo B");
+      assert(forNone.seen.length === 0, `the coordination with no polo heard ${forNone.seen.length} events`);
+      assert(forJoao.seen.some(([e]) => e === "campaign" || e === "contactList"), "the consultant stopped hearing campaigns (regression)");
+      [forA, forNone, forAdmin, forJoao].forEach(x => x.socket.close());
+      poloF.ok = true;
+      void cNone; void LN;
+    });
+    // Analyses, students of the portal and connections by polo (ESP-011): the coordination reaches only what belongs to the polos it is in; a row with
+    // no polo, and a connection with no owner, are the administration's; the QR Code goes only to the administration and the owner of the number.
+    console.log("\nAnálises, alunos do portal e conexões por polo");
+    await test("analyses, portal students and connections: the coordination of polo A reaches only polo A; the QR Code stays with the administration and the owner", async () => {
+      const { io } = require("socket.io-client");
+      const pA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('F3A', 'Polo F3 A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const pB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('F3B', 'Polo F3 B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cA = await mkUser("Coordenação F3 A", "coord-f3a@x.com", "coordenacao");
+      const cNone = await mkUser("Coordenação F3 sem polo", "coord-f3n@x.com", "coordenacao");
+      const idA = userId("coord-f3a@x.com");
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${pA}, ${idA}, 'coordenacao', NOW(), NOW()), (${pA}, ${ids.joao}, 'comercial', NOW(), NOW()), (${pB}, ${ids.gabrielli}, 'comercial', NOW(), NOW())`);
+      const ex = (r, label) => assert(r.status === 403 || r.status === 404, `${label}: ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`);
+
+      // ---- curricular analyses
+      const mkCur = (name, polo, owner) => Number(sql(`INSERT INTO CurricularAnalyses (candidateName, courseName, poloId, userId, status, subjects, claims, baseWarnings, createdAt, updatedAt) VALUES ('${name}', 'Curso F3', ${polo || "NULL"}, ${owner || ids.admin}, 'COMPLETED', '[]', '[]', '[]', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const curA = mkCur("CURF3 A", pA), curB = mkCur("CURF3 B", pB), curN = mkCur("CURF3 sem polo", null), curMine = mkCur("CURF3 feita pela A", null, idA);
+      const curNames = async t => (await http.get("/analysis/curricular?search=CURF3", as(t))).data.map(r => r.candidateName).sort();
+      assert(JSON.stringify(await curNames(cA)) === JSON.stringify(["CURF3 A", "CURF3 feita pela A"]), `coordination A lists ${JSON.stringify(await curNames(cA))}`);
+      assert((await curNames(admin)).length === 4, "administration misses an analysis");
+      assert((await curNames(cNone)).length === 0, "coordination with no polo sees analyses");
+      for (const id of [curB, curN]) {
+        for (const p of ["", "/file", "/events", "/proposal"]) ex(await http.get(`/analysis/curricular/${id}${p}`, as(cA)), `GET curricular ${id}${p}`);
+        ex(await http.put(`/analysis/curricular/${id}`, { candidateName: "Trocado" }, as(cA)), `PUT curricular ${id}`);
+        ex(await http.put(`/analysis/curricular/${id}/enrollment`, { status: "ENROLLED" }, as(cA)), `enrollment ${id}`);
+        ex(await http.post(`/analysis/curricular/${id}/send-proposal`, {}, as(cA)), `send-proposal ${id}`);
+        ex(await http.delete(`/analysis/curricular/${id}`, as(cA)), `DELETE curricular ${id}`);
+      }
+      assert((await http.get(`/analysis/curricular/${curA}`, as(cA))).status === 200 && (await http.get(`/analysis/curricular/${curMine}`, as(cA))).status === 200, "coordination A cannot open its own analyses");
+      assert((await http.get(`/analysis/curricular/${curB}`, as(admin))).status === 200, "administration cannot open polo B");
+      assert((await http.put(`/analysis/curricular/${curA}`, { poloId: Number(pB) }, as(cA))).status === 403, "coordination A moved an analysis to polo B");
+      assert(sql(`SELECT candidateName FROM CurricularAnalyses WHERE id=${curB}`) === "CURF3 B", "an analysis of B changed");
+      const fu = await http.get("/analysis/follow-ups", as(cA));
+      assert(fu.status === 200 && JSON.stringify(fu.data).indexOf("CURF3 B") === -1, "the returns of coordination A carry polo B");
+
+      // ---- students of the portal and academic analyses
+      const mkStu = (name, polo) => Number(sql(`INSERT INTO Students (rgm, name, email, poloId, createdAt, updatedAt) VALUES ('F3${Math.floor(Math.random() * 1e6)}', '${name}', '${name.replace(/\W/g, "").toLowerCase()}@exemplo.com', ${polo || "NULL"}, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const stA = mkStu("STUF3 A", pA), stB = mkStu("STUF3 B", pB), stN = mkStu("STUF3 sem polo", null);
+      const mkAc = (student, name) => Number(sql(`INSERT INTO AcademicAnalyses (studentId, studentName, rgm, userId, snapshot, isCurrent, version, createdAt, updatedAt) VALUES (${student}, '${name}', 'R${student}', ${ids.admin}, '{}', true, 1, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const acA = mkAc(stA, "ACAF3 A"), acB = mkAc(stB, "ACAF3 B"), acN = mkAc(stN, "ACAF3 sem polo");
+      const stuNames = async t => (await http.get("/students?search=STUF3", as(t))).data.map(s => s.name).sort();
+      assert(JSON.stringify(await stuNames(cA)) === JSON.stringify(["STUF3 A"]), `coordination A lists students ${JSON.stringify(await stuNames(cA))}`);
+      assert((await stuNames(admin)).length === 3 && (await stuNames(cNone)).length === 0, "students of the administration or of the coordination with no polo");
+      const acaNames = async t => (await http.get("/analysis/academic", as(t))).data.map(a => a.studentName).filter(n => /ACAF3/.test(n)).sort();
+      assert(JSON.stringify(await acaNames(cA)) === JSON.stringify(["ACAF3 A"]), `coordination A lists academic analyses ${JSON.stringify(await acaNames(cA))}`);
+      assert((await acaNames(admin)).length === 3, "administration misses an academic analysis");
+      for (const id of [stB, stN]) {
+        ex(await http.get(`/students/${id}`, as(cA)), `GET student ${id}`);
+        ex(await http.put(`/students/${id}`, { name: "Trocado" }, as(cA)), `PUT student ${id}`);
+        ex(await http.post(`/students/${id}/invite`, {}, as(cA)), `invite student ${id}`);
+      }
+      for (const id of [acB, acN]) {
+        ex(await http.get(`/analysis/academic/${id}`, as(cA)), `GET academic ${id}`);
+        ex(await http.get(`/analysis/academic/${id}/file`, as(cA)), `file of academic ${id}`);
+        ex(await http.put(`/analysis/academic/${id}`, { currentPeriod: 2 }, as(cA)), `PUT academic ${id}`);
+        ex(await http.delete(`/analysis/academic/${id}`, as(cA)), `DELETE academic ${id}`);
+      }
+      assert((await http.get(`/students/${stA}`, as(cA))).status === 200 && (await http.get(`/analysis/academic/${acA}`, as(cA))).status === 200, "coordination A cannot reach its own polo");
+      assert((await http.get(`/students/${stB}`, as(admin))).status === 200, "administration cannot open a student of B");
+      ex(await http.post("/students", { rgm: "F3NEW1", name: "Aluno de fora", poloId: Number(pB) }, as(cA)), "create a student in polo B");
+      assert((await http.post("/students", { rgm: "F3NEW2", name: "Aluno do A", poloId: Number(pA) }, as(cA))).status === 201, "coordination A cannot create a student in its polo");
+      assert((await http.get("/students", as(tutor))).status === 200 && (await http.get("/students", as(joao))).status === 403, "tutor/consultant regression");
+
+      // ---- connections
+      const mkConn = (name, owner) => Number(sql(`INSERT INTO Whatsapps (name, status, channel, ownerId, qrcode, isDefault, createdAt, updatedAt) VALUES ('${name}', 'QRCODE', 'whatsapp', ${owner || "NULL"}, 'QR-SEGREDO-${name.replace(/\W/g, "")}', false, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const wJ = mkConn("F3 do João", ids.joao), wG = mkConn("F3 da Gabrielli", ids.gabrielli), wC = mkConn("F3 da instituição", null);
+      const names = async t => (await http.get("/whatsapp", as(t))).data.map(w => w.name);
+      let got = await names(cA);
+      assert(got.includes("F3 do João") && !got.includes("F3 da Gabrielli") && !got.includes("F3 da instituição") && !got.includes("Telegram"), `coordination A lists connections ${JSON.stringify(got)}`);
+      got = await names(admin);
+      assert(["F3 do João", "F3 da Gabrielli", "F3 da instituição"].every(n => got.includes(n)), "administration misses a connection");
+      assert((await names(cNone)).length === 0, "the coordination with no polo sees connections");
+      assert((await http.get(`/whatsapp/${wJ}`, as(cA))).status === 200, "coordination A cannot open the connection of its polo");
+      assert(JSON.stringify((await http.get("/whatsapp", as(cA))).data).indexOf("QR-SEGREDO") === -1, "the QR Code reached the coordination");
+      assert(JSON.stringify((await http.get(`/whatsapp/${wJ}`, as(cA))).data).indexOf("QR-SEGREDO") === -1, "the QR Code of the connection reached the coordination");
+      assert(JSON.stringify((await http.get(`/whatsapp/${wJ}`, as(admin))).data).indexOf("QR-SEGREDO") !== -1, "the administration lost the QR Code");
+      assert(JSON.stringify((await http.get(`/whatsapp/${wJ}`, as(joao))).data).indexOf("QR-SEGREDO") !== -1, "the owner lost the QR Code");
+      for (const id of [wG, wC]) {
+        ex(await http.get(`/whatsapp/${id}`, as(cA)), `GET connection ${id}`);
+        ex(await http.put(`/whatsapp/${id}`, { name: "Tomada" }, as(cA)), `PUT connection ${id}`);
+        ex(await http.delete(`/whatsapp/${id}`, as(cA)), `DELETE connection ${id}`);
+        ex(await http.post(`/whatsappsession/${id}`, {}, as(cA)), `start session ${id}`);
+        ex(await http.get(`/channels/${id}/safety`, as(cA)), `safety ${id}`);
+        ex(await http.get(`/channels/${id}/info`, as(cA)), `info ${id}`);
+        ex(await http.post(`/whatsapp/${id}/import-history`, {}, as(cA)), `import-history ${id}`);
+      }
+      ex(await http.post("/whatsapp", { name: "Sem dono", channel: "telegram", config: JSON.stringify({ botToken: "9:ZZZ" }), queueIds: [] }, as(cA)), "the coordination created a connection with no owner");
+      ex(await http.put(`/whatsapp/${wJ}`, { ownerId: ids.gabrielli }, as(cA)), "the coordination handed a number to polo B");
+      assert((await http.get(`/channels/${wJ}/safety`, as(cA))).status !== 403, "coordination A cannot reach the safety of its connection");
+      assert(sql(`SELECT name FROM Whatsapps WHERE id=${wG}`) === "F3 da Gabrielli", "a connection of B changed");
+      assert((await http.get(`/whatsapp/${wG}`, as(gabrielli))).status === 200 && (await http.get(`/whatsapp/${wG}`, as(joao))).status === 403, "owner/consultant regression");
+      const health = (await http.get("/whatsapp-health", as(cA))).data.map(w => w.name);
+      assert(health.includes("F3 do João") && !health.includes("F3 da Gabrielli"), `health of coordination A ${JSON.stringify(health)}`);
+
+      // ---- the live events (they carry the QR Code)
+      const listen = async token => {
+        const socket = io(API, { auth: { token }, transports: ["websocket"] });
+        const seen = [];
+        await new Promise((res, rej) => { socket.on("connect", res); socket.on("connect_error", rej); });
+        ["whatsapp", "whatsappSession"].forEach(ev => socket.on(ev, p => seen.push([ev, p])));
+        return { socket, seen };
+      };
+      const [forA, forNone, forAdmin, forJoao] = [await listen(cA), await listen(cNone), await listen(admin), await listen(joao)];
+      await sleep(400);
+      for (const id of [wG, wC, wJ]) assert((await http.put(`/whatsapp/${id}`, { name: `F3 renomeada ${id}` }, as(admin))).status === 200, `admin edit ${id}`);
+      await waitFor(() => forAdmin.seen.filter(([e]) => e === "whatsapp").length >= 3, 8000, "events for the administration");
+      await waitFor(() => forA.seen.some(([e, p]) => e === "whatsapp" && p.whatsapp && p.whatsapp.id === wJ), 8000, "the event of its polo for coordination A");
+      await sleep(600);
+      const idsOf = x => x.seen.map(([, p]) => (p.whatsapp || p.session || {}).id);
+      assert(!idsOf(forA).includes(wG) && !idsOf(forA).includes(wC), "coordination A heard of a connection of B or of the institution");
+      assert(forA.seen.every(([, p]) => !JSON.stringify(p).includes("QR-SEGREDO")), "the QR Code travelled to the coordination");
+      assert(forNone.seen.length === 0, `the coordination with no polo heard ${forNone.seen.length} events`);
+      assert(forAdmin.seen.some(([, p]) => JSON.stringify(p).includes("QR-SEGREDO")), "the administration stopped getting the QR Code");
+      assert(forJoao.seen.some(([, p]) => (p.whatsapp || {}).id === wJ && JSON.stringify(p).includes("QR-SEGREDO")) && !idsOf(forJoao).includes(wG), "the owner's events changed");
+      [forA, forNone, forAdmin, forJoao].forEach(x => x.socket.close());
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);
@@ -1285,6 +1678,7 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
   }
   const failed = results.filter(r => !r[0]);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+  require("./e2e-logs").save(__filename, global.__backendLog ? global.__backendLog() : "");
   failed.forEach(f => console.log(`  FAILED: ${f[1]}`));
   process.exit(failed.length ? 1 : 0);
 })();

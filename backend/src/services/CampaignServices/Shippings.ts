@@ -2,6 +2,10 @@ import AppError from "../../errors/AppError";
 import Campaign from "../../models/Campaign";
 import CampaignShipping from "../../models/CampaignShipping";
 import ContactListItem from "../../models/ContactListItem";
+import PoloMember from "../../models/PoloMember";
+import User from "../../models/User";
+import { roleOf } from "../../helpers/Roles";
+import { numbersInPolos } from "../../helpers/ListScope";
 
 // The recipients of a campaign are copied from its list the first time it starts (or is scheduled to start), so editing the
 // list later does not change a campaign that already began.
@@ -11,7 +15,14 @@ export const ensureShippings = async (campaign: Campaign): Promise<number> => {
     await (CampaignShipping.sequelize as any).query("SELECT pg_advisory_xact_lock(:key)", { replacements: { key: 7400000000 + Number(campaign.id) }, transaction });
     const existing = await CampaignShipping.count({ where: { campaignId: campaign.id }, transaction });
     if (existing) return existing;
-    const items = await ContactListItem.findAll({ where: { contactListId: campaign.contactListId }, transaction });
+    let items = await ContactListItem.findAll({ where: { contactListId: campaign.contactListId }, transaction });
+    // a campaign of the coordination goes only to people of its creator's polos AT THE MOMENT OF THE SEND (the list may have changed since it was made)
+    const creator = campaign.createdById ? await User.findByPk(campaign.createdById, { attributes: ["id", "role", "profile"], transaction }) : null;
+    if (creator && roleOf(creator as any) === "coordenacao") {
+      const polos = (await PoloMember.findAll({ where: { userId: creator.id }, attributes: ["poloId"], transaction })).map(m => m.poloId);
+      const inside = await numbersInPolos(polos, items.map(i => i.number));
+      items = items.filter(i => inside.has(i.number));
+    }
     if (!items.length) throw new AppError("ERR_CAMPAIGN_EMPTY_LIST");
     await CampaignShipping.bulkCreate(
       items.map(i => ({ campaignId: campaign.id, name: i.name, number: i.number, status: "pending" })),

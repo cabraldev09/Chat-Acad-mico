@@ -10,7 +10,7 @@ interface CrudOptions {
   include?: any[];
   order?: any[];
   fields: string[];
-  where?: (req: Request) => any;
+  where?: (req: Request) => any | Promise<any>;
   authorize?: (req: Request, row: any) => Promise<void>;
   beforeSave?: (data: any, req: Request, existing?: any) => Promise<any> | any;
   afterSave?: (row: any, req: Request, created: boolean) => Promise<void> | void;
@@ -40,7 +40,7 @@ const makeCrud = (Model: ModelCtor<any>, opts: CrudOptions) => {
   return {
     index: async (req: Request, res: Response): Promise<Response> => {
       const rows = await Model.findAll({
-        where: opts.where ? opts.where(req) : undefined,
+        where: opts.where ? await opts.where(req) : undefined,
         include: opts.include,
         order: opts.order || [["id", "DESC"]],
         // a screen never reads a whole table: up to 2000 rows unless it asks for fewer

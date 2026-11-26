@@ -648,7 +648,17 @@ const Detail = ({ id }) => {
   const [changes, setChanges] = useState(0);
 
   const apply = useCallback((data) => { setA(data); setEntry(data.entryPeriod || ""); setTerm(data.startTerm || ""); }, []);
-  useEffect(() => { api.get(`/analysis/curricular/${id}`).then(({ data }) => apply(data)).catch((e) => { toastError(e); history.replace("/analise-curricular"); }); }, [id, apply, history]);
+  // an analysis of another polo (or one that no longer exists) is a state of the page, not an error: the person sees why and goes back
+  const [denied, setDenied] = useState(null);
+  useEffect(() => {
+    setDenied(null);
+    api.get(`/analysis/curricular/${id}`).then(({ data }) => apply(data)).catch((e) => {
+      const status = e && e.response && e.response.status;
+      if (status === 403 || status === 404) { setDenied(status); return; }
+      toastError(e);
+      history.replace("/analise-curricular");
+    });
+  }, [id, apply, history]);
 
   const save = async (patch, ok) => {
     setBusy(true);
@@ -682,6 +692,14 @@ const Detail = ({ id }) => {
   const copy = async (text) => { try { await navigator.clipboard.writeText(text); toast.success("Texto copiado. É só colar na conversa."); } catch (e) { toast.error("Não foi possível copiar."); } };
 
   const byId = useMemo(() => new Map((a ? a.subjects || [] : []).map((s) => [s.id, s])), [a]);
+  if (denied) {
+    return (
+      <div className="orig flex-1 p-8 text-sm" role="alert">
+        <p className="mb-3">{denied === 403 ? "Esta análise é de um polo que você não acompanha." : "Esta análise não existe mais."}</p>
+        <button type="button" className="rounded-lg border px-3 py-2" onClick={() => history.replace("/analise-curricular")}>Voltar para as análises</button>
+      </div>
+    );
+  }
   if (!a) return <div className="orig flex-1 p-8 text-sm text-slate-500">Carregando…</div>;
   const r = a.result || {};
   const subjects = a.subjects || [];

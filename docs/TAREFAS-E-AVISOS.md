@@ -34,10 +34,12 @@
 | Tarefa em 15 minutos (`task_soon`) | quem tem a tarefa |
 | Lead encaminhado pela IA (`ai_handoff`) | quem atende (ou a gestão, quando ninguém pôde) |
 | Prazo de resposta a 70% (`sla_soon`), excedido (`sla_breached`), escalado (`sla_escalated`) | quem atende; o escalado também para a gestão |
+| Lead novo na fila comum (`queue_lead`, só com a fila ligada) | todos os consultores, uma vez cada; é marcado como lido quando alguém assume |
 | Proposta aberta pelo lead (`proposal_viewed`) | o dono do lead e quem fez a proposta |
 | Taxa paga (`payment_paid`) | o dono do lead e quem recebe a comissão |
 | Ambientação atrasada (`onboarding_late`) | a gestão (e uma tarefa sem responsável, não uma por gestor) |
 | Envios pausados pela proteção (`safety_paused`) | a gestão |
+| Recomendação do OpenBot (`openbot`), gravada pela API (`POST /api/v1/insights`, sem dados de pessoas; título começa com "OpenBot:") | **só a administração** (não a coordenação): é da operação inteira, e a equipe não tem polo |
 | Número fora do ar ou com o token vencendo (`connection_*`) | a gestão (o e-mail tem um controle de 6 h por motivo) |
 | Orçamento a 80% e 100% (`budget`) | a gestão (o do mês não repete todo dia) |
 | Trabalho sem responsável há 30 min (`unassigned`) | a gestão, no máximo uma vez por hora |

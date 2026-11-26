@@ -125,6 +125,29 @@ Uma vez por dia, a conversa de cada lead que se matriculou ou se perdeu nos últ
 - **Transferência:** por padrão, a transferência manual passa o cliente para o novo consultor. Marque **"Só este atendimento"** para cobrir uma ausência sem tirar o cliente da carteira.
 - **Desligar:** Configurações → Atendimento e CRM → "Cliente que volta a escrever fala com o mesmo consultor".
 
+## Fila comum + carteira (desligada por padrão)
+
+Configurações → Atendimento e CRM → "Fila comum" (`crm_queue_mode`, só a administração liga). Com ela **desligada** nada muda: o rodízio e a
+distribuição por fila funcionam como hoje e o consultor só vê o que é dele.
+
+Com a fila **ligada**:
+- **Lead novo nasce sem dono** e a conversa fica "Aguardando", sem ir ao dono do número QR, ao rodízio da fila nem à distribuição do setor.
+  Os leads que já existem sem dono (se houver) também entram na fila: confira a lista antes de ligar.
+- **Todos os consultores veem o lead da fila** como um cartão (nome, telefone, curso, cidade e origem), no funil (filtro "Sem responsável" e a
+  etiqueta "Na fila comum") e na aba **Fila** das Conversas, também quando ele chegou no QR de outra pessoa ou em outro setor.
+  **CPF, documentos, e-mail e anotações só aparecem depois de assumir.** Grupos, conversas que já têm atendente, alunos matriculados, perdidos,
+  alunos da tutoria e o histórico copiado do celular nunca entram na fila.
+- **Assumir** (`POST /leads/:id/claim`, ou "Aceitar" na conversa): quem clicar primeiro vira o dono (a carteira); o segundo recebe "Outro consultor
+  já assumiu". Tudo numa transação: o lead, as conversas dele sem atendente e o registro "Lead assumido da fila comum". O lead some das telas dos outros na hora.
+- **Antes de assumir o consultor só lê.** Qualquer ação (editar, etapa, tarefa, nota, proposta, cobrança, responder a conversa) responde
+  `ERR_LEAD_CLAIM_FIRST`. A administração e a coordenação (dos seus polos) também podem assumir.
+- **A conversa continua no número onde chegou:** quem assume responde por esse número (se for o QR de outra pessoa, o cliente vê a resposta sair
+  dele, e o celular dele mostra mensagens que ele não escreveu: avise a pessoa).
+- **Quem assumiu não devolve** o lead à fila; só a gestão transfere.
+- **Avisos:** um aviso "Lead novo na fila" por consultor (sem repetir) quando passa de 70% do prazo de resposta, em horário comercial; no prazo da
+  escalada a gestão é avisada. Ao assumir, o aviso é marcado como lido. A tarefa de proposta e de taxa nasce quando o lead tem dono (ao assumir).
+- **Desligar** devolve o rodízio; os leads já assumidos continuam com os donos. Nada é apagado.
+
 ## Montagem na Meta (uma vez)
 1. Use **um app** no Meta for Developers e **uma conta do WhatsApp Business (WABA)** verificada no nome da instituição.
 2. Cadastre cada número (polo ou institucional) na WABA. No Chat, cada número vira uma conexão "API Oficial", com o Phone Number ID dele.

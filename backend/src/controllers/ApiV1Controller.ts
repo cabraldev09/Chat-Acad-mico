@@ -199,6 +199,26 @@ export const connections = async (_req: Request, res: Response): Promise<Respons
   );
 };
 
+// POST /api/v1/insights: a warning or recommendation of the OpenBot for the management (administrators only; no personal data, checked here).
+// Always the same short answer, with no id: 201 {"aceito": true}, or 200 {"duplicado": true} when the subject is already in force.
+// Not filtered by polo: it is about the whole operation, whatever the polos of the token (docs/API-V1.md).
+export const createInsight = async (req: Request, res: Response): Promise<Response> => {
+  const { cleanInsight } = await import("../helpers/InsightRules");
+  const { recordInsight } = await import("../services/InsightServices/OpenbotInsights");
+  const input = cleanInsight(req.body);
+  const caller = apiCaller(req);
+  let result;
+  try {
+    result = await recordInsight(input, caller.id);
+  } catch (err: any) {
+    // a full panel clears as the recommendations expire or are dismissed: try again in an hour
+    if (err?.message === "ERR_INSIGHT_LIMIT" || err?.message === "ERR_INSIGHT_TOKEN_LIMIT") res.setHeader("Retry-After", "3600");
+    throw err;
+  }
+  if (result.duplicated) return res.status(200).json({ duplicado: true });
+  return res.status(201).json({ aceito: true });
+};
+
 // GET /api/v1/indicadores?de=AAAA-MM-DD&ate=AAAA-MM-DD&polo=<id>: totals and codes only (services/IndicatorServices/Indicators)
 // One computation per token, period and polo for a minute (helpers/TtlCache): the cache key carries the token, its scopes and its polos,
 // so two tokens never share an answer (the consultant codes are per token, and the polos may differ)

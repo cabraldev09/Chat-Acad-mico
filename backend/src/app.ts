@@ -70,6 +70,11 @@ app.use("/auth/login", express.json({ limit: "20kb" }), loginPerNetwork, loginPe
 app.use("/auth/forgot", rateLimit({ windowMs: 15 * 60 * 1000, max: 6 }));
 app.use("/auth/reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
 // every page load renews the session, so this one is far more generous
+// the renewal of the login: 400 calls in 15 minutes for each network address (a few people behind one address, each with several tabs) and, apart,
+// only the REFUSED calls (no cookie, a bad or old one: the 401s) are counted, at most 30 in 15 minutes: an anonymous loop is stopped early (429) and
+// does not fill the log. Like the failures of the login, it is per address: once reached, that address waits (the renewals that work are not what
+// fills it, so a normal use never reaches it)
+app.use("/auth/refresh_token", rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.REFRESH_FAIL_MAX) || 30, failuresOnly: true }));
 app.use("/auth/refresh_token", rateLimit({ windowMs: 15 * 60 * 1000, max: 400 }));
 
 // Public endpoints (embedded web chat, provider webhooks): no cookies, any origin

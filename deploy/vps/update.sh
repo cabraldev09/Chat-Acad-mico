@@ -45,14 +45,15 @@ fi
 # Run the target revision's check gate in the existing Node container.
 # A sick API container (no free processes: "pthread_create", "Cannot fork") used to abort or hang here while holding the lock, so every
 # later update gave up after 15 minutes. Now the check has a time limit, and when the container cannot run it, a throwaway container of
-# the same image runs it instead (a refusal of the check itself, exit 1, still stops the update).
+# the same image runs it instead (a refusal of the check itself, exit 1, still stops the update). The new container has no GIT_SHA of the API: the
+# version in production is the checkout (LOCAL), which goes back to it whenever an update fails, so it is passed as PUBLISHED_SHA (publication lock).
 CHECK=$(git show "$REMOTE:deploy/vps/check-ci.js")
 set +e
 printf '%s\n' "$CHECK" | timeout 120 docker compose -f deploy/vps/docker-compose.yml --env-file deploy/vps/.env exec -T -e GH_TOKEN="${GH_TOKEN:-}" api node - "$REMOTE"
 rc=$?
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
   log "a conferência não rodou dentro da API (código $rc): rodando num contêiner novo da mesma imagem"
-  printf '%s\n' "$CHECK" | timeout 120 docker run --rm -i -e GH_TOKEN="${GH_TOKEN:-}" --entrypoint node chat-academico-api:vps - "$REMOTE"
+  printf '%s\n' "$CHECK" | timeout 120 docker run --rm -i -e GH_TOKEN="${GH_TOKEN:-}" -e PUBLISHED_SHA="${LOCAL:0:7}" --entrypoint node chat-academico-api:vps - "$REMOTE"
   rc=$?
 fi
 set -e

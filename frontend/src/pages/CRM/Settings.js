@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
   Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, Tooltip, IconButton, makeStyles,
@@ -14,6 +14,8 @@ import ImportWizard from "../../components/ImportWizard";
 import ColorSwatchPicker from "../../components/ColorSwatchPicker";
 import { SetCard, Fields, SaveBar, Fold, Gap } from "../SettingsHub/ui";
 import api from "../../services/api";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isStrictAdmin } from "../../utils/access";
 import { getBackendUrl } from "../../config";
 import { publicApiBase } from "../../utils/publicApiBase";
 import toastError from "../../errors/toastError";
@@ -361,6 +363,8 @@ const EntryCalendar = ({ s, save }) => {
 
 // Distribuição e lembretes: who gets a new lead, and what happens when a client writes again. Saved as soon as they change.
 export const Distribution = ({ s, setS, save, users }) => {
+  const classes = useStyles();
+  const { user } = useContext(AuthContext);
   return (
     <>
       <SetCard title="Quem recebe o lead" sub="Vale para todos os canais. Grupos não viram lead, e ninguém é cadastrado duas vezes.">
@@ -380,6 +384,17 @@ export const Distribution = ({ s, setS, save, users }) => {
             </TextField>
           ) : <Gap />}
         </Fields>
+        {isStrictAdmin(user) && (
+          <>
+            <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={!!s.queueMode} onChange={(e) => save({ queueMode: e.target.checked })} />}
+              label="Fila comum: lead novo sem dono, todos os consultores veem e o primeiro que assumir atende" />
+            <Typography className={classes.hint}>
+              Ligada, o lead novo não vai para o rodízio nem para o dono do número: fica na fila (aba Fila das Conversas e filtro “Sem responsável” do funil) até um
+              consultor clicar em Assumir. Os leads que já estão sem responsável também entram na fila: confira a lista antes de ligar. CPF, documentos e anotações só aparecem depois de assumir.
+              Desligada, nada muda e os leads já assumidos continuam com seus donos.
+            </Typography>
+          </>
+        )}
       </SetCard>
       <SetCard title="Cliente que volta a escrever" sub="Nos números compartilhados, quem já foi atendido volta direto para o consultor dele, sem robô e sem rodízio.">
         <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={s.returnToOwner !== false} onChange={(e) => save({ returnToOwner: e.target.checked })} />}
