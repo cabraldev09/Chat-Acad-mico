@@ -4007,9 +4007,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const fresh = Number(sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Fwd Sem Conversa', 'tg_5559', '', false, 'person', 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0]);
       try {
         // the list comes from the server, with the marks; searching finds the contact with no conversation
-        const all = (await http.get("/forward/targets", { params: { q: "", page: 1 }, ...auth() })).data;
+        const beto = sql(`SELECT c.name FROM Contacts c JOIN Tickets t ON t.contactId=c.id WHERE t.id=${other}`);
+        const all = (await http.get("/forward/targets", { params: { q: beto, page: 1 }, ...auth() })).data;
         const row = all.tickets.find(t => t.id === other);
-        assert(row && row.waiting === true && row.windowClosed === false, `the waiting conversation: ${JSON.stringify(row)}`);
+        assert(row && row.waiting === true && row.windowClosed === false, `the waiting conversation: ${JSON.stringify(row)} in ${JSON.stringify(all.tickets.map(t => [t.id, t.name]))}`);
         const found = (await http.get("/forward/targets", { params: { q: "Fwd Sem" }, ...auth() })).data;
         assert(found.contacts.some(c => c.id === fresh), `the contact with no conversation is not offered: ${JSON.stringify(found.contacts)}`);
         assert(!(await http.get("/forward/targets", { params: { q: "Ana Souza" }, ...auth() })).data.contacts.some(c => c.number === "tg_5551"), "a contact with a live conversation was offered as a new one");

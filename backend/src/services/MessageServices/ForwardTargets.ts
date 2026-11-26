@@ -35,10 +35,11 @@ const PAGE = 40;
 export const forwardTargets = async (req: Request, q: string, page = 1) => {
   const userId = Number(req.user.id);
   const role = roleOf(req.user);
+  // the management sees every sector (as in Conversas); the others, their own sectors
   const queueIds = isManagerRole(role) ? [] : (await UserQueue.findAll({ where: { userId } })).map(x => x.queueId);
   const search = String(q || "").trim().slice(0, 80);
   const lists = await Promise.all(
-    ["open", "pending"].map(status => ListTicketsService({ searchParam: search || undefined, pageNumber: String(page), status, showAll: "false", userId: String(userId), queueIds, role } as any))
+    ["open", "pending"].map(status => ListTicketsService({ searchParam: search || undefined, pageNumber: String(page), status, showAll: "false", userId: String(userId), queueIds, role, ...(isManagerRole(role) ? { allQueues: "true" } : {}) } as any))
   );
   const tickets = [...lists[0].tickets, ...lists[1].tickets];
   const flags = await forwardFlags(tickets, userId);
