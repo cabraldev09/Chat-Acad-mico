@@ -320,7 +320,8 @@ const WHY = {
   whatsapp_none: "A pessoa nunca conectou um WhatsApp: não recebe nem envia mensagens. As conversas e tarefas dela ficam paradas.",
   whatsapp_offline: "O WhatsApp da pessoa está desconectado: as mensagens dos clientes não chegam até ele ser reconectado.",
   tasks_overdue: "Tarefas de acompanhamento cujo prazo já passou. Clique para ver quais são.",
-  pending_reply: "Conversas abertas em que o cliente foi o último a falar e ainda espera resposta.",
+  pending_reply: "Leads em negociação que escreveram por último nos últimos 7 dias e esperam resposta. Não contam matriculado, ganho ou perdido, aluno, nem ok, obrigado ou figurinha.",
+  forgotten_reply: "Conversas em que o cliente escreveu por último há mais de 7 dias e ninguém respondeu. Retome ou marque como resolvida.",
   idle_on_schedule: "No horário de trabalho, sem enviar mensagem, mexer em lead ou concluir tarefa há um tempo.",
   below_messages_target: "Mensagens enviadas hoje abaixo da meta diária, dentro do horário de trabalho.",
   below_attendances_target: "Conversas atendidas hoje abaixo da meta diária, dentro do horário de trabalho.",
@@ -352,7 +353,7 @@ const Alerts = ({ alerts, onOpen, history }) => {
   const open = (a) => {
     if (a.code === "tasks_overdue") history.push(`/crm/tarefas?scope=all&status=overdue&userId=${a.userId}`);
     else if (a.code === "whatsapp_offline" || a.code === "whatsapp_none") history.push("/connections");
-    else if (a.code === "pending_reply") history.push("/tickets");
+    else if (a.code === "pending_reply" || a.code === "forgotten_reply") history.push("/tickets");
     else onOpen(a.userId);
   };
   const TONE = { high: "bad", medium: "warn", low: "info" };
@@ -373,7 +374,7 @@ const Alerts = ({ alerts, onOpen, history }) => {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
                   <b className="mx-name" style={{ fontSize: 13.5 }}>{g.name}</b>
                   <button type="button" className="mx-go" style={{ border: 0, background: "none", cursor: "pointer", padding: "6px 0", font: "inherit", fontSize: 12.5, fontWeight: 650, color: "var(--c-brand)" }} onClick={() => open(head)}>
-                    {head.code === "tasks_overdue" ? "Ver tarefas" : head.code === "pending_reply" ? "Ver conversas" : head.code.startsWith("whatsapp") ? "Ver conexão" : "Ver detalhe"} <ChevronRight size={15} aria-hidden="true" />
+                    {head.code === "tasks_overdue" ? "Ver tarefas" : head.code === "pending_reply" || head.code === "forgotten_reply" ? "Ver conversas" : head.code.startsWith("whatsapp") ? "Ver conexão" : "Ver detalhe"} <ChevronRight size={15} aria-hidden="true" />
                   </button>
                 </div>
                 <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>{head.text}</div>

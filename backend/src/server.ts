@@ -28,6 +28,7 @@ import { startDataRetention } from "./workers/DataRetention";
 import { startHumanTranscription } from "./workers/HumanTranscription";
 import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
+import { startPhoneNamesSync } from "./workers/PhoneNamesSync";
 import { startAckReconciler } from "./workers/AckReconciler";
 import { startPaymentPoller } from "./workers/PaymentPoller";
 import { startOnboardingSla } from "./workers/OnboardingSla";
@@ -81,6 +82,7 @@ whenLeader(() => {
   startHumanTranscription();
   startFollowUpAlert();
   startProfilePicSync();
+  startPhoneNamesSync();
   startAckReconciler();
   startUnreadReconciler();
   startPaymentPoller();

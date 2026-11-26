@@ -535,6 +535,8 @@ const postMeta = (id, payload, secret, badSig) => {
   try {
     psql("postgres", `CREATE DATABASE ${DB}`);
     const env = {
+      // the suite creates many QR Code numbers (one per scenario); the production cap of QR numbers (WHATSAPP_MAX_QR, 8) is not what it tests
+      WHATSAPP_MAX_QR: "200",
       ...process.env, DATABASE_URL: "", DATABASE_URL_POOL: "", DB_SSL: "false", NODE_ENV: "test", DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "150",
@@ -1058,6 +1060,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sentTo("5569911120001") === 1, "a limited or refused call sent a message");
       } finally {
         if (qrRows.length) sql(`UPDATE Whatsapps SET status = 'CONNECTED' WHERE id IN (${qrRows.join(",")})`);
+        // the connection made only for this test goes away: it counted as a QR number and the later tests that connect one hit the
+        // limit of QR numbers (WHATSAPP_MAX_QR)
+        sql(`DELETE FROM WhatsappQueues WHERE whatsappId=${unlinked}`);
+        sql(`DELETE FROM Whatsapps WHERE id=${unlinked}`);
       }
     });
 
@@ -6104,7 +6110,9 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => ticketOf(from), 8000, "ticket of the quiet lead");
       const tk = ticketOf(from);
       sql(`UPDATE Tickets SET chatbotNodeId=-1 WHERE id=${tk}`);
-      const leadId = await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`), 8000, "lead of the quiet person");
+      // the inbound hook creates the lead and only then writes lastInboundAt=now (LeadCore.hookInbound): wait for that write, or it
+      // lands after the update below and the lead is not quiet anymore
+      const leadId = await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}' AND l.lastInboundAt IS NOT NULL`), 8000, "lead of the quiet person");
       sql(`UPDATE Leads SET lastInboundAt=NOW() - INTERVAL '5 days', lastContactAt=NOW() - INTERVAL '5 days', createdAt=NOW() - INTERVAL '6 days' WHERE id=${leadId}`);
       let before = graph.sent.length;
       const r1 = await http.post("/crm/cadences/run", {}, auth());
@@ -8444,6 +8452,22 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put("/operations/config",{ai_openai_key:"not-allowed"},auth())).status===400,"arbitrary key");
       assert((await http.get("/operations/summary",asUser(agentToken))).status===403,"consultant saw spend");
       assert((await http.get("/operations/summary",auth())).status===200,"summary failed");
+      // Configurações by profile: the coordination keeps the operation and the bill of the Meta, never the money limits nor the accounts
+      await http.post("/users", { name: "Coordenação Configurações", email: "coord-config@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
+      const coordTok = (await http.post("/auth/login", { email: "coord-config@x.com", password: "senha123" })).data.token;
+      const asCoord = asUser(coordTok);
+      const coordConfig = (await http.get("/operations/config", asCoord)).data;
+      assert(coordConfig.send_quota_monthly !== undefined && Object.keys(coordConfig).every(k => !k.startsWith("ai_") && !k.startsWith("outbound_")), `coordination saw the money limits ${Object.keys(coordConfig)}`);
+      assert((await http.put("/operations/config", { ai_daily_usd_cap: "5" }, asCoord)).status === 403, "coordination changed a money limit");
+      assert((await http.put("/operations/config", { send_quota_monthly: String(coordConfig.send_quota_monthly) }, asCoord)).status === 200, "coordination could not save the quota");
+      assert((await http.get("/operations/summary", asCoord)).data.spend == null, "coordination saw the spending of the day");
+      assert((await http.get("/meta/costs", asCoord)).status !== 403, "coordination lost the bill of the Meta");
+      for (const url of ["/payments/efi/settings", "/mail/settings", "/data-retention"]) assert((await http.get(url, asCoord)).status === 403, `coordination opened ${url}`);
+      // the days before the due date to make the boleto: empty or invalid stays 3; 0 only typed on purpose
+      for (const [typed, saved] of [["", 3], ["abc", 3], [0, 0], ["7", 7]]) {
+        assert((await http.put("/payments/efi/settings", { chargeDaysBefore: typed }, auth())).data.chargeDaysBefore === saved, `boleto days ${JSON.stringify(typed)}`);
+      }
+      await http.put("/payments/efi/settings", { chargeDaysBefore: 3 }, auth());
     });
     await test("task hooks synchronize bulk, completed and deleted follow-ups", async () => {
       inDb(`const Lead=require("./dist/models/Lead").default, Task=require("./dist/models/LeadTask").default;
@@ -8489,6 +8513,31 @@ const postMeta = (id, payload, secret, badSig) => {
         await setSetting("business_hours",JSON.stringify({enabled:false}));await setSetting("crm_sla_minutes","0.000001");await setSetting("crm_escalation_minutes","0.000001");
         const before=await Event.count({where:{ticketId:ticket.id,type:"sla"}});
         try{await new Promise(r=>setTimeout(r,1200));await runLeadSlaAlertOnce();await runLeadSlaAlertOnce();assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before+1);}finally{await msg.destroy();await ticket.update({lastMessageFromMe:wasFromMe});await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
+    });
+    await test("SLA: a closing message or a wait that started days ago raises no alert (the old one goes once a day in the bell)", async () => {
+      inDb(`const Ticket=require("./dist/models/Ticket").default,Message=require("./dist/models/Message").default,Lead=require("./dist/models/Lead").default,Event=require("./dist/models/TicketEvent").default,Notification=require("./dist/models/Notification").default,sequelize=require("./dist/database").default;
+        const {setSetting}=require("./dist/helpers/AppSettings"),{runLeadSlaAlertOnce}=require("./dist/workers/LeadSlaAlert");
+        const ticket=await Ticket.findByPk(${tgTicket}),lead=await Lead.findOne({where:{contactId:ticket.contactId}});
+        await ticket.update({status:"open",isHistorical:false,archivedAt:null});const wasFromMe=ticket.lastMessageFromMe;
+        const owner=ticket.userId||lead.ownerId;
+        await setSetting("business_hours",JSON.stringify({enabled:false}));await setSetting("crm_sla_minutes","0.000001");await setSetting("crm_escalation_minutes","0.000001");
+        const last=await Message.findOne({where:{ticketId:ticket.id},order:[["createdAt","DESC"]]});
+        const before=await Event.count({where:{ticketId:ticket.id,type:"sla"}});
+        const shift=(days)=>sequelize.query('UPDATE "Messages" SET "createdAt"="createdAt"+make_interval(days => :d) WHERE "ticketId"=:t',{replacements:{d:days,t:ticket.id}});
+        try{
+          const bye=await Message.create({id:"sla-closing",ticketId:ticket.id,fromMe:false,body:"Obrigado!",mediaType:"chat",createdAt:new Date(+last.createdAt+1000)});await ticket.update({lastMessageFromMe:false});
+          await new Promise(r=>setTimeout(r,1200));await runLeadSlaAlertOnce();
+          assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before,"a thank-you raised an SLA alert");
+          await bye.destroy();
+          await shift(-5);
+          const late=await Message.create({id:"sla-old-wait",ticketId:ticket.id,fromMe:false,body:"Tenho uma dúvida",mediaType:"chat",createdAt:new Date(Date.now()-3*86400000)});
+          await runLeadSlaAlertOnce();
+          assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before,"a wait of 3 days raised an alert");
+          if(owner)assert.equal(await Notification.count({where:{userId:owner,kind:"sla_forgotten"}}),1,"the forgotten conversation was not told in the bell");
+          await runLeadSlaAlertOnce();
+          if(owner)assert.equal(await Notification.count({where:{userId:owner,kind:"sla_forgotten"}}),1,"the forgotten line came twice in the same day");
+          await late.destroy();
+        }finally{await Message.destroy({where:{id:["sla-closing","sla-old-wait"]}});await shift(5);await ticket.update({lastMessageFromMe:wasFromMe});await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
     });
     await test("private attachments reject unsigned links and support revocation", async () => {
       const fileHttp = axios.create({ baseURL: API, validateStatus: () => true, httpAgent: new (require("http").Agent)({ keepAlive: false }) });

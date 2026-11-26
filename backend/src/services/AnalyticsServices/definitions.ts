@@ -15,7 +15,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
   { key: "messagesSent", label: "Mensagens enviadas", unit: "count", kind: "period", description: "Mensagens digitadas e enviadas por uma pessoa pelo sistema (autoria real, uma por envio). Mensagens da IA, de campanhas automáticas e de robôs nunca entram. Abrir uma conversa não conta." },
   { key: "reactivated", label: "Contatos reativados", unit: "count", kind: "period", description: "Conversas em que a pessoa escreveu depois de 7 dias ou mais sem nenhuma mensagem de ninguém." },
   { key: "leadsWorked", label: "Leads trabalhados", unit: "count", kind: "period", description: "Leads distintos em que a pessoa registrou uma atividade (anotação, etapa, contato) ou enviou mensagem pela conversa do lead. Atividades automáticas do sistema não contam." },
-  { key: "pendingReply", label: "Conversas pendentes", unit: "count", kind: "now", description: "Conversas abertas da pessoa em que o cliente foi o último a escrever." },
+  { key: "pendingReply", label: "Conversas pendentes", unit: "count", kind: "now", description: "Conversas abertas da pessoa em que o cliente escreveu por último nos últimos 7 dias e espera resposta. Não contam lead matriculado, ganho ou perdido, aluno, nem mensagem que encerra o assunto (ok, obrigado, figurinha)." },
   { key: "inProgress", label: "Atendimentos em andamento", unit: "count", kind: "now", description: "Conversas com status Atendendo atribuídas à pessoa." },
   { key: "tasksOpen", label: "Tarefas abertas", unit: "count", kind: "now", description: "Tarefas da pessoa ainda não concluídas." },
   { key: "tasksOverdue", label: "Tarefas atrasadas", unit: "count", kind: "now", description: "Tarefas abertas com prazo anterior a agora." },

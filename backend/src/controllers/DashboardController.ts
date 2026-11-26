@@ -5,6 +5,7 @@ import sequelize from "../database";
 import UserQueue from "../models/UserQueue";
 import User from "../models/User";
 import { dayBounds, fmtDate, getAppTz, shiftDays } from "../helpers/AppTime";
+import { REPLY_NEEDED } from "../services/AnalyticsServices/AnalyticsService";
 import { businessMinutes, getBusinessConfig } from "../helpers/BusinessTime";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { portable } from "../helpers/sqlDialect";
@@ -95,7 +96,7 @@ const candidatesP = q(
     `SELECT t.id, t.contactId, c.name, ${since} AS at
      FROM Tickets t JOIN Contacts c ON c.id = t.contactId
      WHERE t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL
-       AND COALESCE(t.lastMessageType, 'chat') <> 'reaction' AND c.noReply = false
+       AND ${REPLY_NEEDED} AND c.noReply = false
        AND ${since} > ${`NOW() - INTERVAL '24 hours'`} AND ${live}
      ORDER BY ${since} ASC LIMIT 80`,
     rep

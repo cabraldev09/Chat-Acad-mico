@@ -251,10 +251,17 @@ export const publicView = async (form: EnrollmentForm, lead: Lead) => {
   const data = dataOf(form);
   const files = filesOf(form);
   const state = stateOf(data, files, !!form.consentAt);
-  const course = lead.courseId ? await Course.findByPk(lead.courseId, { attributes: ["name"] }) : null;
+  const course = lead.courseId ? await Course.findByPk(lead.courseId, { attributes: ["name", "institutionId"] }) : null;
+  // the brand on top of the page: the university of the course (or of the lead), else the logo of the brand
+  const Institution = (await import("../../models/Institution")).default;
+  const institutionId = (course && (course as any).institutionId) || (lead as any).institutionId || null;
+  const institution = institutionId ? await Institution.findByPk(institutionId, { attributes: ["name", "shortName", "logoFile"] }) : null;
+  const { brandLogoDataUri, logoDataUri } = await import("../../helpers/LogoFile");
   return {
     firstName: String(lead.name || "").trim().split(/\s+/)[0] || "",
     courseName: course?.name || null,
+    institutionName: institution ? institution.shortName || institution.name : null,
+    logo: (institution && logoDataUri(institution.logoFile)) || brandLogoDataUri(),
     data,
     files: files.map(f => ({ kind: f.kind, name: f.name, mime: f.mime, size: f.size })),
     fields: FIELDS,

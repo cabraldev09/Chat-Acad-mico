@@ -165,7 +165,7 @@ const MyPerformance = () => {
             {todoShown.length ? <PriorityList items={todoShown.map((it) => ({ key: it.key, tone: it.tone, title: it.title, detail: it.detail, onClick: it.link ? () => go(it.link) : undefined,
               onDismiss: () => act(`i${it.key}`, (undone) => dismissInsight(it.key, undone)) }))} /> : <EmptyNote>Tudo em dia. Nenhum ponto pedindo atenção agora.</EmptyNote>}
           </GlowPanel>
-          <GlowPanel id="reply" title={`Responder agora (${num(Math.max(0, Number(data.metrics.pendingReply || 0) - (data.focus.conversations || []).filter((v) => gone.has(`r${v.ticketId}`)).length))})`} sub="Conversas suas em que o cliente falou por último. As mais antigas primeiro.">
+          <GlowPanel id="reply" title={`Responder agora (${num(Math.max(0, Number(data.metrics.pendingReply || 0) - (data.focus.conversations || []).filter((v) => gone.has(`r${v.ticketId}`)).length))})`} sub="Leads em negociação que escreveram por último nos últimos 7 dias. Os mais antigos primeiro.">
             {waitingReply.length === 0 ? <EmptyNote>Ninguém esperando resposta sua.</EmptyNote> : (
               <div className="gv-rowlist">
                 {waitingReply.slice(0, 5).map((v) => (

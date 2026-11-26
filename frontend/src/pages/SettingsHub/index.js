@@ -1,16 +1,15 @@
 import CopilotSettings from "../../components/Copilot/Settings";
 import Operations from "./Operations";
-import Costs from "./Costs";
 import MetaTemplates from "./MetaTemplates";
 import Readiness from "./Readiness";
 import DataRetention from "./DataRetention";
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link, useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
-import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles, useMediaQuery } from "@material-ui/core";
+import { Button, FormControlLabel, InputAdornment, MenuItem, Switch, TextField, Typography, makeStyles, useMediaQuery } from "@material-ui/core";
 import {
-  ArrowUpRight, BellRing, Bot, Building2, Clock, CreditCard, Eye, EyeOff, FileInput, GraduationCap, KeyRound, ListTree, Plug, Search,
-  Settings2, Tags, Users, Workflow, Zap, FileText, ListChecks, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator, CircleDollarSign, Archive,
+  ArrowUpRight, BellRing, Building2, CalendarDays, Clock, CreditCard, FileInput, GraduationCap, KeyRound, ListTree, Search, Shuffle,
+  Settings2, Tags, Users, Workflow, FileText, ListChecks, SlidersHorizontal, Bug, Trash2, Mail, Calculator, Gauge, Archive,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -18,7 +17,8 @@ import SectionBoundary from "../../components/SectionBoundary";
 import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
 import TimezoneSelect from "../../components/TimezoneSelect";
-import { Automation, Capture, EfiSettings, HoursAndAlerts } from "../CRM/Settings";
+import { Capture, Distribution, EfiSettings, EnrollmentRules, HoursAndAlerts } from "../CRM/Settings";
+import { SetCard, Fields, Fold, SaveBar, Gap } from "./ui";
 import CoursePages from "../CRM/CoursePages";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
@@ -37,21 +37,25 @@ import { confirmDialog } from "../../components/ConfirmDialog";
 // not only the name of the group)
 const GROUPS = [
   { id: "prontidao", section: "Começar", label: "Prontidão do sistema", icon: ListChecks, hint: "O que falta para o time usar", keywords: "pendências falta configurar checklist" },
-  { id: "cadastros", section: "Equipe", label: "Equipe e cadastros", icon: ListTree, hint: "Usuários, polos, filas, etiquetas e funil", keywords: "usuários pessoas polos filas etiquetas funil etapas cursos propostas api webhooks" },
-  { id: "geral", section: "Atendimento", label: "Geral", icon: Settings2, hint: "Nome, fuso e acesso", keywords: "nome instituição fuso horário acesso login senha versão" },
-  { id: "atendimento", section: "Atendimento", label: "Horário e atendimento", icon: Clock, hint: "Expediente, prazos, distribuição e lembretes", keywords: "horário expediente fora do horário prazo distribuição automática lembrete sla fila espera capacidade disponibilidade escalar proposta cobrança acompanhamento" },
+  { id: "cadastros", section: "Equipe", label: "Equipe e cadastros", icon: ListTree, hint: "Usuários, polos, filas, etiquetas e funil", keywords: "usuários pessoas polos filas etiquetas funil etapas cursos propostas" },
+  { id: "geral", section: "Atendimento", label: "Geral", icon: Settings2, hint: "Nome da instituição e fuso", keywords: "nome instituição fuso horário" },
+  { id: "horario", section: "Atendimento", label: "Horário e prazos", icon: Clock, hint: "Expediente e prazos de resposta", keywords: "horário expediente comercial dias semana prazo sla lead sem resposta alerta escalar gestão responder em até meta tempo de resposta" },
+  { id: "atendimento", section: "Atendimento", label: "Distribuição e lembretes", icon: Shuffle, hint: "Quem recebe, retornos e lembretes", keywords: "distribuição rodízio consultores cadastrar crm primeiro contato cliente volta mesmo consultor fora do horário aviso chatbot lembrete agente ia tá por aí proposta cobrança retorno tarefas disponibilidade capacidade equipe" },
   { id: "tutoria", section: "Atendimento", label: "Tutoria", icon: BellRing, hint: "Boas-vindas, número e prazo do 1º contato", keywords: "tutor boas-vindas ambientação número prazo primeiro contato" },
-  { id: "copiloto", section: "Atendimento", label: "Copiloto", icon: Workflow, hint: "Processo de vendas e sugestões da IA", keywords: "processo etapas sugestão ia consultor limite" },
-  { id: "modelos", section: "WhatsApp e custos", label: "Modelos da Meta", icon: FileText, hint: "Modelos por departamento e onde cada um é usado", keywords: "template modelo meta aprovado utilidade marketing abertura autorizar envio categoria" },
-  { id: "meta", section: "WhatsApp e custos", label: "Custos", icon: CircleDollarSign, hint: "Meta e IA, orçamento e como gastar menos", keywords: "custo gasto preço orçamento openai anthropic meta fatura limite diário tokens" },
-  { id: "captacao", section: "Matrícula", label: "Captação", icon: FileInput, hint: "Formulário público e páginas por curso", keywords: "formulário site página curso lead captação" },
-  { id: "pagamentos", section: "Matrícula", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true, system: true, keywords: "efí pix boleto taxa pagamento" },
-  { id: "regras", section: "Matrícula", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true, keywords: "vagas semestres previsão análise curricular regras" },
-  { id: "email", section: "Sistema", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true, system: true, keywords: "email e-mail envio smtp resend modelo pendências diário" },
-  { id: "entregas", section: "Sistema", label: "Entregas e arquivos", icon: SlidersHorizontal, hint: "Mensagens interrompidas e acesso a arquivos", keywords: "entrega mensagem interrompida conferir reenviar arquivo revogar link operação" },
-  { id: "retencao", section: "Sistema", label: "Retenção de dados", icon: Archive, hint: "Prazo para apagar conversas e áudios antigos", admin: true, system: true, keywords: "retenção lgpd apagar conversas áudios prazo dias expurgo simulação privacidade" },
+  { id: "copiloto", section: "Atendimento", label: "Copiloto", icon: Workflow, hint: "Processo de vendas e sugestões da IA", keywords: "processo etapas sugestão ia consultor limite acompanhamento automático conexões" },
+  { id: "calendario", section: "Matrícula", label: "Calendário e documentos", icon: CalendarDays, hint: "Períodos, turmas, prazos e documentos", keywords: "período ingresso padrão calendário turma entrada prazo matrícula boleto documentos exigidos cobrar" },
+  { id: "captacao", section: "Matrícula", label: "Captação", icon: FileInput, hint: "Formulário público e páginas por curso", keywords: "formulário site página curso lead captação utm" },
+  { id: "pagamentos", section: "Matrícula", label: "Pagamentos", icon: CreditCard, hint: "Conta da Efí para a taxa de matrícula", admin: true, system: true, keywords: "efí boleto bolix pix taxa pagamento client id secret wallet repasse comissão vendedor vencimento tarifa" },
+  { id: "regras", section: "Matrícula", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true, keywords: "vagas semestres previsão análise curricular regras disciplinas extras" },
+  { id: "modelos", section: "WhatsApp e custos", label: "Modelos da Meta", icon: FileText, hint: "Modelos e onde cada um é usado", keywords: "template modelo meta aprovado utilidade marketing abertura autorizar envio categoria" },
+  { id: "limites", section: "WhatsApp e custos", label: "Limites e orçamento", icon: Gauge, hint: "Teto de gasto da Meta e da IA", keywords: "custo gasto preço orçamento limite diário mês teto tokens cota disparos marketing cotação dólar" },
+  { id: "email", section: "Sistema", label: "E-mail", icon: Mail, hint: "Conta que envia os e-mails", admin: true, system: true, keywords: "email e-mail envio smtp resend remetente gmail" },
+  { id: "entregas", section: "Sistema", label: "Entregas e arquivos", icon: SlidersHorizontal, hint: "Mensagens interrompidas e acesso a arquivos", keywords: "entrega mensagem interrompida conferir arquivo revogar link" },
+  { id: "retencao", section: "Sistema", label: "Retenção de dados", icon: Archive, hint: "Prazo para apagar conversas e áudios antigos", admin: true, system: true, keywords: "retenção lgpd apagar conversas áudios prazo dias simulação privacidade" },
   { id: "erros", section: "Sistema", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true, keywords: "erro falha tela navegador" },
 ];
+// old links (alerts, bookmarks) to groups that were renamed or merged
+const ALIASES = { meta: "limites", custos: "limites", operacao: "limites" };
 const plainText = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 const useStyles = makeStyles((theme) => ({
@@ -93,39 +97,8 @@ const useStyles = makeStyles((theme) => ({
   dot: { width: 9, height: 9, borderRadius: "50%", flexShrink: 0 },
 }));
 
-const STATUS = {
-  CONNECTED: ["Conectado", "#16a34a"],
-  qrcode: ["Aguardando o QR Code", "#d97706"],
-  PAIRING: ["Pareando", "#d97706"],
-  OPENING: ["Abrindo", "#d97706"],
-  DISCONNECTED: ["Desconectado", "#dc2626"],
-  TIMEOUT: ["Sem resposta", "#dc2626"],
-};
 const HOURS = [4, 8, 12, 24, 48, 72];
 const REMINDER = [0, 15, 30, 60, 120];
-
-const Card = ({ title, sub, children }) => {
-  const classes = useStyles();
-  return (
-    <Paper variant="outlined" className={classes.card}>
-      <div><div className={classes.cardTitle}>{title}</div>{sub && <div className={classes.hint}>{sub}</div>}</div>
-      {children}
-    </Paper>
-  );
-};
-
-// what is rarely changed (or only for old installations) stays folded, under the main controls
-const Advanced = ({ children, label = "Avançado" }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <Button size="small" onClick={() => setOpen((v) => !v)} aria-expanded={open} style={{ justifySelf: "start", textTransform: "none", fontWeight: 600 }}>
-        {open ? "▾" : "▸"} {label}
-      </Button>
-      {open && children}
-    </div>
-  );
-};
 
 // the settings of the system, saved as soon as they change
 // a failed load never shows the forms with default values (a change there would overwrite the real settings): it shows the error
@@ -166,108 +139,54 @@ const useCrm = (enabled) => {
   return { s, setS, save, users, failed, retry: () => setAttempt((n) => n + 1) };
 };
 
-// The old single token has full access to the API, of every polo. It stays on (an integration nobody knows about may use it), but the
-// recommendation is to make a token per integration in API e webhooks and turn this one off.
-const LegacyTokenSwitch = () => {
-  const [state, setState] = useState(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    api.get("/api-tokens/legacy").then(({ data }) => setState(data)).catch(() => setFailed(true));
-  }, []);
-  const change = async (enabled) => {
-    try { const { data } = await api.put("/api-tokens/legacy", { enabled }); setState(data); toast.success(enabled ? "Token antigo ligado." : "Token antigo desligado."); } catch (err) { toastError(err); }
-  };
-  if (failed) return <Typography variant="body2" color="error">Não foi possível ler se o token antigo está ligado.</Typography>;
-  if (!state) return null;
-  return (
-    <div>
-      <FormControlLabel control={<Switch color="primary" checked={!!state.enabled} onChange={(e) => { const v = e.target.checked; change(v); }} />} label="Aceitar este token antigo na API" />
-      <Typography variant="body2" style={{ color: state.enabled ? "#92400e" : undefined }}>
-        {state.enabled
-          ? "Recomendado desligar: este token tem acesso total, a todos os polos. Crie um token por integração, com só o que ela precisa, e desligue este."
-          : "Desligado: a API recusa este token."}
-        {" "}Último uso: {state.lastUsedAt ? new Date(state.lastUsedAt).toLocaleString("pt-BR") : "nunca registrado"}.
-        {state.usage && state.usage.routes && Object.keys(state.usage.routes).length > 0 && (
-          <> Usado em: {Object.entries(state.usage.routes).sort((a, b) => b[1].count - a[1].count).slice(0, 4).map(([route, u]) => `${route} (${u.count}×)`).join(", ")}.</>
-        )}
-      </Typography>
-    </div>
-  );
-};
+const Geral = ({ values, save }) => (
+  <SetCard title="Instituição" sub="O nome que o assistente de IA usa para se apresentar e nas mensagens prontas. Todos os horários e o “hoje” dos relatórios seguem o fuso.">
+    <Fields>
+      <TextField variant="outlined" size="small" label="Nome da instituição" defaultValue={values.institution_name || "Cruzeiro do Sul Virtual"}
+        inputProps={{ maxLength: 80 }} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (values.institution_name || "Cruzeiro do Sul Virtual")) save("institution_name", v); }} />
+      <TimezoneSelect value={values.appTimezone || "America/Porto_Velho"} onChange={(v) => save("appTimezone", v)} />
+    </Fields>
+  </SetCard>
+);
 
-const Geral = ({ values, save, admin, system }) => {
-  const classes = useStyles();
-  const [show, setShow] = useState(false);
-  const token = values.userApiToken || "";
-  return (
-    <>
-      <Card title="Instituição" sub="O nome que o assistente de IA usa para se apresentar e nas mensagens prontas.">
-        <TextField variant="outlined" size="small" label="Nome da instituição" defaultValue={values.institution_name || "Cruzeiro do Sul Virtual"} style={{ maxWidth: 420, width: "100%" }}
-          inputProps={{ maxLength: 80 }} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (values.institution_name || "Cruzeiro do Sul Virtual")) save("institution_name", v); }}
-          helperText="Ex.: “Olá! Eu sou a Estela, assistente virtual da Cruzeiro do Sul Virtual.”" />
-      </Card>
-      <Card title="Empresa e horário" sub="Todos os horários e o “hoje” dos relatórios seguem este fuso.">
-        <TimezoneSelect value={values.appTimezone || "America/Porto_Velho"} onChange={(v) => save("appTimezone", v)} />
-        <div className={classes.hint}>Os dados são guardados em UTC; só a exibição e a contagem do dia mudam.</div>
-      </Card>
-      {/* the old single API token: rarely used (a QR Code number is given to a person in Conexões, by the management) */}
-      {system && (
-        <Advanced>
-          <Card title="Integração" sub="Token usado pelas integrações externas (API). Trate como uma senha.">
-            <div className={classes.row}>
-              <TextField style={{ flex: "1 1 260px" }} variant="outlined" size="small" label="Token da API" value={token} type={show ? "text" : "password"} InputProps={{ readOnly: true }} />
-              <Button variant="outlined" onClick={() => setShow((v) => !v)} startIcon={show ? <EyeOff size={15} /> : <Eye size={15} />}>{show ? "Ocultar" : "Mostrar"}</Button>
-              <Button variant="outlined" disabled={!token} startIcon={<Copy size={15} />} onClick={() => { navigator.clipboard.writeText(token); toast.success("Token copiado."); }}>Copiar</Button>
-            </div>
-            <div className={classes.hint}>Para criar tokens por integração e cadastrar webhooks, use <Link to="/integrations">API e webhooks</Link>.</div>
-            <LegacyTokenSwitch />
-          </Card>
-        </Advanced>
-      )}
-    </>
-  );
-};
-
-const Horario = ({ values, save, crm }) => {
-  const classes = useStyles();
-  return (
-    <>
-      <Card title="Expediente e alerta de lead sem resposta" sub="Com o horário ligado, o tempo de resposta e os alertas contam só as horas de trabalho.">
-        <HoursAndAlerts s={crm.s} save={crm.save} />
-      </Card>
-      <Card title="Meta de tempo de resposta" sub="Usada nas Estatísticas para dizer quantos clientes foram respondidos no prazo e quem está esperando.">
-        <TextField select variant="outlined" size="small" label="Responder em até" value={Number(values.response_sla_minutes || 15)} onChange={(e) => save("response_sla_minutes", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }}>
+const Horario = ({ values, save, crm }) => (
+  <>
+    <SetCard title="Expediente e lead sem resposta" sub="Com o horário ligado, o tempo de resposta e os alertas contam só as horas de trabalho.">
+      <HoursAndAlerts s={crm.s} save={crm.save} />
+    </SetCard>
+    <Operations part="prazos" />
+    <SetCard title="Meta de tempo de resposta" sub="Usada nas Estatísticas para contar quem foi respondido no prazo. Salva ao escolher.">
+      <Fields>
+        <TextField select variant="outlined" size="small" label="Responder em até" value={Number(values.response_sla_minutes || 15)} onChange={(e) => save("response_sla_minutes", e.target.value)} InputLabelProps={{ shrink: true }}>
           {[5, 10, 15, 30, 60].map((m) => (<MenuItem key={m} value={m}>{m} minutos</MenuItem>))}
         </TextField>
-        <div className={classes.hint}>É a meta geral das conversas. O alerta de lead novo sem resposta, acima, é outro aviso e tem o próprio prazo.</div>
-      </Card>
-    </>
-  );
-};
+      </Fields>
+    </SetCard>
+  </>
+);
 
 const Atendimento = ({ values, save, crm }) => {
-  const classes = useStyles();
+  const reactivationOff = String(values.ai_reactivation ?? "1") === "0";
   return (
     <>
-      <Automation s={crm.s} setS={crm.setS} save={crm.save} users={crm.users} />
-      <Card title="Chatbot" sub="Quando o bot lembra quem parou no meio do menu.">
-        <TextField select variant="outlined" size="small" label="Lembrar quem largou o chatbot após" value={Number(values.chatbot_reminder_minutes ?? 30)} onChange={(e) => save("chatbot_reminder_minutes", e.target.value)} style={{ maxWidth: 320 }} InputLabelProps={{ shrink: true }}>
-          {REMINDER.map((m) => (<MenuItem key={m} value={m}>{m === 0 ? "Não lembrar" : `${m} minutos`}</MenuItem>))}
-        </TextField>
-        <div className={classes.hint}>Os menus e fluxos em si ficam em <Link to="/chatbot">Chatbot e fluxos</Link>.</div>
-      </Card>
-      <Card title="Agente de IA: lead que parou de responder" sub="O agente manda “Tá por aí?” depois deste tempo de silêncio (a qualquer hora) e mais dois lembretes, de 3 h e 9 h, no horário comercial.">
-        <div className={classes.row}>
-          <TextField select variant="outlined" size="small" label="Lembretes do agente" value={String(values.ai_reactivation ?? "1") === "0" ? "0" : "1"} onChange={(e) => save("ai_reactivation", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }}>
+      <Distribution s={crm.s} setS={crm.setS} save={crm.save} users={crm.users} />
+      <SetCard title="Lembretes automáticos" sub="Salvos ao escolher. O agente manda “Tá por aí?” depois do silêncio e mais dois lembretes no horário comercial; quem continua sem responder vai para o consultor.">
+        <Fields>
+          <TextField select variant="outlined" size="small" label="Lembrar quem largou o chatbot após" value={Number(values.chatbot_reminder_minutes ?? 30)} onChange={(e) => save("chatbot_reminder_minutes", e.target.value)} InputLabelProps={{ shrink: true }}>
+            {REMINDER.map((m) => (<MenuItem key={m} value={m}>{m === 0 ? "Não lembrar" : `${m} minutos`}</MenuItem>))}
+          </TextField>
+          <Gap />
+          <TextField select variant="outlined" size="small" label="Lembretes do agente de IA" value={reactivationOff ? "0" : "1"} onChange={(e) => save("ai_reactivation", e.target.value)} InputLabelProps={{ shrink: true }}>
             <MenuItem value="1">Ligados</MenuItem>
             <MenuItem value="0">Desligados</MenuItem>
           </TextField>
-          <TextField select variant="outlined" size="small" label="Primeiro lembrete após" value={Number(values.ai_reactivation_minutes ?? 10)} onChange={(e) => save("ai_reactivation_minutes", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }} disabled={String(values.ai_reactivation ?? "1") === "0"} inputProps={{ "data-testid": "ai-reactivation-minutes" }}>
+          <TextField select variant="outlined" size="small" label="Primeiro lembrete do agente após" value={Number(values.ai_reactivation_minutes ?? 10)} onChange={(e) => save("ai_reactivation_minutes", e.target.value)} InputLabelProps={{ shrink: true }} disabled={reactivationOff} inputProps={{ "data-testid": "ai-reactivation-minutes" }}>
             {[5, 10, 15, 20, 30, 60].map((m) => (<MenuItem key={m} value={m}>{m} minutos</MenuItem>))}
           </TextField>
-        </div>
-        <div className={classes.hint}>Quem já disse o curso e continua sem responder 2 horas depois do último lembrete vai para o consultor do polo.</div>
-      </Card>
+        </Fields>
+      </SetCard>
+      <Operations part="acompanhamento" />
+      <Operations part="equipe" />
     </>
   );
 };
@@ -276,35 +195,38 @@ const Tutoria = ({ values, save }) => {
   const classes = useStyles();
   const { whatsApps } = useContext(WhatsAppsContext);
   const numbers = (whatsApps || []).filter((w) => (w.channel || "whatsapp") === "whatsapp" || w.channel === "whatsapp_cloud");
+  // the old default number (before Conexões → Função do número = Tutoria) only shows where it is still set
+  const legacy = Number(values.tutoria_whatsapp_id || 0) > 0;
   return (
     <>
-      <Card title="Boas-vindas do tutor (texto da empresa)" sub="O texto padrão que o tutor recebe pronto na conversa do aluno recém-matriculado. Cada tutor pode escrever o próprio em Ambientação → Meu texto de boas-vindas; quem não escrever usa este.">
+      <SetCard title="Boas-vindas do tutor" sub="O texto que o tutor recebe pronto na conversa do aluno recém-matriculado. O tutor edita e envia; o sistema nunca envia sozinho. Cada tutor pode ter o próprio em Ambientação.">
         <TextField fullWidth multiline rows={5} variant="outlined" label="Mensagem de boas-vindas da empresa"
           defaultValue={values.onboarding_welcome_template || ""} key={values.onboarding_welcome_template || "vazio"}
           placeholder="{{saudacao}} Eu sou {{tutor}}, tutor(a) da {{instituicao}}[[ no polo {{polo}}]], e vou acompanhar você[[ no curso de {{curso}}]]..."
           onBlur={(e) => { if (e.target.value !== (values.onboarding_welcome_template || "")) save("onboarding_welcome_template", e.target.value); }}
           InputLabelProps={{ shrink: true }} />
-        <div className={classes.hint}>O sistema nunca envia esta mensagem sozinho: o tutor vê o texto no campo de mensagem, edita se quiser e envia. Variáveis, preenchidas com os dados da matrícula: {"{{saudacao}}"} (responde quem escreveu primeiro: "Olá, Ana, que bom que você chamou!"), {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"}, {"{{polo}}"}, {"{{curso}}"} e {"{{instituicao}}"}. O trecho entre [[ e ]] só aparece quando todas as variáveis dentro dele têm valor (por exemplo, [[ no polo {"{{polo}}"}]]). Em branco, vale um texto padrão em que o tutor se apresenta e convida para a ambientação. Para quem escreve sem ter matrícula no sistema, o tutor recebe outro texto, que pede o RGM.</div>
-      </Card>
-      <Card title="Contato da tutoria na matrícula" sub="Ao confirmar a matrícula, o aluno recebe na conversa do consultor o número da tutoria, para salvar e mandar um oi: a conversa no número da Tutoria começa gratuita.">
-        <TextField variant="outlined" size="small" label="Número da tutoria (com DDD)" placeholder="69 99325-8103"
-          defaultValue={values.tutoria_numero || ""} key={`tn-${values.tutoria_numero || ""}`} style={{ maxWidth: 260, width: "100%" }} InputLabelProps={{ shrink: true }}
-          onBlur={(e) => { const v = e.target.value.replace(/\D/g, ""); const full = v && (v.length === 10 || v.length === 11) ? `55${v}` : v; if (full !== (values.tutoria_numero || "")) save("tutoria_numero", full); }} />
-        <div className={classes.hint}>Em branco, o sistema usa o número que a Meta informa para a conexão de Tutoria. Fora das 24 horas, o aviso sai pelo modelo escolhido em Modelos da Meta → Em uso.</div>
-      </Card>
-      <Card title="Prazo do primeiro contato" sub="O sistema avisa a tutoria e a coordenação quando o aluno passa deste tempo sem contato depois da matrícula.">
-        <TextField select variant="outlined" size="small" label="Alertar após" value={Number(values.onboarding_sla_hours || 24)} onChange={(e) => save("onboarding_sla_hours", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }}>
-          {HOURS.map((h) => (<MenuItem key={h} value={h}>{h} horas</MenuItem>))}
-        </TextField>
-      </Card>
-      <Advanced>
-      <Card title="Número padrão da tutoria (instalações antigas)" sub="Prefira marcar o número da tutoria em Conexões → Função do número = Tutoria. Sem isso, a conversa sai pelo número do próprio tutor e, quando ele não tem um, por este.">
-        <TextField select variant="outlined" size="small" label="Número padrão da tutoria" value={Number(values.tutoria_whatsapp_id || 0)} onChange={(e) => save("tutoria_whatsapp_id", e.target.value)} style={{ maxWidth: 360 }} InputLabelProps={{ shrink: true }}>
-          <MenuItem value={0}>Nenhum (usa um número compartilhado)</MenuItem>
-          {numbers.map((w) => (<MenuItem key={w.id} value={w.id}>{w.name}</MenuItem>))}
-        </TextField>
-      </Card>
-      </Advanced>
+        <div className={classes.hint}>Variáveis: {"{{saudacao}}"}, {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"}, {"{{polo}}"}, {"{{curso}}"} e {"{{instituicao}}"}. O trecho entre [[ e ]] só aparece quando as variáveis dentro dele têm valor. Em branco, vale o texto padrão.</div>
+      </SetCard>
+      <SetCard title="Número e prazo" sub="Ao confirmar a matrícula, o aluno recebe o número da tutoria para salvar. Passado o prazo sem contato, a tutoria e a coordenação são avisadas.">
+        <Fields>
+          <TextField variant="outlined" size="small" label="Número da tutoria (com DDD)" placeholder="69 99325-8103" helperText="Em branco, usa o número da conexão de Tutoria"
+            defaultValue={values.tutoria_numero || ""} key={`tn-${values.tutoria_numero || ""}`} InputLabelProps={{ shrink: true }}
+            onBlur={(e) => { const v = e.target.value.replace(/\D/g, ""); const full = v && (v.length === 10 || v.length === 11) ? `55${v}` : v; if (full !== (values.tutoria_numero || "")) save("tutoria_numero", full); }} />
+          <TextField select variant="outlined" size="small" label="Avisar sem primeiro contato após" value={Number(values.onboarding_sla_hours || 24)} onChange={(e) => save("onboarding_sla_hours", e.target.value)} InputLabelProps={{ shrink: true }}>
+            {HOURS.map((h) => (<MenuItem key={h} value={h}>{h} horas</MenuItem>))}
+          </TextField>
+        </Fields>
+      </SetCard>
+      {legacy && (
+        <SetCard title="Número padrão da tutoria (instalações antigas)" sub="Prefira marcar o número em Conexões → Função do número = Tutoria. Escolha “Nenhum” depois disso.">
+          <Fields>
+            <TextField select variant="outlined" size="small" label="Número padrão da tutoria" value={Number(values.tutoria_whatsapp_id || 0)} onChange={(e) => save("tutoria_whatsapp_id", e.target.value)} InputLabelProps={{ shrink: true }}>
+              <MenuItem value={0}>Nenhum</MenuItem>
+              {numbers.map((w) => (<MenuItem key={w.id} value={w.id}>{w.name}</MenuItem>))}
+            </TextField>
+          </Fields>
+        </SetCard>
+      )}
     </>
   );
 };
@@ -363,19 +285,18 @@ const Cadastros = ({ admin, system }) => {
 const RegrasAcademicas = () => {
   const classes = useStyles();
   const [r, setR] = useState(null);
+  const [saved, setSaved] = useState(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api.get("/analysis/rules").then(({ data }) => setR(data)).catch(toastError); }, []);
+  useEffect(() => { api.get("/analysis/rules").then(({ data }) => { setR(data); setSaved(data); }).catch(toastError); }, []);
   if (!r) return <Typography className={classes.hint}>Carregando...</Typography>;
   const add = r.additionalSemesterCapacityRule || { type: "SAME_AS_LAST_PERIOD" };
   const save = async () => {
     setBusy(true);
-    try { const { data } = await api.put("/analysis/rules", r); setR(data); toast.success("Regras salvas. As próximas análises e recálculos já usam estes valores."); } catch (e) { toastError(e); }
+    try { const { data } = await api.put("/analysis/rules", r); setR(data); setSaved(data); toast.success("Regras salvas. As próximas análises e recálculos já usam estes valores."); } catch (e) { toastError(e); }
     setBusy(false);
   };
   return (
-    <Paper variant="outlined" className={classes.card}>
-      <div className={classes.cardTitle}>Regras das previsões</div>
-      <div className={classes.hint}>Valem para a análise curricular (previsão de ingresso) e para a análise acadêmica (previsão de formatura). Uma análise já feita só muda quando for recalculada.</div>
+    <SetCard title="Regras das previsões" sub="Valem para a análise curricular e para a acadêmica. Uma análise já feita só muda quando for recalculada.">
       <div className={classes.row}>
         <TextField size="small" variant="outlined" type="number" label="Disciplinas extras por semestre" value={r.extraSubjectsAllowed} onChange={(e) => setR({ ...r, extraSubjectsAllowed: e.target.value })} style={{ width: 240 }} InputLabelProps={{ shrink: true }} helperText="Hoje: +3 além das do período" />
         <TextField size="small" variant="outlined" type="number" label="Máximo de disciplinas por semestre" value={r.maximumSubjectsPerSemester ?? ""} onChange={(e) => setR({ ...r, maximumSubjectsPerSemester: e.target.value === "" ? null : e.target.value })} style={{ width: 260 }} InputLabelProps={{ shrink: true }} helperText="Em branco: sem teto" />
@@ -390,8 +311,8 @@ const RegrasAcademicas = () => {
         {add.type === "FIXED_VALUE" && <TextField size="small" variant="outlined" type="number" label="Disciplinas por semestre" value={add.value || ""} onChange={(e) => setR({ ...r, additionalSemesterCapacityRule: { type: "FIXED_VALUE", value: e.target.value } })} style={{ width: 200 }} InputLabelProps={{ shrink: true }} />}
         <FormControlLabel control={<Switch color="primary" checked={!!r.reviewCountsAsPending} onChange={(e) => setR({ ...r, reviewCountsAsPending: e.target.checked })} />} label="Disciplina “a revisar” conta como pendente" />
       </div>
-      <div><Button variant="contained" color="primary" onClick={save} disabled={busy}>Salvar</Button></div>
-    </Paper>
+      <SaveBar dirty={JSON.stringify(r) !== JSON.stringify(saved)} busy={busy} onSave={save} onDiscard={() => setR(saved)} />
+    </SetCard>
   );
 };
 
@@ -400,13 +321,15 @@ const RegrasAcademicas = () => {
 const Email = () => {
   const classes = useStyles();
   const [f, setF] = useState(null);
+  const [savedF, setSavedF] = useState(null);
   const [pass, setPass] = useState("");
   const [key, setKey] = useState("");
   const [inbound, setInbound] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api.get("/mail/settings").then(({ data }) => setF(data)).catch(toastError); }, []);
+  useEffect(() => { api.get("/mail/settings").then(({ data }) => { setF(data); setSavedF(data); }).catch(toastError); }, []);
   if (!f) return <Typography className={classes.hint}>Carregando...</Typography>;
+  const dirty = JSON.stringify(f) !== JSON.stringify(savedF) || !!pass.trim() || !!key.trim() || !!inbound.trim();
   const set = (k) => (e) => { const value = e.target.value; setF((cur) => ({ ...cur, [k]: value })); };
   const resend = f.provider === "resend";
   const ready = resend ? f.hasResendKey && !!f.fromEmail : f.hasPassword;
@@ -421,6 +344,7 @@ const Email = () => {
       if (inbound.trim()) body.inboundSecret = inbound.trim();
       const { data } = await api.put("/mail/settings", body);
       setF(data);
+      setSavedF(data);
       setPass("");
       setKey("");
       setInbound("");
@@ -439,11 +363,7 @@ const Email = () => {
       InputProps={{ endAdornment: <InputAdornment position="end"><Button size="small" onClick={() => setShow((v) => !v)}>{show ? "Ocultar" : "Mostrar"}</Button></InputAdornment> }} />
   );
   return (
-    <Paper variant="outlined" className={classes.card}>
-      <div className={classes.cardTitle}>Envio de e-mails do sistema</div>
-      <div className={classes.hint}>
-        Todos os e-mails do sistema saem daqui: recuperação de senha, boas-vindas da equipe, afiliados, portal do aluno e avisos de retorno.
-      </div>
+    <SetCard title="Conta que envia" sub="Todos os e-mails do sistema saem daqui: senha, boas-vindas da equipe, afiliados, portal do aluno e avisos.">
       <TextField select size="small" variant="outlined" label="Como enviar" value={f.provider || "smtp"} onChange={set("provider")} style={{ maxWidth: 360 }} InputLabelProps={{ shrink: true }}>
         <MenuItem value="resend">Resend (recomendado)</MenuItem>
         <MenuItem value="smtp">Conta de e-mail (SMTP, ex.: Gmail)</MenuItem>
@@ -486,12 +406,11 @@ const Email = () => {
       )}
       <TextField size="small" variant="outlined" label="Nome que aparece como remetente" value={f.fromName || ""} onChange={set("fromName")} fullWidth InputLabelProps={{ shrink: true }} />
       <TextField size="small" variant="outlined" label="Respostas vão para (opcional)" value={f.replyTo || ""} onChange={set("replyTo")} fullWidth placeholder="atendimento@mail.cruzeirodosulvirtual.app.br" InputLabelProps={{ shrink: true }} />
-      <div className={classes.row}>
-        <Button variant="contained" color="primary" onClick={save} disabled={busy}>Salvar</Button>
-        <Button variant="outlined" onClick={test} disabled={busy || !ready}>Enviar e-mail de teste para mim</Button>
-        <span className={classes.hint}>{ready ? (resend ? "Chave e remetente salvos." : "Senha salva.") : resend ? "Falta a chave ou o remetente." : "Falta digitar a senha de app."}</span>
-      </div>
-    </Paper>
+      <SaveBar dirty={dirty} busy={busy} onSave={save} onDiscard={() => { setF(savedF); setPass(""); setKey(""); setInbound(""); }}
+        note={ready ? (resend ? "Chave e remetente salvos." : "Senha salva.") : resend ? "Falta a chave ou o remetente." : "Falta a senha de app."}>
+        <Button variant="outlined" onClick={test} disabled={busy || !ready || dirty}>Enviar e-mail de teste para mim</Button>
+      </SaveBar>
+    </SetCard>
   );
 };
 
@@ -512,9 +431,8 @@ const EmailModels = () => {
     setBusy(false);
   };
   return (
-    <Paper variant="outlined" className={classes.card}>
-      <div className={classes.cardTitle}>E-mails do sistema</div>
-      <div className={classes.hint}>Todos usam o mesmo modelo, com a marca, um botão principal e o motivo do envio. Escolha um para ver como a pessoa recebe.</div>
+    <SetCard>
+      <Fold label="Ver os e-mails que o sistema envia">
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
         <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
           {list.map((t) => (
@@ -536,7 +454,8 @@ const EmailModels = () => {
           </>}
         </div>
       </div>
-    </Paper>
+      </Fold>
+    </SetCard>
   );
 };
 
@@ -585,7 +504,7 @@ const ErrosDeTela = () => {
   const tag = (text, color) => <span style={{ fontSize: 11.5, padding: "2px 8px", borderRadius: 10, background: `${color}22`, color, whiteSpace: "nowrap" }}>{text}</span>;
 
   return (
-    <Paper variant="outlined" className={classes.card}>
+    <SetCard>
       <div className={classes.row}>
         <Button variant={view === "resumo" ? "contained" : "outlined"} color="primary" onClick={() => setView("resumo")}>Resumo</Button>
         <Button variant={view === "registros" ? "contained" : "outlined"} color="primary" onClick={() => setView("registros")}>Registros</Button>
@@ -648,7 +567,7 @@ const ErrosDeTela = () => {
           ))}
         </>
       )}
-    </Paper>
+    </SetCard>
   );
 };
 
@@ -662,7 +581,7 @@ const SettingsHub = () => {
   const system = isStrictAdmin(user);
   const groups = useMemo(() => GROUPS.filter((g) => (!g.admin || admin) && (!g.system || system)), [admin, system]);
   const asked = new URLSearchParams(search).get("secao");
-  const wanted = asked === "horario" ? "atendimento" : asked;
+  const wanted = ALIASES[asked] || asked;
   const [group, setGroup] = useState(groups.some((g) => g.id === wanted) ? wanted : "prontidao");
   // the phone: the list first; a group opens in full (and "Voltar" brings the list back)
   const narrow = useMediaQuery((theme) => theme.breakpoints.down("sm"), { noSsr: true });
@@ -680,8 +599,7 @@ const SettingsHub = () => {
   }, [group, values]);
   const crm = useCrm(true);
 
-  // old links to the group that was split ("operacao") open where its main part went
-  useEffect(() => { const w = wanted === "operacao" ? "modelos" : wanted; if (groups.some((g) => g.id === w)) setGroup(w); }, [wanted, groups]);
+  useEffect(() => { if (groups.some((g) => g.id === wanted)) setGroup(wanted); }, [wanted, groups]);
   const panelRef = React.useRef(null);
   const open = (id) => {
     setGroup(id); setListOnPhone(false); history.replace(`/configuracoes?secao=${id}`);
@@ -737,21 +655,23 @@ const SettingsHub = () => {
               <div className={classes.h}>{current.label}</div>
               <div className={classes.sub}>{current.hint}</div>
             </div>
-            {!values && valuesFailed ? <ErrorState title="Não foi possível carregar as configurações." text="Nada foi alterado. Tente de novo para editar." onRetry={retryValues} /> : crm.failed && ["horario", "atendimento", "captacao"].includes(current.id) ? <ErrorState title="Não foi possível carregar as regras do atendimento." text="Nada foi alterado. Tente de novo para editar." onRetry={crm.retry} /> : !values ? <Typography className={classes.hint}>Carregando...</Typography> : (
+            {!values && valuesFailed ? <ErrorState title="Não foi possível carregar as configurações." text="Nada foi alterado. Tente de novo para editar." onRetry={retryValues} /> : crm.failed && ["horario", "atendimento", "calendario", "captacao"].includes(current.id) ? <ErrorState title="Não foi possível carregar as regras do atendimento." text="Nada foi alterado. Tente de novo para editar." onRetry={crm.retry} /> : !values ? <Typography className={classes.hint}>Carregando...</Typography> : (
               <SectionBoundary name={current.id} resetKey={current.id}>
                 {current.id === "prontidao" && <Readiness />}
                 {current.id === "copiloto" && <CopilotSettings />}
                 {current.id === "entregas" && <Operations part="entregas" />}
-                {current.id === "meta" && <Costs />}
+                {current.id === "limites" && <Operations part="limites" />}
                 {current.id === "modelos" && <><Operations part="modelos" /><MetaTemplates values={values} save={save} /></>}
 
-                {current.id === "geral" && <Geral values={values} save={save} admin={admin} system={system} />}
-                {current.id === "atendimento" && <><Horario values={values} save={save} crm={crm} /><Atendimento values={values} save={save} crm={crm} /><Operations part="atendimento" /></>}
+                {current.id === "geral" && <Geral values={values} save={save} />}
+                {current.id === "horario" && <Horario values={values} save={save} crm={crm} />}
+                {current.id === "atendimento" && <Atendimento values={values} save={save} crm={crm} />}
+                {current.id === "calendario" && <EnrollmentRules s={crm.s} setS={crm.setS} save={crm.save} />}
                 {current.id === "tutoria" && <Tutoria values={values} save={save} />}
                 {current.id === "captacao" && (
                   <>
                     <Capture s={crm.s} setS={crm.setS} save={crm.save} />
-                    <div style={{ marginTop: 20 }}><CoursePages /></div>
+                    <CoursePages />
                   </>
                 )}
                 {current.id === "pagamentos" && system && <Pagamentos />}
