@@ -175,6 +175,34 @@ export const listByKind = async (req: Request, res: Response): Promise<Response>
 };
 
 // "Carregar mídia": brings the file of a message that came without it
+// "Dados da mensagem": who received it, who read it and who listened (voice), each with the time, as the phone shows it
+export const info = async (req: Request, res: Response): Promise<Response> => {
+  const message = await Message.findByPk(req.params.messageId, { attributes: ["id", "ticketId", "fromMe", "ack", "createdAt"] });
+  if (!message) throw new AppError("ERR_NO_MESSAGE_FOUND", 404);
+  const base = { fromMe: message.fromMe, ack: message.ack, createdAt: message.createdAt };
+  if (!message.fromMe) return res.json({ ...base, available: false, reason: "received" });
+  const ticket = await ShowTicketService(message.ticketId);
+  if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp" || !whatsappProvider.getMessageInfo) {
+    return res.json({ ...base, available: false, reason: "channel" });
+  }
+  const found = await whatsappProvider.getMessageInfo(ticket.whatsappId, chatIdOf(ticket.contact, ticket.isGroup), message.id).catch(() => null);
+  if (!found) return res.json({ ...base, available: false, reason: "phone" });
+  const { withKnownContacts } = await import("../services/ContactServices/KnownPeople");
+  const shape = async (list: typeof found.read) => (await withKnownContacts(list)).map(p => ({ id: p.key, name: p.name, number: p.number, contactId: p.contactId, at: p.t ? new Date(p.t * 1000).toISOString() : null }));
+  return res.json({
+    ...base,
+    available: true,
+    isGroup: ticket.isGroup,
+    read: await shape(found.read),
+    played: await shape(found.played),
+    // delivered but not read yet (the phone lists them apart)
+    delivery: await shape(found.delivery),
+    readRemaining: found.readRemaining,
+    deliveryRemaining: found.deliveryRemaining,
+    playedRemaining: found.playedRemaining
+  });
+};
+
 export const loadMedia = async (req: Request, res: Response): Promise<Response> => {
   const message = await loadMessageMedia(req.params.messageId);
   return res.json(message);

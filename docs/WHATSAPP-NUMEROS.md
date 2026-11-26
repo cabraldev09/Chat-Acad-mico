@@ -263,3 +263,12 @@ Modelos da Meta e autorizar o envio com modelos.
 5. Em **Operação e custos**, libere o envio de modelos (`outbound_allow_templates`).
 6. Faça o teste: mande uma mensagem do seu celular para o número da Tutoria. A conversa deve aparecer para o tutor do aluno, ou na fila da tutoria do polo, e nunca para os consultores.
 
+
+## Grupos (número por QR Code)
+
+- **Quem escreveu:** cada mensagem recebida em grupo guarda o participante (`Messages.contactId`). Na conversa, cada pessoa aparece com o nome, uma cor e o avatar no primeiro balão, como no WhatsApp. Sem nome, aparece o telefone; sem telefone, "Participante".
+- **Nome do participante:** o nome salvo no celular, depois o nome que a pessoa mostra no WhatsApp (`notifyName`). "Contato sem telefone" e os números são trocados assim que o nome real aparece; um nome digitado no sistema não muda.
+- **Nome do grupo:** segue o assunto do WhatsApp; quando o grupo é renomeado, o sistema também muda (evento `group_update` e cada mensagem nova).
+- **Encaminhada:** a mensagem encaminhada no WhatsApp mostra "Encaminhada" (`Messages.isForwarded`).
+- **Participantes:** no painel do contato, a lista com criador e admins primeiro, busca por nome ou número, e "Número oculto pelo WhatsApp" quando o celular só conhece a identificação interna (LID). A LID nunca aparece como telefone.
+- **Dados da mensagem** (menu da mensagem enviada, `GET /messages/:messageId/info`): quem leu, quem ouviu (áudio) e a quem foi entregue, com o horário, como o celular mostra. Só em números por QR Code; no número oficial a Meta não informa por pessoa.

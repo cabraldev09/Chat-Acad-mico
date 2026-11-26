@@ -476,35 +476,13 @@ export const groupInfo = async (req: Request, res: Response): Promise<Response> 
   const info = await whatsappProvider.getGroupInfo(ticket.whatsappId, chatIdOf(ticket.contact, true)).catch(() => null);
   if (!info) return res.json({ participants: [] });
 
-  const raw = info.participants.map(p => ({ ...p, key: p.id.split("@")[0] }));
-  const keys = raw.map(p => p.key);
-  const known = keys.length
-    ? await Contact.findAll({
-        where: { [Op.or]: [{ number: { [Op.in]: keys } }, { lid: { [Op.in]: keys } }] } as any,
-        attributes: ["id", "name", "number", "lid", "isStaff", "isPersonal", "profilePicUrl"]
-      })
-    : [];
-  const byKey = new Map<string, Contact>();
-  known.forEach(c => {
-    if (c.number) byKey.set(c.number, c);
-    if (c.lid) byKey.set(String(c.lid).split("@")[0], c);
-  });
-
-  const participants = raw
-    .map(p => {
-      const c = byKey.get(p.key);
-      return {
-        id: p.key,
-        contactId: c ? c.id : null,
-        name: c ? c.name : null,
-        number: c && c.number ? c.number : /^\d{8,15}$/.test(p.key) ? p.key : null,
-        isAdmin: p.isAdmin,
-        isStaff: c ? c.isStaff : false,
-        isPersonal: c ? c.isPersonal : false,
-        profilePicUrl: c ? c.profilePicUrl : null
-      };
-    })
-    .sort((a, b) => Number(b.isAdmin) - Number(a.isAdmin) || String(a.name || a.number || "").localeCompare(String(b.name || b.number || "")));
+  const { withKnownContacts } = await import("../services/ContactServices/KnownPeople");
+  const people = await withKnownContacts(info.participants.map(p => ({
+    key: p.key || p.id.split("@")[0], isLid: p.isLid ?? p.id.endsWith("@lid"), phone: p.phone || "", name: p.name || "", isAdmin: p.isAdmin, isSuperAdmin: !!p.isSuperAdmin
+  })));
+  const participants = people
+    .map(p => ({ id: p.key, contactId: p.contactId, name: p.name, number: p.number, isAdmin: p.isAdmin, isSuperAdmin: p.isSuperAdmin, isStaff: p.isStaff, isPersonal: p.isPersonal, profilePicUrl: p.profilePicUrl }))
+    .sort((a, b) => Number(b.isSuperAdmin) - Number(a.isSuperAdmin) || Number(b.isAdmin) - Number(a.isAdmin) || String(a.name || a.number || "").localeCompare(String(b.name || b.number || "")));
 
   return res.json({ name: info.name, description: info.description, createdAt: info.createdAt, participants });
 };

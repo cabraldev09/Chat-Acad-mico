@@ -175,7 +175,10 @@ export const importHistory = async (
             // the kind stays known so the file can be loaded later with one click
             mediaType: MEDIA_KIND[m.type || ""] || "chat",
             ack: m.ack,
-            contactId: m.fromMe ? undefined : (m.author && people.get(`${m.author.number}|${m.author.lid || ""}`)) || contact.id,
+            // in a group, the person who wrote; when that could not be read, nobody (never the group itself, which made every
+            // message look like the group's own); in a conversation with one person, that person
+            contactId: m.fromMe ? undefined : (m.author && people.get(`${m.author.number}|${m.author.lid || ""}`)) || (chat.isGroup ? null : contact.id),
+            isForwarded: !!m.forwarded,
             createdAt: new Date(m.timestamp * 1000)
           })) as any,
           { ignoreDuplicates: true }

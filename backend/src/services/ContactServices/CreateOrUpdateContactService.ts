@@ -32,11 +32,23 @@ export interface CommunityInfo {
 }
 
 // a name that is only the number (or nothing) says nothing about the person
-const onlyNumber = (n: string | null | undefined, number: string | null | undefined): boolean =>
-  !n || String(n).replace(/\D/g, "") === String(number || "").replace(/\D/g, "") || /^\+?\d[\d\s()-]*$/.test(String(n).trim());
-// the name WhatsApp gives (saved on the phone, else the profile name, or the group's subject) replaces only a name that is still the number
-export const betterNameOf = (current: string | null | undefined, incoming: string | null | undefined, number: string | null | undefined): boolean =>
-  !!incoming && !onlyNumber(incoming, number) && onlyNumber(current, number);
+// (a contact with no phone yet, known only by WhatsApp's internal id, has number "": then only a name made of digits counts as a number)
+const onlyNumber = (n: string | null | undefined, number: string | null | undefined): boolean => {
+  if (!n || !String(n).trim()) return true;
+  const digits = String(number || "").replace(/\D/g, "");
+  return (!!digits && String(n).replace(/\D/g, "") === digits) || /^\+?\d[\d\s()-]*$/.test(String(n).trim());
+};
+// names the system wrote itself while it did not know better: they always give way to the real one
+const PLACEHOLDERS = new Set(["Contato sem telefone", "Participante", "Contato", "Comunidade"]);
+const isPlaceholderName = (n: string | null | undefined, number: string | null | undefined): boolean =>
+  onlyNumber(n, number) || PLACEHOLDERS.has(String(n || "").trim());
+// the name WhatsApp gives (saved on the phone, else the profile name) replaces only a name that is still the number or a placeholder;
+// a group's name is its subject on WhatsApp: when the group is renamed there, it is renamed here too
+export const betterNameOf = (current: string | null | undefined, incoming: string | null | undefined, number: string | null | undefined, isGroup = false): boolean => {
+  if (!incoming || isPlaceholderName(incoming, number)) return false;
+  if (isGroup) return String(incoming).trim() !== String(current || "").trim();
+  return isPlaceholderName(current, number);
+};
 
 const emitContactEvent = (action: "update" | "create", contact: Contact) => {
   const io = getIO();
@@ -103,7 +115,7 @@ const CreateOrUpdateContactService = async ({
   if (contactByNumber) {
     // a person still known only by the number gets the name WhatsApp gives (the one saved on the phone, else the profile name); a name
     // typed in the system is never replaced
-    const betterName = betterNameOf(contactByNumber.name, name, contactByNumber.number) ? { name } : {};
+    const betterName = betterNameOf(contactByNumber.name, name, contactByNumber.number, !!isGroup || !!contactByNumber.isGroup) ? { name } : {};
     await contactByNumber.update({
       ...betterName,
       // the provider says this chat is a group: a contact saved before as a person is corrected
@@ -120,6 +132,8 @@ const CreateOrUpdateContactService = async ({
 
   if (contactByLid) {
     await contactByLid.update({
+      // found by the internal id: a placeholder name ("Contato sem telefone") gives way to the real one too
+      ...(betterNameOf(contactByLid.name, name, number || contactByLid.number) ? { name } : {}),
       number: number || contactByLid.number,
       ...(profilePicUrl && !isLocalPic(contactByLid.getDataValue("profilePicUrl")) ? { profilePicUrl } : {})
     });

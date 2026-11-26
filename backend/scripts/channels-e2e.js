@@ -8703,6 +8703,42 @@ const postMeta = (id, payload, secret, badSig) => {
           await late.destroy();
         }finally{await Message.destroy({where:{id:["sla-closing","sla-old-wait"]}});await shift(5);await ticket.update({lastMessageFromMe:wasFromMe});await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
     });
+    await test("group messages: each participant is stored as who wrote (a LID-only one with the name WhatsApp shows), a forwarded one says so, and the group renamed on WhatsApp is renamed here", async () => {
+      const wid = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, groupsMode, createdAt, updatedAt) VALUES ('QR Grupo Remetente', 'DISCONNECTED', 'whatsapp', false, 'all', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      try {
+        inDb(`const { handleMessage } = require("./dist/handlers/handleWhatsappEvents");
+          const Message = require("./dist/models/Message").default, Contact = require("./dist/models/Contact").default, Ticket = require("./dist/models/Ticket").default;
+          const old = await Contact.create({ name: "Contato sem telefone", number: "", lid: "77001122334455", isGroup: false });
+          const group = (name) => ({ name, number: "120363999000000777", isGroup: true });
+          const say = (id, who, extra = {}, groupName = "Polo Vilhena Teste") => handleMessage(
+            { id, body: "oi " + id, fromMe: false, hasMedia: false, type: "chat", timestamp: Math.floor(Date.now() / 1000), from: "120363999000000777@g.us", to: "me", ...extra },
+            { isGroup: false, ...who }, { whatsappId: ${wid}, unreadMessages: 1, groupContact: group(groupName) });
+          await say("grp-a-1", { name: "Adriele E2E", number: "5569900001111" });
+          await say("grp-b-1", { name: "Pedro E2E", number: "", lid: "88001122334455" });
+          await say("grp-c-1", { name: "Laura E2E", number: "", lid: "77001122334455" }, { isForwarded: true });
+          await say("grp-a-2", { name: "Adriele E2E", number: "5569900001111" }, {}, "Ambientação Vilhena Teste");
+          const rows = await Message.findAll({ where: { id: ["grp-a-1", "grp-b-1", "grp-c-1", "grp-a-2"] }, include: ["contact"], order: [["id", "ASC"]] });
+          const by = Object.fromEntries(rows.map(r => [r.id, r]));
+          assert.equal(rows.length, 4, "a group message was not stored");
+          assert.equal(new Set(rows.map(r => r.contactId)).size, 3, "the three people of the group were not told apart");
+          assert.equal(by["grp-b-1"].contact.name, "Pedro E2E", "the LID-only participant has no name");
+          assert.equal(by["grp-c-1"].contactId, old.id, "the LID contact was not reused");
+          await old.reload();
+          assert.equal(old.name, "Laura E2E", "Contato sem telefone was not given the real name");
+          assert.equal(by["grp-c-1"].isForwarded, true, "the forwarded message lost its mark");
+          assert.equal(by["grp-a-1"].isForwarded, false);
+          const g = await Contact.findOne({ where: { number: "120363999000000777" } });
+          assert.equal(g.name, "Ambientação Vilhena Teste", "the group renamed on WhatsApp kept the old name");
+          const t = await Ticket.findOne({ where: { contactId: g.id, whatsappId: ${wid} } });
+          assert(t && t.isGroup, "the group conversation was not opened");`);
+      } finally {
+        sql(`DELETE FROM Messages WHERE id IN ('grp-a-1','grp-b-1','grp-c-1','grp-a-2')`);
+        sql(`DELETE FROM Tickets WHERE whatsappId=${wid}`);
+        sql(`DELETE FROM Contacts WHERE number IN ('120363999000000777','5569900001111') OR lid IN ('88001122334455','77001122334455')`);
+        sql(`DELETE FROM WhatsappQueues WHERE whatsappId=${wid}`);
+        sql(`DELETE FROM Whatsapps WHERE id=${wid}`);
+      }
+    });
     await test("private attachments reject unsigned links and support revocation", async () => {
       const fileHttp = axios.create({ baseURL: API, validateStatus: () => true, httpAgent: new (require("http").Agent)({ keepAlive: false }) });
       const id=sql(`SELECT id FROM Messages WHERE ticketId=${cticket} AND mediaUrl IS NOT NULL LIMIT 1`);
