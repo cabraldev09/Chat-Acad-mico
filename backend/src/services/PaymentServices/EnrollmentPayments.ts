@@ -171,7 +171,9 @@ const createBolixPayment = async (
   const dueDate = ymd(due);
   if (dueDate < ymd(shiftDays(today, 0))) throw new AppError("ERR_PAYMENT_DUE_IN_PAST");
 
-  const before = Math.max(0, Number(await getSetting("efi_charge_days_before", "3")) || 3);
+  const beforeRaw = Number(await getSetting("efi_charge_days_before", "3"));
+  // 0 means "generate on the due day" (a saved 0 used to turn into 3)
+  const before = Number.isFinite(beforeRaw) ? Math.max(0, beforeRaw) : 3;
   const generateAt = shiftDays(new Date(`${dueDate}T11:00:00Z`), -before); // ~07:00 local (RO)
   const recipient = await resolveRecipient(lead, userId);
   const now = Date.now();

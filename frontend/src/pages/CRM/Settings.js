@@ -3,7 +3,7 @@ import { toast } from "react-toastify";
 import {
   Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, Tooltip, IconButton, makeStyles,
 } from "@material-ui/core";
-import { Copy, RefreshCw, DatabaseBackup, Library, Upload, ShieldCheck, PlugZap, KeyRound } from "lucide-react";
+import { Copy, RefreshCw, Library, Upload, ShieldCheck, PlugZap } from "lucide-react";
 import { Dialog, DialogTitle, DialogContent, DialogActions } from "@material-ui/core";
 
 import CrudPage from "../../components/CrudPage";
@@ -12,6 +12,7 @@ import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
 import ImportWizard from "../../components/ImportWizard";
 import ColorSwatchPicker from "../../components/ColorSwatchPicker";
+import { SetCard, Fields, SaveBar, Fold, Gap } from "../SettingsHub/ui";
 import api from "../../services/api";
 import { getBackendUrl } from "../../config";
 import { publicApiBase } from "../../utils/publicApiBase";
@@ -23,7 +24,7 @@ import { confirmDialog } from "../../components/ConfirmDialog";
 const useStyles = makeStyles((theme) => ({
   formHead: { fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: theme.palette.text.secondary, marginTop: theme.spacing(1.5), paddingTop: theme.spacing(1), borderTop: `1px solid ${theme.palette.divider}` },
   off: { color: theme.palette.text.secondary, fontWeight: 400 },
-  pane: { padding: theme.spacing(2.5), display: "grid", gap: theme.spacing(2), maxWidth: 720, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
+  pane: { padding: theme.spacing(2.25), borderRadius: 16, display: "grid", gap: theme.spacing(2), minWidth: 0, overflowX: "hidden" },
   code: {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, background: theme.palette.action.hover, padding: theme.spacing(1.25),
     borderRadius: 8, wordBreak: "break-all", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start",
@@ -158,114 +159,85 @@ const SellerWallets = () => {
   );
 };
 
-// A titled block of the payments settings: the title says what it is, one line says why, the fields follow.
-const Block = ({ title, hint, children, last = false }) => {
-  const classes = useStyles();
-  return (
-    <div style={{ display: "grid", gap: 12, paddingBottom: last ? 0 : 22, marginBottom: last ? 0 : 22, borderBottom: last ? 0 : "1px solid rgba(128,128,128,.2)" }}>
-      <div>
-        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>{title}</Typography>
-        {hint && <Typography className={classes.hint}>{hint}</Typography>}
-      </div>
-      {children}
-    </div>
-  );
-};
-
+// Pagamentos (Efí): what connects the account first (environment, Client_Id and Client_Secret, one button that saves and tests);
+// how the boleto is charged and how the seller gets their part stay folded below. One save for the whole section.
+const EFI_KEYS = ["env", "clientId", "dueDays", "chargeDaysBefore", "moveStageId", "consultantPct", "feeMode", "companyPayeeCode"];
 export const EfiSettings = ({ stages }) => {
   const classes = useStyles();
+  const [saved, setSaved] = useState(null);
   const [v, setV] = useState(null);
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState("");
-  const [advanced, setAdvanced] = useState(false);
-  const load = () => api.get("/payments/efi/settings").then(({ data }) => { setV(data); setSecret(data.clientSecret); }).catch(toastError);
+  const [failed, setFailed] = useState(false);
+  const [tested, setTested] = useState(null);
+  // reading the settings also creates the secret of the payment notices (the boleto tells its payment by it)
+  const load = () => { setFailed(false); return api.get("/payments/efi/settings").then(({ data }) => { setSaved(data); setV(data); setSecret(data.clientSecret); }).catch((e) => { setFailed(true); toastError(e); }); };
   useEffect(() => { load(); }, []);
-  if (!v) return null;
-  const run = (name, fn) => async () => { setBusy(name); try { await fn(); } catch (err) { toastError(err); } finally { setBusy(""); } };
-  const save = run("save", async () => {
-    const { data } = await api.put("/payments/efi/settings", { ...v, clientSecret: secret });
-    setV(data); setSecret(data.clientSecret); toast.success("Configurações salvas");
-  });
-  const connected = !!v.clientId && !!v.clientSecret;
-
+  if (failed) return <SetCard title="Não foi possível carregar os pagamentos"><Button variant="outlined" onClick={load} style={{ justifySelf: "start" }}>Tentar de novo</Button></SetCard>;
+  if (!v) return <Typography className={classes.hint}>Carregando...</Typography>;
+  const dirty = secret !== saved.clientSecret || EFI_KEYS.some((k) => String(v[k] ?? "") !== String(saved[k] ?? ""));
+  const connected = !!saved.clientId && !!saved.clientSecret;
+  const set = (k) => (e) => { const value = e.target.value; setV((cur) => ({ ...cur, [k]: value })); };
+  const save = async (andTest) => {
+    setBusy(andTest ? "test" : "save");
+    try {
+      if (dirty) {
+        const { data } = await api.put("/payments/efi/settings", { ...v, clientSecret: secret });
+        setSaved(data); setV(data); setSecret(data.clientSecret);
+      }
+      if (andTest) {
+        await api.post("/payments/efi/test");
+        setTested("ok");
+        toast.success("Conta da Efí conectada.");
+      } else toast.success("Pagamentos salvos.");
+    } catch (err) {
+      if (andTest) setTested("fail");
+      toastError(err);
+    } finally { setBusy(""); }
+  };
+  const status = !connected ? ["Faltam as credenciais", "rgba(245,158,11,.18)", "#b45309"]
+    : tested === "fail" ? ["A Efí recusou a conexão", "rgba(220,38,38,.12)", "#b91c1c"]
+      : ["Conta conectada", "rgba(22,163,74,.14)", "#15803d"];
   return (
-    <Paper variant="outlined" className={classes.pane}>
-      <Block
-        title="Taxa de matrícula pela Efí"
-        hint="A cobrança é sempre um boleto com QR Code de Pix: o aluno paga como preferir até o vencimento, e o sistema detecta o pagamento sozinho.">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <span className={classes.pill} style={connected ? { background: "rgba(22,163,74,.14)", color: "#15803d" } : { background: "rgba(245,158,11,.18)", color: "#b45309" }}>
-            <ShieldCheck size={14} /> {connected ? "Conta da empresa conectada" : "Informe as credenciais da Efí"}
-          </span>
-          <span className={classes.pill} style={{ background: "rgba(6,147,227,.12)", color: "#0b4279" }}>{v.env === "production" ? "Produção" : "Homologação (testes)"}</span>
-        </div>
-      </Block>
-
-      <Block title="Conta da empresa" hint="A conta Efí que emite as cobranças. Use as credenciais de uma aplicação criada nela (Efí → API → Minhas aplicações). O que não for repassado a um vendedor fica nesta conta.">
-        <div className={classes.row}>
-          <TextField select size="small" variant="outlined" label="Ambiente" value={v.env} onChange={(e) => setV({ ...v, env: e.target.value })} style={{ width: 230 }}>
-            <MenuItem value="sandbox">Homologação (testes)</MenuItem><MenuItem value="production">Produção</MenuItem>
+    <>
+      <SetCard title="Conta da Efí" sub="A conta que emite o boleto da taxa de matrícula. Use as credenciais de uma aplicação da conta (Efí → API → Minhas aplicações), com o Bolix ativo."
+        right={<span className={classes.pill} style={{ background: status[1], color: status[2] }}><ShieldCheck size={14} /> {status[0]}</span>}>
+        <Fields>
+          <TextField select size="small" variant="outlined" label="Ambiente" value={v.env} onChange={set("env")}>
+            <MenuItem value="production">Produção</MenuItem><MenuItem value="sandbox">Homologação (testes)</MenuItem>
           </TextField>
-          <TextField size="small" variant="outlined" label="Wallet ID da empresa (opcional)" value={v.companyPayeeCode || ""} onChange={(e) => setV({ ...v, companyPayeeCode: e.target.value })}
-            helperText="Evita que ele seja informado por engano como o de um vendedor." style={{ flex: 1, minWidth: 260 }} />
-        </div>
-        <div className={classes.row}>
-          <TextField size="small" variant="outlined" label="ID do cliente (Client_Id)" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} style={{ flex: 1, minWidth: 260 }} />
-          <TextField size="small" variant="outlined" label="Segredo do cliente (Client_Secret)" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" style={{ flex: 1, minWidth: 260 }} />
-        </div>
-        <div className={classes.row}>
-          <Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button>
-          <Button variant="outlined" startIcon={<PlugZap size={16} />} disabled={busy === "test"} onClick={run("test", async () => { await api.post("/payments/efi/test"); toast.success("Conexão com a Efí funcionando"); })}>Testar conexão</Button>
-        </div>
-        <Typography className={classes.hint}>O Bolix precisa estar ativo na conta: Efí → Configurações da conta → Configurações de cobranças → Boletos bancários e carnês → Bolix.</Typography>
-      </Block>
-
-      <Block title="Cobrança" hint="Quando vence e o que acontece quando o aluno paga.">
-        <div className={classes.row}>
-          <TextField size="small" variant="outlined" type="number" label="Vence em (dias)" value={v.dueDays ?? 3} onChange={(e) => setV({ ...v, dueDays: e.target.value })} inputProps={{ min: 1, max: 30 }}
-            helperText="Quando o consultor não escolhe a data" style={{ width: 200 }} />
-          <TextField size="small" variant="outlined" type="number" label="Gerar o boleto (dias antes)" value={v.chargeDaysBefore} onChange={(e) => setV({ ...v, chargeDaysBefore: e.target.value })} inputProps={{ min: 0, max: 30 }}
-            helperText="Para vencimentos distantes" style={{ width: 220 }} />
-          <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ flex: 1, minWidth: 240 }}>
-            <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
-            {/* a payment never enrolls by itself (the RGM and the tutor come from the enrollment dialog): only the open columns */}
-            {stages.filter((st) => st.type === "open" || st.id === v.moveStageId).map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
-          </TextField>
-        </div>
-        <div><Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button></div>
-      </Block>
-
-      <Block title="Repasse ao vendedor" hint="O vendedor informa só o Wallet ID da conta Efí dele (em Comissões), ou a administração informa por ele na lista abaixo. Quando o aluno paga, a Efí manda a parte dele direto para a conta dele.">
-        <div className={classes.row}>
-          <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct} onChange={(e) => setV({ ...v, consultantPct: e.target.value })} style={{ flex: "1 1 240px", maxWidth: "100%" }} inputProps={{ min: 1, max: 100 }} />
-          <TextField select size="small" variant="outlined" label="Quem paga a tarifa da Efí" value={v.feeMode || "proportional"} onChange={(e) => setV({ ...v, feeMode: e.target.value })} style={{ flex: 1, minWidth: "min(100%, 240px)" }}
-            helperText={(v.feeMode || "proportional") === "company" ? "A empresa paga a tarifa inteira; o vendedor recebe a parte dele sem desconto." : "Cada conta paga a tarifa sobre o que recebe: o vendedor arca com a tarifa da parte dele."}>
-            <MenuItem value="proportional">O vendedor paga a tarifa da parte dele</MenuItem>
-            <MenuItem value="company">Só a empresa paga a tarifa</MenuItem>
-          </TextField>
-        </div>
-        <div><Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button></div>
-        <Typography className={classes.hint}>
-          O repasse só existe entre contas Efí e usa apenas o Wallet ID. Se a Efí recusar o Wallet ID de um vendedor, o boleto sai mesmo assim na conta da empresa, o histórico do lead avisa e a comissão fica para repasse manual. Sem Wallet ID, a cobrança é toda da empresa e a comissão aparece em “a repassar” na tela de Comissões.
-        </Typography>
-      </Block>
-
-      <SellerWallets />
-
-      <Block title="Avançado" hint="Só mexa se a Efí pedir." last>
-        <div><Button size="small" onClick={() => setAdvanced((x) => !x)}>{advanced ? "Esconder" : "Mostrar o aviso automático de pagamento (webhook)"}</Button></div>
-        {advanced && (
-          <div style={{ display: "grid", gap: 8 }}>
-            <Typography className={classes.hint}>
-              A Efí avisa o pagamento neste endereço (precisa ser público e em HTTPS). {v.publicUrlIsHttps ? "O endereço público já está em HTTPS." : "Aqui ele ainda não é HTTPS: o sistema confere os pagamentos sozinho a cada 30 segundos."}
-            </Typography>
-            <Copyable text={v.webhookUrl} />
-            <div><Button variant="outlined" startIcon={<RefreshCw size={16} />} disabled={busy === "hook"}
-              onClick={run("hook", async () => { await api.post("/payments/efi/webhook"); toast.success("Webhook registrado na Efí"); })}>Registrar webhook na Efí</Button></div>
-          </div>
-        )}
-      </Block>
-    </Paper>
+          <Gap />
+          <TextField size="small" variant="outlined" label="ID do cliente (Client_Id)" value={v.clientId || ""} onChange={set("clientId")} autoComplete="off" />
+          <TextField size="small" variant="outlined" label="Segredo do cliente (Client_Secret)" type="password" value={secret || ""} onChange={(e) => { const value = e.target.value; setSecret(value); }} autoComplete="new-password" />
+        </Fields>
+        <SaveBar dirty={dirty} busy={!!busy} onSave={() => save(false)} onDiscard={() => { setV(saved); setSecret(saved.clientSecret); }}>
+          <Button variant="outlined" startIcon={<PlugZap size={16} />} disabled={!!busy || (!v.clientId || !secret)} onClick={() => save(true)}>{busy === "test" ? "Testando..." : dirty ? "Salvar e testar" : "Testar conexão"}</Button>
+        </SaveBar>
+      </SetCard>
+      <SetCard>
+        <Fold label="Cobrança e repasse ao vendedor">
+          <Fields>
+            <TextField size="small" variant="outlined" type="number" label="Vence em (dias)" value={v.dueDays ?? 3} onChange={set("dueDays")} inputProps={{ min: 1, max: 30 }} helperText="Quando o consultor não escolhe a data" />
+            <TextField size="small" variant="outlined" type="number" label="Gerar o boleto (dias antes do vencimento)" value={v.chargeDaysBefore ?? ""} onChange={set("chargeDaysBefore")} inputProps={{ min: 0, max: 30 }} InputLabelProps={{ shrink: true }} />
+            <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => { const value = e.target.value; setV((cur) => ({ ...cur, moveStageId: value || null })); }} SelectProps={{ displayEmpty: true }} InputLabelProps={{ shrink: true }}>
+              <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
+              {/* a payment never enrolls by itself (the RGM and the tutor come from the enrollment dialog): only the open columns */}
+              {stages.filter((st) => st.type === "open" || st.id === v.moveStageId).map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
+            </TextField>
+            <Gap />
+            <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct ?? ""} onChange={set("consultantPct")} inputProps={{ min: 1, max: 100 }} InputLabelProps={{ shrink: true }} />
+            <TextField select size="small" variant="outlined" label="Quem paga a tarifa da Efí" value={v.feeMode || "proportional"} onChange={set("feeMode")}>
+              <MenuItem value="proportional">O vendedor paga a tarifa da parte dele</MenuItem>
+              <MenuItem value="company">Só a empresa paga a tarifa</MenuItem>
+            </TextField>
+            <TextField size="small" variant="outlined" label="Wallet ID da empresa (opcional)" value={v.companyPayeeCode || ""} onChange={set("companyPayeeCode")} helperText="Evita que seja informado como o de um vendedor" />
+          </Fields>
+          <SaveBar dirty={dirty} busy={!!busy} onSave={() => save(false)} onDiscard={() => { setV(saved); setSecret(saved.clientSecret); }} />
+          <Typography className={classes.hint}>Sem o Wallet ID do vendedor, a taxa fica toda com a empresa e a comissão aparece “a repassar” em Comissões.</Typography>
+          <SellerWallets />
+        </Fold>
+      </SetCard>
+    </>
   );
 };
 
@@ -279,11 +251,11 @@ export const HoursAndAlerts = ({ s, save }) => {
   const classes = useStyles();
   const [hours, setHours] = useState(null);
   const [sla, setSla] = useState("15");
-  useEffect(() => {
-    if (s.businessHours) setHours(s.businessHours);
-    if (s.slaMinutes !== undefined) setSla(String(s.slaMinutes));
-  }, [s.businessHours, s.slaMinutes]);
-  if (!hours) return null;
+  const [busy, setBusy] = useState(false);
+  const reset = () => { if (s.businessHours) setHours(s.businessHours); if (s.slaMinutes !== undefined) setSla(String(s.slaMinutes)); };
+  useEffect(reset, [s.businessHours, s.slaMinutes]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!hours) return <Typography className={classes.hint}>Carregando...</Typography>;
+  const dirty = JSON.stringify(hours) !== JSON.stringify(s.businessHours) || String(sla) !== String(s.slaMinutes ?? "");
 
   const setDay = (d, patch) => {
     const list = hours.days[d] || [];
@@ -293,15 +265,9 @@ export const HoursAndAlerts = ({ s, save }) => {
   const toggleDay = (d, on) => setHours({ ...hours, days: { ...hours.days, [d]: on ? [dayDefault(d)] : [] } });
 
   return (
-    <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16, display: "grid", gap: 12 }}>
-      <div>
-        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Horário comercial e alerta de lead sem resposta</Typography>
-        <Typography className={classes.hint}>
-          Com o horário ligado, o tempo de resposta e o alerta contam só as horas de trabalho: uma mensagem que chega às 22h não conta como atraso na manhã seguinte.
-        </Typography>
-      </div>
-      <FormControlLabel
-        control={<Switch color="primary" checked={!!hours.enabled} onChange={(e) => setHours({ ...hours, enabled: e.target.checked })} />}
+    <>
+      <FormControlLabel style={{ margin: 0 }}
+        control={<Switch color="primary" checked={!!hours.enabled} onChange={(e) => { const on = e.target.checked; setHours((h) => ({ ...h, enabled: on })); }} />}
         label={hours.enabled ? "Horário comercial ligado" : "Horário comercial desligado (conta o tempo corrido)"}
       />
       {hours.enabled && (
@@ -314,8 +280,8 @@ export const HoursAndAlerts = ({ s, save }) => {
                 <FormControlLabel style={{ width: 130, margin: 0 }} control={<Switch size="small" color="primary" checked={on} onChange={(e) => toggleDay(d, e.target.checked)} />} label={label} />
                 {on ? (
                   <>
-                    <TextField size="small" variant="outlined" type="time" label="Das" InputLabelProps={{ shrink: true }} value={list[0].start} onChange={(e) => setDay(d, { start: e.target.value })} />
-                    <TextField size="small" variant="outlined" type="time" label="Às" InputLabelProps={{ shrink: true }} value={list[0].end} onChange={(e) => setDay(d, { end: e.target.value })} />
+                    <TextField size="small" variant="outlined" type="time" label="Das" InputLabelProps={{ shrink: true }} value={list[0].start} onChange={(e) => setDay(d, { start: e.target.value })} style={{ width: 120 }} />
+                    <TextField size="small" variant="outlined" type="time" label="Às" InputLabelProps={{ shrink: true }} value={list[0].end} onChange={(e) => setDay(d, { end: e.target.value })} style={{ width: 120 }} />
                   </>
                 ) : (
                   <Typography className={classes.hint}>Fechado</Typography>
@@ -325,16 +291,13 @@ export const HoursAndAlerts = ({ s, save }) => {
           })}
         </div>
       )}
-      <TextField
-        size="small" variant="outlined" type="number" label="Avisar quando um lead novo ficar sem resposta por (minutos)"
-        value={sla} onChange={(e) => setSla(e.target.value)} inputProps={{ min: 0, max: 1440 }}
-        helperText="0 desliga o alerta. O aviso chega para o consultor responsável e para a coordenação."
-        style={{ maxWidth: 460 }}
-      />
-      <div>
-        <Button variant="contained" color="primary" onClick={() => save({ businessHours: hours, slaMinutes: Number(sla) || 0 })}>Salvar horário e alerta</Button>
-      </div>
-    </div>
+      <Fields>
+        <TextField size="small" variant="outlined" type="number" label="Avisar lead novo sem resposta após (min)" InputLabelProps={{ shrink: true }}
+          value={sla} onChange={(e) => setSla(e.target.value)} inputProps={{ min: 0, max: 1440 }}
+          helperText="Avisa o consultor e a coordenação. 0 desliga." />
+      </Fields>
+      <SaveBar dirty={dirty} busy={busy} onDiscard={reset} onSave={async () => { setBusy(true); await save({ businessHours: hours, slaMinutes: Number(sla) || 0 }); setBusy(false); }} />
+    </>
   );
 };
 
@@ -360,10 +323,6 @@ const EntryCalendar = ({ s, save }) => {
   );
   return (
     <div>
-      <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Calendário de entradas (turmas)</Typography>
-      <Typography className={classes.hint} gutterBottom>
-        O dia da matrícula define a turma. Na proposta, a turma preenche o período, as parcelas do 1º semestre e o vencimento da 1ª mensalidade, que é o prazo do boleto. As demais mensalidades seguem o dia de vencimento do modelo.
-      </Typography>
       <div style={{ display: "grid", gap: 10 }}>
         {list.length === 0 && <Typography className={classes.hint}>Nenhuma turma cadastrada. Sem turma, o consultor informa as datas na proposta.</Typography>}
         {list.map((r, i) => {
@@ -400,89 +359,87 @@ const EntryCalendar = ({ s, save }) => {
   );
 };
 
-export const Automation = ({ s, setS, save, users }) => {
-  const classes = useStyles();
-  const [busy, setBusy] = useState(false);
+// Distribuição e lembretes: who gets a new lead, and what happens when a client writes again. Saved as soon as they change.
+export const Distribution = ({ s, setS, save, users }) => {
   return (
-    <Paper variant="outlined" className={classes.pane}>
-      <FormControlLabel control={<Switch color="primary" checked={!!s.autocreate} onChange={(e) => save({ autocreate: e.target.checked })} />}
-        label="Cadastrar no CRM todo contato que enviar mensagem" />
-      <Typography className={classes.hint} style={{ marginTop: -12 }}>Vale para todos os canais. Grupos não viram lead. Quem já existe (mesmo telefone ou contato) não é duplicado.</Typography>
-      <FormControlLabel control={<Switch color="primary" checked={!!s.autoadvance} onChange={(e) => save({ autoadvance: e.target.checked })} />}
-        label="Mover para “Primeiro contato” quando um atendente responder" />
-      <FormControlLabel control={<Switch color="primary" checked={s.returnToOwner !== false} onChange={(e) => save({ returnToOwner: e.target.checked })} />}
-        label="Cliente que volta a escrever fala com o mesmo consultor" />
-      <Typography className={classes.hint} style={{ marginTop: -12 }}>
-        Nos números compartilhados (como a API Oficial dos polos), quem já foi atendido volta direto para o consultor dono dele no CRM (ou quem atendeu por último), sem robô e sem rodízio, mesmo fora do horário dele.
-      </Typography>
-      {s.returnToOwner !== false && (
-        <TextField size="small" variant="outlined" multiline minRows={2} label="Aviso ao cliente quando o consultor está fora do horário"
-          placeholder="Olá! {consultor} está fora do horário de atendimento agora e responde {quando}. Sua mensagem já ficou com {consultor}."
-          helperText="{consultor} vira o primeiro nome e {quando} o próximo horário (ex.: amanhã às 08:00). Enviado no máximo uma vez a cada 6 horas. Vazio usa o texto do exemplo."
-          value={s.returnAwayMessage || ""} onChange={(e) => setS({ ...s, returnAwayMessage: e.target.value })} onBlur={() => save({ returnAwayMessage: s.returnAwayMessage || "" })} />
-      )}
-      <div>
-        <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Períodos de ingresso</Typography>
-        <Typography className={classes.hint} gutterBottom>Os períodos que a instituição está captando. O padrão vem preenchido em todo lead novo e nas propostas.</Typography>
-        <div className={classes.row}>
-          <TextField size="small" variant="outlined" label="Períodos (ex.: 2026/2, 2027/1)" value={(s.entryTerms || []).join(", ")} style={{ minWidth: "min(100%, 240px)" }}
+    <>
+      <SetCard title="Quem recebe o lead" sub="Vale para todos os canais. Grupos não viram lead, e ninguém é cadastrado duas vezes.">
+        <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={!!s.autocreate} onChange={(e) => save({ autocreate: e.target.checked })} />}
+          label="Cadastrar no CRM todo contato que enviar mensagem" />
+        <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={!!s.autoadvance} onChange={(e) => save({ autoadvance: e.target.checked })} />}
+          label="Mover para “Primeiro contato” quando um atendente responder" />
+        <Fields>
+          <TextField select variant="outlined" size="small" label="Distribuição de novos leads" value={s.autoassign || "roundrobin"} onChange={(e) => save({ autoassign: e.target.value })}>
+            <MenuItem value="roundrobin">Rodízio entre os consultores</MenuItem>
+            <MenuItem value="none">Sem responsável (o primeiro a atender assume)</MenuItem>
+          </TextField>
+          {s.autoassign !== "none" ? (
+            <TextField select variant="outlined" size="small" label="Consultores no rodízio" SelectProps={{ multiple: true, displayEmpty: true, renderValue: (ids) => (ids.length ? users.filter((u) => ids.includes(u.id)).map((u) => u.name).join(", ") : "Todos") }} InputLabelProps={{ shrink: true }}
+              value={s.ownerIds || []} onChange={(e) => save({ ownerIds: e.target.value })}>
+              {users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
+            </TextField>
+          ) : <Gap />}
+        </Fields>
+      </SetCard>
+      <SetCard title="Cliente que volta a escrever" sub="Nos números compartilhados, quem já foi atendido volta direto para o consultor dele, sem robô e sem rodízio.">
+        <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={s.returnToOwner !== false} onChange={(e) => save({ returnToOwner: e.target.checked })} />}
+          label="Volta para o mesmo consultor" />
+        {s.returnToOwner !== false && (
+          <TextField size="small" variant="outlined" multiline minRows={2} label="Aviso quando o consultor está fora do horário"
+            placeholder="Olá! {consultor} está fora do horário de atendimento agora e responde {quando}. Sua mensagem já ficou com {consultor}."
+            helperText="{consultor} vira o primeiro nome e {quando} o próximo horário. Sai no máximo uma vez a cada 6 horas. Vazio usa o exemplo."
+            value={s.returnAwayMessage || ""} onChange={(e) => setS({ ...s, returnAwayMessage: e.target.value })} onBlur={() => save({ returnAwayMessage: s.returnAwayMessage || "" })} />
+        )}
+      </SetCard>
+    </>
+  );
+};
+
+// Calendário e documentos: the terms the institution is enrolling, the classes of each term, the last day to enroll and the documents.
+export const EnrollmentRules = ({ s, setS, save }) => {
+  const classes = useStyles();
+  return (
+    <>
+      <SetCard title="Períodos de ingresso" sub="Os períodos que estão em captação. O padrão vem preenchido em todo lead novo e nas propostas.">
+        <Fields>
+          <TextField size="small" variant="outlined" label="Períodos (ex.: 2026/2, 2027/1)" value={(s.entryTerms || []).join(", ")}
             onChange={(e) => setS({ ...s, entryTerms: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })}
             onBlur={() => save({ entryTerms: s.entryTerms })} />
-          <TextField select size="small" variant="outlined" label="Período padrão" value={s.defaultEntryTerm || ""} onChange={(e) => save({ defaultEntryTerm: e.target.value })} style={{ minWidth: 160 }}>
+          <TextField select size="small" variant="outlined" label="Período padrão" value={s.defaultEntryTerm || ""} onChange={(e) => save({ defaultEntryTerm: e.target.value })}>
             {(s.entryTerms || []).map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
           </TextField>
-        </div>
-      </div>
-      <EntryCalendar s={s} save={save} />
-      <div>
-        <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Prazo de matrícula de cada período</Typography>
-        <Typography className={classes.hint} gutterBottom>
-          O último dia para se matricular. Com o prazo cadastrado, o gatilho “Prazo de matrícula se aproximando” (em Gatilhos) lembra, uma vez, os leads do período que ainda não se matricularam. O gatilho “Lead parado” retoma quem deixou de responder.
-        </Typography>
-        <div className={classes.row}>
-          {(s.entryTerms || []).map((t) => (
-            <TextField key={t} size="small" variant="outlined" type="date" label={`Prazo de ${t}`} InputLabelProps={{ shrink: true }} style={{ width: 190 }}
-              value={(s.entryDeadlines || {})[t] || ""}
-              onChange={(e) => setS({ ...s, entryDeadlines: { ...(s.entryDeadlines || {}), [t]: e.target.value } })}
-              onBlur={() => save({ entryDeadlines: s.entryDeadlines || {} })} />
-          ))}
-          <Button size="small" variant="outlined" onClick={async () => { try { const { data } = await api.post("/crm/cadences/run"); toast.success(`Follow-ups rodados: ${data.idle} de lead parado, ${data.deadline} de prazo.`); } catch (e) { toastError(e); } }}>Rodar os follow-ups agora</Button>
-        </div>
-      </div>
-      <div>
-        <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Documentos da matrícula</Typography>
-        <Typography className={classes.hint} gutterBottom>Os documentos que o aluno entrega depois de confirmada a matrícula, um por linha. Enquanto faltar algum, o aluno fica com a etiqueta “Documentos pendentes” e a aba Documentos do lead mostra o que falta.</Typography>
+        </Fields>
+        {(s.entryTerms || []).length > 0 && (
+          <>
+            <Typography className={classes.hint}>Último dia para se matricular em cada período. O gatilho “Prazo de matrícula se aproximando” lembra quem ainda não se matriculou.</Typography>
+            <Fields>
+              {(s.entryTerms || []).map((t) => (
+                <TextField key={t} size="small" variant="outlined" type="date" label={`Prazo de ${t}`} InputLabelProps={{ shrink: true }}
+                  value={(s.entryDeadlines || {})[t] || ""}
+                  onChange={(e) => setS({ ...s, entryDeadlines: { ...(s.entryDeadlines || {}), [t]: e.target.value } })}
+                  onBlur={() => save({ entryDeadlines: s.entryDeadlines || {} })} />
+              ))}
+            </Fields>
+          </>
+        )}
+      </SetCard>
+      <SetCard title="Calendário de entradas" sub="O dia da matrícula define a turma. Na proposta, a turma preenche o período, as parcelas do 1º semestre e o vencimento da 1ª mensalidade.">
+        <EntryCalendar s={s} save={save} />
+      </SetCard>
+      <SetCard title="Documentos da matrícula" sub="O que o aluno entrega depois de matriculado. Enquanto faltar algum, ele fica com a etiqueta “Documentos pendentes”.">
         <TextField multiline rows={5} fullWidth size="small" variant="outlined" label="Documentos exigidos (um por linha)" value={(s.requiredDocs || []).join("\n")}
           onChange={(e) => setS({ ...s, requiredDocs: e.target.value.split("\n") })}
           onBlur={() => save({ requiredDocs: (s.requiredDocs || []).map((d) => d.trim()).filter(Boolean) })} />
-        <FormControlLabel control={<Switch color="primary" checked={!!s.docsAutoReminder} onChange={(e) => save({ docsAutoReminder: e.target.checked })} />}
-          label="Cobrar os documentos pendentes por WhatsApp automaticamente" />
+        <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={!!s.docsAutoReminder} onChange={(e) => save({ docsAutoReminder: e.target.checked })} />}
+          label="Cobrar os documentos pendentes por WhatsApp" />
         {s.docsAutoReminder && (
-          <div className={classes.row}>
-            <TextField size="small" variant="outlined" type="number" label="A cada (dias)" style={{ width: 150 }} value={s.docsReminderDays || 3} onChange={(e) => setS({ ...s, docsReminderDays: e.target.value })} onBlur={() => save({ docsReminderDays: s.docsReminderDays })} />
-            <TextField size="small" variant="outlined" type="number" label="No máximo (vezes)" style={{ width: 170 }} value={s.docsReminderMax || 3} onChange={(e) => setS({ ...s, docsReminderMax: e.target.value })} onBlur={() => save({ docsReminderMax: s.docsReminderMax })} />
-          </div>
+          <Fields>
+            <TextField size="small" variant="outlined" type="number" label="A cada (dias)" value={s.docsReminderDays || 3} onChange={(e) => setS({ ...s, docsReminderDays: e.target.value })} onBlur={() => save({ docsReminderDays: s.docsReminderDays })} />
+            <TextField size="small" variant="outlined" type="number" label="No máximo (vezes)" value={s.docsReminderMax || 3} onChange={(e) => setS({ ...s, docsReminderMax: e.target.value })} onBlur={() => save({ docsReminderMax: s.docsReminderMax })} />
+          </Fields>
         )}
-      </div>
-      <TextField select variant="outlined" size="small" label="Distribuição de novos leads" value={s.autoassign || "roundrobin"} onChange={(e) => save({ autoassign: e.target.value })} style={{ maxWidth: 360 }}>
-        <MenuItem value="roundrobin">Rodízio entre os consultores</MenuItem>
-        <MenuItem value="none">Sem responsável (o primeiro a atender assume)</MenuItem>
-      </TextField>
-      {s.autoassign !== "none" && (
-        <TextField select variant="outlined" size="small" label="Consultores no rodízio" SelectProps={{ multiple: true }} value={s.ownerIds || []}
-          onChange={(e) => save({ ownerIds: e.target.value })} helperText="Vazio = todos os usuários" style={{ maxWidth: 360 }}>
-          {users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
-        </TextField>
-      )}
-      <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16 }}>
-        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Contatos já existentes</Typography>
-        <Typography className={classes.hint} gutterBottom>Ao iniciar, o sistema já registra no CRM os contatos que ainda não são leads. Rode manualmente se importar contatos novos.</Typography>
-        <Button variant="outlined" disabled={busy} startIcon={<DatabaseBackup size={16} />} onClick={async () => {
-          setBusy(true);
-          try { const { data } = await api.post("/crm/backfill"); toast.success(`${data.created} contatos registrados como lead`); } catch (err) { toastError(err); } finally { setBusy(false); }
-        }}>Sincronizar contatos agora</Button>
-      </div>
-    </Paper>
+      </SetCard>
+    </>
   );
 };
 
@@ -539,31 +496,20 @@ const ActiveToggle = ({ row: course, endpoint = "/courses", label = "curso" }) =
 const CrmSettings = () => {
   const classes = useStyles();
   const [tab, setTab] = useState(0);
-  const [s, setS] = useState({});
-  const [users, setUsers] = useState([]);
   const [options, setOptions] = useState({});
   const [institutions, setInstitutions] = useState([]);
-  const [stages, setStages] = useState([]);
   const [importOpen, setImportOpen] = useState(false);
   const [reload, setReload] = useState(0);
   const [categories, setCategories] = useState(["Graduação", "Pós-graduação", "Segunda graduação", "Técnico", "Extensão", "Livre"]);
 
-  const load = () => api.get("/crm/settings").then(({ data }) => setS(data)).catch(toastError);
   useEffect(() => {
-    load();
-    fetchAllUsersPage().then(({ data }) => setUsers(data.users || []));
     api.get("/crm/options").then(({ data }) => setOptions(data));
     api.get("/institutions").then(({ data }) => setInstitutions(data)).catch(() => {});
-    api.get("/lead-stages").then(({ data }) => setStages(data)).catch(() => {});
     api.get("/courses").then(({ data }) => {
       const rows = Array.isArray(data) ? data : data.rows || data.courses || [];
       setCategories((prev) => [...new Set([...prev, ...rows.map((c) => c.category).filter(Boolean)])].sort((a, b) => a.localeCompare(b, "pt-BR")));
     }).catch(() => {});
   }, [tab, reload]);
-  const save = async (patch) => {
-    try { const { data } = await api.put("/crm/settings", patch); setS(data); toast.success("Salvo"); } catch (err) { toastError(err); }
-  };
-
   const opts = (arr = []) => arr.map((v) => ({ value: v, label: v }));
 
   return (
