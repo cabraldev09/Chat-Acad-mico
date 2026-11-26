@@ -76,6 +76,10 @@ Para um erro: reproduza antes de corrigir e mostre o mesmo teste passando depois
    (`deploy/vps/check-ci.js`). Confira que terminou com sucesso e avise o usuário.
 6. Nunca abra PR sem o usuário ter pedido.
 
+**Trava de publicação:** só vai para produção o commit de um PR mesclado com o rótulo `publicar`, aplicado só pela
+coordenação depois da auditoria (veja `docs/VPS-HOSTINGER.md`). Não aplique o rótulo e não tente contornar a trava. Sem o
+rótulo, o merge deixa o código na `main` sem publicar (o item 5 vale só com o rótulo).
+
 ## Segurança e privacidade
 
 - **Nunca** peça nem escreva senhas, tokens ou chaves no chat, no código, em logs ou em commits. Use o formulário seguro da

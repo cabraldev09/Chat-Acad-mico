@@ -142,7 +142,8 @@ const useStyles = makeStyles((theme) => {
       opacity: 0,
       transition: "opacity .12s",
       "$row:hover &, &:focus-visible": { opacity: 1 },
-      "@media (hover: none)": { opacity: 1 },
+      // on a phone the options open with a long press on the conversation (as in WhatsApp): no arrow taking room on every row
+      "@media (hover: none)": { display: "none" },
       "&:hover": { backgroundColor: c.hover },
     },
   };
@@ -252,6 +253,21 @@ const TicketListItem = ({ ticket }) => {
   const kindOf = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
   const previewText = cardName || (ticket.lastMessageType === "vcard" ? String(ticket.lastMessage || "").replace(/^👤\s*/, "") : null) || (kindOf[1] && (looksLikeFileName(ticket.lastMessage) || /^[\p{Extended_Pictographic}\s]*(Foto|Imagem|Áudio|Mensagem de voz|Vídeo|Figurinha)$/u.test(plain(ticket.lastMessage))) ? kindOf[1] : plain(/^\[unsupported\]$/i.test(String(ticket.lastMessage || "").trim()) ? "Mensagem não suportada pelo WhatsApp oficial" : ticket.lastMessage)) || kindOf[1] || "";
   const [KindIcon, kindLabel] = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
+  // two lines like WhatsApp: the third (queue, attendant, tags) only when it says something new. The person's own conversations do
+  // not repeat their own name on every row.
+  const otherAttendant = !!(ticket.user && ticket.user.name && (!user || ticket.user.id !== user.id));
+  const aiAttends = !ticket.user && !ticket.isGroup && !!ticket.aiActive;
+  const showMeta = !!(ticket.queue && ticket.queue.name) || otherAttendant || aiAttends || (ticket.tags || []).length > 0;
+  // a long press opens the options of the conversation (the arrow is hidden on touch screens)
+  const pressTimer = useRef(null);
+  const pressed = useRef(false);
+  const pressStart = (e) => {
+    pressed.current = false;
+    const target = e.currentTarget;
+    clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => { pressed.current = true; setMenuEl(target); }, 500);
+  };
+  const pressEnd = () => clearTimeout(pressTimer.current);
 
   return (
     <div
@@ -259,7 +275,11 @@ const TicketListItem = ({ ticket }) => {
       tabIndex={0}
       data-ticket-id={ticket.id}
       className={clsx(classes.row, selected && classes.selected, ticket.status === "closed" && classes.closed)}
-      onClick={() => canOpen && history.push(`/tickets/${ticket.id}`)}
+      onClick={() => { if (pressed.current) { pressed.current = false; return; } if (canOpen) history.push(`/tickets/${ticket.id}`); }}
+      onTouchStart={pressStart}
+      onTouchEnd={pressEnd}
+      onTouchMove={pressEnd}
+      onContextMenu={(e) => { e.preventDefault(); setMenuEl(e.currentTarget); }}
       onKeyDown={(e) => {
         if (e.key === "Enter" && canOpen) history.push(`/tickets/${ticket.id}`);
         // arrow keys walk the list like WhatsApp Web (only rows that are on screen: other tabs stay mounted, hidden)
@@ -287,13 +307,13 @@ const TicketListItem = ({ ticket }) => {
           <span className={classes.name} style={{ fontWeight: unread ? 600 : 400 }}>
             {(ticket.contact && ticket.contact.name) || "Sem nome"}
           </span>
-          {ticket.lastMessage && (
+          {(ticket.lastMessage || ticket.lastMessageAt || previewText) && (
             <span className={clsx(classes.time, unread && classes.timeUnread)}>{stamp(ticket.lastMessageAt || ticket.updatedAt)}</span>
           )}
         </div>
         <div className={classes.line}>
           <span className={classes.preview} style={unread ? { color: undefined, fontWeight: 500 } : undefined}>
-            {ticket.lastMessageFromMe && ticket.lastMessage && (
+            {ticket.lastMessageFromMe && (ticket.lastMessage || previewText) && (
               <span className={classes.tick} title={ticket.lastMessageAck < 0 ? "Falha no envio" : ["Enviando", "Enviada", "Entregue", "Lida", "Ouvida"][ticket.lastMessageAck] || ""} style={{ color: ticket.lastMessageAck >= 3 ? "#53bdeb" : ticket.lastMessageAck < 0 ? "#ea0038" : undefined }}>
                 {ticket.lastMessageAck < 0 ? <AlertCircle size={15} /> : (ticket.lastMessageAck === 0 && Date.now() - new Date(ticket.lastMessageAt || ticket.updatedAt).getTime() < 120000) ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
               </span>
@@ -361,16 +381,18 @@ const TicketListItem = ({ ticket }) => {
             </MenuItem>
           </Menu>
         </div>
-        <div className={classes.meta}>
-          <Tooltip arrow title={ticket.queue?.name || "Sem fila"}>
-            <span className={classes.dot} style={{ backgroundColor: ticket.queue?.color || "#9aa4ab" }} />
-          </Tooltip>
+        {showMeta && <div className={classes.meta}>
+          {ticket.queue?.name && (
+            <Tooltip arrow title={`Fila: ${ticket.queue.name}`}>
+              <span className={classes.dot} style={{ backgroundColor: ticket.queue.color || "#9aa4ab" }} />
+            </Tooltip>
+          )}
           {ticket.queue?.name && <span className={classes.pill}>{ticket.queue.name}</span>}
-          {ticket.user?.name ? (
+          {otherAttendant ? (
             <Tooltip arrow title={`Atendente: ${ticket.user.name}`}>
               <span className={classes.pill} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><UserRound size={11} />{ticket.user.name.split(" ")[0]}</span>
             </Tooltip>
-          ) : !ticket.isGroup && ticket.aiActive ? (
+          ) : aiAttends ? (
             <Tooltip arrow title="Quem atende: o agente de IA">
               <span className={classes.pill} style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "#0f766e" }}><Bot size={11} />IA</span>
             </Tooltip>
@@ -385,7 +407,7 @@ const TicketListItem = ({ ticket }) => {
               <span className={classes.pill} style={{ flex: "none" }}>+{ticket.tags.length - 2}</span>
             </Tooltip>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   );
