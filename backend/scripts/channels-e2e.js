@@ -2024,6 +2024,38 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put("/crm/settings", { entryCalendar: [] }, auth());
     });
 
+    await test("a proposal without a lead (avulsa): only the name, nothing in the CRM, of who made it, closed as a link or sent in a conversation", async () => {
+      const due = new Date(Date.now() + 15 * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      assert((await http.get("/proposals/defaults", { params: { courseId: propCourse.id }, ...auth() })).data.error === "ERR_PROPOSAL_RECIPIENT", "a proposal without a lead and without a name");
+      const d = (await http.get("/proposals/defaults", { params: { recipientName: "  Amiga   da Equipe ", courseId: propCourse.id }, ...auth() })).data;
+      const params = { ...d.params, admissionType: "ENEM", firstDueDate: due };
+      const pv = (await http.post("/proposals/preview", { recipientName: "Amiga da Equipe", courseId: propCourse.id, params }, auth())).data;
+      assert(pv.html.includes("Amiga da Equipe") && pv.missing === null, `preview ${pv.missing}`);
+      const leadsBefore = sql(`SELECT COUNT(*) FROM Leads`);
+      const cons = (await http.post("/users", { name: "Consultora Avulsa", email: "avulsa@polo.test", password: "senha123", role: "consultor" }, auth())).data;
+      const tok = (await http.post("/auth/login", { email: "avulsa@polo.test", password: "senha123" })).data.token;
+      const made = await http.post("/proposals", { recipientName: "Amiga da Equipe", courseId: propCourse.id, params }, asUser(tok));
+      assert(made.status === 201 && made.data.leadId === null && made.data.recipientName === "Amiga da Equipe", `avulsa ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      assert(sql(`SELECT COUNT(*) FROM Leads`) === leadsBefore, "an avulsa made a lead");
+      // of who made it (and of the management): another consultant neither sees nor opens it
+      const other = (await http.post("/users", { name: "Outro Consultor Avulsa", email: "avulsa2@polo.test", password: "senha123", role: "consultor" }, auth())).data;
+      const otherTok = (await http.post("/auth/login", { email: "avulsa2@polo.test", password: "senha123" })).data.token;
+      assert(!(await http.get("/proposals", { params: { standalone: 1 }, ...asUser(otherTok) })).data.some(p => p.id === made.data.id), "another consultant lists the avulsa");
+      assert((await http.get(`/proposals/${made.data.id}`, asUser(otherTok))).status === 403, "another consultant opened the avulsa");
+      assert((await http.get("/proposals", { params: { standalone: 1 }, ...asUser(tok) })).data.some(p => p.id === made.data.id), "the author does not see the avulsa");
+      assert((await http.get("/proposals", { params: { standalone: 1 }, ...auth() })).data.some(p => p.id === made.data.id), "the management does not see the avulsa");
+      // without a conversation it cannot be "sent": it is closed as a link for whoever will send it
+      const noChat = await http.post(`/proposals/${made.data.id}/send`, {}, asUser(tok));
+      assert(noChat.status === 400 && noChat.data.error === "ERR_PROPOSAL_NEEDS_CONVERSATION", `sent with no conversation ${noChat.status}`);
+      const shared = await http.post(`/proposals/${made.data.id}/send`, { share: true }, asUser(tok));
+      assert(shared.status === 200 && shared.data.status === "sent" && /\/p\/[0-9a-f]+$/.test(shared.data.link), `share ${shared.status} ${JSON.stringify(shared.data).slice(0, 160)}`);
+      const page = await http.get(`/p/${shared.data.link.split("/p/")[1]}`);
+      assert(page.status === 200 && String(page.data).includes("Amiga da Equipe"), `public page ${page.status}`);
+      const file = await http.get(`/proposals/${made.data.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" });
+      assert(file.status === 200 && /Proposta%20-%20Amiga%20da%20Equipe\.pdf/.test(String(file.headers["content-disposition"])), `pdf ${file.status} ${file.headers["content-disposition"]}`);
+      assert(sql(`SELECT viewedAt IS NOT NULL FROM Proposals WHERE id=${made.data.id}`) === "1", "the view was not noted");
+    });
+
     // ------------------------------------------- admission, CPF and payments
     console.log("\nadmission & enrollment payments");
     const VALID_CPF = "529.982.247-25";
@@ -3977,11 +4009,28 @@ const postMeta = (id, payload, secret, badSig) => {
       const t = sql(`SELECT t.id FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number='tg_5551' AND t.isHistorical=false ORDER BY t.id DESC LIMIT 1`);
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, mediaUrl, ack, starred, createdAt, updatedAt) VALUES
         ('dr-img-1', ${t}, 'foto da prova', false, true, 'image', 'dr-img-1.jpg', 0, false, NOW(), NOW()),
+        ('dr-stk-1', ${t}, '', false, true, 'image', 'sticker-1700000000.webp', 0, false, NOW(), NOW()),
         ('dr-doc-1', ${t}, 'edital.pdf', false, true, 'document', 'dr-doc-1.pdf', 0, false, NOW(), NOW()),
         ('dr-link-1', ${t}, 'veja https://cruzeirodosulvirtual.com.br/cursos, e depois me chame', true, true, 'chat', NULL, 1, false, NOW(), NOW()),
         ('dr-star-1', ${t}, 'lembrar xyzzycode', true, true, 'chat', NULL, 1, true, NOW(), NOW())`);
       const kind = async k => (await http.get(`/messages/${t}/list`, { params: { kind: k }, ...auth() })).data;
-      assert((await kind("media")).some(m => m.id === "dr-img-1"), "media tab");
+      const media = await kind("media");
+      assert(media.some(m => m.id === "dr-img-1"), "media tab");
+      // a sticker (kept as a .webp image) is not media of the conversation, as in WhatsApp
+      assert(!media.some(m => m.id === "dr-stk-1"), "a sticker is in the media tab");
+      // the stickers of the number: the ones received or sent, the same sticker only once (two files with the same bytes)
+      {
+        const { PUBLIC_DIR } = require("../dist/config/paths");
+        fs.writeFileSync(path.join(PUBLIC_DIR, "sticker-1700000000.webp"), "RIFF-sticker-a");
+        fs.writeFileSync(path.join(PUBLIC_DIR, "sticker-1700000001.webp"), "RIFF-sticker-a");
+        fs.writeFileSync(path.join(PUBLIC_DIR, "sticker-1700000002.webp"), "RIFF-sticker-b");
+        sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, mediaUrl, ack, starred, createdAt, updatedAt) VALUES
+          ('dr-stk-2', ${t}, '', true, true, 'image', 'sticker-1700000001.webp', 1, false, NOW(), NOW()),
+          ('dr-stk-3', ${t}, '', false, true, 'image', 'sticker-1700000002.webp', 0, false, NOW(), NOW())`);
+        const stickers = (await http.get(`/messages/${t}/stickers`, auth())).data;
+        assert(stickers.length === 2 && stickers.every(x => /\/public\/sticker-17000000\d{2}\.webp\?access=/.test(x.url)), `stickers of the number ${JSON.stringify(stickers)}`);
+        assert((await http.post(`/messages/${t}/sticker`, { messageId: "dr-img-1" }, auth())).status === 404, "a photo was sent as a sticker");
+      }
       assert((await kind("docs")).some(m => m.id === "dr-doc-1"), "docs tab");
       const links = await kind("links");
       assert(links.length === 1 && links[0].url === "https://cruzeirodosulvirtual.com.br/cursos", `links tab ${JSON.stringify(links)}`);
@@ -8653,6 +8702,42 @@ const postMeta = (id, payload, secret, badSig) => {
           if(owner)assert.equal(await Notification.count({where:{userId:owner,kind:"sla_forgotten"}}),1,"the forgotten line came twice in the same day");
           await late.destroy();
         }finally{await Message.destroy({where:{id:["sla-closing","sla-old-wait"]}});await shift(5);await ticket.update({lastMessageFromMe:wasFromMe});await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
+    });
+    await test("group messages: each participant is stored as who wrote (a LID-only one with the name WhatsApp shows), a forwarded one says so, and the group renamed on WhatsApp is renamed here", async () => {
+      const wid = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, groupsMode, createdAt, updatedAt) VALUES ('QR Grupo Remetente', 'DISCONNECTED', 'whatsapp', false, 'all', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      try {
+        inDb(`const { handleMessage } = require("./dist/handlers/handleWhatsappEvents");
+          const Message = require("./dist/models/Message").default, Contact = require("./dist/models/Contact").default, Ticket = require("./dist/models/Ticket").default;
+          const old = await Contact.create({ name: "Contato sem telefone", number: "", lid: "77001122334455", isGroup: false });
+          const group = (name) => ({ name, number: "120363999000000777", isGroup: true });
+          const say = (id, who, extra = {}, groupName = "Polo Vilhena Teste") => handleMessage(
+            { id, body: "oi " + id, fromMe: false, hasMedia: false, type: "chat", timestamp: Math.floor(Date.now() / 1000), from: "120363999000000777@g.us", to: "me", ...extra },
+            { isGroup: false, ...who }, { whatsappId: ${wid}, unreadMessages: 1, groupContact: group(groupName) });
+          await say("grp-a-1", { name: "Adriele E2E", number: "5569900001111" });
+          await say("grp-b-1", { name: "Pedro E2E", number: "", lid: "88001122334455" });
+          await say("grp-c-1", { name: "Laura E2E", number: "", lid: "77001122334455" }, { isForwarded: true });
+          await say("grp-a-2", { name: "Adriele E2E", number: "5569900001111" }, {}, "Ambientação Vilhena Teste");
+          const rows = await Message.findAll({ where: { id: ["grp-a-1", "grp-b-1", "grp-c-1", "grp-a-2"] }, include: ["contact"], order: [["id", "ASC"]] });
+          const by = Object.fromEntries(rows.map(r => [r.id, r]));
+          assert.equal(rows.length, 4, "a group message was not stored");
+          assert.equal(new Set(rows.map(r => r.contactId)).size, 3, "the three people of the group were not told apart");
+          assert.equal(by["grp-b-1"].contact.name, "Pedro E2E", "the LID-only participant has no name");
+          assert.equal(by["grp-c-1"].contactId, old.id, "the LID contact was not reused");
+          await old.reload();
+          assert.equal(old.name, "Laura E2E", "Contato sem telefone was not given the real name");
+          assert.equal(by["grp-c-1"].isForwarded, true, "the forwarded message lost its mark");
+          assert.equal(by["grp-a-1"].isForwarded, false);
+          const g = await Contact.findOne({ where: { number: "120363999000000777" } });
+          assert.equal(g.name, "Ambientação Vilhena Teste", "the group renamed on WhatsApp kept the old name");
+          const t = await Ticket.findOne({ where: { contactId: g.id, whatsappId: ${wid} } });
+          assert(t && t.isGroup, "the group conversation was not opened");`);
+      } finally {
+        sql(`DELETE FROM Messages WHERE id IN ('grp-a-1','grp-b-1','grp-c-1','grp-a-2')`);
+        sql(`DELETE FROM Tickets WHERE whatsappId=${wid}`);
+        sql(`DELETE FROM Contacts WHERE number IN ('120363999000000777','5569900001111') OR lid IN ('88001122334455','77001122334455')`);
+        sql(`DELETE FROM WhatsappQueues WHERE whatsappId=${wid}`);
+        sql(`DELETE FROM Whatsapps WHERE id=${wid}`);
+      }
     });
     await test("private attachments reject unsigned links and support revocation", async () => {
       const fileHttp = axios.create({ baseURL: API, validateStatus: () => true, httpAgent: new (require("http").Agent)({ keepAlive: false }) });

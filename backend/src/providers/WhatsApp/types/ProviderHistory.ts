@@ -10,6 +10,8 @@ export interface ProviderHistoryMessage {
   type?: string;
   // in groups: who wrote it
   author?: { name: string; number: string; lid?: string };
+  // forwarded on WhatsApp
+  forwarded?: boolean;
 }
 
 export interface ProviderHistoryChat {

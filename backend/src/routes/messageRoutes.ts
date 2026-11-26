@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import isAuth from "../middleware/isAuth";
-import { canReadTicket, canWriteTicket, canSendTicket, canWriteMessage } from "../middleware/canAccessTicket";
+import { canReadTicket, canWriteTicket, canSendTicket, canWriteMessage, canReadMessage } from "../middleware/canAccessTicket";
 import uploadConfig from "../config/upload";
 import { uploadCapacity } from "../middleware/uploadCapacity";
 
@@ -20,6 +20,9 @@ messageRoutes.get("/messages/:ticketId", isAuth, canReadTicket, MessageControlle
 messageRoutes.post("/messages/:ticketId/contact", isAuth, canSendTicket, MessageController.sendContact);
 messageRoutes.post("/messages/:ticketId/poll", isAuth, canSendTicket, MessageController.sendPoll);
 messageRoutes.get("/messages/:ticketId/list", isAuth, canReadTicket, MessageController.listByKind);
+// the stickers of the number of the conversation (already received or sent), and sending one of them as a sticker
+messageRoutes.get("/messages/:ticketId/stickers", isAuth, canReadTicket, MessageController.stickers);
+messageRoutes.post("/messages/:ticketId/sticker", isAuth, canSendTicket, MessageController.sendSticker);
 
 messageRoutes.post(
   "/messages/:ticketId",
@@ -37,5 +40,7 @@ messageRoutes.put("/messages/:messageId/star", isAuth, canWriteMessage, MessageC
 messageRoutes.post("/messages/:messageId/media", isAuth, canWriteMessage, MessageController.loadMedia);
 messageRoutes.post("/messages/:messageId/react", isAuth, canWriteMessage, MessageController.react);
 messageRoutes.post("/messages/:messageId/forward", isAuth, canWriteMessage, MessageController.forward);
+// who received, read and listened to a message sent from a number by QR Code (the phone keeps this only for what was sent)
+messageRoutes.get("/messages/:messageId/info", isAuth, canReadMessage, MessageController.info);
 
 export default messageRoutes;

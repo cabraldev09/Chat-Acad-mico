@@ -14,6 +14,7 @@ import PlugIcon from "lucide-react/dist/esm/icons/plug-2";
 import ContactIcon from "lucide-react/dist/esm/icons/contact";
 import ZapIcon from "lucide-react/dist/esm/icons/zap";
 import RotateCcwIcon from "lucide-react/dist/esm/icons/rotate-ccw";
+import FileTextIcon from "lucide-react/dist/esm/icons/file-text";
 import CalendarClockIcon from "lucide-react/dist/esm/icons/calendar-clock";
 import MegaphoneIcon from "lucide-react/dist/esm/icons/megaphone";
 import BarChartIcon from "lucide-react/dist/esm/icons/bar-chart-3";
@@ -149,21 +150,26 @@ function ListItemLink(props) {
   const { icon, primary, to, collapsed, adornment, alsoActive } = props;
   const classes = useStyles();
 
+  // The link component must stay the SAME between renders: a new one (the inline alsoActive arrays are new on every render) unmounts the
+  // <a> the person just clicked, the focus falls to the page and the menu jumps. So it depends on the text of the list, not on the array.
+  const alsoKey = (alsoActive || []).join("|");
   const renderLink = React.useMemo(
-    () =>
-      React.forwardRef((itemProps, ref) => (
+    () => {
+      const also = alsoKey ? alsoKey.split("|") : null;
+      return React.forwardRef((itemProps, ref) => (
         <NavLink
           to={to}
           // "/" and "/crm" are the start of other addresses ("/crm/painel"...): only the exact address lights them
           exact={to === "/" || to === "/crm"}
           // a group stays lit while one of its pages is open (Configurações over Conexões, Usuários...)
-          isActive={alsoActive ? (match, location) => !!match || alsoActive.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`)) : undefined}
+          isActive={also ? (match, location) => !!match || also.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`)) : undefined}
           activeClassName={classes.navItemActive}
           ref={ref}
           {...itemProps}
         />
-      )),
-    [to, classes.navItemActive, alsoActive]
+      ));
+    },
+    [to, classes.navItemActive, alsoKey]
   );
 
   return (
@@ -361,6 +367,10 @@ const MainListItems = (props) => {
       {/* the leads that stopped or gave up, with the reason: to be tried again */}
       {user.role !== "relacionamento" && user.role !== "tutor" && user.role !== "academico" && (
         <ListItemLink to="/crm/recuperacao" primary="Recuperação" icon={<RotateCcwIcon className="ico" />} collapsed={collapsed} />
+      )}
+      {/* proposals of a scholarship for someone who is not a lead of yours (a colleague's lead, a simulation) */}
+      {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
+        <ListItemLink to="/crm/propostas" primary="Propostas" icon={<FileTextIcon className="ico" />} collapsed={collapsed} />
       )}
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />

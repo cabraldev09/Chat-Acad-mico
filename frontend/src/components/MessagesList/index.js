@@ -3,7 +3,7 @@ import { looksLikeFileName, shownText } from "../../utils/mediaLabel";
 
 import React, { useState, useEffect, useReducer, useRef, useCallback } from "react";
 import clsx from "clsx";
-import { makeStyles } from "@material-ui/core";
+import { makeStyles, useTheme } from "@material-ui/core";
 import CircularProgress from "@material-ui/core/CircularProgress";
 import IconButton from "@material-ui/core/IconButton";
 import AccessTime from "@material-ui/icons/AccessTime";
@@ -41,6 +41,7 @@ import toastError from "../../errors/toastError";
 import whatsBackground from "../../assets/wa-background.png";
 import whatsBackgroundDark from "../../assets/wa-background-dark.png";
 import { wa, dayLabel, clock, friendlyBody } from "../chat/chatTheme";
+import { initialsOf } from "../../utils/avatar";
 
 // the day and the time of a message, in full (shown when the pointer is over its time)
 const fullDate = (date) => new Date(date).toLocaleString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -169,7 +170,11 @@ const useStyles = makeStyles((theme) => {
     },
     match: { outline: `2px solid ${dark ? "#667781" : "#ffd279"}`, outlineOffset: 1 },
     matchActive: { outline: `3px solid ${c.accent}`, outlineOffset: 1 },
-    sender: { fontSize: 14, fontWeight: 600, color: c.sender, marginBottom: 1 },
+    sender: { fontSize: 14, fontWeight: 600, color: c.sender, marginBottom: 1, display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    // the little picture of who wrote, beside the first bubble of each person in a group (the next ones keep the same indent)
+    senderAvatar: { flex: "none", width: 28, height: 28, borderRadius: "50%", marginRight: 6, alignSelf: "flex-start", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", overflow: "hidden", objectFit: "cover" },
+    senderGap: { flex: "none", width: 34 },
+    forwarded: { display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, fontStyle: "italic", color: c.textSecondary, marginBottom: 2 },
     chevron: {
       position: "absolute",
       top: 2,
@@ -260,11 +265,14 @@ const useStyles = makeStyles((theme) => {
     withReactions: { marginBottom: 14 },
     // the day stays on top while the conversation scrolls (as on WhatsApp): the next day's label takes its place
     day: { alignSelf: "center", margin: "12px 0 8px", padding: "5px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 400, color: c.textSecondary, backgroundColor: c.chatChip, boxShadow: c.shadow, position: "sticky", top: 8, zIndex: 3 },
+    // a band across the whole conversation (as on WhatsApp), drawn above the floating day label: when both meet, it stays readable
     unreadDivider: {
-      alignSelf: "center",
-      margin: "14px 0 8px",
-      padding: "5px 16px",
-      borderRadius: 999,
+      alignSelf: "stretch",
+      position: "relative",
+      zIndex: 4,
+      margin: "14px -8px 8px",
+      padding: "6px 16px",
+      borderRadius: 0,
       textAlign: "center",
       fontSize: 12,
       fontWeight: 700,
@@ -388,8 +396,35 @@ const fileNameOf = (m) => {
 const isOnlyFileName = (m) => !m.body || looksLikeFileName(m.body, m.mediaUrl) || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("?")[0].split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
 
 
+// Who wrote, in a group: each person with their own name and color (as on WhatsApp). The color is always the same for the same person.
+const SENDER_LIGHT = ["#1f7aa8", "#c2410c", "#7c3aed", "#0f766e", "#be123c", "#a16207", "#4d7c0f", "#a21caf", "#0369a1", "#b91c1c"];
+const SENDER_DARK = ["#53bdeb", "#fdba74", "#c4b5fd", "#5eead4", "#fda4af", "#fde047", "#bef264", "#f0abfc", "#7dd3fc", "#fca5a5"];
+export const senderColor = (key, dark) => {
+  const list = dark ? SENDER_DARK : SENDER_LIGHT;
+  if (typeof key === "number") return list[key % list.length];
+  return list[[...String(key ?? "")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % list.length];
+};
+// the same person in a row shares one header; in a conversation with one person only "you" or "them" matter
+export const senderKey = (m, isGroup) => (m.fromMe ? "me" : isGroup ? `c${m.contactId ?? (m.contact && m.contact.id) ?? "?"}` : "them");
+const phoneLabel = (digits) => {
+  const d = String(digits || "").replace(/\D/g, "");
+  if (/^55\d{10,11}$/.test(d)) {
+    const rest = d.slice(4);
+    return `+55 ${d.slice(2, 4)} ${rest.slice(0, rest.length - 4)}-${rest.slice(-4)}`;
+  }
+  return d ? `+${d}` : "";
+};
+// never an empty name: the name, else the phone written as people read it, else "Participante"
+export const senderName = (contact) => {
+  if (!contact) return "Participante";
+  const name = String(contact.name || "").trim();
+  if (name && !/^\+?[\d\s().-]{8,}$/.test(name) && name !== "Contato sem telefone") return name;
+  return phoneLabel(contact.number || name) || "Participante";
+};
+
 const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches, live = false }) => {
   const classes = useStyles();
+  const dark = useTheme().palette.type === "dark";
   const [messagesList, dispatch] = useReducer(reducer, []);
   const messagesListRef = useRef([]);
   messagesListRef.current = messagesList;
@@ -734,13 +769,16 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   );
 
   const items = [];
+  // in a group, each person gets the next color in the order they first appear (no two of the first ten share one), as on WhatsApp
+  const colorSlot = new Map();
+  if (isGroup) messagesList.forEach((m) => { if (!m.fromMe && !colorSlot.has(senderKey(m, true))) colorSlot.set(senderKey(m, true), colorSlot.size); });
+  const colorOfSender = (m, darkMode) => senderColor(colorSlot.has(senderKey(m, true)) ? colorSlot.get(senderKey(m, true)) : senderKey(m, true), darkMode);
   messagesList.forEach((m, i) => {
     const prev = messagesList[i - 1];
     const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
-    const newSender = !prev || prev.fromMe !== m.fromMe || newDay;
-    const following = messagesList[i + 1];
-    // the last bubble of a sequence carries the "tail" (bottom corner), like the WhatsApp app
-    const isLast = !following || following.fromMe !== m.fromMe || new Date(following.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
+    // a new person (in a group, each participant; elsewhere, you or them) or a new day starts a new sequence of bubbles
+    const newSender = !prev || senderKey(prev, isGroup) !== senderKey(m, isGroup) || newDay || m.id === firstUnreadId;
+    const groupIn = isGroup && !m.fromMe;
     if (newDay) {
       items.push(
         <span key={`day-${m.id}`} className={classes.day}>
@@ -775,6 +813,11 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         {mine && !picked && !m.isDeleted && !m.pending && (REACTIONS[channel] || REACTIONS.whatsapp).length > 0 && (
           <ReactionBar message={m} channel={channel} className={classes.reactBtn} />
         )}
+        {groupIn && (newSender
+          ? (m.contact && m.contact.profilePicUrl
+            ? <img className={classes.senderAvatar} src={m.contact.profilePicUrl} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
+            : <span className={classes.senderAvatar} style={{ background: colorOfSender(m, false) }} aria-hidden="true">{initialsOf(senderName(m.contact))}</span>)
+          : <span className={classes.senderGap} aria-hidden="true" />)}
         {picked && !m.isDeleted && (
           <span className={clsx(classes.pickMark, picked.includes(m.id) && classes.pickMarkOn)}>
             {picked.includes(m.id) && <Check size={14} strokeWidth={3} />}
@@ -806,7 +849,8 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
               <ExpandMore />
             </IconButton>
           )}
-          {isGroup && !mine && newSender && <div className={classes.sender}>{m.contact?.name}</div>}
+          {groupIn && newSender && <span className={classes.sender} style={{ color: colorOfSender(m, dark) }}>{senderName(m.contact)}</span>}
+          {m.isForwarded && !m.isDeleted && <div className={classes.forwarded}><Forward style={{ fontSize: 15 }} aria-hidden="true" />Encaminhada</div>}
           {m.quotedMsg && renderQuote(m)}
           {m.isDeleted ? (
             <div className={classes.deleted}>

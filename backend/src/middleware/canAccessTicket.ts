@@ -94,6 +94,14 @@ export const canWriteMessage = async (req: Request, _res: Response, next: NextFu
   next();
 };
 
+// reading what is known about one message (who received and read it): whoever can read its conversation
+export const canReadMessage = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  const message = await Message.findByPk(req.params.messageId, { attributes: ["id", "ticketId"] });
+  if (!message) throw new AppError("ERR_NO_MESSAGE_FOUND", 404);
+  await assertTicketAccess(req, message.ticketId, "read");
+  next();
+};
+
 export const canReadTicket = buildGuard("read");
 export const canWriteTicket = buildGuard("write");
 export const canSendTicket = buildGuard("send");

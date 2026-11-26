@@ -51,6 +51,7 @@ export interface MessagePayload {
   to: string;
   hasQuotedMsg?: boolean;
   isGif?: boolean;
+  isForwarded?: boolean;
   quotedMsgId?: string;
   mediaUrl?: string;
   mediaType?: string;
@@ -225,6 +226,7 @@ export const handleMessage = async (
         ? (processedMessage.type === "ptt" ? "audio" : processedMessage.type === "sticker" ? "image" : processedMessage.type)
         : processedMessage.type,
       isGif: !!processedMessage.isGif,
+      isForwarded: !!processedMessage.isForwarded,
       quotedMsgId: processedMessage.quotedMsgId,
       ack: processedMessage.ack !== undefined ? processedMessage.ack : 0
     };

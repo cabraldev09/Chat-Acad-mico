@@ -29,6 +29,7 @@ import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import type { PhoneName } from "../../../helpers/PhoneNames";
 import CreateOrUpdateContactService from "../../../services/ContactServices/CreateOrUpdateContactService";
+import { nameOrNotify } from "../../../helpers/ParticipantName";
 import { isPhoneNumber } from "../../../helpers/ChatId";
 import Contact from "../../../models/Contact";
 import Message from "../../../models/Message";
@@ -36,7 +37,7 @@ import Ticket from "../../../models/Ticket";
 import { Op, QueryTypes } from "sequelize";
 import sequelize from "../../../database";
 import { logger } from "../../../utils/logger";
-import { WhatsappProvider } from "../whatsappProvider";
+import { ImportSummary, WhatsappProvider } from "../whatsappProvider";
 import {
   ProviderMessage,
   ProviderMediaInput,
@@ -429,6 +430,7 @@ const convertToMessagePayload = async (
     to: processedMsg.to,
     hasQuotedMsg: processedMsg.hasQuotedMsg,
     isGif: !!(processedMsg as any)._data?.isGif,
+    isForwarded: !!(processedMsg as any).isForwarded,
     quotedMsgId
   };
 };
@@ -556,12 +558,16 @@ const getMessageData = async (
     }
 
     groupContact = await convertToContactPayload(msgGroupContact, wbot);
+    // the group's name is the subject the chat has now (the contact entry can keep an old one after the group is renamed)
+    if (chat.name && String(chat.name).trim()) groupContact.name = String(chat.name).trim();
     groupContact.community = communityOf(chat, wbot);
   }
 
   const unreadMessages = msg.fromMe ? 0 : chat.unreadCount;
 
   const contactPayload = await convertToContactPayload(msgContact, wbot);
+  // someone not saved on the phone and with no profile name in the contact: the name they show on WhatsApp travels with the message
+  if (!msg.fromMe) contactPayload.name = nameOrNotify(contactPayload, (msg as any)._data?.notifyName);
   const messagePayload = await convertToMessagePayload(msg);
   const mediaPayload = await convertToMediaPayload(msg);
 
@@ -1008,7 +1014,13 @@ const sendMedia = async (
     quotedMessageId: options?.quotedMessageId
   };
 
-  if (
+  if (options?.sendMediaAsSticker) {
+    // a sticker has no caption; WhatsApp Web turns the image into the sticker format by itself
+    (mediaOptions as any).sendMediaAsSticker = true;
+    delete mediaOptions.caption;
+  } else if (options?.sendVideoAsGif && messageMedia.mimetype.startsWith("video/")) {
+    (mediaOptions as any).sendVideoAsGif = true;
+  } else if (
     messageMedia.mimetype.startsWith("image/") &&
     !/^.*\.(jpe?g|png|gif)?$/i.exec(media.filename)
   ) {
@@ -1122,7 +1134,7 @@ const importChats = async (
   options: HistoryOptions,
   onChat: (chat: ProviderHistoryChat) => Promise<void>,
   onProgress?: (done: number, total: number) => void
-): Promise<void> => {
+): Promise<ImportSummary> => {
   const wbot = getWbot(sessionId);
   const only = options.onlyChatIds && options.onlyChatIds.length ? new Set(options.onlyChatIds) : null;
   // one or a few chats asked by name are read directly (the whole list of a number with hundreds of chats is heavy)
@@ -1155,7 +1167,10 @@ const importChats = async (
           const c = await convertToContactPayload(await wbot.getContactById(id), wbot, { withPic: false });
           authors.set(id, { name: c.name, number: c.number, lid: c.lid });
         } catch (err) {
-          authors.set(id, { name: String(id).split("@")[0], number: String(id).split("@")[0] });
+          // the author could not be read: an internal id (LID) is kept as such, never as a phone number
+          const user = String(id).split("@")[0];
+          const isLid = String(id).endsWith("@lid");
+          authors.set(id, { name: nameOrNotify({ name: isLid ? "" : user, number: isLid ? "" : user }, (m as any)._data?.notifyName), number: isLid ? "" : user, ...(isLid ? { lid: user } : {}) });
         }
       }
       return authors.get(id);
@@ -1166,7 +1181,7 @@ const importChats = async (
       const body = (m.body && (m.type === "chat" || m.hasMedia) ? m.body : "") || HISTORY_LABELS[m.type] || "";
       if (!body) continue;
       // eslint-disable-next-line no-await-in-loop
-      messages.push({ id: m.id.id, body, fromMe: m.fromMe, timestamp: m.timestamp, ack: mapMessageAck(m.ack), type: m.type, author: await authorOf(m) });
+      messages.push({ id: m.id.id, body, fromMe: m.fromMe, timestamp: m.timestamp, ack: mapMessageAck(m.ack), type: m.type, author: await authorOf(m), forwarded: !!(m as any).isForwarded });
     }
     // a person's chat with nothing in it is left out; a group stays even empty (it is part of the number, as on the phone)
     if (!messages.length && !chat.isGroup) return null;
@@ -1185,6 +1200,8 @@ const importChats = async (
   };
 
   let done = 0;
+  let empty = 0;
+  let failed = 0;
   const later: any[] = [];
   const copy = async (chat: any, lastTry: boolean) => {
     let item: ProviderHistoryChat | null = null;
@@ -1193,14 +1210,20 @@ const importChats = async (
       item = await withTimeout(read(chat), IMPORT_CHAT_TIMEOUT_MS);
     } catch (err) {
       if (!lastTry) { later.push(chat); return; }
+      failed += 1;
       logger.warn(`History: could not copy chat ${chat.id._serialized}: ${err}`);
+      item = undefined as any;
     }
     if (item) {
       try {
         await onChat(item);
       } catch (err) {
+        failed += 1;
         logger.warn(`History: could not save chat ${chat.id._serialized}: ${err}`);
       }
+    } else if (item === null) {
+      // a person's chat with no message in it (only WhatsApp system lines) is left out on purpose
+      empty += 1;
     }
     done += 1;
     if (onProgress && (done % 10 === 0 || done === chats.length)) onProgress(done, chats.length);
@@ -1210,6 +1233,7 @@ const importChats = async (
   await eachLimited(later, 2, chat => copy(chat, true));
   // the pictures come afterwards, in the background
   if (!only) fillPictures(wbot, chats.slice(0, 500)).catch(() => undefined);
+  return { phoneTotal: all.length, considered: chats.length, empty, failed };
 };
 
 const sendReaction = async (
@@ -1369,20 +1393,75 @@ const findMessage = async (
   return recent.find(m => m.id.id === messageId) || null;
 };
 
+// Who each WhatsApp id is, as the phone knows them: the phone number (an internal id, LID, is never shown as a phone) and the name
+// (saved on the phone, else the profile name, else the verified business name). A few at a time: a big group has hundreds.
+export interface PersonOnPhone { id: string; key: string; isLid: boolean; phone: string; name: string }
+const describePeople = async (wbot: Session, ids: string[]): Promise<Map<string, PersonOnPhone>> => {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const lids = unique.filter(id => id.endsWith("@lid"));
+  const phones = lids.length ? await resolvePhones(wbot, lids) : new Map<string, string>();
+  const out = new Map<string, PersonOnPhone>();
+  for (let i = 0; i < unique.length; i += 25) {
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.all(unique.slice(i, i + 25).map(async id => {
+      const isLid = id.endsWith("@lid");
+      const key = id.split("@")[0];
+      const phone = isLid ? phones.get(id) || "" : onlyDigits(key);
+      let name = "";
+      try {
+        const c: any = await withTimeout(wbot.getContactById(id), 5000);
+        name = String(c?.name || c?.pushname || c?.verifiedName || "").trim();
+      } catch (err) { /* no name: the screen shows the phone */ }
+      out.set(id, { id, key, isLid, phone: isPhoneNumber(phone) ? phone : "", name });
+    }));
+  }
+  return out;
+};
+
 const getGroupInfo = async (
   sessionId: number,
   chatId: string
-): Promise<{ name: string; description: string; createdAt?: number; participants: { id: string; isAdmin: boolean }[] } | null> => {
-  const chat: any = await getWbot(sessionId).getChatById(chatId).catch(() => null);
+): Promise<{ name: string; description: string; createdAt?: number; participants: { id: string; key: string; isLid: boolean; phone: string; name: string; isAdmin: boolean; isSuperAdmin: boolean }[] } | null> => {
+  const wbot = getWbot(sessionId);
+  const chat: any = await wbot.getChatById(chatId).catch(() => null);
   if (!chat || !chat.isGroup) return null;
+  const list: any[] = chat.participants || [];
+  const people = await describePeople(wbot, list.map((p: any) => p.id?._serialized || ""));
   return {
     name: chat.name,
     description: chat.description || "",
     createdAt: chat.createdAt ? Math.floor(new Date(chat.createdAt).getTime() / 1000) : undefined,
-    participants: (chat.participants || []).map((p: any) => ({
-      id: p.id?._serialized || "",
-      isAdmin: !!(p.isAdmin || p.isSuperAdmin)
-    }))
+    participants: list.map((p: any) => {
+      const id = p.id?._serialized || "";
+      const who = people.get(id) || { key: id.split("@")[0], isLid: id.endsWith("@lid"), phone: "", name: "" };
+      return { id, key: who.key, isLid: who.isLid, phone: who.phone, name: who.name, isAdmin: !!(p.isAdmin || p.isSuperAdmin), isSuperAdmin: !!p.isSuperAdmin };
+    })
+  };
+};
+
+// "Dados da mensagem" of a message sent from this number: who received it, who read it and who listened (voice), with the time of
+// each, as the phone shows it (WhatsApp keeps this only for messages you sent)
+const getMessageInfo = async (
+  sessionId: number,
+  chatId: string,
+  messageId: string
+): Promise<{ delivery: Array<PersonOnPhone & { t: number }>; read: Array<PersonOnPhone & { t: number }>; played: Array<PersonOnPhone & { t: number }>; deliveryRemaining: number; readRemaining: number; playedRemaining: number } | null> => {
+  const wbot = getWbot(sessionId);
+  const message: any = await findMessage(wbot, chatId, messageId, true).catch(() => null);
+  if (!message || typeof message.getInfo !== "function") return null;
+  const info: any = await withTimeout(message.getInfo(), 15000).catch(() => null);
+  if (!info) return null;
+  const idOf = (x: any) => (x?.id?._serialized || x?.id || "") as string;
+  const all = [...(info.delivery || []), ...(info.read || []), ...(info.played || [])].map(idOf);
+  const people = await describePeople(wbot, all);
+  const list = (arr: any[]) => (arr || []).map(x => {
+    const id = idOf(x);
+    const who = people.get(id) || { id, key: id.split("@")[0], isLid: id.endsWith("@lid"), phone: "", name: "" };
+    return { ...who, t: Number(x?.t) || 0 };
+  });
+  return {
+    delivery: list(info.delivery), read: list(info.read), played: list(info.played),
+    deliveryRemaining: Number(info.deliveryRemaining) || 0, readRemaining: Number(info.readRemaining) || 0, playedRemaining: Number(info.playedRemaining) || 0
   };
 };
 
@@ -1933,6 +2012,19 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
 
     // a group changed (someone joined, left, a community was linked): look at the communities again
     ["group_join", "group_leave", "group_update", "group_admin_changed"].forEach(evt => wbot.on(evt as any, () => scheduleCommunitySync(wbot, whatsapp.id, 8000)));
+    // a group renamed on the phone (or by anyone in it): the conversation here takes the new name right away
+    wbot.on("group_update", async (n: any) => {
+      try {
+        const chatId = n?.chatId || n?.id?.remote;
+        if (!chatId) return;
+        const chat: any = await wbot.getChatById(chatId);
+        if (!chat?.isGroup || !chat.name) return;
+        const { default: CreateOrUpdate } = await import("../../../services/ContactServices/CreateOrUpdateContactService");
+        await CreateOrUpdate({ name: String(chat.name).trim(), number: chat.id.user, isGroup: true } as any);
+      } catch (err) {
+        logger.warn(`Group rename not applied: ${(err as Error).message}`);
+      }
+    });
 
     // The event uses either a phone id, group id or LID depending on the account.
     wbot.on("unread_count", async (chat: any) => {
@@ -1996,6 +2088,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendPoll,
   getGroupInfo,
   getMessageAck,
+  getMessageInfo,
   getChatUnreadCount: async (sessionId, chatId) => {
     const chat = await getWbot(sessionId).getChatById(chatId);
     return Number.isFinite(chat.unreadCount) ? chat.unreadCount : null;
