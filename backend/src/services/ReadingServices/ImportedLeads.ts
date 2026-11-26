@@ -96,7 +96,8 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
   // the lead came when the conversation began (an old conversation does not swell this month's numbers) and it was answered when the
   // consultant first wrote (it is not a "new lead to check")
   const patch: any = { lastContactAt: lastAt };
-  if (lead.createdAt && new Date(lead.createdAt).getTime() > firstAt.getTime() + 864e5) patch.createdAt = firstAt;
+  // (createdAt only changes through the static update; an instance update leaves it as it was)
+  if (lead.createdAt && new Date(lead.createdAt).getTime() > firstAt.getTime() + 864e5) await Lead.update({ createdAt: firstAt } as any, { where: { id: lead.id }, silent: true } as any);
   if (!lead.firstContactAt && firstMine) patch.firstContactAt = firstMine;
   if (!lead.ownerId && t.ownerId) patch.ownerId = Number(t.ownerId);
   if (!lead.courseId && answer.course) {
