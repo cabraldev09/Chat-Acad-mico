@@ -6384,6 +6384,9 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // a person of the team answers
       // the handoff already gave the conversation to a consultant of the queue; a person of the team answering is simulated by taking it over
+      // (only after the handoff finished assigning it: taking it over before that, the late assignment won and the team's reply got 409)
+      await waitFor(() => sql(`SELECT COALESCE(userId::text, '') FROM Tickets WHERE id=${t}`) !== "", 8000, "the handoff assigned the conversation").catch(() => undefined);
+      await new Promise(r => setTimeout(r, 300));
       sql(`UPDATE Tickets SET status='open', userId=1 WHERE id=${t}`);
       const taken = { status: 200, data: {} };
       before = graph.sent.length;
