@@ -10,6 +10,8 @@ const FIELDS = [
   ["nome", "Nome (vai para o cadastro do lead)"], ["email", "E-mail (vai para o cadastro)"], ["cidade", "Cidade (vai para o cadastro)"],
   ["curso", "Curso de interesse (vai para o cadastro)"], ["modalidade", "Modalidade (vai para o cadastro)"], ["forma_ingresso", "Forma de ingresso (vai para o cadastro)"],
   ["semestre_transferencia", "Semestre da transferência (vai para o cadastro)"],
+  ["tipo_curso", "Tipo de curso: graduação, técnico, técnico por competência ou pós (vai para o cadastro)"],
+  ["escolaridade", "Formação (vai para o cadastro)"], ["primeira_graduacao", "É a primeira graduação: Sim ou Não (vai para o cadastro)"],
 ];
 const CONDITION_FIELDS = [
   ["hours", "Horário de atendimento"], ["tag", "Etiquetas do lead"], ["lead.course", "Curso do lead"], ["lead.polo", "Polo do lead"], ["lead.stage", "Etapa do funil"],
@@ -152,7 +154,20 @@ const Inspector = ({ node, update, remove, lists, nodes, flowId, kind }) => {
               <T select label="Responsável" value={d.userId ? "user" : d.ownerMode || "keep"} onChange={(e) => set(e.target.value === "user" ? { userId: lists.users[0] ? lists.users[0].id : null, ownerMode: null } : { userId: null, ownerMode: e.target.value })}>
                 <MenuItem value="keep">Manter</MenuItem>
                 <MenuItem value="roundrobin">Rodízio entre os consultores</MenuItem>
+                <MenuItem value="queue">Rodízio entre os consultores de uma fila</MenuItem>
                 <MenuItem value="user">Uma pessoa</MenuItem>
+              </T>
+              {d.ownerMode === "queue" && (
+                <>
+                  <T select label="Fila do rodízio" value={d.queueId || ""} onChange={(e) => set({ queueId: e.target.value })}>
+                    {lists.queues.map((q) => <MenuItem key={q.id} value={q.id}>{q.name}</MenuItem>)}
+                  </T>
+                  <Typography variant="caption" color="textSecondary">O lead vai para o próximo da fila que aceita atendimentos (quem tem o próprio WhatsApp conectado vem primeiro). Ele recebe o aviso e a tarefa de chamar. Depois deste bloco, as mensagens podem usar {"{{consultor}}"} e {"{{consultor_whatsapp}}"}.</Typography>
+                </>
+              )}
+              <T select label="Universidade do lead (opcional)" value={d.institutionId || ""} onChange={(e) => set({ institutionId: e.target.value || null })}>
+                <MenuItem value="">A do número</MenuItem>
+                {(lists.institutions || []).map((i) => <MenuItem key={i.id} value={i.id}>{i.shortName || i.name}</MenuItem>)}
               </T>
               {d.userId && (
                 <T select label="Pessoa" value={d.userId} onChange={(e) => set({ userId: e.target.value })}>
@@ -176,6 +191,14 @@ const Inspector = ({ node, update, remove, lists, nodes, flowId, kind }) => {
               <MenuItem value="">Rodízio entre os consultores</MenuItem>
               {lists.users.map((u) => <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>)}
             </T>
+          )}
+          {d.action === "set_institution" && (
+            <>
+              <T select label="Universidade" value={d.institutionId || ""} onChange={(e) => set({ institutionId: e.target.value })}>
+                {(lists.institutions || []).map((i) => <MenuItem key={i.id} value={i.id}>{i.shortName || i.name}</MenuItem>)}
+              </T>
+              <Typography variant="caption" color="textSecondary">O lead passa a ser desta universidade (proposta, cursos e marca). Num número de outra universidade, as respostas não levam a conversa para as filas dos polos desse número.</Typography>
+            </>
           )}
           {d.action === "set_polo" && (
             <T select label="Polo" value={d.poloId || ""} onChange={(e) => set({ poloId: e.target.value })}>
@@ -213,6 +236,12 @@ const Inspector = ({ node, update, remove, lists, nodes, flowId, kind }) => {
           </T>
           {d.to === "queue" && (
             <T select label="Fila" value={d.queueId || ""} onChange={(e) => set({ queueId: e.target.value })}>
+              {lists.queues.map((q) => <MenuItem key={q.id} value={q.id}>{q.name}</MenuItem>)}
+            </T>
+          )}
+          {d.to === "lead_owner" && (
+            <T select label="Fila (opcional)" value={d.queueId || ""} onChange={(e) => set({ queueId: e.target.value || null })}>
+              <MenuItem value="">Manter a fila</MenuItem>
               {lists.queues.map((q) => <MenuItem key={q.id} value={q.id}>{q.name}</MenuItem>)}
             </T>
           )}

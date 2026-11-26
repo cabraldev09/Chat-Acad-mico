@@ -539,6 +539,7 @@ const messages = {
         ERR_SEND_RELEASE_DECIDED: "Este pedido já foi decidido.",
         ERR_SEND_RELEASE_MANAGER: "A gestão não tem cota de disparos.",
         ERR_CAMPAIGN_OBJECTIVE: "Diga o objetivo do disparo.",
+        ERR_CAMPAIGN_FLOW: "Escolha um bot publicado em Chatbot e fluxos.",
         ERR_PASSWORD_SHORT: "A senha precisa ter pelo menos 8 caracteres.",
         ERR_PASSWORD_REQUIRED: "Crie uma senha com pelo menos 8 caracteres.",
         ERR_USER_NAME_SHORT: "O nome precisa ter pelo menos 2 letras.",

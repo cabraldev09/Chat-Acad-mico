@@ -18,7 +18,7 @@ import { logger } from "../../utils/logger";
 import { applyToLead } from "../AiServices/Tools";
 import AutoAssignTicket from "../AutomationServices/AutoAssignTicket";
 import { isWithinBusinessHours } from "../AutomationServices/BusinessHours";
-import { addActivity, changeStage, pickOwner, upsertLead } from "../CrmServices/LeadCore";
+import { addActivity, changeStage, ensureLead as ensureContactLead, pickOwner, upsertLead } from "../CrmServices/LeadCore";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
@@ -52,6 +52,8 @@ import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 import { noteAutomation } from "../AutomationServices/AutomationTrace";
 import { paceBeforeSend } from "../../helpers/ReplyPace";
+import { ownNumberOf, pickQueueOwner, readableNumber } from "./QueueOwner";
+import { notify, notifyManagers } from "../NotificationServices/Notify";
 import { polishReply, repeatsHandoff, withoutRepeats } from "../../helpers/ReplyPolish";
 
 // invisible mark: bot messages are told apart from the team's
@@ -62,7 +64,7 @@ const FLOW_DONE = -1;
 const MAX_PER_HOUR = 40;
 
 // the answers that fill a field of the lead (the other ones stay only inside the flow)
-const LEAD_FIELDS = ["nome", "email", "cidade", "curso", "modalidade", "forma_ingresso", "semestre_transferencia", "prazo_decisao", "motivacao", "turno"];
+const LEAD_FIELDS = ["nome", "email", "cidade", "curso", "modalidade", "forma_ingresso", "semestre_transferencia", "prazo_decisao", "motivacao", "turno", "tipo_curso", "escolaridade", "primeira_graduacao"];
 
 const firstName = (n: string): string => String(n || "").trim().split(/\s+/)[0] || "";
 
@@ -110,6 +112,12 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     const existing = await leadOf();
     if (existing) return existing;
     const contact = await Contact.findByPk(ticket.contactId);
+    // the same creation the inbound message starts (one per contact at a time): a bot that acts on the first message does not make a second
+    // lead next to the one the CRM is creating for the same person
+    if (contact) {
+      const shared = await ensureContactLead(contact, ticket.whatsapp?.channel || "whatsapp").catch(() => null);
+      if (shared) return shared;
+    }
     const out = await upsertLead(
       { name: vars.nome || contact?.name, phone: contact?.number, contactId: ticket.contactId, source: node.data?.source || "Chatbot", channel: ticket.whatsapp?.channel },
       null
@@ -336,13 +344,39 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
           await applyToLead(ticket, collectedOf(vars));
           if (d.stageId) await changeStage(lead.id, Number(d.stageId), null).catch(err => logger.warn(`flow stage: ${err}`));
           if (d.tagId) await LeadTag.findOrCreate({ where: { leadId: lead.id, tagId: Number(d.tagId) }, defaults: { leadId: lead.id, tagId: Number(d.tagId) } as any });
+          // the university of the bot (a SESTED bot on the shared official number): the lead, its proposal and its courses are of it
+          if (Number(d.institutionId) > 0 && Number(lead.institutionId) !== Number(d.institutionId)) await lead.update({ institutionId: Number(d.institutionId) });
+          if (d.source && lead.source !== d.source && (!lead.source || lead.source === "Chatbot" || lead.source === "WhatsApp")) await lead.update({ source: String(d.source).slice(0, 60) });
+          const ownerBefore = lead.ownerId;
           if (d.userId) await lead.update({ ownerId: Number(d.userId) });
           else if (d.ownerMode === "roundrobin" && !lead.ownerId) await lead.update({ ownerId: await pickOwner() });
+          // the round of a team (the consultants of the SESTED queue): the next one of the queue, even when the lead had another owner
+          else if (d.ownerMode === "queue" && Number(d.queueId) > 0) {
+            const next = await pickQueueOwner(Number(d.queueId));
+            if (next && next !== lead.ownerId) await lead.update({ ownerId: next });
+            if (!next) await notifyManagers({ kind: "flow_lead", level: "warning", title: `Lead do fluxo "${flowName}" sem consultor na fila`, body: "Coloque os consultores na fila do fluxo em Filas.", link: `/crm?lead=${lead.id}`, dedupeKey: `flow_lead_noqueue:${lead.id}` }).catch(() => undefined);
+          }
           const summary = Object.entries(vars)
             .filter(([k, v]) => !k.startsWith("__") && v)
             .map(([k, v]) => `${k}: ${v}`)
             .join(" · ");
           await addActivity(lead.id, null, "system", `Enviado ao CRM pelo fluxo “${flowName}”${summary ? `. ${summary}` : ""}`);
+          // the consultant who got the lead: their first name and their own number go to the last message of the bot, and they are told at
+          // once (the bell and a task to call the lead from their own WhatsApp)
+          if (lead.ownerId) {
+            const owner = await User.findByPk(lead.ownerId, { attributes: ["id", "name", "phone"] });
+            const own = await ownNumberOf(lead.ownerId);
+            vars.consultor = firstName(owner?.name || "");
+            vars.consultor_whatsapp = own ? readableNumber(own.pairingPhone || (owner as any)?.phone || "") : "";
+            // the bot hands the lead over (the round of a queue, or a new owner): once per conversation, even when the lead already was theirs
+            if (d.ownerMode === "queue" || d.notifyOwner || lead.ownerId !== ownerBefore) {
+              await notify([lead.ownerId], { kind: "flow_lead", level: "warning", title: `Lead novo para você chamar: ${lead.name}`, body: summary.slice(0, 380) || null, link: `/crm?lead=${lead.id}`, dedupeKey: `flow_lead:${lead.id}:${ticket.id}` }).catch(() => undefined);
+              const title = `Chamar ${firstName(lead.name) || "o lead"} pelo seu WhatsApp`;
+              if (!(await LeadTask.count({ where: { leadId: lead.id, userId: lead.ownerId, title, doneAt: null } as any }))) {
+                await LeadTask.create({ leadId: lead.id, userId: lead.ownerId, type: "whatsapp", title, dueAt: new Date(Date.now() + 15 * 60000) } as any).catch(err => logger.warn(`flow task: ${err}`));
+              }
+            }
+          }
           return String(lead.id);
         }
         case "move_stage":
@@ -361,6 +395,12 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
             await lead.update({ ownerId });
             await syncHandoffTasks(lead.contactId, before).catch(() => undefined);
           }
+          return "";
+        }
+        // the lead is of this university from here on (a bot of another university on a shared number: its answers do not route the
+        // conversation to the polo queues of the number)
+        case "set_institution": {
+          if (Number(d.institutionId) > 0 && Number(lead.institutionId) !== Number(d.institutionId)) await lead.update({ institutionId: Number(d.institutionId) });
           return "";
         }
         case "set_polo": {
@@ -398,6 +438,14 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
         const notice = afterHandoffNotice(routed, cfg.messages);
         if (notice) await this.say(notice);
         await moveIfTutor(routed);
+        return;
+      }
+      // the consultant who got the lead (the round of the bot): the conversation goes to them, in the queue of the bot
+      if (d.to === "lead_owner") {
+        const lead = await leadOf();
+        if (Number(d.queueId) > 0) await UpdateTicketService({ ticketData: { queueId: Number(d.queueId) }, ticketId: ticket.id });
+        if (lead?.ownerId) await UpdateTicketService({ ticketData: { userId: lead.ownerId, status: "open" }, ticketId: ticket.id });
+        else if (Number(d.queueId) > 0) await AutoAssignTicket(await ShowTicketService(ticket.id));
         return;
       }
       if (d.to === "user" && d.userId) {

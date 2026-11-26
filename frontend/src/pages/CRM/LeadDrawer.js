@@ -96,6 +96,17 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
   const classes = useStyles();
   const history = useHistory();
   const { user: me } = useContext(AuthContext);
+  // the person's own WhatsApp (QR Code) connected now: the lead the bot passed on is called from it
+  const [myNumber, setMyNumber] = useState(null);
+  useEffect(() => {
+    if (!me || !me.id) return undefined;
+    let alive = true;
+    api.get("/whatsapp").then(({ data }) => {
+      const mine = (Array.isArray(data) ? data : []).find((w) => Number(w.ownerId) === Number(me.id) && (w.channel || "whatsapp") === "whatsapp" && w.status === "CONNECTED");
+      if (alive) setMyNumber(mine || null);
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [me]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const { options, courses, stages, users, tags } = ctx;
   // sending a proposal to the affiliate: the management, or the consultant who owns the lead (the server refuses the others)
@@ -181,9 +192,9 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
     }
   };
 
-  const openChat = async () => {
+  const openChat = async (viaMine) => {
     try {
-      const { data } = await api.post(`/leads/${lead.id}/open-ticket`, {});
+      const { data } = await api.post(`/leads/${lead.id}/open-ticket`, viaMine && myNumber ? { whatsappId: myNumber.id } : {});
       history.push(`/tickets/${data.ticketId}`);
     } catch (err) {
       toastError(err);
@@ -275,7 +286,8 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
             </div>
 
             <div className={classes.actions}>
-              <Button size="small" variant="contained" color="primary" startIcon={<MessageSquare size={16} />} onClick={openChat}>Abrir conversa</Button>
+              <Button size="small" variant="contained" color="primary" startIcon={<MessageSquare size={16} />} onClick={() => openChat(false)}>Abrir conversa</Button>
+              {myNumber && <Button size="small" variant="outlined" color="primary" startIcon={<WhatsAppBrand size={16} />} onClick={() => openChat(true)} title={`Abre a conversa no seu WhatsApp (${myNumber.name}); a conversa do número oficial é encerrada com uma nota`}>Chamar pelo meu WhatsApp</Button>}
               {lead.phone && <Button size="small" variant="outlined" startIcon={<Phone size={16} />} onClick={() => {
                 const number = `+${String(lead.phone).replace(/\D/g, "")}`;
                 (navigator.clipboard ? navigator.clipboard.writeText(number) : Promise.reject(new Error("sem área de transferência")))

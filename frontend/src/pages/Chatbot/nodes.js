@@ -81,8 +81,9 @@ export const defaultData = (type) => {
 const ACTIONS = {
   send_to_crm: "Enviar a conversa ao CRM", move_stage: "Mover de etapa", add_tag: "Colocar etiqueta", remove_tag: "Tirar etiqueta",
   set_owner: "Definir o responsável", set_polo: "Definir o polo", create_task: "Criar tarefa", add_note: "Registrar nota",
+  set_institution: "Definir a universidade",
 };
-const TRANSFER = { queue: "Para uma fila", user: "Para um atendente", polo_sales: "Comercial do polo do aluno", chosen_polo_sales: "Comercial do polo escolhido no fluxo", polo_tutoria: "Tutoria do polo do aluno" };
+const TRANSFER = { queue: "Para uma fila", user: "Para um atendente", polo_sales: "Comercial do polo do aluno", chosen_polo_sales: "Comercial do polo escolhido no fluxo", polo_tutoria: "Tutoria do polo do aluno", lead_owner: "Consultor que recebeu o lead" };
 export const ACTION_LABEL = ACTIONS;
 export const TRANSFER_LABEL = TRANSFER;
 

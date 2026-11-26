@@ -134,6 +134,26 @@ export interface TemplateDraft {
   name: string; body: string; examples: string[]; purpose: string; setting?: string;
   department?: TemplateDepartment; use?: TemplateUse; buttons?: string[];
 }
+// The templates of the SESTED: notices about something that already exists (Utility), never an invitation (the Meta reclassifies those as
+// Marketing). Names start with "sested_".
+export const SESTED_PACK: TemplateDraft[] = [
+  { name: "sested_retomada_atendimento", department: "atendimento", use: "abertura", buttons: ["Continuar na SESTED", "Agora não"],
+    purpose: "SESTED: retomar o atendimento depois de 24 h sem resposta",
+    body: "Atendimento da SESTED: {{1}}, aqui é {{2}}. O seu atendimento está em andamento e aguarda a sua resposta para continuar.", examples: ["Maria", "Ana"] },
+  { name: "sested_consultor_contato", department: "atendimento", use: "aviso", buttons: ["Pode me chamar"],
+    purpose: "SESTED: avisar que o consultor continua o atendimento pelo número dele",
+    body: "Atendimento da SESTED: {{1}}, o seu atendimento foi passado para {{2}}, que continua pelo número {{3}}. Pode salvar esse contato.", examples: ["Maria", "Ana", "(69) 99999-0000"] },
+  { name: "sested_proposta_pronta", department: "atendimento", use: "aviso", buttons: ["Quero ver a proposta"],
+    purpose: "SESTED: a simulação de valores que a pessoa pediu foi concluída",
+    body: "Simulação concluída, {{1}}: os valores que você pediu para o curso {{2}} da SESTED estão prontos. Responda esta mensagem para recebê-los.", examples: ["Maria", "Técnico em Enfermagem"] },
+  { name: "sested_documentos_pendentes", department: "atendimento", use: "aviso", buttons: ["Enviar agora"],
+    purpose: "SESTED: documentos que faltam para concluir a matrícula",
+    body: "Matrícula na SESTED: {{1}}, para concluir a sua matrícula ainda falta enviar {{2}}. Responda esta mensagem para enviar.", examples: ["Maria", "o RG e o comprovante de residência"] },
+  { name: "sested_matricula_confirmada", department: "atendimento", use: "aviso",
+    purpose: "SESTED: a matrícula foi confirmada",
+    body: "Matrícula confirmada, {{1}}: o seu curso {{2}} na SESTED está registrado. Em breve você recebe as orientações de acesso.", examples: ["Maria", "Técnico em Enfermagem"] }
+];
+
 // The texts never open with "Olá" when the person is already talking to us: they start with the name and say what continues.
 export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
   { name: "retomada_atendimento", department: "atendimento", use: "abertura", setting: "atendimento_template_name", buttons: ["Continuar o atendimento", "Agora não"],
@@ -200,7 +220,7 @@ export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
     body: "Atividades do mês, {{1}}: as atividades do curso {{2}} estão disponíveis no portal do aluno, com entrega até {{3}}. Orientação da tutoria: {{4}}. Os detalhes de cada atividade estão no portal.", examples: ["Maria", "Pedagogia", "20/12/2026", "faça primeiro o fórum da disciplina"] },
   { name: "lembrete_prova", department: "tutoria", use: "aviso",
     purpose: "Lembrete na semana da prova",
-    body: "Lembrete de prova, {{1}}: a prova de {{2}} do curso {{3}} está marcada para {{4}}. As orientações estão no portal do aluno.", examples: ["Maria", "Didática", "Pedagogia", "12/12/2026"] }
+    body: "Lembrete de prova, {{1}}: a prova de {{2}} do curso {{3}} está marcada para {{4}}. As orientações estão no portal do aluno.", examples: ["Maria", "Didática", "Pedagogia", "12/12/2026"] },
 ];
 
 // department and use of the templates created on the screen (the pack ones carry their own)
@@ -293,9 +313,18 @@ export const createTemplate = async (draft: Partial<TemplateDraft>, whatsappId?:
 };
 
 // the recommended pack: creates the ones that do not exist yet and points the settings (opening of each team, welcome) to them
+// the SESTED templates go with the pack only where the SESTED university exists (it sells on the official number of the commercial team);
+// the button of its opening template ("Continuar na SESTED") starts the SESTED bot, by the keyword
+export const hasSested = async (): Promise<boolean> => {
+  const { default: Institution } = await import("../../models/Institution");
+  const rows = await Institution.findAll({ where: { active: true } as any, attributes: ["name", "shortName"] });
+  return rows.some(r => /sested|sistema de ensino superior tecnol/i.test(`${r.name} ${(r as any).shortName || ""}`));
+};
+export const fullPack = async (institution: string): Promise<TemplateDraft[]> => [...TEMPLATE_PACK(institution), ...((await hasSested()) ? SESTED_PACK : [])];
+
 export const sendTemplatePack = async (institution: string, whatsappId?: number | null): Promise<Array<{ name: string; result: string }>> => {
   const existing = new Set((await allTemplates(whatsappId)).map(t => t.name));
-  const pack = TEMPLATE_PACK(institution);
+  const pack = await fullPack(institution);
   const out: Array<{ name: string; result: string }> = pack.map(t => ({ name: t.name, result: existing.has(t.name) ? "já existe" : "" }));
   // a few at a time (one by one, 17 templates of up to 20 s each kept the screen loading for minutes)
   const queue = pack.map((t, i) => ({ t, i })).filter(({ t }) => !existing.has(t.name));
@@ -350,7 +379,7 @@ export const deleteTemplate = async (name: string, whatsappId?: number | null): 
   const { institutionName } = await import("../../helpers/Institution");
   const clean = String(name || "").replace(/[^a-z0-9_]/g, "");
   if (!clean) throw new AppError("ERR_TEMPLATE_NAME_BODY", 400);
-  if (TEMPLATE_PACK(institutionName()).some(t => t.name === clean)) throw new AppError("ERR_TEMPLATE_IN_PACK", 400);
+  if ([...TEMPLATE_PACK(institutionName()), ...SESTED_PACK].some(t => t.name === clean)) throw new AppError("ERR_TEMPLATE_IN_PACK", 400);
   const { waba, token } = await accountOf(await cloudConnection(whatsappId));
   try {
     await axios.delete(`${GRAPH}/${waba}/message_templates`, { params: { name: clean, access_token: token }, timeout: 20000 });

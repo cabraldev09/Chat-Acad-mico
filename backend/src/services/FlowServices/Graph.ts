@@ -202,6 +202,8 @@ export const validateGraph = (graph: Graph, ctx: { hasAiAgent?: boolean; kind?: 
       if ((d.action === "add_tag" || d.action === "remove_tag") && !d.tagId) err(`${title}: escolha a etiqueta.`, n.id);
       if (d.action === "create_task" && !String(d.title || "").trim()) err(`${title}: escreva o título da tarefa.`, n.id);
       if (d.action === "add_note" && !String(d.text || "").trim()) err(`${title}: escreva a nota.`, n.id);
+      if (d.action === "set_institution" && !(Number(d.institutionId) > 0)) err(`${title}: escolha a universidade.`, n.id);
+      if (d.action === "send_to_crm" && d.ownerMode === "queue" && !(Number(d.queueId) > 0)) err(`${title}: escolha a fila do rodízio.`, n.id);
     }
     if (n.type === "transfer") {
       if (!d.to) err(`${title}: escolha para onde levar a conversa.`, n.id);

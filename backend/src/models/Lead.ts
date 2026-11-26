@@ -77,6 +77,10 @@ class Lead extends Model<Lead> {
   @Column
   educationLevel: string;
 
+  // what the person is looking for: Graduação, Técnico, Técnico por competência, Pós-graduação
+  @Column
+  courseLevel: string;
+
   // digits only; never serialised (see toJSON), the detail endpoint adds it back
   @Column
   cpf: string;

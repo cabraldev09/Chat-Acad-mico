@@ -159,7 +159,7 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
 
 const FIELDS = [
   "name", "phone", "email", "city", "state", "courseId", "modality", "entryTerm",
-  "educationLevel", "enemScore", "financing", "source", "utmSource", "utmMedium", "utmCampaign",
+  "educationLevel", "courseLevel", "enemScore", "financing", "source", "utmSource", "utmMedium", "utmCampaign",
   "notes", "ownerId", "nextFollowUpAt", "cpf", "admissionType", "entrySemester", "extraSemesters",
   "decisionTimeline", "motivation"
 ];
@@ -535,11 +535,32 @@ export const fromContact = async (req: Request, res: Response): Promise<Response
 export const openTicket = async (req: Request, res: Response): Promise<Response> => {
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
-  const { contact, whatsapp } = await resolveLeadTarget(lead, uid(req), req.body.whatsappId);
+  // a chosen number: the institution's, or the person's own one (never a colleague's personal number)
+  const wanted = Number(req.body?.whatsappId) || null;
+  if (wanted) {
+    const chosen = await Whatsapp.findByPk(wanted, { attributes: ["id", "ownerId"] });
+    if (!chosen) throw new AppError("ERR_NO_WAPP_FOUND", 404);
+    if (chosen.ownerId && Number(chosen.ownerId) !== uid(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+  const { contact, whatsapp } = await resolveLeadTarget(lead, uid(req), wanted);
 
   const ticket = await FindOrCreateTicketService(contact, whatsapp.id, 0);
-  if (ticket.status === "pending" || ticket.status === "closed") {
+  if (ticket.status === "pending" || ticket.status === "closed" || (wanted && ticket.userId !== uid(req))) {
     await UpdateTicketService({ ticketData: { status: "open", userId: uid(req) }, ticketId: ticket.id });
+  }
+  // the consultant calls the lead from their own WhatsApp: the conversation of the official number ends there, with a note, so the lead
+  // does not have two open conversations (the history stays)
+  if (wanted && whatsapp.ownerId && Number(whatsapp.ownerId) === uid(req)) {
+    const others = await Ticket.findAll({ where: { contactId: contact.id, id: { [Op.ne]: ticket.id }, status: { [Op.in]: ["open", "pending"] }, isGroup: false } as any, attributes: ["id"] });
+    const me = await User.findByPk(uid(req), { attributes: ["name"] });
+    const { default: TicketEvent } = await import("../models/TicketEvent");
+    for (const other of others) {
+      // eslint-disable-next-line no-await-in-loop
+      await TicketEvent.create({ ticketId: other.id, type: "note", actorId: uid(req), note: `O atendimento continua pelo WhatsApp de ${String(me?.name || "").split(" ")[0] || "o consultor"} (conversa nº ${ticket.id}).` } as any).catch(() => undefined);
+      // eslint-disable-next-line no-await-in-loop
+      await UpdateTicketService({ ticketData: { status: "closed" }, ticketId: other.id }).catch(() => undefined);
+    }
+    await addActivity(lead.id, uid(req), "whatsapp", "Chamou o lead pelo próprio WhatsApp.").catch(() => undefined);
   }
   return res.json({ ticketId: ticket.id });
 };
