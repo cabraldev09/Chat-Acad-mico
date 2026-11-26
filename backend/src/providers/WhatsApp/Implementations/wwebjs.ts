@@ -62,6 +62,7 @@ import {
 import { killLeftoverBrowsers } from "./browserProcesses";
 import { safeLogout } from "../SafeLogout";
 import { applyPuppeteerCompat } from "../PuppeteerCompat";
+import { forwardUnavailable } from "../ForwardFallback";
 
 // before any browser opens: whatsapp-web.js needs browser.isConnected(), which puppeteer 25 no longer has (see PuppeteerCompat)
 applyPuppeteerCompat();
@@ -1489,7 +1490,16 @@ const forwardMessage = async (
   const message: any = await findMessage(wbot, fromChatId, messageId, fromMe).catch(() => null);
   if (!message || typeof message.forward !== "function") return null;
   const startedAt = Math.floor(Date.now() / 1000) - 2;
-  await withTimeout(message.forward(toChatId), 30000);
+  try {
+    await withTimeout(message.forward(toChatId), 30000);
+  } catch (err) {
+    // WhatsApp Web no longer has the module the library forwards with: nothing went, the copy is sent the usual way (see ForwardFallback)
+    if (forwardUnavailable(err)) {
+      logger.warn(`forward: o encaminhar do WhatsApp Web não está disponível (${(err as Error).message}); a cópia vai pelo envio comum`);
+      return null;
+    }
+    throw err;
+  }
   for (let i = 0; i < 4; i += 1) {
     // eslint-disable-next-line no-await-in-loop
     await new Promise(r => setTimeout(r, 600));
@@ -1999,7 +2009,13 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
       try {
         const sender = String(reaction.senderId || "");
         const mine = sender === (wbot as any).info?.wid?._serialized;
-        await applyReaction(reaction.msgId?.id, reaction.reaction || "", mine, mine ? "me" : sender);
+        // the name the person shows on WhatsApp, for the list of a group ("Ana reagiu com ...") when no contact of them is stored here
+        let shown: string | null = null;
+        if (!mine && sender) {
+          const c: any = await withTimeout(wbot.getContactById(sender), 5000).catch(() => null);
+          shown = c ? String(c.pushname || c.name || c.shortName || "").trim() || null : null;
+        }
+        await applyReaction(reaction.msgId?.id, reaction.reaction || "", mine, mine ? "me" : sender, shown);
       } catch (err) {
         logger.error(err, "Error on whatsapp reaction event");
       }
