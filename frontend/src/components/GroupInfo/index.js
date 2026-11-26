@@ -1,14 +1,15 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import React, { useContext, useEffect, useMemo, useState } from "react";
+import { useHistory, useParams } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import Avatar from "@material-ui/core/Avatar";
 import CircularProgress from "@material-ui/core/CircularProgress";
-import { BadgeCheck, ShieldCheck, Users } from "lucide-react";
+import { BadgeCheck, MessageCircle, ShieldCheck, Users } from "lucide-react";
 import { toast } from "react-toastify";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
+import { AuthContext } from "../../context/Auth/AuthContext";
 
 // Group card in the conversation drawer: description and members (admins first), and who is on the team.
 const useStyles = makeStyles((theme) => {
@@ -60,6 +61,27 @@ const GroupInfo = () => {
     return () => { alive = false; };
   }, [ticketId]);
 
+  const history = useHistory();
+  const { user } = useContext(AuthContext) || {};
+  const [opening, setOpening] = useState(null);
+  // "Conversar": opens (or reopens) the private conversation with this participant, as on WhatsApp. Someone the system does not know
+  // yet is registered with the phone the group shows; a participant whose number WhatsApp hides cannot be reached outside the group.
+  const talk = async (p) => {
+    setOpening(p.id);
+    try {
+      let contactId = p.contactId;
+      if (!contactId) {
+        const { data: found } = await api.post("/contact", { name: p.name || phoneText(p.number), number: p.number, email: "" });
+        contactId = found.id;
+      }
+      const { data: ticket } = await api.post("/tickets", { contactId, userId: user && user.id, status: "open" });
+      history.push(`/tickets/${ticket.id}`);
+    } catch (err) {
+      toastError(err);
+    }
+    setOpening(null);
+  };
+
   const toggleStaff = async (p) => {
     try {
       await api.put(`/contacts/${p.contactId}/staff`, { isStaff: !p.isStaff });
@@ -90,6 +112,12 @@ const GroupInfo = () => {
           </div>
           {p.isSuperAdmin ? <span className={classes.admin}><ShieldCheck size={11} style={{ verticalAlign: -1 }} /> criador</span>
             : p.isAdmin && <span className={classes.admin}><ShieldCheck size={11} style={{ verticalAlign: -1 }} /> admin</span>}
+          {p.number && (
+            <button type="button" className={classes.staff} onClick={() => talk(p)} disabled={opening === p.id}
+              title="Conversar em particular" aria-label={`Conversar com ${p.name || phoneText(p.number)}`}>
+              {opening === p.id ? <CircularProgress size={16} /> : <MessageCircle size={18} />}
+            </button>
+          )}
           {p.contactId && (
             <button type="button" className={`${classes.staff} ${p.isStaff ? classes.staffOn : ""}`} onClick={() => toggleStaff(p)}
               title={p.isStaff ? "Da equipe (clique para desmarcar)" : "Marcar como da equipe"} aria-label={p.isStaff ? "Desmarcar da equipe" : "Marcar como da equipe"}>
