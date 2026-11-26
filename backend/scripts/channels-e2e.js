@@ -9295,9 +9295,6 @@ const postMeta = (id, payload, secret, badSig) => {
       const Old = copied("Gabi Antiga Leitura", "5569955550017", [[false, "Quero Pedagogia"], [true, "Claro"]]);
       // a colleague saved with the job ("Coordenador") who passes the record of a student: never a lead, never an enrollment to confirm
       const H = copied("Douglas Coordenador Leitura", "5569955550018", [[true, "Nome: Izabela Teste Pereira Cpf: 529.982.247-25 Inscrição: 266188360 Curso: Letras"], [false, "Já fiz a matrícula dela, coloquei no grupo"], [true, "Valeu"]]);
-      // the person did not get an answer for 8 days: also "Parados" (the consultant did not answer)
-      const I = copied("Ivo Sem Retorno Leitura", "5569955550019", [[false, "Quero Pedagogia"], [true, "Te mando a proposta"], [false, "Me manda a proposta por favor"]]);
-      sql(`UPDATE Messages SET createdAt = NOW() - INTERVAL '8 days' WHERE ticketId=${I.t}`);
       sql(`UPDATE Tickets SET lastMessageAt = NOW() - INTERVAL '120 days' WHERE id=${Old.t}`);
       // the catch-up of the first sync already made a lead for Ana, waiting in "Novos para conferir"
       const stage1 = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
@@ -9345,8 +9342,6 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(item.tab === "desistiram" && item.serviceTip === "Apresentar a bolsa antes do valor cheio" && item.recoveryStage === "Depois de saber o valor" && /Mostrar a bolsa/.test(item.recoveryPending), `the fields of the reading ${JSON.stringify(item)}`);
       const fabi = rec.items.find(i => i.name === "Fabi Parada Leitura");
       assert(fabi && fabi.tab === "parados" && fabi.reason === "Parou de responder" && fabi.recoveryPending, `Fabi is not in Parados ${JSON.stringify(fabi)}`);
-      const ivo = rec.items.find(i => i.name === "Ivo Sem Retorno Leitura");
-      assert(ivo && ivo.tab === "parados" && ivo.reason === "Sem retorno do consultor", `Ivo is not in Parados ${JSON.stringify(ivo)}`);
       assert(!rec.items.some(i => /Douglas Coordenador/.test(i.name)), "a colleague is in Recuperação");
       const bia = rec.items.find(i => String(i.id) === b[0]);
       assert(bia && bia.tab === "confirmar" && bia.rgmSuggested === "7654321" && rec.tabs.confirmar >= 2, `Bia is not to confirm ${JSON.stringify(bia)}`);

@@ -60,8 +60,9 @@ export const inputOf = async (reading: ConversationReading): Promise<ReadingInpu
     // the copy of a consultant's phone has colleagues too: what the code sees and the model cannot (the job in the saved name, a record of
     // someone else's data) goes as a hint; the name written after "Nome:" is of another person and never leaves
     const bodies = msgs.map(m => String(m.body || ""));
-    const hints = importHints(who?.contact, bodies);
-    const masked = msgs.map(m => ({ ...m, body: maskLabelledNames(String(m.body || "")), transcript: m.transcript ? maskLabelledNames(String(m.transcript)) : m.transcript }));
+    const own = [who?.contact, who?.lead].filter(Boolean) as string[];
+    const hints = importHints(who?.contact, bodies, own);
+    const masked = msgs.map(m => ({ ...m, body: maskLabelledNames(String(m.body || ""), own), transcript: m.transcript ? maskLabelledNames(String(m.transcript), own) : m.transcript }));
     const text = hints + maskLongNumbers(reviewTranscript(masked, names)).replace(/^Interessado:/gm, "Contato:");
     return { system: IMPORT_SYSTEM, text };
   }

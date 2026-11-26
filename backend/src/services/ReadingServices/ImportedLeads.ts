@@ -19,9 +19,8 @@ const LOOKBACK_DAYS = Number(process.env.READING_IMPORT_LOOKBACK_DAYS || 90);
 // a lead still deciding whose last message was the consultant's, with no answer for these days, goes to Recuperação as stalled
 export const STALLED_DAYS = Number(process.env.READING_STALLED_DAYS || 7);
 const CONFIRM_STAGE = "Matrícula a confirmar";
-// the reasons of "Parados" in Recuperação: the person stopped answering, or the consultant did not answer the person
+// the reason of "Parados" in Recuperação: the person stopped answering
 export const STALLED_REASON = "Parou de responder";
-export const NO_REPLY_REASON = "Sem retorno do consultor";
 
 const rows = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
   (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
@@ -143,13 +142,11 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
     const to = target ? await LeadStage.findByPk(target) : null;
     // only forward (a stage the consultant already passed is kept)
     if (to && (!current || current.type !== "open" || to.position > current.position)) await changeStage(lead.id, to.id, null).catch(err => logger.warn(`Leitura: etapa do lead ${lead!.id}: ${err}`));
-    // still deciding and nobody wrote for days: it goes to Recuperação as stalled. The last word was the consultant's (the person stopped
-    // answering) or the person's (the consultant did not answer): both are a sale stopped, each with its reason
-    const [last] = await rows(`SELECT m.fromMe, m.createdAt FROM Messages m WHERE m.ticketId = :ticketId ORDER BY m.createdAt DESC LIMIT 1`, { ticketId });
+    // still deciding, but the last word was the consultant's and nobody answered for days: it goes to Recuperação as stalled
+    const [last] = await rows(`SELECT m.fromMe, m.createdAt FROM Messages m WHERE m.ticketId = :ticketId ORDER BY m.createdAt DESC, m.id DESC LIMIT 1`, { ticketId });
     const quietDays = last ? (Date.now() - new Date(last.createdAt).getTime()) / 864e5 : 0;
-    if (last && quietDays >= STALLED_DAYS && !lead.recoveryState) {
-      const mine = last.fromMe === true || last.fromMe === 1 || last.fromMe === "1" || last.fromMe === "t";
-      await lead.update({ recoveryState: "aberta", recoveryAt: new Date(), recoveryReason: mine ? STALLED_REASON : NO_REPLY_REASON, recoveryObjection: answer.objection || null } as any);
+    if (last && (last.fromMe === true || last.fromMe === 1 || last.fromMe === "1" || last.fromMe === "t") && quietDays >= STALLED_DAYS && !lead.recoveryState) {
+      await lead.update({ recoveryState: "aberta", recoveryAt: new Date(), recoveryReason: STALLED_REASON, recoveryObjection: answer.objection || null } as any);
       return { action: "recuperar", leadId: lead.id };
     }
     return { action: "andamento", leadId: lead.id };
@@ -211,6 +208,8 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
 // what a reading left on a lead that turned out not to be one (or not enrolled): the suggested enrollment, the task to confirm it, the place
 // in "Recuperação" and the column "Matrícula a confirmar" (back to the first open column)
 export const undoReadingTraces = async (lead: Lead): Promise<void> => {
+  // the lead may have moved already (Não é matrícula moves it first): read what it is now
+  await lead.reload();
   const LeadTask = (await import("../../models/LeadTask")).default;
   await LeadTask.update({ doneAt: new Date() } as any, { where: { leadId: lead.id, automationKey: `confirm-enroll-${lead.id}`, doneAt: null } as any });
   const patch: any = {};
@@ -220,6 +219,9 @@ export const undoReadingTraces = async (lead: Lead): Promise<void> => {
   const stage = await LeadStage.findByPk(lead.stageId);
   if (stage && stage.name === CONFIRM_STAGE) {
     const first = await LeadStage.findOne({ where: { type: "open", id: { [Op.ne]: stage.id } } as any, order: [["position", "ASC"]] });
-    if (first) await lead.update({ stageId: first.id });
+    if (first) {
+      const { changeStage } = await import("../CrmServices/LeadCore");
+      await changeStage(lead.id, first.id, null).catch(err => logger.warn(`Leitura: etapa do lead ${lead.id}: ${err}`));
+    }
   }
 };

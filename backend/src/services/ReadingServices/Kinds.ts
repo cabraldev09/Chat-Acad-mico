@@ -168,22 +168,36 @@ export const maskLongNumbers = (text: string): string => String(text || "").repl
 // ------------------------------------------------------------------------------------------------ colleagues and third people
 // a contact saved with a job of the team ("Douglas Coordenador", "Jane Consultora", "Pedro Tutor Vilhena"): a strong sign of a colleague. A
 // teacher ("Prof Leila") is NOT here: teachers are often leads (a second degree, the pedagogical training).
-export const TEAM_NAME = /\b(coordenador(a)?|coord\.?|consultor(a)?|tutor(a)?|secretaria|secret[aá]ri[oa]|equipe|comercial|suporte|polo|ambienta[cç][aã]o)\b/i;
+export const TEAM_NAME = /\b(coordenador(a)?|coord\.?|consultor(a)?|tutor(a)?|secretaria|secret[aá]ri[oa]|equipe|ambienta[cç][aã]o)\b/i;
 export const teamByName = (name: string | null | undefined): boolean => TEAM_NAME.test(String(name || ""));
 
 // the data of an enrollment sent in the conversation as a record ("Nome: ...", "CPF: ...", "Inscrição: ..."): what colleagues pass to each
-// other about a student. Two labels or more in one message.
+// other about a student. Two labels or more in one message, and the name in it is NOT the contact's own (a lead sending their own data, or
+// the consultant sending it back to them, is not a colleague).
 const RECORD_LABELS = [/\bnome( completo)?\s*:/i, /\bcpf\s*:/i, /\binscri[cç][aã]o\s*:/i, /\brgm\s*:/i, /\bcurso\s*:/i, /\bmatr[ií]cula\s*:/i, /\bcupom\s*:/i, /\bpolo\s*:/i];
-export const hasRecordOfSomeone = (texts: string[]): boolean => texts.some(t => RECORD_LABELS.filter(r => r.test(String(t || ""))).length >= 2);
+const LABELLED = /(\b(?:nome(?: completo)?|alun[oa]|candidat[oa]|interessad[oa]|respons[aá]vel)\s*:\s*)([^\n:]{2,80}?)(?=\s+(?:cpf|inscri|rgm|curso|e-?mail|telefone|celular|cupom)\b|\n|$)/gi;
+const norm = (v: string): string => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+// the same person: the first name (of 3 letters or more) of one is in the other
+const samePerson = (name: string, own: string[]): boolean => {
+  const first = norm(name).split(" ")[0] || "";
+  return first.length >= 3 && own.some(o => norm(o).split(" ").includes(first));
+};
+export const hasRecordOfSomeone = (texts: string[], own: string[] = []): boolean => texts.some(t => {
+  const text = String(t || "");
+  if (RECORD_LABELS.filter(r => r.test(text)).length < 2) return false;
+  const names = [...text.matchAll(new RegExp(LABELLED.source, "gi"))].map(m => m[2]);
+  return !names.length || names.some(n => !samePerson(n, own));
+});
 
-// the name written after a label is of another person: it never goes to the model (the rule of the readings: no names)
-export const maskLabelledNames = (text: string): string =>
-  String(text || "").replace(/(\b(?:nome(?: completo)?|alun[oa]|candidat[oa]|interessad[oa]|respons[aá]vel)\s*:\s*)([^\n:]{2,80}?)(?=\s+(?:cpf|inscri|rgm|curso|e-?mail|telefone|celular|cupom)\b|\n|$)/gi, "$1[OUTRA PESSOA]");
+// the name written after a label never goes to the model (the rule of the readings: no names): the contact's own is [NOME], anyone
+// else's is [OUTRA PESSOA]
+export const maskLabelledNames = (text: string, own: string[] = []): string =>
+  String(text || "").replace(new RegExp(LABELLED.source, "gi"), (_m, label, name) => `${label}${samePerson(name, own) ? "[NOME]" : "[OUTRA PESSOA]"}`);
 
 // what the code knows and the model cannot see (the names are masked): said before the conversation
-export const importHints = (contactName: string | null | undefined, texts: string[]): string => {
+export const importHints = (contactName: string | null | undefined, texts: string[], own: string[] = []): string => {
   const hints: string[] = [];
   if (teamByName(contactName)) hints.push("o contato está salvo na agenda com um cargo da equipe (coordenador, consultor, tutor, secretaria ou polo)");
-  if (hasRecordOfSomeone(texts)) hints.push("a conversa traz dados de cadastro de alguém (Nome:, CPF:, Inscrição:), o que é comum entre colegas que falam de um aluno");
+  if (hasRecordOfSomeone(texts, own)) hints.push("a conversa traz dados de cadastro de alguém (Nome:, CPF:, Inscrição:), o que é comum entre colegas que falam de um aluno");
   return hints.length ? `Pistas do sistema: ${hints.join("; ")}.\n\n` : "";
 };

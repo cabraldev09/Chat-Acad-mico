@@ -74,6 +74,7 @@ describe("leitura das conversas copiadas: colegas e dados de outra pessoa", asyn
     expect(teamByName("Ambientação prof Esther")).toBe(true);
     expect(teamByName("Prof Leila")).toBe(false);
     expect(teamByName("Gabriela Jonjob")).toBe(false);
+    expect(teamByName("Ana Polo Vilhena")).toBe(false);
   });
   it("dados de cadastro de alguém (Nome:, CPF:, Inscrição:) e o nome depois do rótulo nunca vai ao modelo", () => {
     const rec = "Nome: Izabela Marcia Carolina Pereira\nCpf: 066.051.672-10\nInscrição: 266188360\nCurso: Letras";
@@ -85,5 +86,9 @@ describe("leitura das conversas copiadas: colegas e dados de outra pessoa", asyn
     expect(maskLabelledNames("Nome: João da Silva CPF 123")).toBe("Nome: [OUTRA PESSOA] CPF 123");
     expect(importHints("Douglas Coordenador", [rec])).toMatch(/cargo da equipe.*dados de cadastro/);
     expect(importHints("Maria", ["Oi, quero saber de Pedagogia"])).toBe("");
+    // a lead sending their own data is not "someone else's record", and their own name is [NOME]
+    const mine = "Nome: Maria Souza Lima Cpf: 529.982.247-25 Curso: Pedagogia";
+    expect(hasRecordOfSomeone([mine], ["Maria Souza"])).toBe(false);
+    expect(maskLabelledNames(mine, ["Maria Souza"])).toMatch(/Nome: \[NOME\]/);
   });
 });
