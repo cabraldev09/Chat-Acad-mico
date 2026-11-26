@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { noticeDialog } from "../../components/ConfirmDialog";
 import { useParams } from "react-router-dom";
 import axios from "axios";
+import { emailNormalize, nameClean, titleCaseName } from "../../utils/masks";
 import { makeStyles } from "@material-ui/core/styles";
 import { Camera, Check, CheckCircle2, FileText, Image as ImageIcon, Lock, ShieldCheck, Trash2, AlertCircle, Loader2 } from "lucide-react";
 
@@ -17,6 +18,9 @@ const UFS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "
 const BLUE = "#0B4279";
 
 const onlyDigits = (v) => String(v || "").replace(/\D/g, "");
+// names and places with the first letter of each word in capitals (joão da silva → João da Silva); the e-mail in lower case, no spaces
+const WORDS = ["nome", "mae", "cidade", "bairro", "rua"];
+const tidy = (key, value) => (WORDS.includes(key) ? titleCaseName(value) : key === "email" ? emailNormalize(value) : value);
 const MASKS = {
   cpf: (v) => onlyDigits(v).slice(0, 11).replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})\.(\d{3})(\d)/, "$1.$2.$3").replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4"),
   cep: (v) => onlyDigits(v).slice(0, 8).replace(/(\d{5})(\d)/, "$1-$2"),
@@ -235,8 +239,13 @@ const EnrollmentForm = () => {
     return () => window.removeEventListener("pagehide", out);
   }, [flush]);
 
-  const change = (key, raw) => {
-    const value = key === "rgUf" || key === "uf" ? raw.toUpperCase() : raw;
+  const change = (key, raw, el) => {
+    const value = key === "rgUf" || key === "uf" ? raw.toUpperCase() : tidy(key, raw);
+    // the case of a letter changed: the cursor stays where the person is typing
+    if (el && WORDS.includes(key) && typeof el.selectionStart === "number") {
+      const at = el.selectionStart;
+      requestAnimationFrame(() => { try { el.setSelectionRange(at, at); } catch (err) { /* the field left the screen */ } });
+    }
     setData((d) => ({ ...d, [key]: kept(key, value) }));
     pending.current[key] = kept(key, value);
     setStatus("typing");
@@ -381,7 +390,7 @@ const EnrollmentForm = () => {
                         </select>
                       ) : (
                         <input id={id} className={`${classes.input} ${bad(key) ? classes.inputBad : ""}`} {...(INPUT[key] || {})} value={shown(key, data[key])}
-                          onChange={(e) => change(key, e.target.value)} onBlur={() => setTouched((t) => ({ ...t, [key]: true }))} aria-invalid={!!bad(key)} aria-describedby={bad(key) ? `${id}-err` : undefined} />
+                          onChange={(e) => change(key, e.target.value, e.target)} onBlur={(e) => { const v = e.target.value; if (WORDS.includes(key) && nameClean(v) !== v) change(key, nameClean(v)); setTouched((t) => ({ ...t, [key]: true })); }} aria-invalid={!!bad(key)} aria-describedby={bad(key) ? `${id}-err` : undefined} />
                       )}
                       {bad(key) && <div id={`${id}-err`} className={classes.problem}><AlertCircle size={14} style={{ flex: "none", marginTop: 1 }} />{view.problems[key]}</div>}
                     </div>

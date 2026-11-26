@@ -27,6 +27,7 @@ import { makeStyles } from "@material-ui/core/styles";
 import { green } from "@material-ui/core/colors";
 
 import { i18n } from "../../translate/i18n";
+import { NameField, EmailField, PhoneField } from "../MaskedFields";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -234,21 +235,25 @@ const UserModal = ({ open, onClose, userId }) => {
 						<Form>
 							<DialogContent dividers>
 								{!userId && !numberTouched && !loading && <OfficialNumber role={values.role} whatsApps={whatsApps} current={whatsappId} onPick={setWhatsappId} />}
-								<Field
-										as={TextField}
+								<NameField
+										id="user-name"
 										label={i18n.t("userModal.form.name")}
 										autoFocus
 										name="name"
+										value={values.name || ""}
+										onChange={(v) => setFieldValue("name", v)}
 										error={touched.name && Boolean(errors.name)}
 										helperText={touched.name && errors.name}
 										variant="outlined"
 										margin="dense"
 										fullWidth
 									/>
-								<Field
-										as={TextField}
+								<EmailField
+										id="user-email"
 										label={i18n.t("userModal.form.email")}
 										name="email"
+										value={values.email || ""}
+										onChange={(v) => setFieldValue("email", v)}
 										disabled={!manager}
 										error={touched.email && Boolean(errors.email)}
 										helperText={(touched.email && errors.email) || (!manager ? "O e-mail de acesso é alterado pela gestão." : "")}
@@ -314,11 +319,12 @@ const UserModal = ({ open, onClose, userId }) => {
 										fullWidth
 									/>
 								</div>
-								<TextField
+								<PhoneField
+									id="user-phone"
 									label="Celular da pessoa (opcional)"
 									name="phone"
 									value={values.phone || ""}
-									onChange={(e) => setFieldValue("phone", e.target.value)}
+									onChange={(v) => setFieldValue("phone", v)}
 									variant="outlined"
 									margin="dense"
 									fullWidth

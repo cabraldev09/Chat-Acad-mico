@@ -8,6 +8,8 @@ import { makeStyles } from "@material-ui/core/styles";
 import { green } from "@material-ui/core/colors";
 import Button from "@material-ui/core/Button";
 import TextField from "@material-ui/core/TextField";
+import { NameField, PhoneField, EmailField } from "../MaskedFields";
+import { emailNormalize, nameClean } from "../../utils/masks";
 import Dialog from "@material-ui/core/Dialog";
 import DialogActions from "@material-ui/core/DialogActions";
 import DialogContent from "@material-ui/core/DialogContent";
@@ -116,7 +118,9 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 
 	const handleSaveContact = async typed => {
 		// the number goes as digits only, however it was typed
-		const values = { ...typed, number: String(typed.number || "").replace(/\D/g, "") };
+		// a Brazilian number typed with the area code only gets the 55 (as the server does for leads)
+		const digits = String(typed.number || "").replace(/\D/g, "");
+		const values = { ...typed, name: nameClean(typed.name), email: emailNormalize(typed.email), number: typed.isGroup ? digits : digits.length === 10 || digits.length === 11 ? `55${digits}` : digits };
 		try {
 			if (contactId) {
 				await api.put(`/contacts/${contactId}`, values);
@@ -156,38 +160,55 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 						}, 400);
 					}}
 				>
-					{({ values, errors, touched, isSubmitting }) => (
+					{({ values, errors, touched, isSubmitting, setFieldValue }) => (
 						<Form>
 							<DialogContent dividers>
 								<Typography variant="subtitle1" gutterBottom>
 									{i18n.t("contactModal.form.mainInfo")}
 								</Typography>
-								<Field
-									as={TextField}
+								<NameField
+									id="contact-name"
 									label={i18n.t("contactModal.form.name")}
 									name="name"
 									autoFocus
+									value={values.name}
+									onChange={(v) => setFieldValue("name", v)}
 									error={touched.name && Boolean(errors.name)}
 									helperText={touched.name && errors.name}
 									variant="outlined"
 									margin="dense"
 									className={classes.textField}
 								/>
+								{(values.isGroup || String(values.number || "").replace(/\D/g, "").length > 13) ? (
 								<Field
 									as={TextField}
 									label={i18n.t("contactModal.form.number")}
 									name="number"
 									error={touched.number && Boolean(errors.number)}
 									helperText={touched.number && errors.number}
-									placeholder="5513912344321"
 									variant="outlined"
 									margin="dense"
 								/>
+								) : (
+								<PhoneField
+									id="contact-number"
+									label={i18n.t("contactModal.form.number")}
+									name="number"
+									value={values.number}
+									onChange={(v) => setFieldValue("number", v)}
+									error={touched.number && Boolean(errors.number)}
+									helperText={(touched.number && errors.number) || "Com DDD; o 55 do Brasil entra sozinho"}
+									variant="outlined"
+									margin="dense"
+								/>
+								)}
 								<div>
-									<Field
-										as={TextField}
+									<EmailField
+										id="contact-email"
 										label={i18n.t("contactModal.form.email")}
 										name="email"
+										value={values.email}
+										onChange={(v) => setFieldValue("email", v)}
 										error={touched.email && Boolean(errors.email)}
 										helperText={touched.email && errors.email}
 										placeholder="E-mail do contato"

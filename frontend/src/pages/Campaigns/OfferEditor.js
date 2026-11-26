@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Button, Checkbox, FormControlLabel, MenuItem, Radio, RadioGroup, Switch, TextField, Typography } from "@material-ui/core";
 
 import api from "../../services/api";
+import { CurrencyField } from "../../components/MaskedFields";
 import toastError from "../../errors/toastError";
 
 // THE OFFER OF A RECOVERY CAMPAIGN (only the management): the monthly fee (a fixed value or a scholarship over the price of each person's
@@ -61,12 +62,12 @@ const OfferEditor = ({ value, setValue, contactListId }) => {
               <MenuItem value="fixo">Valor fixo para todos</MenuItem>
             </TextField>
             {v.monthlyMode === "bolsa"
-              ? <TextField size="small" variant="outlined" type="number" label="Bolsa (%)" value={v.bolsaPct} onChange={(e) => set({ bolsaPct: e.target.value })} inputProps={{ min: 1, max: 99 }} style={{ flex: "1 1 140px" }} />
-              : <TextField size="small" variant="outlined" type="number" label="Mensalidade (R$)" value={v.monthly} onChange={(e) => set({ monthly: e.target.value })} inputProps={{ min: 1, step: "0.01" }} style={{ flex: "1 1 140px" }} />}
+              ? <TextField size="small" variant="outlined" label="Bolsa (%)" value={v.bolsaPct} onChange={(e) => { const d = e.target.value.replace(/\D/g, "").slice(0, 2); set({ bolsaPct: d }); }} inputProps={{ inputMode: "numeric", maxLength: 2 }} helperText="De 1% a 99%" style={{ flex: "1 1 140px" }} />
+              : <CurrencyField size="small" variant="outlined" label="Mensalidade (R$)" value={v.monthly === "" ? null : Number(v.monthly)} onChange={(n) => set({ monthly: n === null ? "" : n })} style={{ flex: "1 1 140px" }} />}
           </div>
           <div style={row}>
             <FormControlLabel control={<Checkbox color="primary" checked={!!v.enrollmentExempt} onChange={(e) => set({ enrollmentExempt: e.target.checked })} />} label="Taxa de matrícula isenta" style={{ flex: "1 1 200px" }} />
-            {!v.enrollmentExempt && <TextField size="small" variant="outlined" type="number" label="Taxa de matrícula (R$)" value={v.enrollmentFee} onChange={(e) => set({ enrollmentFee: e.target.value })} inputProps={{ min: 0, step: "0.01" }} style={{ flex: "1 1 160px" }} />}
+            {!v.enrollmentExempt && <CurrencyField size="small" variant="outlined" label="Taxa de matrícula (R$)" value={v.enrollmentFee === "" ? null : Number(v.enrollmentFee)} onChange={(n) => set({ enrollmentFee: n === null ? "" : n })} style={{ flex: "1 1 160px" }} />}
           </div>
           <div style={row}>
             <TextField size="small" variant="outlined" type="date" label="Início (1º vencimento)" InputLabelProps={{ shrink: true }} value={v.startDate} onChange={(e) => set({ startDate: e.target.value })} style={{ flex: "1 1 160px" }} />

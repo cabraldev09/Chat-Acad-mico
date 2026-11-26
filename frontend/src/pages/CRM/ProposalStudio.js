@@ -10,6 +10,8 @@ import { X, Save, Download, SendHorizonal, ChevronDown, SlidersHorizontal, Type,
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { termLabel } from "./LeadFields";
+import { CurrencyField } from "../../components/MaskedFields";
+import { brl as brlText } from "../../utils/masks";
 
 const useStyles = makeStyles((theme) => ({
   paper: { background: theme.palette.background.default },
@@ -92,6 +94,28 @@ const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", c
 // the monthly fee with the scholarship (proposals made before it had its own field kept it in firstMonthly)
 const baseOf = (p) => (Number(p.monthly) > 0 ? Number(p.monthly) : Number(p.firstMonthly) || 0);
 
+// What is wrong with the commercial values, field by field, before anything goes to the preview: the monthly fee with the
+// scholarship above zero and never above the gross one, the scholarship between 0% and 100%, the 1st installment within the gross.
+export const problemsOf = (f) => {
+  const out = {};
+  if (!f) return out;
+  const g = toNum(f.gross);
+  const m = toNum(f.first);
+  const b = toNum(f.bolsa);
+  // with no gross fee yet (no course chosen) there is nothing to compare: the missing course is said at the bottom
+  if (g > 0 && String(f.first ?? "") !== "" && !(m > 0)) out.first = "Informe um valor maior que zero";
+  else if (g > 0 && m > g) out.first = `Não pode passar da mensalidade bruta (${brlText(g)})`;
+  if (String(f.bolsa ?? "") !== "" && (b < 0 || b > 100)) out.bolsa = "A bolsa fica entre 0% e 100%";
+  if (!f.firstExempt && !f.firstSame && String(f.firstPay ?? "") !== "" && g > 0 && toNum(f.firstPay) > g) out.firstPay = `Não pode passar da mensalidade bruta (${brlText(g)})`;
+  return out;
+};
+// the scholarship as typed: digits and one comma, two decimals at most
+const percentTyping = (v) => {
+  const clean = String(v ?? "").replace(/\./g, ",").replace(/[^\d,]/g, "");
+  const [int, ...rest] = clean.split(",");
+  return rest.length ? `${int},${rest.join("").slice(0, 2)}` : int;
+};
+
 // backend params -> text inputs
 const toForm = (p, calendar) => ({
   turma: keyOf(calendar, p), entryTurma: p.entryTurma || "", releaseDate: p.releaseDate || "", grossUnlocked: !!p.grossUnlocked,
@@ -155,6 +179,8 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
   const [html, setHtml] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  // the values the preview on the screen was made with (the chips read them, never a value still being typed)
+  const [shown, setShown] = useState(null);
   const [advanced, setAdvanced] = useState(false);
   const [texts, setTexts] = useState(false);
   const [saved, setSaved] = useState(null);
@@ -241,11 +267,17 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
   useEffect(() => {
     if (!f || !snapshot) return undefined;
     const seq = (loadSeq.current += 1);
+    // an invalid value never reaches the preview: the last valid one stays on the screen, with the reason
+    const wrong = Object.values(problemsOf(f));
+    if (wrong.length) {
+      setError(`${wrong[0]}. A prévia mostra os últimos valores válidos.`);
+      return undefined;
+    }
     const t = setTimeout(async () => {
       try {
         const { data } = await api.post("/proposals/preview", { ...who, proposalId: saved ? saved.id : undefined, courseId, templateId, params: toParams(f), snapshot });
         if (seq !== loadSeq.current) return;
-        setHtml(data.html); setResult(data.result); setBlocks(data.messages || []); setError("");
+        setHtml(data.html); setResult(data.result); setBlocks(data.messages || []); setError(""); setShown(toParams(f));
       } catch (err) {
         if (seq !== loadSeq.current) return;
         const code = err.response && err.response.data && err.response.data.error;
@@ -259,15 +291,30 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
   const field = (k, label, extra = {}) => (
     <TextField fullWidth variant="outlined" margin="dense" label={label} value={f[k]} onChange={set(k)} {...extra} />
   );
-  const setBolsa = (e) => { const v = e.target.value; setF((p) => ({ ...p, bolsa: v, first: money(r2(toNum(p.gross) * (1 - toNum(v) / 100))) })); };
+  // the scholarship: only a value between 0% and 100% moves the monthly fee
+  const setBolsa = (e) => {
+    const v = percentTyping(e.target.value);
+    setF((p) => {
+      const b = toNum(v);
+      return v !== "" && b >= 0 && b <= 100 ? { ...p, bolsa: v, first: money(r2(toNum(p.gross) * (1 - b / 100))) } : { ...p, bolsa: v };
+    });
+  };
+  const problems = problemsOf(f);
+  // a money field in reais: typed from the right (12145 = R$ 121,45); the form keeps the text "121,45"
+  const moneyField = (k, label, extra = {}, onValue, emptyValue = null) => (
+    <CurrencyField fullWidth variant="outlined" margin="dense" label={label} value={f[k] === "" || f[k] === null || f[k] === undefined ? null : toNum(f[k])}
+      emptyValue={emptyValue}
+      onChange={(n) => (onValue ? onValue(n) : setF((p) => ({ ...p, [k]: n === null ? "" : money(n) })))}
+      error={!!problems[k]} {...extra} helperText={problems[k] || extra.helperText} />
+  );
   // a proposal in installments: the installments, the fees (charge, waive or change) and, paid at once, the ways of paying it
   const sw = (k, label, extra = {}) => (
     <FormControlLabel control={<Switch color="primary" checked={!!f[k]} disabled={!!locked} onChange={(e) => { const on = e.target.checked; setF((p) => ({ ...p, [k]: on })); }} />} label={label} {...extra} />
   );
   const plan = result && result.plan;
   const singleBase = () => (toNum(f.singleValue) > 0 ? toNum(f.singleValue) : plan && plan.single ? plan.single.value : plan ? plan.total : 0);
-  const setPixValue = (e) => {
-    const v = e.target.value;
+  const setPixValue = (n) => {
+    const v = n === null ? "" : money(n);
     const base = singleBase();
     setF((p) => ({ ...p, pixTyping: v, pixDiscountPct: base > 0 ? money(r2(Math.min(100, Math.max(0, (1 - toNum(v) / base) * 100)))) : p.pixDiscountPct }));
   };
@@ -280,11 +327,11 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
       {f.singlePayment && (
         <div className={classes.firstBox}>
           <div className={classes.firstHead}>Formas de pagamento</div>
-          {field("singleValue", "Valor do curso à vista (R$)", { disabled: !!locked, placeholder: plan ? money(plan.total) : "", helperText: "Vazio = parcelas somadas" })}
+          {moneyField("singleValue", "Valor do curso à vista (R$)", { disabled: !!locked, placeholder: plan ? brl(plan.total) : "R$ 0,00", helperText: "Vazio = parcelas somadas" })}
           <div className={classes.grid2}>
             {field("pixDiscountPct", "Desconto no Pix (%)", { disabled: !!locked, onChange: (e) => { const v = e.target.value; setF((p) => ({ ...p, pixDiscountPct: v, pixTyping: null })); } })}
-            <TextField fullWidth variant="outlined" margin="dense" label="Valor no Pix (R$)" disabled={!!locked}
-              value={f.pixTyping !== null && f.pixTyping !== undefined ? f.pixTyping : plan && plan.single ? money(plan.single.pix) : ""}
+            <CurrencyField fullWidth variant="outlined" margin="dense" label="Valor no Pix (R$)" disabled={!!locked}
+              value={f.pixTyping !== null && f.pixTyping !== undefined ? (f.pixTyping === "" ? null : toNum(f.pixTyping)) : plan && plan.single ? plan.single.pix : null}
               onChange={setPixValue} onBlur={() => setF((p) => ({ ...p, pixTyping: null }))} helperText="Digite o valor ou a %: o outro se ajusta" />
           </div>
           <div className={classes.grid2}>
@@ -308,15 +355,24 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
           <MenuItem value="exempt">Isenta</MenuItem>
           <MenuItem value="none">O curso não tem</MenuItem>
         </TextField>
-        {f.certification === "charge" && field("certificationFee", "Valor da taxa de certificação (R$)", { disabled: !!locked })}
+        {f.certification === "charge" && moneyField("certificationFee", "Valor da taxa de certificação (R$)", { disabled: !!locked }, null, 0)}
       </div>
       {plan && !f.singlePayment && (
         <div className={classes.note}>{plan.installments} parcelas de {brl(plan.monthly)}{Math.abs(plan.first - plan.monthly) >= 0.01 ? ` (1ª: ${plan.first === 0 ? "isenta" : brl(plan.first)})` : ""} · total {brl(plan.total)}</div>
       )}
     </>
   );
-  const setFirst = (e) => { const v = e.target.value; setF((p) => ({ ...p, first: v, bolsa: toNum(p.gross) ? money(r2((1 - toNum(v) / toNum(p.gross)) * 100)) : "" })); };
-  const setGross = (e) => { const v = e.target.value; setF((p) => ({ ...p, gross: v, first: money(r2(toNum(v) * (1 - toNum(p.bolsa) / 100))) })); };
+  // the monthly fee with the scholarship: the scholarship follows only a value above zero and within the gross one
+  const setFirst = (n) => setF((p) => {
+    const v = n === null ? "" : money(n);
+    const g = toNum(p.gross);
+    return n > 0 && g > 0 && n <= g ? { ...p, first: v, bolsa: money(r2((1 - n / g) * 100)) } : { ...p, first: v };
+  });
+  const setGross = (n) => setF((p) => {
+    const b = toNum(p.bolsa);
+    const v = n === null ? "" : money(n);
+    return n > 0 && b >= 0 && b <= 100 ? { ...p, gross: v, first: money(r2(n * (1 - b / 100))) } : { ...p, gross: v };
+  });
   const setDueDay = (e) => {
     const v = e.target.value;
     setF((p) => {
@@ -523,10 +579,10 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
             <div className={classes.card}>
               <div className={classes.cardHead}><Wallet size={17} /> Condições comerciais</div>
               <div className={classes.grid2}>
-                {field("gross", "Mensalidade bruta (R$)", { onChange: setGross, disabled: !!locked || grossLocked, helperText: grossLocked ? "Valor do curso" : f.grossUnlocked ? "Destravado pela gestão" : " " })}
-                {field("bolsa", "Bolsa aplicada (%)", { onChange: setBolsa, disabled: !!locked })}
-                {field("first", f.planType === "parcelado" ? "Mensalidade (R$)" : "Mensalidade com bolsa (R$)", { onChange: setFirst, disabled: !!locked || (f.planType === "parcelado" && f.singlePayment), helperText: "Valor das demais mensalidades" })}
-                {field("enrollmentFee", "Taxa de matrícula (R$)", { disabled: !!locked || (f.planType === "parcelado" && f.enrollmentExempt) })}
+                {moneyField("gross", "Mensalidade bruta (R$)", { disabled: !!locked || grossLocked, helperText: grossLocked ? "Valor do curso" : f.grossUnlocked ? "Destravado pela gestão" : " " }, setGross)}
+                {field("bolsa", "Bolsa aplicada (%)", { onChange: setBolsa, disabled: !!locked, error: !!problems.bolsa, helperText: problems.bolsa || " ", inputProps: { inputMode: "decimal" }, InputProps: { endAdornment: <span style={{ opacity: 0.6 }}>%</span> } })}
+                {moneyField("first", f.planType === "parcelado" ? "Mensalidade (R$)" : "Mensalidade com bolsa (R$)", { disabled: !!locked || (f.planType === "parcelado" && f.singlePayment), helperText: "Valor das demais mensalidades" }, setFirst)}
+                {moneyField("enrollmentFee", "Taxa de matrícula (R$)", { disabled: !!locked || (f.planType === "parcelado" && f.enrollmentExempt) }, null, 0)}
                 {!(f.planType === "parcelado" && f.singlePayment) && field("dueDay", "Dia de vencimento das demais", { onChange: setDueDay, disabled: !!locked })}
               </div>
               {(canUnlock && (coursePrice || f.grossUnlocked)) ? (
@@ -552,7 +608,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
                     label={`Igual às demais (${brl(toNum(f.first))})`}
                   />
                 )}
-                {!f.firstExempt && !f.firstSame && field("firstPay", "Valor da 1ª mensalidade (R$)", { disabled: !!locked })}
+                {!f.firstExempt && !f.firstSame && moneyField("firstPay", "Valor da 1ª mensalidade (R$)", { disabled: !!locked })}
               </div>}
               {f.planType === "parcelado" ? parcelado() : (<>
               {field("installmentsFixed", "Total de parcelas do curso (vazio = até o fim do curso)", { disabled: !!locked, type: "number", inputProps: { min: 1, max: 120 } })}
@@ -655,8 +711,8 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
             {result && (
               <div className={classes.chips}>
                 <span className={classes.chip}>Bolsa <b>{result.bolsaApplied.toFixed(2).replace(".", ",")}%</b></span>
-                <span className={classes.chip}>1ª mensalidade <b>{f.firstExempt ? "isenta" : brl(f.firstSame ? toNum(f.first) : toNum(f.firstPay))}</b></span>
-                <span className={classes.chip}>Até o dia {f.dueDay}: <b>{brl(result.tiers.onTime)}</b></span>
+                <span className={classes.chip}>1ª mensalidade <b>{shown ? (shown.firstExempt ? "isenta" : brl(shown.firstMonthly)) : "—"}</b></span>
+                <span className={classes.chip}>Até o dia {shown ? shown.dueDay : f.dueDay}: <b>{brl(result.tiers.onTime)}</b></span>
                 {result.rows.length > 0 && <span className={classes.chip}>Última parcela (cenário teto): <b>{brl(result.rows[result.rows.length - 1].monthlyMax)}</b></span>}
               </div>
             )}
