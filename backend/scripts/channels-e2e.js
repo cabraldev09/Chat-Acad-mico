@@ -5165,7 +5165,9 @@ const postMeta = (id, payload, secret, badSig) => {
 
       llm = anthropic.requests.length;
       // the price is worked first: the values come from the consultant, who simulates the scholarship with the name and the CPF asked now
-      out = await say(A, "wamid.com-a5", "qual o valor da mensalidade? tem bolsa?", t => t.some(x => /consultor do seu polo/.test(x)), "the price is worked before the consultant");
+      // (the answer goes in two bubbles and both name "o consultor do seu polo": the wait is for the end of the turn, the request of the CPF
+      // or the handoff, never only the first bubble, or the branch below would miss the question still on its way)
+      out = await say(A, "wamid.com-a5", "qual o valor da mensalidade? tem bolsa?", t => t.some(x => /consultor do seu polo/.test(x)) && (t.some(x => /CPF/.test(x)) || /^handoff|^done/.test(runOf(A))), "the price is worked before the consultant");
       assert(anthropic.requests.length === llm, "a question about price should not call the model");
       assert(!out.some(x => /R\$|\d+,\d{2}/.test(x)), `a value was told: ${out}`);
       if (/CPF/.test(out.join(" "))) {
@@ -5373,9 +5375,11 @@ const postMeta = (id, payload, secret, badSig) => {
       // R) the first message already asks about a course the institution does not offer: it presents itself, says it is not offered and lists the ones that are, without the model
       const NOFF = "5511920000230";
       llm = anthropic.requests.length;
-      out = await say(NOFF, "wamid.com-noff1", "Quero saber o valor do curso de Medicina", t => t.some(x => /não oferece o curso de Medicina/.test(x)), "a course that is not offered");
+      // (the courses offered come in a bubble after the one that says it is not offered: the wait is for that one too)
+      const offeredListed = x => /(temos, por exemplo,|Entre os cursos que oferecemos estão|oferecemos \d+ cursos|o curso que oferecemos é) /.test(x);
+      out = await say(NOFF, "wamid.com-noff1", "Quero saber o valor do curso de Medicina", t => t.some(x => /não oferece o curso de Medicina/.test(x)) && t.some(offeredListed), "a course that is not offered, with the courses that are");
       assert(out.some(x => /assistente virtual/.test(x)), `the agent did not present itself: ${out}`);
-      assert(out.some(x => /(temos, por exemplo,|Entre os cursos que oferecemos estão|oferecemos \d+ cursos|o curso que oferecemos é) /.test(x)), `the offered courses were not listed: ${out}`);
+      assert(out.some(offeredListed), `the offered courses were not listed: ${out}`);
       assert(!out.some(x => /R\$|mensalidade/.test(x)), "a price was given for a course that is not offered");
       assert(anthropic.requests.length === llm, "the model should not be called for a course that is not offered");
       assert(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(NOFF)}`).includes("Medicina"), "the course that is not offered is kept on the lead");
