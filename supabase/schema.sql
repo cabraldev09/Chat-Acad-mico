@@ -8,8 +8,8 @@
 --
 
 
--- Dumped from database version 16.15 (Homebrew)
--- Dumped by pg_dump version 16.15 (Homebrew)
+-- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -3146,14 +3146,15 @@ CREATE TABLE public."Proposals" (
     params text NOT NULL,
     "sentAt" timestamp with time zone,
     "viewedAt" timestamp with time zone,
-    "leadId" integer NOT NULL,
+    "leadId" integer,
     "courseId" integer,
     "templateId" integer,
     "institutionId" integer,
     "createdBy" integer,
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
-    "affiliateId" integer
+    "affiliateId" integer,
+    "recipientName" character varying(120)
 );
 
 
@@ -8293,6 +8294,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tr
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270104000001-proposal-standalone.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

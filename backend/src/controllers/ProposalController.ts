@@ -339,6 +339,33 @@ const compose = async (lead: Lead, params: ProposalParams, snapshot: Snapshot, g
 };
 
 const link = (p: Proposal) => `${getPublicUrl()}/p/${p.token}`;
+
+// A proposal without a lead ("avulsa"): made for a colleague to send to a lead of theirs, or for someone who is not in the CRM.
+// It is computed like any other, from the course and the model, with only the name of the person; nothing in the CRM changes.
+const standaloneLead = (name: string): Lead => ({
+  id: null, name, courseId: null, institutionId: null, admissionType: null, entryTerm: null, entrySemester: null, extraSemesters: null,
+  affiliateId: null, ownerId: null, stageId: null, firstContactAt: null, update: async () => undefined
+}) as unknown as Lead;
+const cleanRecipient = (v: unknown): string => String(v || "").replace(/\s+/g, " ").trim().slice(0, 120);
+// who the proposal is for: the lead (with its permission) or, for an "avulsa", the name typed
+const targetOf = async (req: Request, existing?: Proposal | null, query = false): Promise<Lead> => {
+  const src: any = query ? req.query : req.body;
+  if (existing) {
+    if (!existing.leadId) return standaloneLead(existing.recipientName || "Candidato");
+    await assertLead(req, existing.leadId);
+    return (await Lead.findByPk(existing.leadId)) as Lead;
+  }
+  if (src.leadId) {
+    await assertLead(req, src.leadId);
+    const lead = await Lead.findByPk(src.leadId);
+    if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+    return lead;
+  }
+  const name = cleanRecipient(src.recipientName);
+  if (!name) throw new AppError("ERR_PROPOSAL_RECIPIENT", 400);
+  return standaloneLead(name);
+};
+const nameOf = (p: Proposal & { lead?: Lead }): string => (p.lead && p.lead.name) || p.recipientName || "Candidato";
 // who referred the student: proposals carry the affiliate so the team can follow what each one brings
 const affiliateNames = async (ids: Array<number | null | undefined>): Promise<Map<number, string>> => {
   const list = Array.from(new Set(ids.filter(Boolean) as number[]));
@@ -360,9 +387,7 @@ const entryOf = (p: Proposal) => {
 // ---------------------------------------------------------------------------
 
 export const defaults = async (req: Request, res: Response): Promise<Response> => {
-  await assertLead(req, String(req.query.leadId));
-  const lead = await Lead.findByPk(String(req.query.leadId));
-  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const lead = await targetOf(req, null, true);
   const { params, snapshot, tpl, course, calendar, turma } = await buildDefaults(
     lead,
     req.query.courseId ? Number(req.query.courseId) : null,
@@ -380,13 +405,11 @@ export const defaults = async (req: Request, res: Response): Promise<Response> =
 };
 
 export const preview = async (req: Request, res: Response): Promise<Response> => {
-  const { leadId, courseId, templateId, params: raw, snapshot: snapRaw } = req.body;
-  await assertLead(req, leadId);
-  const lead = await Lead.findByPk(leadId);
-  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const { courseId, templateId, params: raw, snapshot: snapRaw } = req.body;
+  const lead = await targetOf(req);
   const d = await buildDefaults(lead, courseId, templateId);
   const before = req.body.proposalId ? await Proposal.findByPk(req.body.proposalId, { attributes: ["id", "leadId", "courseId", "params"] }) : null;
-  const sameDraft = before && before.leadId === lead.id && before.courseId === (d.course ? d.course.id : null);
+  const sameDraft = before && (before.leadId || null) === (lead.id || null) && before.courseId === (d.course ? d.course.id : null);
   const params = paramsFor(req, d, raw, sameDraft ? JSON.parse(before.params || "{}").params : null);
   const snapshot: Snapshot = {
     ...d.snapshot,
@@ -397,10 +420,8 @@ export const preview = async (req: Request, res: Response): Promise<Response> =>
 };
 
 const save = async (req: Request, existing?: Proposal) => {
-  const { leadId, courseId, templateId, params: raw, snapshot: snapRaw } = req.body;
-  await assertLead(req, existing ? existing.leadId : leadId);
-  const lead = await Lead.findByPk(existing ? existing.leadId : leadId);
-  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const { courseId, templateId, params: raw, snapshot: snapRaw } = req.body;
+  const lead = await targetOf(req, existing);
   // the course and the model the studio shows now (they may have changed since the first save)
   const d = await buildDefaults(
     lead,
@@ -433,24 +454,26 @@ const save = async (req: Request, existing?: Proposal) => {
   if (!lead.admissionType && params.admissionType) fill.admissionType = params.admissionType;
   if (!lead.courseId && d.course) fill.courseId = d.course.id;
   if (!lead.entryTerm && params.startYear) fill.entryTerm = `${params.startYear}/${params.startSemester}`;
-  if (Object.keys(fill).length) await lead.update(fill);
+  if (lead.id && Object.keys(fill).length) await lead.update(fill);
   if (existing) {
     await existing.update(data);
     return existing;
   }
-  return Proposal.create({ ...data, leadId: lead.id, affiliateId: lead.affiliateId || null, token: randomBytes(18).toString("hex"), createdBy: uid(req), status: "draft" });
+  return Proposal.create({ ...data, leadId: lead.id || null, recipientName: lead.id ? null : lead.name, affiliateId: lead.affiliateId || null, token: randomBytes(18).toString("hex"), createdBy: uid(req), status: "draft" });
 };
 
 const rebuild = async (p: Proposal) => {
-  const lead = (await Lead.findByPk(p.leadId)) as Lead;
+  const lead = p.leadId ? ((await Lead.findByPk(p.leadId)) as Lead) : standaloneLead(p.recipientName || "Candidato");
   const { params, snapshot } = JSON.parse(p.params);
   return compose(lead, params, snapshot, p.createdAt);
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const p = await save(req);
-  await addActivity(p.leadId, uid(req), "system", `Proposta #${p.id} criada (${p.courseName}, mensalidade com bolsa ${Number(p.firstMonthly).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`);
-  getIO().emit("lead", { action: "update", lead: await loadLead(p.leadId) });
+  if (p.leadId) {
+    await addActivity(p.leadId, uid(req), "system", `Proposta #${p.id} criada (${p.courseName}, mensalidade com bolsa ${Number(p.firstMonthly).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`);
+    getIO().emit("lead", { action: "update", lead: await loadLead(p.leadId) });
+  }
   return res.status(201).json(present(p));
 };
 
@@ -462,6 +485,16 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
+  // the proposals "avulsas": each person sees the ones they made; the management sees all of them
+  if (req.query.standalone) {
+    const own = await Proposal.findAll({
+      where: { leadId: null, ...(isAdminReq(req) ? {} : { createdBy: uid(req) }) } as any,
+      include: [{ model: User, as: "author", attributes: ["id", "name"] }],
+      order: [["id", "DESC"]],
+      limit: 100
+    });
+    return res.json(own.map(r => ({ ...r.toJSON(), params: undefined, entry: entryOf(r), link: link(r) })));
+  }
   const scope = await leadScopeWhere(req);
   const allowed = scope
     ? (await Lead.findAll({ where: scope, attributes: ["id"], limit: 5000 })).map(l => l.id)
@@ -492,7 +525,7 @@ export const duplicate = async (req: Request, res: Response): Promise<Response> 
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
   const copy = await Proposal.create({
     courseName: p.courseName, grossFee: p.grossFee, firstMonthly: p.firstMonthly, bolsaPct: p.bolsaPct, params: p.params,
-    courseId: p.courseId, templateId: p.templateId, institutionId: p.institutionId, leadId: p.leadId,
+    courseId: p.courseId, templateId: p.templateId, institutionId: p.institutionId, leadId: p.leadId, recipientName: p.recipientName,
     token: randomBytes(18).toString("hex"), createdBy: uid(req), status: "draft"
   } as any);
   return res.status(201).json(present(copy));
@@ -516,7 +549,7 @@ export const pdf = async (req: Request, res: Response): Promise<Response> => {
   const { html } = await rebuild(p);
   const buf = await renderPdf(html);
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(pdfName(p.lead.name))}`);
+  res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(pdfName(nameOf(p)))}`);
   return res.send(buf);
 };
 
@@ -524,6 +557,8 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   const p = await Proposal.findByPk(req.params.id);
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
   assertReady(p);
+  // a proposal "avulsa" goes in the conversation open on screen (it has no lead to find the person by)
+  if (!p.leadId) return sendStandalone(req, res, p);
   const lead = (await Lead.findByPk(p.leadId)) as Lead;
   const { html, messages } = await rebuild(p);
   const buf = await renderPdf(html);
@@ -583,10 +618,55 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   return res.json(present(p));
 };
 
+const sendStandalone = async (req: Request, res: Response, p: Proposal): Promise<Response> => {
+  const ticketId = Number(req.body.ticketId);
+  // "Gerar link": the proposal is closed as it is and its link goes to whoever will send it (a colleague, another channel)
+  if (!ticketId && req.body.share) {
+    await p.update({ status: "sent", sentAt: new Date() });
+    touchAnalytics(p.createdBy);
+    return res.json(present(p));
+  }
+  if (!ticketId) throw new AppError("ERR_PROPOSAL_NEEDS_CONVERSATION", 400);
+  const { assertTicketAccess } = await import("../middleware/canAccessTicket");
+  await assertTicketAccess(req, ticketId, "send");
+  const Ticket = (await import("../models/Ticket")).default;
+  const ticket = await Ticket.findByPk(ticketId, { include: ["contact", "whatsapp"] as any });
+  if (!ticket || !(ticket as any).contact || !(ticket as any).whatsapp) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  const { html, messages } = await rebuild(p);
+  const buf = await renderPdf(html);
+  const file = `proposta-${p.id}-${Date.now()}.pdf`;
+  fs.writeFileSync(path.join(PUBLIC_DIR, file), buf);
+  const edited: string[] = Array.isArray(req.body.messages) ? req.body.messages.map((m: any) => String(m || "").trim()) : [];
+  const blocks = (edited.length ? edited : messages.map(m => m.text)).filter(Boolean);
+  const target = { contact: (ticket as any).contact, whatsapp: (ticket as any).whatsapp, ticketId: ticket.id, keepOpen: { userId: uid(req) } };
+  try {
+    const [intro, summary, ...rest] = blocks;
+    if (intro) await SendToContact({ ...target, body: intro } as any);
+    await SendToContact({ ...target, body: summary || "", mediaUrl: file, mediaName: pdfName(nameOf(p)) } as any);
+    for (const text of rest) {
+      // eslint-disable-next-line no-await-in-loop
+      await SendToContact({ ...target, body: text } as any);
+    }
+  } catch (err) {
+    fs.unlink(path.join(PUBLIC_DIR, file), () => undefined);
+    if (err instanceof AppError) throw err;
+    throw new AppError("ERR_PROPOSAL_SEND_FAILED");
+  }
+  await p.update({ status: "sent", sentAt: new Date() });
+  touchAnalytics(p.createdBy);
+  return res.json(present(p));
+};
+
 // ------------------------------------------------------------ public viewing
 export const publicView = async (req: Request, res: Response): Promise<Response> => {
   const p = await Proposal.findOne({ where: { token: req.params.token } });
   if (!p || p.status === "draft") return res.status(404).send("Proposta indisponível");
+  if (!p.viewedAt && !p.leadId) {
+    // an "avulsa": who made it is told, nothing else
+    await p.update({ viewedAt: new Date() });
+    const { notify } = await import("../services/NotificationServices/Notify");
+    void notify([p.createdBy], { kind: "proposal_viewed", title: `${p.recipientName || "O candidato"} abriu a proposta avulsa`, body: `Proposta #${p.id} (${p.courseName}).`, link: "/crm/propostas", dedupeKey: `proposal-viewed:${p.id}` });
+  }
   if (!p.viewedAt) {
     await p.update({ viewedAt: new Date() });
     await addActivity(p.leadId, null, "system", `O candidato abriu a proposta #${p.id}`);
@@ -606,7 +686,7 @@ export const publicPdf = async (req: Request, res: Response): Promise<Response> 
   const { html } = await rebuild(p);
   const buf = await renderPdf(html);
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(pdfName(p.lead.name))}`);
+  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(pdfName(nameOf(p)))}`);
   return res.send(buf);
 };
 

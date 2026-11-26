@@ -61,6 +61,10 @@ class Proposal extends Model<Proposal> {
   @Column
   leadId: number;
 
+  // a proposal without a lead ("avulsa") keeps the name of the person it is for
+  @Column
+  recipientName: string;
+
   @BelongsTo(() => Lead)
   lead: Lead;
 
