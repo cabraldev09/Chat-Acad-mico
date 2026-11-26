@@ -578,6 +578,12 @@ const postMeta = (id, payload, secret, badSig) => {
     global.__backendLog = () => log;
     await waitFor(async () => (await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" }, { validateStatus: () => true })).status === 200, 30000, "backend up");
     token = (await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" })).data.token;
+    // the administrator's access lasts 15 minutes and the suite takes about that: it logs in again every 10, so the last tests do not
+    // meet an expired login (that made "session renewal" fail with 401 on its very first request, creating the user)
+    setInterval(async () => {
+      const again = await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" }, { validateStatus: () => true }).catch(() => null);
+      if (again && again.status === 200 && again.data.token) token = again.data.token;
+    }, 10 * 60000).unref();
 
     // ------------------------------------------------------------ Telegram
     console.log("\nTelegram");
@@ -9394,6 +9400,25 @@ const postMeta = (id, payload, secret, badSig) => {
       const readsBefore = anthropic.readings;
       await http.post("/readings/run", {}, auth());
       assert(anthropic.readings - readsBefore === 1, `only the outcome of Dani should be read now (${anthropic.readings - readsBefore})`);
+      // "Parados" without a new reading: the team's last message 10 days ago, no answer -> Recuperação; the person answers -> out of it
+      const stalledC = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Gil Parado Diario', '5569955550021', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const stalledT = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageFromMe, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${stalledC}, ${qr.id}, ${u.id}, 0, false, 'sales', false, 'Te mandei a proposta', true, NOW() - INTERVAL '10 days', NOW() - INTERVAL '12 days', NOW()) RETURNING id`).split("\n")[0];
+      const stalledL = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Gil Parado Diario', '5569955550021', ${stage1}, ${stalledC}, ${u.id}, 'WhatsApp', false, NOW() - INTERVAL '12 days', NOW()) RETURNING id`).split("\n")[0];
+      const firstRun = (await http.post("/readings/run", {}, auth())).data;
+      assert(firstRun.stalled && firstRun.stalled.marked >= 1, `the daily check did not run ${JSON.stringify(firstRun.stalled)}`);
+      const gil = (await http.get("/crm/recovery", asUser(uTok))).data.items.find(i => String(i.id) === stalledL);
+      assert(gil && gil.tab === "parados" && gil.reason === "Parou de responder", `Gil is not in Parados ${JSON.stringify(gil)}`);
+      // a colleague (team contact) with the same silence never goes to Recuperação
+      const staffC = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, isStaff, createdAt, updatedAt) VALUES ('Colega Parado Diario', '5569955550022', '', false, 'person', 'whatsapp', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageFromMe, lastMessageAt, createdAt, updatedAt) VALUES ('closed', ${staffC}, ${qr.id}, ${u.id}, 0, false, 'sales', false, 'ok', true, NOW() - INTERVAL '10 days', NOW() - INTERVAL '12 days', NOW())`);
+      const staffL = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Colega Parado Diario', '5569955550022', ${stage1}, ${staffC}, ${u.id}, 'WhatsApp', false, NOW() - INTERVAL '12 days', NOW()) RETURNING id`).split("\n")[0];
+      await http.post("/readings/run", {}, auth());
+      assert(sql(`SELECT COALESCE(recoveryState,'') FROM Leads WHERE id = ${staffL}`) === "", "a colleague went to Parados");
+      // the person answers and the consultant answers right after: the last word is the team's again, but the lead came back
+      sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('stall-back-1', ${stalledT}, ${stalledC}, 'Oi, ainda tenho interesse', false, true, 'chat', 0, NOW(), NOW())`);
+      sql(`UPDATE Tickets SET lastMessageFromMe = true, lastMessageAt = NOW() WHERE id = ${stalledT}`);
+      await http.post("/readings/run", {}, auth());
+      assert(sql(`SELECT recoveryState FROM Leads WHERE id = ${stalledL}`) === "voltou", "who answered is still in Parados");
       const why = (await http.get("/analytics/outcomes", { params: { range: "custom", from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
       assert(why.lost >= 1 && why.reasons.some(r => r.reason === "Preço / mensalidade"), `outcomes ${JSON.stringify(why).slice(0, 300)}`);
       // back to the funnel: out of Recuperação, in an open column
