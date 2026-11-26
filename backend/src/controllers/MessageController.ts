@@ -3,6 +3,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { publicFile } from "../helpers/PublicFile";
+import { asSticker, stickersOf } from "../helpers/Stickers";
 import { noteSuggestionSent } from "../services/CopilotServices/Feedback";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
@@ -70,6 +71,12 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const captions: string[] = ([] as string[]).concat(req.body.body || []);
   // how each file goes ("gif" for a short video sent as a GIF; anything else by its type), in the order of the files
   const kinds: string[] = ([] as string[]).concat(req.body.kind || []);
+  // "Criar figurinha": an image the person picked goes as a sticker, like on WhatsApp (512 x 512, transparent around it, .webp)
+  if (medias) {
+    for (let i = 0; i < medias.length; i += 1) {
+      if (kinds[i] === "sticker" && medias[i].mimetype.startsWith("image/")) await asSticker(medias[i]); // eslint-disable-line no-await-in-loop
+    }
+  }
 
   const { row, duplicate } = await enqueueOutbound({
     ticketId: Number(ticketId),
@@ -78,7 +85,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     body: medias ? undefined : body,
     quotedMsgId: quotedMsg?.id,
     medias: medias
-      ? medias.map((m, i) => ({ path: m.path, filename: m.filename, originalname: m.originalname, mimetype: m.mimetype, size: m.size, caption: (captions[i] || "").trim(), ...(kinds[i] === "gif" && m.mimetype.startsWith("video/") ? { kind: "gif" as const } : {}) }))
+      ? medias.map((m, i) => ({ path: m.path, filename: m.filename, originalname: m.originalname, mimetype: m.mimetype, size: m.size, caption: (captions[i] || "").trim(), ...(kinds[i] === "gif" && m.mimetype.startsWith("video/") ? { kind: "gif" as const } : kinds[i] === "sticker" && m.mimetype === "image/webp" ? { kind: "sticker" as const } : {}) }))
       : undefined
   });
 
@@ -289,31 +296,30 @@ export const sendContact = async (req: Request, res: Response): Promise<Response
   return res.status(201).json(message);
 };
 
-// THE STICKERS OF THE NUMBER: the ones already received and sent in its conversations (WhatsApp Web does not give the "favorites" of the
-// phone), newest first and without repeating the same sticker. The composer shows them in a grid; a tap sends one (sendSticker).
+// THE STICKERS (AND GIFS) OF THE NUMBER: the ones already received and sent in its conversations (WhatsApp Web does not give the
+// "favorites" of the phone), newest first and without repeating the same file. Each one says whether the team already sent it (Recentes),
+// how many times it went in the conversations (Mais usadas) and whether it only came from clients (Recebidas). ?kind=gif lists the GIFs.
 export const stickers = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await ShowTicketService(Number(req.params.ticketId));
+  const gif = req.query.kind === "gif";
   const rows = await Message.findAll({
-    where: { mediaType: "image", isDeleted: false, mediaUrl: { [Op.iLike]: "%.webp" } } as any,
+    where: (gif ? { isGif: true, isDeleted: false, mediaUrl: { [Op.ne]: null } } : { mediaType: "image", isDeleted: false, mediaUrl: { [Op.iLike]: "%.webp" } }) as any,
     include: [{ association: "ticket", attributes: [], where: { whatsappId: ticket.whatsappId }, required: true }] as any,
-    attributes: ["id", "mediaUrl", "createdAt"],
+    attributes: ["id", "mediaUrl", "fromMe", "createdAt"],
     order: [["createdAt", "DESC"]],
-    limit: 300
+    limit: 400
   });
-  const seen = new Set<string>();
-  const out: Array<{ id: string; url: string }> = [];
+  const read: Array<{ id: string; url: string; hash: string; fromMe: boolean; at: number }> = [];
   for (const m of rows) {
     const raw = m.getDataValue("mediaUrl");
     let file: string;
     try { file = publicFile(raw); } catch (_) { continue; }
+    if (!fs.existsSync(file)) continue;
     // the same sticker arrives under many names: it is the same when the bytes are the same
     const hash = crypto.createHash("md5").update(fs.readFileSync(file)).digest("hex");
-    if (seen.has(hash)) continue;
-    seen.add(hash);
-    out.push({ id: m.id, url: m.mediaUrl || "" });
-    if (out.length >= 60) break;
+    read.push({ id: m.id, url: m.mediaUrl || "", hash, fromMe: !!m.fromMe, at: new Date(m.createdAt as any).getTime() });
   }
-  return res.json(out);
+  return res.json(stickersOf(read, gif ? 40 : 60));
 };
 
 // Sends one of those stickers as a WhatsApp sticker (a copy of the file goes: the send removes the file it was given)
@@ -322,16 +328,20 @@ export const sendSticker = async (req: Request, res: Response): Promise<Response
   const ticket = await ShowTicketService(ticketId);
   const source = await Message.findByPk(String(req.body?.messageId || ""), { include: [{ association: "ticket", attributes: ["whatsappId"] }] as any });
   const raw = source ? source.getDataValue("mediaUrl") : null;
-  if (!source || source.isDeleted || !raw || !/\.webp$/i.test(raw) || (source as any).ticket?.whatsappId !== ticket.whatsappId) throw new AppError("ERR_MEDIA_NOT_FOUND", 404);
+  const isGif = !!source?.isGif;
+  if (!source || source.isDeleted || !raw || !(isGif || /\.webp$/i.test(raw)) || (source as any).ticket?.whatsappId !== ticket.whatsappId) throw new AppError("ERR_MEDIA_NOT_FOUND", 404);
   const from = publicFile(raw);
-  const filename = `sticker-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.webp`;
+  const ext = isGif ? (path.extname(from) || ".mp4") : ".webp";
+  const filename = `${isGif ? "gif" : "sticker"}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${ext}`;
   const to = path.join(path.dirname(from), filename);
   fs.copyFileSync(from, to);
   const { row, duplicate } = await enqueueOutbound({
     ticketId,
     userId: Number(req.user.id),
     clientKey: req.body?.clientKey,
-    medias: [{ path: to, filename, originalname: "figurinha.webp", mimetype: "image/webp", size: fs.statSync(to).size, caption: "", kind: "sticker" }]
+    medias: [isGif
+      ? { path: to, filename, originalname: `gif${ext}`, mimetype: "video/mp4", size: fs.statSync(to).size, caption: "", kind: "gif" as const }
+      : { path: to, filename, originalname: "figurinha.webp", mimetype: "image/webp", size: fs.statSync(to).size, caption: "", kind: "sticker" as const }]
   });
   if (!duplicate) await processOutbound(row.id).catch(err => logger.error(`Outbound ${row.id}: ${err}`));
   await row.reload();
