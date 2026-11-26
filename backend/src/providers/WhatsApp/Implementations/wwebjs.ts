@@ -59,6 +59,7 @@ import {
   WhatsappContextPayload
 } from "../../../handlers/handleWhatsappEvents";
 import { killLeftoverBrowsers } from "./browserProcesses";
+import { safeLogout } from "../SafeLogout";
 import { chatBehind, eachLimited, isTransientState, settledChats, stateToWrite } from "./chatSync";
 
 interface Session extends Client {
@@ -1368,10 +1369,21 @@ const afterConnection = async (whatsapp: Whatsapp, copyHistory: boolean) => {
   }
 };
 
-const logout = async (sessionId: number): Promise<void> => {
-  const wbot = getWbot(sessionId);
-  await wbot.logout();
-};
+// "desconectar" (see SafeLogout): whatever the logout of WhatsApp Web says, the browser is closed, the saved login is put aside (the next
+// start shows a new QR Code) and the number is marked as disconnected
+const logout = async (sessionId: number): Promise<void> =>
+  safeLogout(sessions.find(s => s.id === sessionId) || clients.get(sessionId) || null, async () => {
+    loggedOut.delete(sessionId);
+    removeSession(sessionId);
+    reconnectAttempts.delete(sessionId);
+    await closeClient(sessionId).catch(() => undefined);
+    setAsideLogin(sessionId, "desconectado por uma pessoa");
+    const row = await Whatsapp.findByPk(sessionId);
+    if (row) {
+      await row.update({ status: "DISCONNECTED", session: "", qrcode: "" } as any);
+      getIO().emit("whatsappSession", { action: "update", session: row });
+    }
+  }, m => logger.warn(`Session ${sessionId}: ${m}`));
 
 // The id WhatsApp keeps for a message depends on how the chat is addressed (phone or internal id), so building it
 // by hand often misses. Fall back to searching the latest messages of the chat for the short id we store.
