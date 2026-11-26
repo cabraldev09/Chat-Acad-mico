@@ -61,6 +61,10 @@ Ao ler o QR Code, o sistema copia o WhatsApp do celular, sem ninguém clicar em 
   - arquivadas e fixadas ficam iguais ao celular;
   - todos os grupos e comunidades viram conversa, mesmo sem mensagem recente. A comunidade aparece no chip "Comunidades" do dono;
   - o contato que só tinha o número recebe o nome salvo na agenda do celular (ou o do perfil). Um nome digitado no sistema não muda.
+  - **Nomes sempre em dia** (`WbotServices/CompletePhoneNames.ts`): em toda conexão e a cada 6 horas (`workers/PhoneNamesSync.ts`),
+    quem conversa com o número e ainda aparece só com o número recebe o nome da agenda do celular, senão o nome do perfil do
+    WhatsApp, senão o da empresa verificada. O número da empresa e o de administradores trazem também a agenda inteira como
+    contatos; o número próprio de consultor ou tutor não cria contato da agenda, porque ela é pessoal.
   - No número da empresa (sem dono), tudo fica como histórico, sem responsável.
 - **Mensagens mais antigas:** na conversa aberta, ao rolar até o topo, as anteriores vêm do celular, de 100 em 100, até o começo
   (`ChatHistoryFromPhone.ts`, até 3000 por conversa, `WHATSAPP_HISTORY_MAX_PER_CHAT`).

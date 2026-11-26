@@ -104,6 +104,13 @@ class Campaign extends Model<Campaign> {
   @Column(DataType.TEXT)
   templateBody: string;
 
+  // a recovery campaign: the offer set by the management (JSON, see CampaignServices/Offer) and what happens when the person answers
+  @Column(DataType.TEXT)
+  offer: string;
+
+  @Column
+  approach: string;
+
   @Default(20)
   @Column
   intervalMin: number;

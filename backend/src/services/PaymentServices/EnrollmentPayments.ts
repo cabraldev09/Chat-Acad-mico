@@ -15,6 +15,9 @@ import ProposalTemplate from "../../models/ProposalTemplate";
 import AppError from "../../errors/AppError";
 import { getIO } from "../../libs/socket";
 import { getSetting } from "../../helpers/AppSettings";
+import { chargeDaysBeforeOf, efiWebhookSecret } from "./EfiSettings";
+
+export { chargeDaysBeforeOf, efiWebhookSecret };
 import { isValidCpf, normalizeCpf } from "../../helpers/Cpf";
 import { logger } from "../../utils/logger";
 import { markFeePaid, syncPendingFeeTags } from "./FeeTags";
@@ -171,7 +174,7 @@ const createBolixPayment = async (
   const dueDate = ymd(due);
   if (dueDate < ymd(shiftDays(today, 0))) throw new AppError("ERR_PAYMENT_DUE_IN_PAST");
 
-  const before = Math.max(0, Number(await getSetting("efi_charge_days_before", "3")) || 3);
+  const before = chargeDaysBeforeOf(await getSetting("efi_charge_days_before", "3"));
   const generateAt = shiftDays(new Date(`${dueDate}T11:00:00Z`), -before); // ~07:00 local (RO)
   const recipient = await resolveRecipient(lead, userId);
   const now = Date.now();
@@ -215,7 +218,7 @@ const createBolixPayment = async (
 // Creates the charge at Efí for a bolix payment row (immediately or when its schedule is due)
 const issueBolix = async (payment: Payment, lead: Lead): Promise<Payment> => {
   const cfg = await requireBilletConfig();
-  const secret = await getSetting("efi_webhook_secret", "");
+  const secret = await efiWebhookSecret();
   // who pays the Efí fee when the charge is split: 2 = each account in proportion (the default of Efí), 1 = only the company
   const feeMode: 1 | 2 = (await getSetting("efi_fee_mode", "2")) === "1" ? 1 : 2;
   const params = (repass: { payeeCode: string; percentage: number; feeMode: 1 | 2 } | null) => ({

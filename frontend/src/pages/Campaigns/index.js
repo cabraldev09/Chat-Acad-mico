@@ -48,6 +48,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
 import SendReleaseDialog, { QuotaLine } from "../../components/SendRelease";
 import { confirmDialog } from "../../components/ConfirmDialog";
+import OfferEditor, { emptyOffer, offerIn, offerOut } from "./OfferEditor";
 
 const useStyles = makeStyles((theme) => ({
   body: { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 },
@@ -619,6 +620,7 @@ const Campaigns = () => {
             wizard={[
               { title: "Público", hint: "Dê um nome, diga para que serve o disparo e escolha quem recebe. Dá para criar a lista aqui mesmo.", fields: ["name", "objective", "contactListId"] },
               { title: "Mensagem", hint: "Na API oficial, quem nunca respondeu só recebe por um modelo aprovado pela Meta.", fields: ["whatsappId", "template", "steps"] },
+              ...(isManager(user) ? [{ title: "Oferta", hint: "Só para recuperar leads: a condição, o valor de cada pessoa e o que acontece quando ela responder.", fields: ["offer"] }] : []),
               { title: "Envio", hint: "O ritmo protege o número. Sem data, a campanha espera você clicar em Iniciar. Com um bot, quem responder é qualificado por ele.", fields: ["pace", "flowId", "scheduledAt"] },
               { title: "Revisar", fields: [], review: (payload) => <DraftReview payload={payload} lists={lists} connections={connections} bots={bots} /> },
             ]}
@@ -627,6 +629,7 @@ const Campaigns = () => {
             mapIn={(row) => ({
               ...row,
               pace: paceOf(row),
+              offer: offerIn(row),
               template: { name: row.templateName || "", language: row.templateLanguage || "pt_BR", body: row.templateBody || "", params: (() => { try { return JSON.parse(row.templateParams || "[]"); } catch (e) { return []; } })() },
               steps: Array.isArray(row.steps) && row.steps.length
                 ? row.steps.map((st) => ({ ...st, mediaName: st.mediaUrl || "" }))
@@ -634,13 +637,14 @@ const Campaigns = () => {
             })}
             mapOut={(payload) => {
               const steps = (payload.steps || []).map(({ mediaName, ...st }) => st);
-              const { pace, template, ...rest } = payload;
+              const { pace, template, offer, ...rest } = payload;
               const p = pace || PACES.normal;
               const t = template || {};
               return {
                 ...rest, steps, message: steps[0] ? steps[0].body : "",
                 intervalMin: p.intervalMin, intervalMax: p.intervalMax, batchSize: p.batchSize, batchPause: p.batchPause,
                 templateName: t.name || null, templateLanguage: t.language || "pt_BR", templateBody: t.body || null, templateParams: JSON.stringify(t.params || []),
+                ...offerOut(offer, isManager(user)),
               };
             }}
             emptyText="Nenhuma campanha ainda. Clique em Nova campanha: você pode criar a lista de contatos dentro do formulário."
@@ -687,6 +691,7 @@ const Campaigns = () => {
                   />
                 ),
               },
+              { name: "offer", type: "custom", label: "Oferta", default: emptyOffer(), render: (value, setValue, values) => <OfferEditor value={value} setValue={setValue} contactListId={values.contactListId} /> },
               {
                 name: "flowId",
                 type: "select",

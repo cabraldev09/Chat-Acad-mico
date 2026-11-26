@@ -261,3 +261,15 @@ O tutor vê uma versão simples, sem nada sobre a leitura da IA.
 - `POST /tutoria/protocols`;
 - `POST /tutoria/protocols/:id/resolve`;
 - `GET /tickets/:ticketId/protocols`.
+
+## Alertas de prazo de resposta (`workers/LeadSlaAlert.ts`)
+
+- **Quando avisa:** a cada minuto, em horário comercial. O alerta sai quando o lead espera resposta além de `crm_sla_minutes` (padrão 15 min). Além de `crm_escalation_minutes` (padrão 30 min), o alerta é escalado para a gestão do polo.
+- **Quando não avisa** (`services/NotificationServices/SlaRules.ts`):
+  - a última mensagem do cliente encerra o assunto: "obrigado", "ok", "blz", uma figurinha ou uma reação (`helpers/ClosingMessage.ts`). Com "?" ela sempre conta como pergunta;
+  - a espera começou há mais de `crm_sla_max_age_hours` (padrão 24 h; 0 desliga essa regra). Isso acontece com conversas copiadas do celular ou depois de uma parada do servidor. Essas conversas vão uma vez por dia para o sino, como "N conversas esquecidas", sem pop-up.
+- **Na tela** (`components/CrmReminders`, `components/NotificationCenter`):
+  - um aviso aparece uma vez só, e não mais como "Atenção" e "Algo deu errado" ao mesmo tempo;
+  - o tempo aparece por extenso ("2 h 10 min", "3 dias");
+  - vários avisos do mesmo tipo em poucos segundos viram um cartão só ("5 leads esperando resposta"), com o botão para abrir;
+  - se a conversa do aviso já está aberta na tela, não aparece pop-up; o aviso fica no sino.

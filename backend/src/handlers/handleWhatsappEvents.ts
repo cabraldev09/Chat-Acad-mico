@@ -204,7 +204,8 @@ export const handleMessage = async (
       contact,
       contextPayload.whatsappId,
       contextPayload.unreadMessages,
-      groupContact
+      groupContact,
+      processedMessage.body
     );
 
     // keep the order the phone shows: a message that reached us late (offline period, history) is stored

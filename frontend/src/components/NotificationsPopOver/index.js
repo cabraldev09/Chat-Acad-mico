@@ -276,6 +276,12 @@ const NotificationsPopOver = () => {
 	// the notices of the system (Avisos), the conversations with unread messages (Mensagens) and the sound preferences (Som)
 	const notices = useNotices();
 	const [tab, setTab] = useState(null);
+	// "Ver avisos" on a grouped pop-up opens the bell on the Avisos tab
+	useEffect(() => {
+		const openBell = () => { setTab("notices"); setIsOpen(true); };
+		window.addEventListener("openNoticeBell", openBell);
+		return () => window.removeEventListener("openNoticeBell", openBell);
+	}, []);
 	const shownTab = tab || (notices.unread > 0 ? "notices" : "messages");
 	const tabBtn = (key, label, count) => (
 		<button key={key} type="button" role="tab" aria-selected={shownTab === key} onClick={() => setTab(key)}

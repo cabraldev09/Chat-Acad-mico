@@ -2,7 +2,6 @@ import { safeEqual } from "../helpers/SafeEqual";
 import { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
-import { randomBytes } from "crypto";
 
 import Lead from "../models/Lead";
 import LeadStage from "../models/LeadStage";
@@ -22,19 +21,14 @@ import {
   markPaid,
   present,
   refreshPayment,
-  sendPaymentToLead
+  sendPaymentToLead,
+  chargeDaysBeforeOf,
+  efiWebhookSecret
 } from "../services/PaymentServices/EnrollmentPayments";
 
 const uid = (req: Request) => Number(req.user.id);
 
-const webhookSecret = async (): Promise<string> => {
-  let s = await getSetting("efi_webhook_secret", "");
-  if (!s) {
-    s = randomBytes(20).toString("hex");
-    await setSetting("efi_webhook_secret", s);
-  }
-  return s;
-};
+const webhookSecret = efiWebhookSecret;
 
 // ------------------------------------------------------------------ settings
 const settingsView = async () => {
@@ -52,7 +46,7 @@ const settingsView = async () => {
     bolixReady: !!(cfg.clientId && cfg.clientSecret),
     companyPayeeCode: await getSetting("efi_company_payee_code", ""),
     consultantPct: Number(await getSetting("efi_consultant_pct", "100")),
-    chargeDaysBefore: Number(await getSetting("efi_charge_days_before", "3")),
+    chargeDaysBefore: chargeDaysBeforeOf(await getSetting("efi_charge_days_before", "3")),
     // every enrollment fee is a Bolix (boleto with a Pix QR Code); `dueDays` is the due date when the consultant does not pick one
     defaultMethod: "bolix",
     dueDays: Math.min(30, Math.max(1, Math.round(Number(await getSetting("efi_due_days", "3")) || 3))),
@@ -79,7 +73,8 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
   }
   if (typeof b.companyPayeeCode === "string") await setSetting("efi_company_payee_code", b.companyPayeeCode.trim());
   if (b.consultantPct !== undefined) await setSetting("efi_consultant_pct", String(Math.min(100, Math.max(1, Math.round(Number(b.consultantPct) || 100)))));
-  if (b.chargeDaysBefore !== undefined) await setSetting("efi_charge_days_before", String(Math.min(30, Math.max(0, Math.round(Number(b.chargeDaysBefore) || 0)))));
+  // empty or invalid stays 3; 0 only when typed on purpose (the boleto is then made on the due day)
+  if (b.chargeDaysBefore !== undefined) await setSetting("efi_charge_days_before", String(chargeDaysBeforeOf(b.chargeDaysBefore)));
   if (b.dueDays !== undefined) await setSetting("efi_due_days", String(Math.min(30, Math.max(1, Math.round(Number(b.dueDays) || 3)))));
   if (b.feeMode) await setSetting("efi_fee_mode", b.feeMode === "company" ? "1" : "2");
   Efi.clearTokens();

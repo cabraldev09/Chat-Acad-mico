@@ -88,7 +88,7 @@ const ROUTES = [
   "/users", "/polos", "/Queues", "/tags", "/configuracoes", "/crm/retencao",
   "/grades", "/analise-curricular", "/analise-academica", "/alunos",
 ];
-const SETTINGS_GROUPS = ["prontidao", "modelos", "copiloto", "entregas", "meta", "geral", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];
+const SETTINGS_GROUPS = ["prontidao", "modelos", "copiloto", "entregas", "limites", "geral", "horario", "atendimento", "tutoria", "calendario", "captacao", "pagamentos", "cadastros", "regras", "email", "retencao", "erros"];
 
 // what the sweep itself created, erased at the end (the screens may still create a few things while forms are typed in)
 const created = [];
@@ -438,7 +438,9 @@ async function sweepRole(browser, name, def, detailRoutes = []) {
         const out = [];
         const seen = new Set();
         const label = (el) => `${el.tagName.toLowerCase()}.${String(el.className.baseVal ?? el.className).split(" ")[0].slice(0, 28)}`;
-        const visible = (el) => { const r = el.getBoundingClientRect(); const c = getComputedStyle(el); return r.width > 0 && r.height > 0 && c.visibility !== "hidden" && r.bottom > 0 && r.top < innerHeight * 3; };
+        // what is inside a closed <details> (but not its <summary>) is hidden: Chromium still gives it a size, but it cannot be touched or read
+        const folded = (el) => { const d = el.closest("details:not([open])"); return !!d && !(el.closest("summary") && el.closest("summary").parentElement === d); };
+        const visible = (el) => { const r = el.getBoundingClientRect(); const c = getComputedStyle(el); return r.width > 0 && r.height > 0 && c.visibility !== "hidden" && r.bottom > 0 && r.top < innerHeight * 3 && !folded(el); };
         const main = document.querySelector("main") || document.body;
         main.querySelectorAll("button, a[href], [role=button], [role=tab], input:not([type=hidden]), select, [role=checkbox], [role=switch]").forEach((el) => {
           if (!visible(el) || el.closest("[aria-hidden=true]") || el.disabled) return;

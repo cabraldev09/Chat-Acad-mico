@@ -305,6 +305,8 @@ r.get("/campaigns", isAuth, salesStaff, Campaign.index);
 r.get("/campaigns/templates", isAuth, salesStaff, Campaign.templates);
 r.post("/campaigns", isAuth, salesStaff, Campaign.store);
 r.post("/campaigns/preflight", isAuth, salesStaff, Campaign.preflightDraft);
+// the offer of a recovery campaign, person by person, before the send (only the management sets an offer)
+r.post("/campaigns/offer-preview", isAuth, isManager, Campaign.offerPreview);
 r.get("/campaigns/:id", isAuth, salesStaff, ownCampaign, Campaign.show);
 r.put("/campaigns/:id", isAuth, salesStaff, ownCampaign, Campaign.update);
 r.delete("/campaigns/:id", isAuth, salesStaff, ownCampaign, Campaign.remove);

@@ -22,7 +22,7 @@ const th = { ...cell, fontSize: 12, fontWeight: 700, color: "var(--text-2)", bac
 const CATEGORY = { MARKETING: "Marketing", UTILITY: "Utilidade", AUTHENTICATION: "Autenticação", SERVICE: "Respostas (24 h)", SEM_CATEGORIA: "Antes da separação por categoria" };
 const reais = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-// the estimate of the month against the cap of the month (Operação e custos), always this month whatever the period chosen
+// the estimate of the month against the cap of the month (Limites e orçamento), always this month whatever the period chosen
 function MonthCap({ month, onLimits }) {
   const pct = month.pct === null ? null : Math.min(100, month.pct);
   const tone = month.pct >= 100 ? "#b91c1c" : month.pct >= 80 ? "#b45309" : "var(--accent)";
@@ -130,11 +130,11 @@ export default function MetaCosts({ onLimits }) {
             <div style={{ ...card, display: "grid", gap: 4 }}>
               <div style={{ fontSize: 15, fontWeight: 700 }}>Estimado pelo sistema × cobrado pela Meta</div>
               <div style={{ fontSize: 13 }}>
-                O sistema estimou <b>{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" }).format(data.estimate.usd)}</b> para {data.estimate.messages.toLocaleString("pt-BR")} envios no período (a tarifa de Operação e custos, usada no orçamento do dia); a Meta cobrou <b>{money(data.total)}</b>.
+                O sistema estimou <b>{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" }).format(data.estimate.usd)}</b> para {data.estimate.messages.toLocaleString("pt-BR")} envios no período (com os preços de Limites e orçamento, usados no orçamento do dia); a Meta cobrou <b>{money(data.total)}</b>.
                 {data.estimate.unpriced > 0 && <> {data.estimate.unpriced} envio(s) sem tarifa não entraram na estimativa.</>}
               </div>
               {!data.estimate.sameCurrency && <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>A conta da Meta cobra em {data.currency}: a comparação com a estimativa em dólar é só uma referência.</div>}
-              {data.estimate.suggestedRate !== null && <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Pelo que a Meta cobrou, a tarifa média real ficou em US$ {String(data.estimate.suggestedRate).replace(".", ",")} por envio. Se estiver muito diferente da tarifa salva, ajuste em Operação e custos.</div>}
+              {data.estimate.suggestedRate !== null && <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Pelo que a Meta cobrou, a tarifa média real ficou em US$ {String(data.estimate.suggestedRate).replace(".", ",")} por envio. Se estiver muito diferente da tarifa salva, ajuste o preço em Preços da Meta, logo acima.</div>}
             </div>
           )}
           <div style={card}>

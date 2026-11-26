@@ -49,6 +49,8 @@ export const SLOT_KINDS: Record<string, Kind> = {
   reuseExplained: "boolean", formatTried: "boolean", formatMark: "string", formatMarkCourse: "string", priceAsks: "number",
   // the commercial lane (asked the price: "price"; wants to enroll now: "enrollment"), and the one question after "vou pensar"
   fastLane: "string", thinkAsked: "boolean",
+  // a recovery campaign answered: its offer (CampaignServices/RecoveryReply), and whether the AI already told it
+  recoveryOffer: "object", recoveryCampaignId: "number", offerTold: "boolean",
   // a contact who is already a student: for whom is the question, and what they already know
   // a student who needs the tutoring or the secretary: what was asked, whether the city was asked (once) before the team of the polo is called
   supportNeed: "string", supportCityAsked: "number", supportKind: "string",

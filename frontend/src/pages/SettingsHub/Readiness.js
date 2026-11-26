@@ -21,7 +21,7 @@ const FIX = {
   templates: ["/configuracoes?secao=modelos", "Enviar os modelos"],
   efi: ["/configuracoes?secao=pagamentos", "Abrir Pagamentos"],
   mail: ["/configuracoes?secao=email", "Configurar o e-mail"],
-  hours: ["/configuracoes?secao=atendimento", "Definir o horário"],
+  hours: ["/configuracoes?secao=horario", "Definir o horário"],
   polos: ["/polos", "Abrir Polos"],
   users_hours: ["/users", "Abrir Usuários"],
   users_number: ["/users", "Abrir Usuários"],

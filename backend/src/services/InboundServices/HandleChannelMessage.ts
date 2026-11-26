@@ -118,7 +118,9 @@ const HandleChannelMessage = async (
     const ticket = await FindOrCreateTicketService(
       contact,
       whatsapp.id,
-      unread
+      unread,
+      undefined,
+      input.body
     );
 
     const messageData: any = {

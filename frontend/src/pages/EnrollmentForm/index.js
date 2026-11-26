@@ -65,9 +65,16 @@ const shrink = (file) =>
 
 const useStyles = makeStyles(() => ({
   page: { minHeight: "100vh", background: "#F3F6FA", color: "#0F172A", fontFamily: "inherit", paddingBottom: 120 },
-  top: { background: `linear-gradient(135deg, ${BLUE} 0%, #0a5ba8 100%)`, color: "#fff", padding: "28px 16px 72px" },
-  topIn: { maxWidth: 640, margin: "0 auto" },
-  kicker: { fontSize: 12.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", opacity: 0.85 },
+  // the blue of the brand with a soft light in the corner (a static radial glow, no animation)
+  top: {
+    position: "relative", overflow: "hidden", color: "#fff", padding: "18px 16px 72px",
+    background: `radial-gradient(120% 90% at 100% 0%, rgba(56,189,248,.28) 0%, rgba(56,189,248,0) 55%), radial-gradient(80% 60% at 0% 100%, rgba(255,255,255,.08) 0%, rgba(255,255,255,0) 60%), linear-gradient(135deg, ${BLUE} 0%, #0a5ba8 100%)`,
+  },
+  topIn: { position: "relative", maxWidth: 640, margin: "0 auto" },
+  // the brand bar: the logo straight on the blue, in white (any logo the institution sends turns white), and the name of the page
+  brandBar: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingBottom: 16, marginBottom: 22, borderBottom: "1px solid rgba(255,255,255,.16)" },
+  brandImg: { height: 30, width: "auto", maxWidth: "min(58vw, 220px)", display: "block", objectFit: "contain", filter: "brightness(0) invert(1)", "@media (min-width: 600px)": { height: 34 } },
+  pill: { flex: "none", fontSize: 12.5, fontWeight: 600, padding: "6px 12px", borderRadius: 999, background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.22)", whiteSpace: "nowrap" },
   h1: { margin: "6px 0 6px", fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 },
   lead: { margin: 0, fontSize: 15, lineHeight: 1.5, opacity: 0.92 },
   wrap: { maxWidth: 640, margin: "-52px auto 0", padding: "0 16px" },
@@ -306,6 +313,7 @@ const EnrollmentForm = () => {
     return (
       <div className={classes.page}>
         <div className={classes.center}>
+          {view.logo && <img src={view.logo} alt={view.institutionName || "Logo da instituição"} style={{ height: 40, width: "auto", maxWidth: 220, display: "block", margin: "0 auto 18px" }} />}
           <div className={classes.bigIcon} style={{ background: "#DCFCE7", color: "#15803D" }}><CheckCircle2 size={32} /></div>
           <h1 style={{ fontSize: 24, margin: "0 0 8px" }}>{locked ? "Sua matrícula já foi confirmada" : "Recebemos a sua ficha"}</h1>
           <p style={{ color: "#475569", lineHeight: 1.6, margin: "0 0 20px" }}>
@@ -328,7 +336,10 @@ const EnrollmentForm = () => {
     <div className={classes.page}>
       <header className={classes.top}>
         <div className={classes.topIn}>
-          <div className={classes.kicker}>Ficha de matrícula</div>
+          <div className={classes.brandBar}>
+            {view.logo ? <img src={view.logo} alt={view.institutionName || "Logo da instituição"} className={classes.brandImg} /> : <span style={{ fontWeight: 700 }}>{view.institutionName || ""}</span>}
+            <span className={classes.pill}>Ficha de matrícula</span>
+          </div>
           <h1 className={classes.h1}>{view.firstName ? `${view.firstName}, falta pouco para a sua matrícula` : "Falta pouco para a sua matrícula"}</h1>
           <p className={classes.lead}>{view.courseName ? `Curso: ${view.courseName}. ` : ""}Preencha os dados e envie a foto do seu documento. Dá para parar e continuar depois pelo mesmo link.</p>
         </div>

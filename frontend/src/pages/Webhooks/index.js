@@ -220,6 +220,43 @@ GET  ${base}/api/v1/connections`}
   );
 };
 
+// The old single token (before the tokens per integration) has full access to the API, of every polo. It stays accepted while an
+// integration may use it; "Usado em" says where, so it can be replaced by a token per integration and then turned off.
+const LegacyToken = () => {
+  const classes = useStyles();
+  const [state, setState] = useState(null);
+  const [token, setToken] = useState("");
+  const [show, setShow] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    api.get("/api-tokens/legacy").then(({ data }) => setState(data)).catch(() => setFailed(true));
+    api.get("/settings").then(({ data }) => { const row = (data || []).find((x) => x.key === "userApiToken"); setToken((row && row.value) || ""); }).catch(() => undefined);
+  }, []);
+  const change = async (enabled) => {
+    try { const { data } = await api.put("/api-tokens/legacy", { enabled }); setState(data); toast.success(enabled ? "Token antigo ligado." : "Token antigo desligado."); } catch (err) { toastError(err); }
+  };
+  if (failed) return <Paper className={classes.paper} variant="outlined"><Typography variant="body2" color="error">Não foi possível ler o token antigo.</Typography></Paper>;
+  if (!state) return null;
+  const routes = state.usage && state.usage.routes ? Object.entries(state.usage.routes).sort((a, b) => b[1].count - a[1].count).slice(0, 4) : [];
+  return (
+    <Paper className={classes.paper} variant="outlined">
+      <Typography variant="h6">Token antigo</Typography>
+      <Typography variant="body2" color="textSecondary" gutterBottom>
+        Acesso total, a todos os polos. Troque por um token por integração (acima) e depois desligue este. Último uso: {state.lastUsedAt ? new Date(state.lastUsedAt).toLocaleString("pt-BR") : "nunca registrado"}.
+        {routes.length > 0 && <> Usado em: {routes.map(([route, u]) => `${route} (${u.count}×)`).join(", ")}.</>}
+      </Typography>
+      {token && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "8px 0" }}>
+          <TextField size="small" variant="outlined" label="Token" value={token} type={show ? "text" : "password"} InputProps={{ readOnly: true }} style={{ flex: "1 1 260px" }} />
+          <Button variant="outlined" style={{ height: 40 }} onClick={() => setShow((v) => !v)}>{show ? "Ocultar" : "Mostrar"}</Button>
+          <Button variant="outlined" style={{ height: 40 }} onClick={() => { navigator.clipboard.writeText(token).then(() => toast.success("Token copiado."), () => toast.error("Não foi possível copiar.")); }}>Copiar</Button>
+        </div>
+      )}
+      <FormControlLabel control={<Switch color="primary" checked={!!state.enabled} onChange={(e) => { const v = e.target.checked; change(v); }} />} label={state.enabled ? "Aceito pela API" : "Desligado: a API recusa este token"} />
+    </Paper>
+  );
+};
+
 // WHO READS THE CONVERSATIONS (services/ReadingServices): the system's own AI, or OpenBot through the API (GET /api/v1/leituras) with the
 // system's AI reading only what it leaves waiting. The counts show how much each one read and the tokens OpenBot saved.
 const ReadingsCard = () => {
@@ -293,6 +330,7 @@ const Webhooks = () => {
       </MainHeader>
       <div className={classes.wrap}>
         <ApiTokens />
+        <LegacyToken />
         <ReadingsCard />
         <div style={{ minHeight: 360, display: "flex", flexDirection: "column" }}>
           <CrudPage
