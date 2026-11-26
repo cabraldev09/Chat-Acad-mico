@@ -1866,7 +1866,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const exempt = await prev({ firstExempt: true });
       assert(exempt.status === 200, `exempt ${exempt.status} ${JSON.stringify(exempt.data).slice(0, 200)}`);
       assert(exempt.data.result.tiers.onTime === 220 && exempt.data.result.bolsaApplied === same.data.result.bolsaApplied, "the waived 1st changed the others");
-      assert(/isenta \(R\$\s?0,00\)/.test(exempt.data.html) && /vencimento 01\/02\/2027/.test(exempt.data.html) && /Valor total do pedido<\/span><span>R\$\s?0,00/.test(exempt.data.html), "the PDF of a waived 1st installment");
+      assert(/isenta \(R\$\s?0,00\)/.test(exempt.data.html) && /vencimento 01\/02\/2027/.test(exempt.data.html) && /Valor total do pedido<\/span><span>R\$\s?99,00/.test(exempt.data.html), "the PDF of a waived 1st installment (the order is the enrollment fee only)");
       const zero = await prev({ firstMonthly: 0 });
       assert(zero.status === 200 && /isenta \(R\$\s?0,00\)/.test(zero.data.html), "R$ 0 typed should mean waived");
       const own = await prev({ firstMonthly: 150 });
