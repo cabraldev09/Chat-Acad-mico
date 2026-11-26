@@ -100,5 +100,10 @@ const q = async (title, sql) => {
     console.log(JSON.stringify({ goal: b.goal && { id: b.goal.id, entryTerm: b.goal.entryTerm }, totals: b.totals && { done: b.totals.done, target: b.totals.target, inCourse: b.totals.inCourse, canceled: b.totals.canceled },
       buritis: { auto: row.auto, manual: row.manual, adjust: row.adjust, done: row.done, inCourse: row.inCourse, canceled: row.canceled, months: (row.months || []).map(m => `${m.month}:${m.done}`) } }));
   }
+  // Bot da SESTED (só ids e contagens)
+  await q("universidade SESTED", `SELECT id, active FROM "Institutions" WHERE name ~* 'sested|sistema de ensino superior tecnol' OR "shortName" ~* 'sested'`);
+  await q("bot da SESTED", `SELECT id, status, "whatsappId", entry, version FROM "ChatFlows" WHERE name LIKE 'Bot SESTED%'`);
+  await q("fila Comercial SESTED", `SELECT q.id, COUNT(uq."userId") AS consultores FROM "Queues" q LEFT JOIN "UserQueues" uq ON uq."queueId" = q.id WHERE q.name = 'Comercial SESTED' GROUP BY q.id`);
+  await q("número do bot", `SELECT w.id, w.channel, w.team, w.status FROM "Whatsapps" w JOIN "ChatFlows" f ON f."whatsappId" = w.id WHERE f.name LIKE 'Bot SESTED%'`);
   process.exit(0);
 })().catch(e => { console.error(e.message); process.exit(1); });
