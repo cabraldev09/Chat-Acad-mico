@@ -45,8 +45,14 @@ const readingStatus = async (sequelize: any): Promise<any> => {
   const { readingSettings } = await import("../services/ReadingServices/Queue");
   const cfg = await readingSettings();
   const hasKey = !!(await auditorAccess().catch(() => null));
-  // only the OpenBot reads when the system's AI has no key: then nothing is stopped
-  const stopped = !cfg.enabled ? "disabled" : !hasKey && cfg.provider !== "openbot" ? "no_api_key" : null;
+  // only the OpenBot reads when the system's AI has no key: then nothing is stopped. The daily limit or the spending cap of the readings
+  // stops the queue until the next day (the last round says so)
+  const { getSetting } = await import("../helpers/AppSettings");
+  const { todayInAppTz } = await import("../helpers/AppTime");
+  const [lastStop, day] = String(await getSetting("readings_last_stop", "")).split(":");
+  const queued = by("pendente") + by("reservada");
+  const stopped = !cfg.enabled ? "disabled" : !hasKey && cfg.provider !== "openbot" ? "no_api_key"
+    : queued && day === todayInAppTz() && (lastStop === "daily_limit" || lastStop === "budget") ? lastStop : null;
   return {
     done: by("feita"), queued: by("pendente") + by("reservada"), failed: by("falhou"),
     numbers: Number(qr?.total || 0), numbersWithoutOwner: Number(qr?.noOwner || 0),
@@ -110,7 +116,8 @@ export const act = async (req: Request, res: Response): Promise<Response> => {
       if (first) await changeStage(lead.id, first.id, me);
     }
     if (action === "nao_matricula") {
-      await lead.update({ rgmSuggested: null, enrolledAtSuggested: null } as any);
+      const { undoReadingTraces } = await import("../services/ReadingServices/ImportedLeads");
+      await undoReadingTraces(lead);
       await addActivity(lead.id, me, "system", "A matrícula que a leitura da conversa sugeriu não se confirmou: o lead voltou ao funil.");
     } else {
       await lead.update({ recoveryState: "voltou" } as any);
@@ -121,4 +128,48 @@ export const act = async (req: Request, res: Response): Promise<Response> => {
     await addActivity(lead.id, me, "system", "Marcado para não recuperar.");
   }
   return res.json({ ok: true, recoveryState: lead.recoveryState });
+};
+
+// who may read again a number: its owner; the administration any; the coordination only numbers of people of its polos
+const mayReread = async (req: Request, ownerId: number): Promise<boolean> => {
+  if (ownerId === Number(req.user.id)) return true;
+  if (!isManagerRole(reqRole(req))) return false;
+  const polos = await crmPolosOf(req);
+  if (polos === null) return true;
+  if (!polos.length) return false;
+  const PoloMember = (await import("../models/PoloMember")).default;
+  return (await PoloMember.count({ where: { userId: ownerId, poloId: polos } as any })) > 0;
+};
+
+// "Ler de novo": the conversations copied from a number are read again with the current rules (the readings of that number are reset and
+// put back in the queue). The owner of the number, or the management. What a new reading finds replaces what the old one left.
+export const reread = async (req: Request, res: Response): Promise<Response> => {
+  const whatsappId = Number(req.body?.whatsappId);
+  if (!whatsappId) throw new AppError("ERR_FIELD_REQUIRED_whatsappId", 400);
+  const Whatsapp = (await import("../models/Whatsapp")).default;
+  const w = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId", "channel"] });
+  if (!w || (w.channel || "whatsapp") !== "whatsapp" || !w.ownerId) throw new AppError("ERR_NO_WAPP_FOUND", 404);
+  if (!(await mayReread(req, Number(w.ownerId)))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const sequelize = (await import("../database")).default;
+  await sequelize.query(portable(`DELETE FROM ConversationReadings WHERE kind = 'importacao' AND status IN ('feita', 'falhou', 'pendente')
+      AND ticketId IN (SELECT id FROM Tickets WHERE whatsappId = :whatsappId)`), { replacements: { whatsappId }, type: QueryTypes.DELETE });
+  const { enqueueImported } = await import("../services/ReadingServices/ImportedLeads");
+  const queued = await enqueueImported(whatsappId);
+  // the queue is read at once (in the background), not only in the next round of the worker
+  import("../services/ReadingServices/Queue").then(({ runLocalReadings }) => runLocalReadings({ only: "importacao" })).catch(() => undefined);
+  return res.json({ queued });
+};
+
+// the numbers by QR Code whose conversations can be read again: the person's own, or every one with an owner for the management
+export const rereadNumbers = async (req: Request, res: Response): Promise<Response> => {
+  const sequelize = (await import("../database")).default;
+  const list = (await sequelize.query(portable(`SELECT w.id, w.name, w.ownerId, u.name AS ownerName FROM Whatsapps w JOIN Users u ON u.id = w.ownerId
+      WHERE w.channel = 'whatsapp' AND w.ownerId IS NOT NULL ORDER BY w.name`),
+    { type: QueryTypes.SELECT })) as any[];
+  const out: any[] = [];
+  for (const w of list) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await mayReread(req, Number(w.ownerId))) out.push({ id: w.id, name: w.name, ownerName: w.ownerName });
+  }
+  return res.json(out);
 };

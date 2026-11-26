@@ -9,7 +9,7 @@ import Proposal from "../../models/Proposal";
 import Contact from "../../models/Contact";
 import ConversationReading from "../../models/ConversationReading";
 import { logger } from "../../utils/logger";
-import { ImportAnswer, findRgm, lostReasonFor } from "./Kinds";
+import { ImportAnswer, findRgm, lostReasonFor, teamByName } from "./Kinds";
 
 // THE CONVERSATIONS COPIED FROM A CONSULTANT'S PHONE (WhatsApp by QR Code), read once each: who is a lead, who already enrolled, who stopped
 // and why. What it becomes in the CRM (see applyImport) is silent: one notice at the end for the owner of the number and the management.
@@ -19,6 +19,8 @@ const LOOKBACK_DAYS = Number(process.env.READING_IMPORT_LOOKBACK_DAYS || 90);
 // a lead still deciding whose last message was the consultant's, with no answer for these days, goes to Recuperação as stalled
 export const STALLED_DAYS = Number(process.env.READING_STALLED_DAYS || 7);
 const CONFIRM_STAGE = "Matrícula a confirmar";
+// the reason of "Parados" in Recuperação: the person stopped answering
+export const STALLED_REASON = "Parou de responder";
 
 const rows = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
   (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
@@ -30,6 +32,9 @@ export const importCandidates = async (whatsappId?: number | null, limit = 500):
       JOIN Whatsapps w ON w.id = t.whatsappId JOIN Contacts c ON c.id = t.contactId LEFT JOIN Leads l ON l.contactId = t.contactId
     WHERE w.channel = 'whatsapp' AND w.ownerId IS NOT NULL ${whatsappId ? "AND w.id = :whatsappId" : ""}
       AND t.isGroup = false AND c.isGroup = false AND COALESCE(c.isStaff, false) = false AND COALESCE(c.isPersonal, false) = false
+      AND COALESCE(c.kind, 'person') = 'person'
+      AND NOT EXISTS (SELECT 1 FROM Users u2 WHERE u2.phone IS NOT NULL AND LENGTH(u2.phone) >= 8 AND RIGHT(REGEXP_REPLACE(u2.phone, '[^0-9]', '', 'g'), 8) = RIGHT(REGEXP_REPLACE(c.number, '[^0-9]', '', 'g'), 8))
+      AND NOT EXISTS (SELECT 1 FROM Affiliates a2 WHERE a2.phone IS NOT NULL AND LENGTH(a2.phone) >= 8 AND RIGHT(REGEXP_REPLACE(a2.phone, '[^0-9]', '', 'g'), 8) = RIGHT(REGEXP_REPLACE(c.number, '[^0-9]', '', 'g'), 8))
       AND t.lastMessageAt > :since
       AND EXISTS (SELECT 1 FROM Messages m WHERE m.ticketId = t.id AND m.fromMe = false)
       AND (t.isHistorical = true OR EXISTS (SELECT 1 FROM Messages m2 WHERE m2.ticketId = t.id AND m2.createdAt < COALESCE(w.historyImportedAt, w.createdAt)))
@@ -78,14 +83,24 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
   let lead = await Lead.findOne({ where: { contactId: contact.id } });
 
   if (!answer.isLead) {
+    // a colleague saved with a job of the team, and the model also says "equipe": the contact becomes "Equipe" (reversible in Contatos), so
+    // their conversations leave the funnel, the statistics and the next readings
+    if (answer.contactType === "equipe" && teamByName(contact.name) && !contact.isStaff) {
+      const { applyRelation } = await import("../CrmServices/Relation");
+      await applyRelation(contact, "staff").catch(err => logger.warn(`Leitura: equipe do contato ${contact.id}: ${err}`));
+    }
     // a lead the system made by itself for this conversation (still in the funnel, untouched: no proposal, no enrollment) leaves the CRM
-    if (lead && !lead.isHistorical && !lead.enrolledAt) {
+    if (lead && !lead.enrolledAt) {
       const stage = await LeadStage.findByPk(lead.stageId);
       const proposals = await Proposal.count({ where: { leadId: lead.id } as any });
-      if (stage && stage.type === "open" && !proposals) {
+      if (!lead.isHistorical && stage && stage.type === "open" && !proposals) {
         await lead.update({ isHistorical: true });
-        await addActivity(lead.id, null, "system", "A leitura do WhatsApp indicou que esta conversa não é de alguém interessado em estudar: saiu do funil.");
+        await addActivity(lead.id, null, "system", answer.contactType === "equipe" || answer.contactType === "parceiro"
+          ? "A leitura do WhatsApp indicou que esta conversa é com alguém da equipe ou parceiro (fala de outra pessoa): saiu do funil."
+          : "A leitura do WhatsApp indicou que esta conversa não é de alguém interessado em estudar: saiu do funil.");
       }
+      // what an earlier reading made for it goes away: the enrollment to confirm, its task, the place in Recuperação
+      await undoReadingTraces(lead);
     }
     return { action: "nao_lead", leadId: lead ? lead.id : null };
   }
@@ -128,10 +143,10 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
     // only forward (a stage the consultant already passed is kept)
     if (to && (!current || current.type !== "open" || to.position > current.position)) await changeStage(lead.id, to.id, null).catch(err => logger.warn(`Leitura: etapa do lead ${lead!.id}: ${err}`));
     // still deciding, but the last word was the consultant's and nobody answered for days: it goes to Recuperação as stalled
-    const [last] = await rows(`SELECT m.fromMe, m.createdAt FROM Messages m WHERE m.ticketId = :ticketId ORDER BY m.createdAt DESC LIMIT 1`, { ticketId });
+    const [last] = await rows(`SELECT m.fromMe, m.createdAt FROM Messages m WHERE m.ticketId = :ticketId ORDER BY m.createdAt DESC, m.id DESC LIMIT 1`, { ticketId });
     const quietDays = last ? (Date.now() - new Date(last.createdAt).getTime()) / 864e5 : 0;
     if (last && (last.fromMe === true || last.fromMe === 1 || last.fromMe === "1" || last.fromMe === "t") && quietDays >= STALLED_DAYS && !lead.recoveryState) {
-      await lead.update({ recoveryState: "aberta", recoveryAt: new Date(), recoveryReason: "Parou de responder", recoveryObjection: answer.objection || null } as any);
+      await lead.update({ recoveryState: "aberta", recoveryAt: new Date(), recoveryReason: STALLED_REASON, recoveryObjection: answer.objection || null } as any);
       return { action: "recuperar", leadId: lead.id };
     }
     return { action: "andamento", leadId: lead.id };
@@ -179,6 +194,34 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
     const target = await resolveStage("no_interest");
     if (target && (!current || current.id !== target)) await changeStage(lead.id, target, null, { lostReason: reason, lostNote: answer.reason || undefined }).catch(() => undefined);
   }
-  await lead.update({ recoveryState: "aberta", recoveryAt: new Date(), recoveryReason: (answer.reason || reason).slice(0, 160), recoveryObjection: answer.objection || null } as any);
+  // who stopped answering is in "Parados" (the reason the model wrote goes with what was left pending); who gave up keeps the reason
+  const stalled = answer.situation === "sem_resposta";
+  await lead.update({
+    recoveryState: "aberta", recoveryAt: new Date(),
+    recoveryReason: stalled ? STALLED_REASON : (answer.reason || reason).slice(0, 160),
+    ...(stalled && answer.reason ? { recoveryPending: [answer.reason, lead.recoveryPending].filter(Boolean).join(" ").slice(0, 400) } : {}),
+    recoveryObjection: answer.objection || null
+  } as any);
   return { action: "recuperar", leadId: lead.id };
+};
+
+// what a reading left on a lead that turned out not to be one (or not enrolled): the suggested enrollment, the task to confirm it, the place
+// in "Recuperação" and the column "Matrícula a confirmar" (back to the first open column)
+export const undoReadingTraces = async (lead: Lead): Promise<void> => {
+  // the lead may have moved already (Não é matrícula moves it first): read what it is now
+  await lead.reload();
+  const LeadTask = (await import("../../models/LeadTask")).default;
+  await LeadTask.update({ doneAt: new Date() } as any, { where: { leadId: lead.id, automationKey: `confirm-enroll-${lead.id}`, doneAt: null } as any });
+  const patch: any = {};
+  if ((lead as any).rgmSuggested || (lead as any).enrolledAtSuggested) Object.assign(patch, { rgmSuggested: null, enrolledAtSuggested: null });
+  if ((lead as any).recoveryState === "aberta") Object.assign(patch, { recoveryState: null, recoveryReason: null, recoveryAt: null });
+  if (Object.keys(patch).length) await lead.update(patch);
+  const stage = await LeadStage.findByPk(lead.stageId);
+  if (stage && stage.name === CONFIRM_STAGE) {
+    const first = await LeadStage.findOne({ where: { type: "open", id: { [Op.ne]: stage.id } } as any, order: [["position", "ASC"]] });
+    if (first) {
+      const { changeStage } = await import("../CrmServices/LeadCore");
+      await changeStage(lead.id, first.id, null).catch(err => logger.warn(`Leitura: etapa do lead ${lead.id}: ${err}`));
+    }
+  }
 };

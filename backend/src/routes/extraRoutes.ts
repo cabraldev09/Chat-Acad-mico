@@ -369,6 +369,9 @@ r.get("/crm/metrics", isAuth, Lead.metrics);
 r.get("/crm/triage", isAuth, Lead.triageList);
 // "Recuperação": the leads that stopped or gave up, with the reason (each one sees the ones it may see; see RecoveryController)
 r.get("/crm/recovery", isAuth, Recovery.index);
+// read again the conversations copied from a number (its owner, or the management)
+r.get("/crm/recovery/reread", isAuth, salesStaff, Recovery.rereadNumbers);
+r.post("/crm/recovery/reread", isAuth, salesStaff, Recovery.reread);
 r.post("/leads/:id/recovery", isAuth, canAccessLead, Recovery.act);
 // the readings of conversations (who reads them, the counts): the administration sees; only the administrator (not the coordination)
 // turns them on or off, chooses who reads and runs a round now

@@ -24,11 +24,15 @@ export const callWithBudget = async (agent: AiAgent, kind: "reply" | "summary" |
     const globalUsed = Number(await AiUsage.sum("inputTokens", { where: { createdAt: { [Op.gte]: since } }, transaction }) || 0) + Number(await AiUsage.sum("outputTokens", { where: { createdAt: { [Op.gte]: since } }, transaction }) || 0) + Number(await AiUsage.sum("cacheReadTokens", { where: { createdAt: { [Op.gte]: since } }, transaction }) || 0) + Number(await AiUsage.sum("cacheWriteTokens", { where: { createdAt: { [Op.gte]: since } }, transaction }) || 0);
     const reserved = Number(await Reservation.sum("tokens", { where: active, transaction }) || 0);
     if (Number(globalTokens) > 0 && globalUsed + reserved + tokens > Number(globalTokens)) throw new Error("ERR_AI_TOKEN_CAP");
-    if (kind !== "test" && agent.dailyTokenCap > 0) {
-      const where = { agentId: agent.id, kind: { [Op.ne]: "test" }, createdAt: { [Op.gte]: since } };
+    // the readings of conversations have their own daily cap (readings_daily_tokens): they never use up the budget of the agent that talks
+    // to the leads, and the agent's cap does not count them
+    const reading = (kind as string) === "reading";
+    const cap = reading ? Number(await getSetting("readings_daily_tokens", "3000000")) || 0 : agent.dailyTokenCap;
+    if (kind !== "test" && cap > 0) {
+      const where = { agentId: agent.id, kind: reading ? "reading" : { [Op.notIn]: ["test", "reading"] }, createdAt: { [Op.gte]: since } };
       const used = Number(await AiUsage.sum("inputTokens", { where, transaction }) || 0) + Number(await AiUsage.sum("outputTokens", { where, transaction }) || 0) + Number(await AiUsage.sum("cacheReadTokens", { where, transaction }) || 0) + Number(await AiUsage.sum("cacheWriteTokens", { where, transaction }) || 0);
       const held = Number(await Reservation.sum("tokens", { where: { ...active, agentId: agent.id }, transaction }) || 0);
-      if (used + held + tokens > agent.dailyTokenCap) throw new Error("ERR_AI_TOKEN_CAP");
+      if (used + (reading ? 0 : held) + tokens > cap) throw new Error("ERR_AI_TOKEN_CAP");
     }
     if (Number(globalUsd) > 0) {
       // a document reading of a model without a price does not block the agents (its tokens still count)

@@ -1,6 +1,6 @@
-# Rotas da API (623)
+# Rotas da API (625)
 
-Públicas: 40 · logado (qualquer perfil): 338 · gestão: 184 · admin: 49
+Públicas: 40 · logado (qualquer perfil): 340 · gestão: 184 · admin: 49
 
 ## Quem vê quais leads no CRM (middleware/scope.ts)
 
@@ -230,6 +230,7 @@ só dos itens acima e das outras áreas da coordenação (análises, alunos do p
 - DELETE /contact-lists/:id → salesStaff, ownList, listVisible
 - POST /contact-lists/:id/import → salesStaff, notTutor, listVisible
 - DELETE /contact-lists/:id/items/:itemId → salesStaff, ownList, listVisible
+- POST /crm/recovery/reread → salesStaff
 - POST /leads/:id/recovery → canAccessLead
 - PUT /retention/config → loadCrmPolos, isRetentionOperator
 - POST /retention/run → loadCrmPolos, isRetentionOperator
