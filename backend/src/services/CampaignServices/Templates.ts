@@ -71,7 +71,7 @@ export const categoryOf = async (name: string): Promise<"MARKETING" | "UTILITY" 
   ((await templateCategories())[name] as any) || "MARKETING";
 
 // the values the {{n}} of a template can take, for one person of the list
-export const TEMPLATE_VARIABLES = ["primeiro_nome", "nome", "curso", "polo", "consultor", "numero", "vencimento", "valor", "prazo", "situacao", "tutoria", "oferta_mensalidade", "oferta_taxa", "oferta_inicio", "oferta_prazo"] as const;
+export const TEMPLATE_VARIABLES = ["primeiro_nome", "nome", "curso", "polo", "consultor", "numero", "vencimento", "valor", "prazo", "situacao", "tutoria", "tutor", "oferta_mensalidade", "oferta_taxa", "oferta_inicio", "oferta_prazo"] as const;
 // the values of the offer of a recovery campaign for one person (the scholarship over the price of their course)
 const offerValuesOf = async (offerJson: string | null | undefined, courseId: number | null): Promise<Record<string, string>> => {
   if (!offerJson) return {};
@@ -88,9 +88,9 @@ export const templateValues = async (contactId: number | null, name: string, num
   const prazo = await getSetting("rematricula_prazo", "");
   const { tutoriaNumber, prettyPhone } = await import("../CrmServices/TutoriaContact");
   const tutoria = prettyPhone((await tutoriaNumber()).number);
-  const base: Record<string, string> = { primeiro_nome: (name || "").split(" ")[0] || "", nome: name || "", numero: number || "", curso: "", polo: "", consultor: "", vencimento: "", valor: "", prazo, situacao: "cancelada", tutoria };
+  const base: Record<string, string> = { primeiro_nome: (name || "").split(" ")[0] || "", nome: name || "", numero: number || "", curso: "", polo: "", consultor: "", vencimento: "", valor: "", prazo, situacao: "cancelada", tutoria, tutor: "" };
   if (!contactId) return { ...base, ...(await offerValuesOf(offerJson, null)) };
-  const lead = await Lead.findOne({ where: { contactId }, attributes: ["id", "courseId", "poloId", "ownerId", "lostAt", "enrolledAt"], order: [["updatedAt", "DESC"]] });
+  const lead = await Lead.findOne({ where: { contactId }, attributes: ["id", "courseId", "poloId", "ownerId", "lostAt", "enrolledAt", "onboardingTutorId"], order: [["updatedAt", "DESC"]] });
   if (!lead) return { ...base, ...(await offerValuesOf(offerJson, null)) };
   Object.assign(base, await offerValuesOf(offerJson, lead.courseId || null));
   // the open charge of the student (aviso de boleto): its due date and amount
@@ -98,12 +98,13 @@ export const templateValues = async (contactId: number | null, name: string, num
   const due = await Payment.findOne({ where: { leadId: (lead as any).id, status: ["pending", "scheduled", "active", "waiting"] } as any, order: [["dueDate", "ASC"]], attributes: ["dueDate", "amount"] });
   if (due?.dueDate) base.vencimento = String(due.dueDate).slice(0, 10).split("-").reverse().join("/");
   if (due?.amount) base.valor = Number(due.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  const [course, polo, owner] = await Promise.all([
+  const [course, polo, owner, tutor] = await Promise.all([
     lead.courseId ? Course.findByPk(lead.courseId, { attributes: ["name"] }) : null,
     lead.poloId ? Polo.findByPk(lead.poloId, { attributes: ["name"] }) : null,
-    lead.ownerId ? User.findByPk(lead.ownerId, { attributes: ["name"] }) : null
+    lead.ownerId ? User.findByPk(lead.ownerId, { attributes: ["name"] }) : null,
+    (lead as any).onboardingTutorId ? User.findByPk((lead as any).onboardingTutorId, { attributes: ["name"] }) : null
   ]);
-  return { ...base, curso: course?.name || "", polo: polo?.name || "", consultor: (owner?.name || "").split(" ")[0], situacao: (lead as any).lostAt ? "cancelada" : (lead as any).enrolledAt ? "ativa" : "em aberto" };
+  return { ...base, curso: course?.name || "", polo: polo?.name || "", consultor: (owner?.name || "").split(" ")[0], tutor: (tutor?.name || "").split(" ")[0], situacao: (lead as any).lostAt ? "cancelada" : (lead as any).enrolledAt ? "ativa" : "em aberto" };
 };
 
 export const cleanParam = (text: string): string => String(text || "").replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ").trim().slice(0, 200);

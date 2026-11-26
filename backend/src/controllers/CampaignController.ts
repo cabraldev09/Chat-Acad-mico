@@ -598,7 +598,9 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
   if (tutor) { b.audience = "students"; b.tutorId = tutor; }
   // the students: enrolled and not lost; the ones who finished the onboarding, and the ones enrolled for at least N days
   const students = b.audience === "students";
-  if (students && b.tutorId) and.push({ onboardingTutorId: Number(b.tutorId) });
+  // "all": every student who has a tutor (each one's answer goes to their own tutor, see CampaignServices/TutorReply)
+  if (students && b.tutorId === "all") and.push({ onboardingTutorId: { [Op.ne]: null } });
+  else if (students && b.tutorId) and.push({ onboardingTutorId: Number(b.tutorId) });
   if (students) {
     and.push({ enrolledAt: { [Op.ne]: null } });
     if (b.onboardingDone) and.push({ onboardingStatus: "done" });
