@@ -3853,7 +3853,16 @@ const postMeta = (id, payload, secret, badSig) => {
       const mine = await ids({ allQueues: "true", attendantId: String(a2.id) }, asUser(t1a));
       assert(!mine.includes(t2), "an attendant saw a colleague's conversation");
       assert(!(await ids({ allQueues: "true" }, asUser(t1a))).includes(t2), "allQueues worked for a non-manager");
-      assert((await http.get("/whatsapp", asUser(tc))).data.length >= 1, "coordinator does not list the connections");
+      // the coordination lists the numbers of people of its polos (#222): a number of a consultant of the polo, never the institution's (no owner)
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${polo}, ${a1.id}, 'consultor', NOW(), NOW())`);
+      const ownWa = sql(`INSERT INTO Whatsapps (name, channel, status, isDefault, ownerId, createdAt, updatedAt) VALUES ('WhatsApp do Um', 'whatsapp', 'DISCONNECTED', false, ${a1.id}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      try {
+        const listed = (await http.get("/whatsapp", asUser(tc))).data.map(w => String(w.id));
+        assert(listed.includes(ownWa), "coordinator does not list the connections of its polos");
+        assert(!listed.includes(String(tgId)), "coordinator lists the institution's connection");
+      } finally {
+        sql(`DELETE FROM Whatsapps WHERE id=${ownWa}`);
+      }
     });
     await test("the last administrator cannot be demoted, and the user form shows the effective role", async () => {
       // the list is paged: look for the administrator by e-mail instead of hoping it is on the first page
@@ -9256,8 +9265,9 @@ const postMeta = (id, payload, secret, badSig) => {
       // the preview of the offer shows only the leads the person may see: a coordination without polo sees no course nor value
       await http.post("/users", { name: "Coordenação Sem Polo Oferta", email: "coord-oferta@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
       const coordTok = (await http.post("/auth/login", { email: "coord-oferta@x.com", password: "senha123" })).data.token;
-      const blind = (await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(coordTok))).data;
-      assert(blind.rows.every(r => r.course === null && r.monthly === "o consultor informa"), `the preview crossed leads out of scope ${JSON.stringify(blind.rows)}`);
+      // with the lists isolated by polo (#220) she does not even reach the list of another polo: no name, no course, no value
+      const blind = await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(coordTok));
+      assert(blind.status === 403, `the preview crossed a list out of scope ${blind.status} ${JSON.stringify(blind.data).slice(0, 200)}`);
       await http.put("/operations/config", { outbound_allow_marketing: "false" }, auth());
     });
     await test("the conversations copied from a consultant's phone are read once: real leads in the funnel with a summary, enrollments with the RGM, the ones without it to confirm, who gave up in Recuperação with the reason; one notice; OpenBot takes masked readings through the API", async () => {
