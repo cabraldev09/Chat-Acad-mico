@@ -1555,6 +1555,121 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       poloF.ok = true;
       void cNone; void LN;
     });
+    // Analyses, students of the portal and connections by polo (ESP-011): the coordination reaches only what belongs to the polos it is in; a row with
+    // no polo, and a connection with no owner, are the administration's; the QR Code goes only to the administration and the owner of the number.
+    console.log("\nAnálises, alunos do portal e conexões por polo");
+    await test("analyses, portal students and connections: the coordination of polo A reaches only polo A; the QR Code stays with the administration and the owner", async () => {
+      const { io } = require("socket.io-client");
+      const pA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('F3A', 'Polo F3 A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const pB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('F3B', 'Polo F3 B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cA = await mkUser("Coordenação F3 A", "coord-f3a@x.com", "coordenacao");
+      const cNone = await mkUser("Coordenação F3 sem polo", "coord-f3n@x.com", "coordenacao");
+      const idA = userId("coord-f3a@x.com");
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${pA}, ${idA}, 'coordenacao', NOW(), NOW()), (${pA}, ${ids.joao}, 'comercial', NOW(), NOW()), (${pB}, ${ids.gabrielli}, 'comercial', NOW(), NOW())`);
+      const ex = (r, label) => assert(r.status === 403 || r.status === 404, `${label}: ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`);
+
+      // ---- curricular analyses
+      const mkCur = (name, polo, owner) => Number(sql(`INSERT INTO CurricularAnalyses (candidateName, courseName, poloId, userId, status, subjects, claims, baseWarnings, createdAt, updatedAt) VALUES ('${name}', 'Curso F3', ${polo || "NULL"}, ${owner || ids.admin}, 'COMPLETED', '[]', '[]', '[]', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const curA = mkCur("CURF3 A", pA), curB = mkCur("CURF3 B", pB), curN = mkCur("CURF3 sem polo", null), curMine = mkCur("CURF3 feita pela A", null, idA);
+      const curNames = async t => (await http.get("/analysis/curricular?search=CURF3", as(t))).data.map(r => r.candidateName).sort();
+      assert(JSON.stringify(await curNames(cA)) === JSON.stringify(["CURF3 A", "CURF3 feita pela A"]), `coordination A lists ${JSON.stringify(await curNames(cA))}`);
+      assert((await curNames(admin)).length === 4, "administration misses an analysis");
+      assert((await curNames(cNone)).length === 0, "coordination with no polo sees analyses");
+      for (const id of [curB, curN]) {
+        for (const p of ["", "/file", "/events", "/proposal"]) ex(await http.get(`/analysis/curricular/${id}${p}`, as(cA)), `GET curricular ${id}${p}`);
+        ex(await http.put(`/analysis/curricular/${id}`, { candidateName: "Trocado" }, as(cA)), `PUT curricular ${id}`);
+        ex(await http.put(`/analysis/curricular/${id}/enrollment`, { status: "ENROLLED" }, as(cA)), `enrollment ${id}`);
+        ex(await http.post(`/analysis/curricular/${id}/send-proposal`, {}, as(cA)), `send-proposal ${id}`);
+        ex(await http.delete(`/analysis/curricular/${id}`, as(cA)), `DELETE curricular ${id}`);
+      }
+      assert((await http.get(`/analysis/curricular/${curA}`, as(cA))).status === 200 && (await http.get(`/analysis/curricular/${curMine}`, as(cA))).status === 200, "coordination A cannot open its own analyses");
+      assert((await http.get(`/analysis/curricular/${curB}`, as(admin))).status === 200, "administration cannot open polo B");
+      assert((await http.put(`/analysis/curricular/${curA}`, { poloId: Number(pB) }, as(cA))).status === 403, "coordination A moved an analysis to polo B");
+      assert(sql(`SELECT candidateName FROM CurricularAnalyses WHERE id=${curB}`) === "CURF3 B", "an analysis of B changed");
+      const fu = await http.get("/analysis/follow-ups", as(cA));
+      assert(fu.status === 200 && JSON.stringify(fu.data).indexOf("CURF3 B") === -1, "the returns of coordination A carry polo B");
+
+      // ---- students of the portal and academic analyses
+      const mkStu = (name, polo) => Number(sql(`INSERT INTO Students (rgm, name, email, poloId, createdAt, updatedAt) VALUES ('F3${Math.floor(Math.random() * 1e6)}', '${name}', '${name.replace(/\W/g, "").toLowerCase()}@exemplo.com', ${polo || "NULL"}, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const stA = mkStu("STUF3 A", pA), stB = mkStu("STUF3 B", pB), stN = mkStu("STUF3 sem polo", null);
+      const mkAc = (student, name) => Number(sql(`INSERT INTO AcademicAnalyses (studentId, studentName, rgm, userId, snapshot, isCurrent, version, createdAt, updatedAt) VALUES (${student}, '${name}', 'R${student}', ${ids.admin}, '{}', true, 1, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const acA = mkAc(stA, "ACAF3 A"), acB = mkAc(stB, "ACAF3 B"), acN = mkAc(stN, "ACAF3 sem polo");
+      const stuNames = async t => (await http.get("/students?search=STUF3", as(t))).data.map(s => s.name).sort();
+      assert(JSON.stringify(await stuNames(cA)) === JSON.stringify(["STUF3 A"]), `coordination A lists students ${JSON.stringify(await stuNames(cA))}`);
+      assert((await stuNames(admin)).length === 3 && (await stuNames(cNone)).length === 0, "students of the administration or of the coordination with no polo");
+      const acaNames = async t => (await http.get("/analysis/academic", as(t))).data.map(a => a.studentName).filter(n => /ACAF3/.test(n)).sort();
+      assert(JSON.stringify(await acaNames(cA)) === JSON.stringify(["ACAF3 A"]), `coordination A lists academic analyses ${JSON.stringify(await acaNames(cA))}`);
+      assert((await acaNames(admin)).length === 3, "administration misses an academic analysis");
+      for (const id of [stB, stN]) {
+        ex(await http.get(`/students/${id}`, as(cA)), `GET student ${id}`);
+        ex(await http.put(`/students/${id}`, { name: "Trocado" }, as(cA)), `PUT student ${id}`);
+        ex(await http.post(`/students/${id}/invite`, {}, as(cA)), `invite student ${id}`);
+      }
+      for (const id of [acB, acN]) {
+        ex(await http.get(`/analysis/academic/${id}`, as(cA)), `GET academic ${id}`);
+        ex(await http.get(`/analysis/academic/${id}/file`, as(cA)), `file of academic ${id}`);
+        ex(await http.put(`/analysis/academic/${id}`, { currentPeriod: 2 }, as(cA)), `PUT academic ${id}`);
+        ex(await http.delete(`/analysis/academic/${id}`, as(cA)), `DELETE academic ${id}`);
+      }
+      assert((await http.get(`/students/${stA}`, as(cA))).status === 200 && (await http.get(`/analysis/academic/${acA}`, as(cA))).status === 200, "coordination A cannot reach its own polo");
+      assert((await http.get(`/students/${stB}`, as(admin))).status === 200, "administration cannot open a student of B");
+      ex(await http.post("/students", { rgm: "F3NEW1", name: "Aluno de fora", poloId: Number(pB) }, as(cA)), "create a student in polo B");
+      assert((await http.post("/students", { rgm: "F3NEW2", name: "Aluno do A", poloId: Number(pA) }, as(cA))).status === 201, "coordination A cannot create a student in its polo");
+      assert((await http.get("/students", as(tutor))).status === 200 && (await http.get("/students", as(joao))).status === 403, "tutor/consultant regression");
+
+      // ---- connections
+      const mkConn = (name, owner) => Number(sql(`INSERT INTO Whatsapps (name, status, channel, ownerId, qrcode, isDefault, createdAt, updatedAt) VALUES ('${name}', 'QRCODE', 'whatsapp', ${owner || "NULL"}, 'QR-SEGREDO-${name.replace(/\W/g, "")}', false, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const wJ = mkConn("F3 do João", ids.joao), wG = mkConn("F3 da Gabrielli", ids.gabrielli), wC = mkConn("F3 da instituição", null);
+      const names = async t => (await http.get("/whatsapp", as(t))).data.map(w => w.name);
+      let got = await names(cA);
+      assert(got.includes("F3 do João") && !got.includes("F3 da Gabrielli") && !got.includes("F3 da instituição") && !got.includes("Telegram"), `coordination A lists connections ${JSON.stringify(got)}`);
+      got = await names(admin);
+      assert(["F3 do João", "F3 da Gabrielli", "F3 da instituição"].every(n => got.includes(n)), "administration misses a connection");
+      assert((await names(cNone)).length === 0, "the coordination with no polo sees connections");
+      assert((await http.get(`/whatsapp/${wJ}`, as(cA))).status === 200, "coordination A cannot open the connection of its polo");
+      assert(JSON.stringify((await http.get("/whatsapp", as(cA))).data).indexOf("QR-SEGREDO") === -1, "the QR Code reached the coordination");
+      assert(JSON.stringify((await http.get(`/whatsapp/${wJ}`, as(cA))).data).indexOf("QR-SEGREDO") === -1, "the QR Code of the connection reached the coordination");
+      assert(JSON.stringify((await http.get(`/whatsapp/${wJ}`, as(admin))).data).indexOf("QR-SEGREDO") !== -1, "the administration lost the QR Code");
+      assert(JSON.stringify((await http.get(`/whatsapp/${wJ}`, as(joao))).data).indexOf("QR-SEGREDO") !== -1, "the owner lost the QR Code");
+      for (const id of [wG, wC]) {
+        ex(await http.get(`/whatsapp/${id}`, as(cA)), `GET connection ${id}`);
+        ex(await http.put(`/whatsapp/${id}`, { name: "Tomada" }, as(cA)), `PUT connection ${id}`);
+        ex(await http.delete(`/whatsapp/${id}`, as(cA)), `DELETE connection ${id}`);
+        ex(await http.post(`/whatsappsession/${id}`, {}, as(cA)), `start session ${id}`);
+        ex(await http.get(`/channels/${id}/safety`, as(cA)), `safety ${id}`);
+        ex(await http.get(`/channels/${id}/info`, as(cA)), `info ${id}`);
+        ex(await http.post(`/whatsapp/${id}/import-history`, {}, as(cA)), `import-history ${id}`);
+      }
+      ex(await http.post("/whatsapp", { name: "Sem dono", channel: "telegram", config: JSON.stringify({ botToken: "9:ZZZ" }), queueIds: [] }, as(cA)), "the coordination created a connection with no owner");
+      ex(await http.put(`/whatsapp/${wJ}`, { ownerId: ids.gabrielli }, as(cA)), "the coordination handed a number to polo B");
+      assert((await http.get(`/channels/${wJ}/safety`, as(cA))).status !== 403, "coordination A cannot reach the safety of its connection");
+      assert(sql(`SELECT name FROM Whatsapps WHERE id=${wG}`) === "F3 da Gabrielli", "a connection of B changed");
+      assert((await http.get(`/whatsapp/${wG}`, as(gabrielli))).status === 200 && (await http.get(`/whatsapp/${wG}`, as(joao))).status === 403, "owner/consultant regression");
+      const health = (await http.get("/whatsapp-health", as(cA))).data.map(w => w.name);
+      assert(health.includes("F3 do João") && !health.includes("F3 da Gabrielli"), `health of coordination A ${JSON.stringify(health)}`);
+
+      // ---- the live events (they carry the QR Code)
+      const listen = async token => {
+        const socket = io(API, { auth: { token }, transports: ["websocket"] });
+        const seen = [];
+        await new Promise((res, rej) => { socket.on("connect", res); socket.on("connect_error", rej); });
+        ["whatsapp", "whatsappSession"].forEach(ev => socket.on(ev, p => seen.push([ev, p])));
+        return { socket, seen };
+      };
+      const [forA, forNone, forAdmin, forJoao] = [await listen(cA), await listen(cNone), await listen(admin), await listen(joao)];
+      await sleep(400);
+      for (const id of [wG, wC, wJ]) assert((await http.put(`/whatsapp/${id}`, { name: `F3 renomeada ${id}` }, as(admin))).status === 200, `admin edit ${id}`);
+      await waitFor(() => forAdmin.seen.filter(([e]) => e === "whatsapp").length >= 3, 8000, "events for the administration");
+      await waitFor(() => forA.seen.some(([e, p]) => e === "whatsapp" && p.whatsapp && p.whatsapp.id === wJ), 8000, "the event of its polo for coordination A");
+      await sleep(600);
+      const idsOf = x => x.seen.map(([, p]) => (p.whatsapp || p.session || {}).id);
+      assert(!idsOf(forA).includes(wG) && !idsOf(forA).includes(wC), "coordination A heard of a connection of B or of the institution");
+      assert(forA.seen.every(([, p]) => !JSON.stringify(p).includes("QR-SEGREDO")), "the QR Code travelled to the coordination");
+      assert(forNone.seen.length === 0, `the coordination with no polo heard ${forNone.seen.length} events`);
+      assert(forAdmin.seen.some(([, p]) => JSON.stringify(p).includes("QR-SEGREDO")), "the administration stopped getting the QR Code");
+      assert(forJoao.seen.some(([, p]) => (p.whatsapp || {}).id === wJ && JSON.stringify(p).includes("QR-SEGREDO")) && !idsOf(forJoao).includes(wG), "the owner's events changed");
+      [forA, forNone, forAdmin, forJoao].forEach(x => x.socket.close());
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);

@@ -634,18 +634,20 @@ export const setEnrollment = async (row: CurricularAnalysis, userId: number, dec
 const dueWhere = () => ({ status: "COMPLETED", enrollmentStatus: "PENDING", followUpDueAt: { [Op.lte]: new Date() } });
 
 // returns waiting for an answer (the bell of the owner; the management sees everyone's)
-export const listDueFollowUps = async (userId: number | null, take = 20): Promise<CurricularAnalysis[]> =>
-  CurricularAnalysis.findAll({ where: { ...dueWhere(), ...(userId ? { userId } : {}) } as any, order: [["followUpDueAt", "ASC"]], limit: take });
+// `extra`: one more limit on the rows (the coordination: the analyses of its polos)
+const withExtra = (where: any, extra?: any): any => (extra ? { [Op.and]: [where, extra] } : where);
+export const listDueFollowUps = async (userId: number | null, take = 20, extra?: any): Promise<CurricularAnalysis[]> =>
+  CurricularAnalysis.findAll({ where: withExtra({ ...dueWhere(), ...(userId ? { userId } : {}) }, extra), order: [["followUpDueAt", "ASC"]], limit: take });
 
-export const countDueFollowUps = async (userId: number | null): Promise<number> =>
-  CurricularAnalysis.count({ where: { ...dueWhere(), ...(userId ? { userId } : {}) } as any });
+export const countDueFollowUps = async (userId: number | null, extra?: any): Promise<number> =>
+  CurricularAnalysis.count({ where: withExtra({ ...dueWhere(), ...(userId ? { userId } : {}) }, extra) });
 
 // delivered more than two business days ago and still waiting for an answer (a new analysis keeps counting from its date);
 // only the ones that carry a return date, so what existed before this control does not flood the list
-export const listStaleEnrollmentCases = async (userId: number | null, take = 6): Promise<CurricularAnalysis[]> => {
+export const listStaleEnrollmentCases = async (userId: number | null, take = 6, extra?: any): Promise<CurricularAnalysis[]> => {
   const candidates = await CurricularAnalysis.findAll({
     // two business days are at least two calendar days: the return fell due at least a day ago
-    where: { status: "COMPLETED", enrollmentStatus: "PENDING", followUpDueAt: { [Op.lte]: new Date(Date.now() - 24 * 3600000) }, ...(userId ? { userId } : {}) } as any,
+    where: withExtra({ status: "COMPLETED", enrollmentStatus: "PENDING", followUpDueAt: { [Op.lte]: new Date(Date.now() - 24 * 3600000) }, ...(userId ? { userId } : {}) }, extra),
     order: [["followUpDueAt", "ASC"]],
     limit: 500
   });

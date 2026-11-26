@@ -6,6 +6,8 @@ import { Op, WhereOptions } from "sequelize";
 import AppError from "../errors/AppError";
 import { getPublicUrl } from "../helpers/PublicUrl";
 import { isManagerRole, roleOf } from "../helpers/Roles";
+import { academicWhereOf, curricularWhereOf, polosOfCoordination, studentWhereOf } from "../helpers/PoloAccess";
+import { assertLead } from "../middleware/scope";
 import AcademicAnalysis from "../models/AcademicAnalysis";
 import CurricularAnalysis from "../models/CurricularAnalysis";
 import Polo from "../models/Polo";
@@ -122,6 +124,9 @@ export const rulesSave = async (req: Request, res: Response): Promise<Response> 
 const loadCurricular = async (req: Request, readOnly = false): Promise<CurricularAnalysis> => {
   const row = await CurricularAnalysis.findByPk(req.params.id);
   if (!row) throw new AppError("Análise não encontrada.", 404);
+  // the coordination reaches only the analyses of its polos (a row with no polo is the administration's) and the ones it made
+  const polos = await polosOfCoordination(req);
+  if (polos && row.userId !== me(req) && !polos.includes(Number(row.poloId))) throw new AppError("ERR_NO_PERMISSION", 403);
   if (!isManager(req) && row.userId !== me(req)) {
     const lead = readOnly && row.leadId ? await Lead.findByPk(row.leadId, { attributes: ["onboardingTutorId", "ownerId"] }) : null;
     if (!lead || (lead.onboardingTutorId !== me(req) && lead.ownerId !== me(req))) throw new AppError("ERR_NO_PERMISSION", 403);
@@ -133,6 +138,8 @@ export const curricularIndex = async (req: Request, res: Response): Promise<Resp
   const where: WhereOptions = {};
   const and: any[] = [];
   if (!isManager(req)) and.push({ userId: me(req) });
+  const polosOf = await polosOfCoordination(req);
+  if (polosOf) and.push(curricularWhereOf(polosOf, me(req)));
   const q = String(req.query.search || "").trim();
   if (q) {
     const like = `%${q.replace(/[%_]/g, "")}%`;
@@ -166,6 +173,9 @@ export const curricularStore = async (req: Request, res: Response): Promise<Resp
   if (candidate.length < 3) throw new AppError("Informe o nome do aluno.", 400);
   const polo = num(b.poloId) ? await Polo.findByPk(num(b.poloId) as number) : null;
   if (!polo || polo.active === false) throw new AppError("Informe o polo do aluno.", 400);
+  // the coordination makes analyses only for the polos it is in
+  const myPolos = await polosOfCoordination(req);
+  if (myPolos && !myPolos.includes(polo.id)) throw new AppError("ERR_NO_PERMISSION", 403);
   const row = await createCurricular(me(req), bytes, name, {
     poloId: polo.id,
     entryPeriod: num(b.entryPeriod),
@@ -186,6 +196,9 @@ export const curricularShow = async (req: Request, res: Response): Promise<Respo
 export const curricularUpdate = async (req: Request, res: Response): Promise<Response> => {
   const row = await loadCurricular(req);
   const b = req.body || {};
+  const movedTo = b.poloId === undefined ? null : num(b.poloId);
+  const myPolos = await polosOfCoordination(req);
+  if (myPolos && movedTo && !myPolos.includes(movedTo)) throw new AppError("ERR_NO_PERMISSION", 403);
   const out = await updateCurricular(row, {
     entryPeriod: b.entryPeriod === undefined ? undefined : num(b.entryPeriod),
     startTerm: b.startTerm === undefined ? undefined : String(b.startTerm).trim(),
@@ -235,7 +248,10 @@ export const curricularEnrollment = async (req: Request, res: Response): Promise
 // returns waiting for an answer: the owner sees theirs, the management sees everyone's and the cases without enrollment for too long
 export const followUps = async (req: Request, res: Response): Promise<Response> => {
   const scope = isManager(req) ? null : me(req);
-  const [rows, total, stale] = await Promise.all([listDueFollowUps(scope, 20), countDueFollowUps(scope), isManager(req) ? listStaleEnrollmentCases(null, 6) : Promise.resolve([])]);
+  // the coordination: only the returns of the analyses of its polos
+  const polosOf = await polosOfCoordination(req);
+  const extra = polosOf ? curricularWhereOf(polosOf, me(req)) : undefined;
+  const [rows, total, stale] = await Promise.all([listDueFollowUps(scope, 20, extra), countDueFollowUps(scope, extra), isManager(req) ? listStaleEnrollmentCases(null, 6, extra) : Promise.resolve([])]);
   const owners = new Map<number, string>();
   if (isManager(req)) {
     const ids = [...new Set([...rows, ...stale].map(r => r.userId).filter(Boolean))];
@@ -297,15 +313,32 @@ export const curricularRemove = async (req: Request, res: Response): Promise<Res
 
 // a tutor reaches the analyses of the students they follow and the ones they made; the management reaches all
 const academicScope = async (req: Request): Promise<any[]> => {
+  const polosOf = await polosOfCoordination(req);
+  if (polosOf) return [academicWhereOf(polosOf, me(req))];
   if (isManager(req)) return [];
   const mine = await Student.findAll({ where: { responsibleUserId: me(req) }, attributes: ["id"] });
   return [{ [Op.or]: [{ userId: me(req) }, { studentId: { [Op.in]: mine.map(s => s.id) } }] }];
+};
+
+const academicInPolos = async (row: AcademicAnalysis, polos: number[]): Promise<boolean> => {
+  if (row.studentId) {
+    const s = await Student.findByPk(row.studentId, { attributes: ["id", "poloId"] });
+    if (s && polos.includes(Number(s.poloId))) return true;
+  }
+  if (row.leadId) {
+    const l = await Lead.findByPk(row.leadId, { attributes: ["id", "poloId"] });
+    if (l && polos.includes(Number(l.poloId))) return true;
+  }
+  return false;
 };
 
 const loadAcademic = async (req: Request): Promise<AcademicAnalysis> => {
   mustAcademic(req);
   const row = await AcademicAnalysis.findByPk(req.params.id);
   if (!row) throw new AppError("Análise não encontrada.", 404);
+  // the coordination: an analysis of a student or of a lead of its polos, or one it made
+  const polosOf = await polosOfCoordination(req);
+  if (polosOf && row.userId !== me(req) && !(await academicInPolos(row, polosOf))) throw new AppError("ERR_NO_PERMISSION", 403);
   if (!isManager(req) && row.userId !== me(req)) {
     const student = row.studentId ? await Student.findByPk(row.studentId, { attributes: ["responsibleUserId"] }) : null;
     const lead = !student && row.leadId ? await Lead.findByPk(row.leadId, { attributes: ["onboardingTutorId"] }) : null;
@@ -336,7 +369,10 @@ export const academicStore = async (req: Request, res: Response): Promise<Respon
     student = await Student.findByPk(num(b.studentId) as number);
     if (!student) throw new AppError("Aluno não encontrado.", 404);
     if (!isManager(req) && student.responsibleUserId !== me(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+    await assertStudentInPolos(req, student);
   }
+  // the coordination attaches an analysis only to a lead of its polos
+  if (num(b.leadId) && (await polosOfCoordination(req))) await assertLead(req, num(b.leadId) as number);
   const { analysis, reused } = await createAcademic(me(req), bytes, name, { student, origin: "STAFF_UPLOAD", leadId: num(b.leadId) || student?.leadId || undefined, contactId: num(b.contactId) });
   if (!reused) {
     if (isManager(req) && (student || num(b.leadId)) && b.tutorId !== undefined && b.tutorId !== "") await assignTutor(me(req), { leadId: num(b.leadId) || student?.leadId || null, studentId: student?.id || null, tutorId: b.tutorId === "auto" ? "auto" : Number(b.tutorId) || null });
@@ -381,11 +417,17 @@ export const academicRemove = async (req: Request, res: Response): Promise<Respo
 
 // ------------------------------------------------------------------ students of the portal
 
+const assertStudentInPolos = async (req: Request, s: Student): Promise<void> => {
+  const polosOf = await polosOfCoordination(req);
+  if (polosOf && s.responsibleUserId !== me(req) && !polosOf.includes(Number(s.poloId))) throw new AppError("ERR_NO_PERMISSION", 403);
+};
+
 const loadStudent = async (req: Request): Promise<Student> => {
   mustAcademic(req);
   const s = await Student.findByPk(req.params.id);
   if (!s) throw new AppError("Aluno não encontrado.", 404);
   if (!isManager(req) && s.responsibleUserId !== me(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+  await assertStudentInPolos(req, s);
   return s;
 };
 
@@ -393,6 +435,8 @@ export const studentIndex = async (req: Request, res: Response): Promise<Respons
   mustAcademic(req);
   const and: any[] = [];
   if (!isManager(req)) and.push({ responsibleUserId: me(req) });
+  const polosOf = await polosOfCoordination(req);
+  if (polosOf) and.push(studentWhereOf(polosOf, me(req)));
   const q = String(req.query.search || "").trim();
   if (q) and.push(searchStudents(q));
   const students = await Student.findAll({ where: and.length ? { [Op.and]: and } : {}, order: [["name", "ASC"]], limit: 300 });
@@ -413,7 +457,16 @@ export const studentStore = async (req: Request, res: Response): Promise<Respons
   const b = req.body || {};
   // a tutor follows the students they create; the management chooses who follows
   const responsible = isManager(req) ? num(b.responsibleUserId) || me(req) : me(req);
-  const s = await createStudent({ rgm: b.rgm, name: b.name, email: b.email, phone: b.phone, courseName: b.courseName, poloId: num(b.poloId), responsibleUserId: responsible, leadId: num(b.leadId) });
+  // the coordination creates students only in the polos it is in (the polo of the lead when none is given, or its only polo)
+  let poloId = num(b.poloId);
+  const myPolos = await polosOfCoordination(req);
+  if (myPolos) {
+    if (num(b.leadId)) await assertLead(req, num(b.leadId) as number);
+    if (!poloId && num(b.leadId)) poloId = (await Lead.findByPk(num(b.leadId) as number, { attributes: ["poloId"] }))?.poloId || null;
+    if (!poloId && myPolos.length === 1) [poloId] = myPolos;
+    if (!poloId || !myPolos.includes(poloId)) throw new AppError("ERR_NO_PERMISSION", 403);
+  }
+  const s = await createStudent({ rgm: b.rgm, name: b.name, email: b.email, phone: b.phone, courseName: b.courseName, poloId, responsibleUserId: responsible, leadId: num(b.leadId) });
   return res.status(201).json(studentView(s));
 };
 

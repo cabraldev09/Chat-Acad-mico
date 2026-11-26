@@ -16,7 +16,7 @@ import { canAccessContact } from "../middleware/canAccessContact";
 import { cached } from "../middleware/refCache";
 import { crmReport } from "../controllers/ReportController";
 import * as Preferences from "../controllers/PreferencesController";
-import canManageWhatsapp from "../middleware/canManageWhatsapp";
+import canManageWhatsapp, { connectionInScope } from "../middleware/canManageWhatsapp";
 import isAdmin from "../middleware/isAdmin";
 import isManager from "../middleware/isManager";
 import * as Recovery from "../controllers/RecoveryController";
@@ -344,7 +344,7 @@ r.get("/channels/instagram/status", isAuth, ChannelOAuth.status);
 r.get("/channels/instagram/authorize", isAuth, isManager, ChannelOAuth.authorize);
 r.get("/channels/instagram/app", isAuth, isManager, ChannelOAuth.getApp);
 r.put("/channels/instagram/app", isAuth, isManager, ChannelOAuth.putApp);
-r.get("/channels/:whatsappId/info", isAuth, isManager, Channel.info);
+r.get("/channels/:whatsappId/info", isAuth, isManager, connectionInScope, Channel.info);
 r.get("/channels/:whatsappId/safety", isAuth, canManageWhatsapp, Channel.safety);
 r.get("/channels/:whatsappId/groups", isAuth, canManageWhatsapp, Channel.groups);
 
