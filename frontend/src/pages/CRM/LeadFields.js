@@ -90,6 +90,7 @@ const LeadFields = ({ lead, onChange, options, courses, users, tags }) => {
           <Select label="Momento de decisão" value={lead.decisionTimeline} onChange={set("decisionTimeline")} items={list(options.decisionTimelines)} />
           <Select label="Objetivo com o curso" value={lead.motivation} onChange={set("motivation")} items={list(options.motivations)} />
           <Select label="Escolaridade" value={lead.educationLevel} onChange={set("educationLevel")} items={list(options.educationLevels)} />
+          <Select label="Tipo de curso" value={lead.courseLevel} onChange={set("courseLevel")} items={list(options.courseLevels)} />
           {lead.admissionType === "ENEM" && text("enemScore", "Nota do ENEM", { type: "number" })}
         </div>
       </div>

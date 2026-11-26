@@ -421,7 +421,7 @@ const TestDialog = ({ campaign, onClose }) => {
 };
 
 // the last step of the form: who receives, who is left out and why, how long it takes, and how the message looks (before saving)
-const DraftReview = ({ payload, lists, connections }) => {
+const DraftReview = ({ payload, lists, connections, bots = [] }) => {
   const [pre, setPre] = useState(null);
   const key = JSON.stringify(payload);
   useEffect(() => {
@@ -446,6 +446,7 @@ const DraftReview = ({ payload, lists, connections }) => {
         {row("Conexão", conn ? `${conn.name} · ${riskOf(conn)[0]}` : "Sem conexão padrão")}
         {row("Mensagem", payload.templateName && conn && conn.channel === "whatsapp_cloud" ? `Modelo aprovado “${payload.templateName}”` : `${steps.length} ${steps.length === 1 ? "mensagem" : "mensagens em sequência"}`)}
         {row("Início", payload.scheduledAt ? format(parseISO(payload.scheduledAt), "dd/MM 'às' HH:mm") : "Quando você clicar em Iniciar")}
+        {row("Quem responder", payload.flowId ? `Entra no bot “${(bots.find((b) => b.id === Number(payload.flowId)) || {}).name || "escolhido"}”, que qualifica e passa ao consultor` : "Segue o atendimento do número")}
       </div>
       {preview && (
         <div>
@@ -555,11 +556,14 @@ const Campaigns = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [newList, setNewList] = useState(false); // false | { mode, target }
   const [pickedList, setPickedList] = useState(null);
+  // the published bots: who answers the campaign goes into the chosen one
+  const [bots, setBots] = useState([]);
   const loadLists = useCallback(() => api.get("/contact-lists").then(({ data }) => setLists(data)), []);
   const tutoringNumber = connections.find((c) => c.team === "tutoria" && c.channel === "whatsapp_cloud") || connections.find((c) => c.team === "tutoria");
 
   useEffect(() => {
     loadLists();
+    api.get("/flows/published").then(({ data }) => setBots(Array.isArray(data) ? data : [])).catch(() => setBots([]));
     api.get("/whatsapp").then(({ data }) =>
       setConnections(data.filter((w) => ["whatsapp", "whatsapp_cloud"].includes(w.channel)))
     );
@@ -617,8 +621,8 @@ const Campaigns = () => {
               { title: "Público", hint: "Dê um nome, diga para que serve o disparo e escolha quem recebe. Dá para criar a lista aqui mesmo.", fields: ["name", "objective", "contactListId"] },
               { title: "Mensagem", hint: "Na API oficial, quem nunca respondeu só recebe por um modelo aprovado pela Meta.", fields: ["whatsappId", "template", "steps"] },
               ...(isManager(user) ? [{ title: "Oferta", hint: "Só para recuperar leads: a condição, o valor de cada pessoa e o que acontece quando ela responder.", fields: ["offer"] }] : []),
-              { title: "Envio", hint: "O ritmo protege o número. Sem data, a campanha espera você clicar em Iniciar.", fields: ["pace", "scheduledAt"] },
-              { title: "Revisar", fields: [], review: (payload) => <DraftReview payload={payload} lists={lists} connections={connections} /> },
+              { title: "Envio", hint: "O ritmo protege o número. Sem data, a campanha espera você clicar em Iniciar. Com um bot, quem responder é qualificado por ele.", fields: ["pace", "flowId", "scheduledAt"] },
+              { title: "Revisar", fields: [], review: (payload) => <DraftReview payload={payload} lists={lists} connections={connections} bots={bots} /> },
             ]}
             saveActions={[{ key: "test", label: "Salvar e enviar teste" }, { key: "start", label: "Salvar e iniciar" }]}
             onSaved={(row, action) => { setReloadKey((k) => k + 1); if (action === "test") setTesting(row); if (action === "start") setStarting(row); }}
@@ -688,6 +692,14 @@ const Campaigns = () => {
                 ),
               },
               { name: "offer", type: "custom", label: "Oferta", default: emptyOffer(), render: (value, setValue, values) => <OfferEditor value={value} setValue={setValue} contactListId={values.contactListId} /> },
+              {
+                name: "flowId",
+                type: "select",
+                label: "Bot para quem responder (opcional)",
+                options: [{ value: "", label: "Nenhum: a resposta segue o atendimento do número" }, ...bots.map((b) => ({ value: b.id, label: b.name }))],
+                helper: "Quem responder à campanha nos 7 dias seguintes entra neste bot: ele faz as perguntas com botões e passa ao consultor. Os botões e as perguntas se editam em Chatbot e fluxos.",
+                emptyText: "Nenhum bot publicado. Publique um em Chatbot e fluxos.",
+              },
               { name: "pace", type: "custom", label: "Ritmo de envio", default: { key: "normal", ...PACES.normal }, render: (value, setValue) => <PacePicker value={value} setValue={setValue} /> },
               { name: "scheduledAt", label: "Agendar início (vazio = iniciar manualmente)", type: "datetime", helper: "Com uma data, a campanha começa sozinha nesse horário. Dá para iniciar antes pelo botão de iniciar." },
             ]}

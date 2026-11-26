@@ -90,3 +90,35 @@ em funcionamento.
 - Polos que servem várias universidades (`PoloInstitutions`).
 - Logo da universidade nos e-mails e no portal do aluno e do afiliado.
 - Filtro "Universidade" em Metas, Campanhas e Custos.
+
+## Bot da SESTED (número oficial compartilhado com o comercial)
+
+A SESTED vende os próprios cursos (graduação, técnico, técnico por competência e pós) pelo mesmo número oficial do comercial. Para os
+leads não se misturarem, o bot da SESTED só começa pela **palavra-chave "SESTED"**: o link dos anúncios (Chatbot e fluxos, abrir o
+fluxo, "Quando este fluxo começa", Link para anúncios) já manda "Quero conhecer os cursos da SESTED". Quem escreve outra coisa segue o
+atendimento de sempre do número. Ele também é o bot de uma campanha (campo "Bot para quem responder").
+
+- Instalado pela migração `20270105000003-sested-bot.ts` (só onde a universidade SESTED existe): fluxo "Bot SESTED: qualificação"
+  publicado, fila "Comercial SESTED" (vazia: a gestão coloca os consultores em Filas) e etiqueta "SESTED". O desenho está em
+  `FlowServices/SestedBot.ts`; o fluxo se edita na tela como qualquer outro (textos, botões, ordem).
+- O que pergunta, com botões: nome, cidade, o que procura (Graduação, Técnico, Técnico por competência, Pós-graduação), formação e, conforme
+  o tipo, se é a primeira graduação, se já trabalha na área (técnico por competência; sem experiência sugere o técnico regular) ou, para a
+  pós sem superior completo, se prefere graduação. Mostra um resumo para confirmar ou corrigir. Nunca fala valor, bolsa ou prazo.
+- O primeiro bloco (`crm` "Definir a universidade") deixa o lead da SESTED: a cidade informada não leva a conversa para as filas dos polos
+  da Cruzeiro (`AiServices/Tools.ts applyToLead`).
+- "Enviar ao CRM" com "Rodízio entre os consultores de uma fila" (`FlowServices/QueueOwner.ts`): o próximo da fila que aceita atendimentos,
+  com quem tem o próprio WhatsApp (QR Code) conectado primeiro. Ele recebe o aviso no sino e a tarefa "Chamar pelo seu WhatsApp". A última
+  mensagem diz o nome e o número dele (`{{consultor}}`, `{{consultor_whatsapp}}`: o número digitado ao conectar, ou o telefone do usuário).
+- Na ficha do lead, "Chamar pelo meu WhatsApp" abre a conversa no número próprio do consultor; a conversa do número oficial é encerrada com
+  uma nota. O servidor recusa o número pessoal de outra pessoa (`LeadController.openTicket`).
+- Campos novos do lead preenchidos pelos bots: `courseLevel` (Tipo de curso), `educationLevel` (Formação) e a primeira graduação (vira a
+  motivação "Primeira graduação" ou "Segunda graduação" e o ingresso de portador de diploma).
+- Modelos da Meta da SESTED (`SESTED_PACK` em `CampaignServices/Templates.ts`, nomes `sested_`): retomada do atendimento (o botão
+  "Continuar na SESTED" abre o bot), consultor que continua pelo número dele, proposta pronta, documentos pendentes e matrícula confirmada.
+  Vão com o pacote (Modelos da Meta, ou o workflow `meta-modelos.yml` com `confirmar_envio`).
+
+## Bot de uma campanha
+
+No passo Envio da campanha, "Bot para quem responder" escolhe um fluxo publicado. Quem responder à campanha nos 7 dias seguintes, no número
+de onde ela saiu, entra nesse bot (`FlowServices/CampaignFlow.ts`, chamado em `RunInboundAutomation` antes do agente de IA e também fora do
+horário). Só uma vez por envio, nunca por cima de um fluxo em andamento e nunca depois que alguém da equipe já escreveu para a pessoa.

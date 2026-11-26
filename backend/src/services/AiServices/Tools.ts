@@ -373,6 +373,17 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>, opt
   if (motivation && !lead.motivation) patch.motivation = motivation;
   const shift = known(CRM_OPTIONS.shifts, c.turno);
   if (shift && !lead.shift) patch.shift = shift;
+  // the answers of the qualification bots: what the person is looking for, the schooling, and whether it is the first degree
+  const level = known(CRM_OPTIONS.courseLevels, c.tipo_curso);
+  if (level && lead.courseLevel !== level) patch.courseLevel = level;
+  const schooling = known(CRM_OPTIONS.educationLevels, c.escolaridade);
+  if (schooling && lead.educationLevel !== schooling) patch.educationLevel = schooling;
+  const first = String(c.primeira_graduacao || "").trim().toLowerCase();
+  if (first === "sim" && !lead.motivation) patch.motivation = "Primeira graduação";
+  if (first === "não" || first === "nao") {
+    if (!lead.motivation) patch.motivation = "Segunda graduação";
+    if (!lead.admissionType) patch.admissionType = CRM_OPTIONS.admissionTypes.find(t => /2ª graduação|diploma/i.test(t)) || lead.admissionType;
+  }
   const financing = known(CRM_OPTIONS.financing, c.financiamento);
   if (financing && !lead.financing) patch.financing = financing;
   if (c.semestre_transferencia && (!lead.entrySemester || lead.entrySemester === 1)) {
@@ -408,7 +419,13 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>, opt
     const settled = await settleLeadPolo(lead, { cityHint: c.cidade, stateHint: c.estado });
     if (settled.source === "city" && settled.cityPolo) newPolo = settled.cityPolo;
   }
-  // the polo is known: the conversation and the lead go to that polo's commercial team right away
+  // the polo is known: the conversation and the lead go to that polo's commercial team right away; a lead of another university than the
+  // number's (a SESTED lead on the shared official number) stays with the team of its own bot, never the polo queues of this number
+  if (newPolo && lead.institutionId) {
+    const { institutionIdForWhatsapp } = await import("../../helpers/Institution");
+    const own = ticket.whatsappId ? await institutionIdForWhatsapp(ticket.whatsappId).catch(() => null) : null;
+    if (own && Number(own) !== Number(lead.institutionId)) newPolo = null;
+  }
   if (newPolo) {
     const { assignToPolo } = await import("../CommercialServices/Router");
     await assignToPolo(ticket, lead, newPolo);

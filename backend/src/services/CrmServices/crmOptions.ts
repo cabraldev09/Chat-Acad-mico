@@ -41,6 +41,8 @@ export const CRM_OPTIONS = {
   ],
   financing: ["Bolsa da instituição", "FIES", "ProUni", "Financiamento próprio", "Pagamento particular", "Ainda não sabe"],
   educationLevels: ["Ensino médio cursando", "Ensino médio completo", "Superior cursando", "Superior completo", "Técnico"],
+  // what the person is looking for (the qualification bots ask it)
+  courseLevels: ["Graduação", "Técnico", "Técnico por competência", "Pós-graduação"],
   lostReasons: [
     "Preço / mensalidade",
     "Escolheu outra instituição",
