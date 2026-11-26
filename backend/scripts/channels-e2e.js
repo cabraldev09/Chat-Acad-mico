@@ -1058,6 +1058,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sentTo("5569911120001") === 1, "a limited or refused call sent a message");
       } finally {
         if (qrRows.length) sql(`UPDATE Whatsapps SET status = 'CONNECTED' WHERE id IN (${qrRows.join(",")})`);
+        // the connection made only for this test goes away: it counted as a QR number and the later tests that connect one hit the
+        // limit of QR numbers (WHATSAPP_MAX_QR)
+        sql(`DELETE FROM WhatsappQueues WHERE whatsappId=${unlinked}`);
+        sql(`DELETE FROM Whatsapps WHERE id=${unlinked}`);
       }
     });
 
