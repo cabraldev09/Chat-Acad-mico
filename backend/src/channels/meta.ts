@@ -256,6 +256,13 @@ export const whatsappCloud: ChannelAdapter = {
     await cloudSend(whatsapp, contact, { type: "reaction", reaction: { message_id: messageId, emoji } });
   },
 
+  // a contact card, as the Meta documents it (the person opens it and taps "Conversar" or "Salvar")
+  async sendContacts(whatsapp, contact: Contact, person) {
+    const { cloudContactsPayload } = await import("../helpers/ContactCards");
+    const data = await cloudSend(whatsapp, contact, { type: "contacts", contacts: cloudContactsPayload(person.name, person.number) });
+    return { id: data.messages[0].id };
+  },
+
   async sendTemplate(whatsapp, contact: Contact, template) {
     const data = await cloudSend(whatsapp, contact, {
       type: "template",
@@ -437,6 +444,7 @@ const processCloud = async (received: Whatsapp, entry: any) => {
       const profileName = (value.contacts || []).find((c: any) => c.wa_id === m.from)?.profile
         ?.name;
       let body = "";
+      let mediaType: string | undefined;
       let media: { filename?: string; mimetype: string; data: Buffer } | undefined;
 
       if (m.type === "text") body = m.text.body;
@@ -464,11 +472,14 @@ const processCloud = async (received: Whatsapp, entry: any) => {
           m.interactive?.list_reply?.title ||
           "[interativo]";
       } else if (m.type === "contacts") {
-        // a shared contact card: the names and numbers stay in the text; sent by an affiliate, each person becomes a referral lead of
-        // the affiliate's consultant (the same as on the QR numbers)
+        // a shared contact card (one or several people): kept as vCards, like on the QR numbers, so the conversation shows each
+        // person with "Conversar"; sent by an affiliate, each person becomes a referral lead of the affiliate's consultant
         const { peopleOfCloudContacts, cardText } = await import("../helpers/CloudContacts");
+        const { vcardsOfCloud } = await import("../helpers/ContactCards");
         const people = peopleOfCloudContacts(m.contacts);
-        body = cardText(people);
+        const cards = vcardsOfCloud(m.contacts);
+        body = cards || cardText(people);
+        if (cards) mediaType = "vcard";
         if (people.length) {
           const { registerAffiliateReferrals } = await import("../services/AffiliateServices/ReferralFromContact");
           registerAffiliateReferrals(m.from, people).catch(err => logger.warn(`Referral from a shared contact failed: ${err}`));
@@ -484,6 +495,9 @@ const processCloud = async (received: Whatsapp, entry: any) => {
         messageId: m.id,
         body,
         media,
+        mediaType,
+        // a reply to another message: the quote shows above it (the id the Meta gave the answered message, as stored here)
+        quotedMsgId: m.context?.id ? messageIdOf(String(m.context.id)) : undefined,
         sentAt: m.timestamp ? new Date(Number(m.timestamp) * 1000) : undefined
       });
     }

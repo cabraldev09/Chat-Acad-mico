@@ -8,6 +8,8 @@ export const isVcard = (body?: string | null): boolean => /^\s*BEGIN:VCARD/i.tes
 
 export const previewOf = (body: string, type?: string): string => {
   if (type === "vcard" || isVcard(body)) {
+    const many = (String(body || "").match(/BEGIN:VCARD/gi) || []).length;
+    if (many > 1) return `👤 ${many} contatos`;
     const name = vcardName(body);
     return name ? `👤 ${name}` : "👤 Contato";
   }

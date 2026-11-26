@@ -7235,6 +7235,52 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.delete(`/ai-agents/${id}/draft`, auth())).status === 200 && !(await http.get("/ai-agents", auth())).data.find(a => a.id === id).persona.draft, "discarding kept the draft");
       await http.put(`/ai-agents/${id}`, { systemPrompt: live.systemPrompt, persona: live.persona }, auth());
     });
+    await test("official number: a reply keeps the quoted message, several shared contacts are one contact card, and the team shares a contact as a card (24 h window, only a contact they may see)", async () => {
+      const num = "5569977001100";
+      await inboundCloud(num, "wamid.quote-orig", "Qual o valor da mensalidade?");
+      const tid = await waitFor(() => sql(`SELECT t.id FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number='${num}' AND t.whatsappId=${cid} ORDER BY t.id DESC LIMIT 1`), 8000, "official ticket for the quote");
+      await waitFor(() => sql(`SELECT id FROM Messages WHERE id='wamid.quote-orig'`), 8000, "the first message");
+      // the person answers a message: the quote is kept
+      await postMeta(cid, cloudEvent([{ from: num, id: "wamid.quote-reply", type: "text", text: { body: "Esse aqui" }, context: { from: num, id: "wamid.quote-orig" } }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT quotedMsgId FROM Messages WHERE id='wamid.quote-reply'`) === "wamid.quote-orig", 8000, "the reply lost its quote");
+      // a reply to a message that is not stored here (older than the conversation): kept, without the quote, nothing breaks
+      await postMeta(cid, cloudEvent([{ from: num, id: "wamid.quote-unknown", type: "text", text: { body: "E esse?" }, context: { from: num, id: "wamid.never-stored" } }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT COALESCE(quotedMsgId,'none') FROM Messages WHERE id='wamid.quote-unknown'`) === "none", 8000, "a reply to an unknown message was not stored");
+      // two people in one card: one contact card message with both
+      await postMeta(cid, cloudEvent([{ from: num, id: "wamid.two-cards", type: "contacts", contacts: [
+        { name: { formatted_name: "Primeira Pessoa" }, phones: [{ phone: "+55 69 98100-0001", wa_id: "5569981000001" }] },
+        { name: { formatted_name: "Segunda Pessoa" }, phones: [{ phone: "+55 69 98100-0002", wa_id: "5569981000002" }] }
+      ] }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT mediaType FROM Messages WHERE id='wamid.two-cards'`) === "vcard", 8000, "the shared contacts are not a contact card");
+      const twoBody = sql(`SELECT body FROM Messages WHERE id='wamid.two-cards'`);
+      assert((twoBody.match(/BEGIN:VCARD/g) || []).length === 2 && twoBody.includes("FN:Primeira Pessoa") && twoBody.includes("waid=5569981000002"), `the two cards: ${twoBody.slice(0, 200)}`);
+      assert(sql(`SELECT lastMessage FROM Tickets WHERE id=${tid}`) === "👤 2 contatos", `the list shows the raw card: ${sql(`SELECT lastMessage FROM Tickets WHERE id=${tid}`)}`);
+      // the team shares a contact on the official number: a "contacts" message with the number of WhatsApp
+      const shared = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Contato Para Compartilhar', '5569981000077', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const before = graph.sent.length;
+      const ok = await http.post(`/messages/${tid}/contact`, { contactId: Number(shared) }, auth());
+      assert(ok.status === 201 && ok.data.mediaType === "vcard" && /FN:Contato Para Compartilhar/.test(ok.data.body), `share on the official number ${ok.status} ${JSON.stringify(ok.data).slice(0, 200)}`);
+      const card = graph.sent.slice(before).find(x => x.body && x.body.type === "contacts");
+      assert(card && card.body.contacts[0].phones[0].wa_id === "5569981000077" && card.body.contacts[0].name.formatted_name === "Contato Para Compartilhar", `the card sent to the Meta: ${JSON.stringify(graph.sent.slice(before)).slice(0, 300)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM OutboundDeliveries WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${tid}) AND status='sent' AND externalId='${ok.data.id}'`)) === 1, "the shared card did not go through the record of sends");
+      // a consultant cannot share a contact of someone else's lead (another polo): 403; a contact nobody works yet is fine
+      const other = (await http.post("/users", { name: "Consultor Do Cartao", email: "cartao@x.test", password: "senha123", role: "consultor" }, auth())).data;
+      const otok = (await http.post("/auth/login", { email: "cartao@x.test", password: "senha123" })).data.token;
+      sql(`UPDATE Tickets SET userId=${other.id}, status='open' WHERE id=${tid}`);
+      const someoneElse = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Lead De Outro', '5569981000088', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Leads (name, phone, source, contactId, stageId, ownerId, isHistorical, createdAt, updatedAt) SELECT 'Lead De Outro', '5569981000088', 'API', ${someoneElse}, (SELECT id FROM LeadStages ORDER BY position LIMIT 1), 1, false, NOW(), NOW()`);
+      const denied = await http.post(`/messages/${tid}/contact`, { contactId: Number(someoneElse) }, asUser(otok));
+      assert(denied.status === 403, `a consultant shared the contact of someone else's lead: ${denied.status} ${JSON.stringify(denied.data)}`);
+      const free = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Contato Livre', '5569981000099', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      assert((await http.post(`/messages/${tid}/contact`, { contactId: Number(free) }, asUser(otok))).status === 201, "a contact nobody works yet could not be shared");
+      // outside the 24 h of the official number: refused with the reason, nothing goes to the Meta
+      sql(`UPDATE Messages SET createdAt=createdAt - INTERVAL '3 days' WHERE ticketId=${tid}`);
+      const sentNow = graph.sent.length;
+      const late = await http.post(`/messages/${tid}/contact`, { contactId: Number(free) }, asUser(otok));
+      assert(late.status === 409 && late.data.error === "ERR_MESSAGING_WINDOW_CLOSED", `outside the window ${late.status} ${JSON.stringify(late.data)}`);
+      assert(!graph.sent.slice(sentNow).some(x => x.body && x.body.type === "contacts"), "a card went out of the 24 h window");
+      sql(`UPDATE Tickets SET status='closed' WHERE id=${tid}`);
+    });
     await test("affiliate on the official number: straight to their consultant (no robot, no rotation, no lead for the affiliate), a shared card is a referral, the portal points to the official number", async () => {
       const cons = (await http.post("/users", { name: "Consultora dos Afiliados", email: "cons-afiliados@x.test", password: "senha123", role: "consultor" }, auth())).data;
       const aff = (await http.post("/affiliates", { name: "Parceira Oficial", phone: "(69) 98111-2233", ownerId: cons.id }, auth())).data;
@@ -7253,7 +7299,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // a contact card shared on the official number: the person becomes a referral lead of the affiliate's consultant
       await postMeta(cid, cloudEvent([{ from: "556981112233", id: "wamid.affiliate-card", type: "contacts", contacts: [{ name: { formatted_name: "Indicado Pelo Cartao" }, phones: [{ phone: "+55 69 98444-5566", wa_id: "5569984445566" }] }] }]), cloudCfg.appSecret);
       await waitFor(() => sql(`SELECT CONCAT(ownerId,'|',affiliateId) FROM Leads WHERE name='Indicado Pelo Cartao'`) === `${cons.id}|${aff.id}`, 8000, "the shared card became a referral of the consultant");
-      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${tid} AND body LIKE 'Contato compartilhado: Indicado Pelo Cartao%'`)) === 1, 8000, "the card is readable in the conversation");
+      // the card is kept as a contact card (vCard), like on the QR numbers: the conversation shows the person with "Conversar"
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${tid} AND mediaType='vcard' AND body LIKE 'BEGIN:VCARD%FN:Indicado Pelo Cartao%waid=5569984445566%'`)) === 1, 8000, "the card is kept as a contact card in the conversation");
       assert(sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${tid}`) === `open|${cons.id}`, "the card moved the conversation away from the consultant");
       // the portal: support is the official number, with the message ready and the consultant's name
       const portal = (await http.get(`/affiliate-portal/${aff.portalToken}`)).data;
