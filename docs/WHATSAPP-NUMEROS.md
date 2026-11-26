@@ -93,6 +93,11 @@ O que vira no CRM:
   - a leitura não muda as datas que o lead já tem (criação, matrícula, perda); só preenche o que está vazio;
   - não entra em "Novos para conferir";
   - se a última mensagem foi do consultor há 7 dias ou mais, sem resposta, vai para Recuperação, aba **Parados**.
+- **Parados sem nova leitura:** uma vez por dia (e também em "Ler agora"), todo lead em andamento cuja última mensagem foi da equipe
+  há 7 dias ou mais (até 90) vai para Parados; quando a pessoa escreve qualquer coisa depois, sai sozinho (`services/ReadingServices/Stalled.ts`).
+  - Ficam de fora: colegas (`isStaff`), contatos pessoais, canais, listas de transmissão (`noReply`), "Matrícula a confirmar", matriculados e históricos.
+  - Quem saiu ("voltou") não volta a Parados sozinho, nem que pare de novo.
+  - Uma campanha enviada a leads em andamento conta como a última palavra da equipe: quem não responder em 7 dias vai para Parados.
 - **Matriculado:** a leitura **nunca matricula** ninguém, porque qualquer pessoa pode escrever "RGM 123" na conversa.
   - O lead vai para a coluna "Matrícula a confirmar", com a tarefa "Confirmar a matrícula" para o dono.
   - Se a conversa tiver um RGM (lido no código, nunca pela IA), ele aparece só como sugestão (`rgmSuggested`), com a data da mensagem que

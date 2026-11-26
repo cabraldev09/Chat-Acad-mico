@@ -149,8 +149,13 @@ const useStyles = makeStyles((theme) => {
     typingBot: { marginRight: 2, color: c.bubbleOutText, opacity: 0.9 },
     sticker: {
       background: "transparent !important", boxShadow: "none !important", border: "0 !important", padding: "0 !important", minWidth: 0,
+      display: "flex", flexDirection: "column",
       "& $media": { margin: 0, overflow: "visible" },
-      "& $meta": { float: "none", display: "flex", justifyContent: "flex-end", margin: "2px 4px 0", color: c.textSecondary },
+      // the time and the ticks of a sticker go in a small chip under its corner (as on WhatsApp), never over the transparent picture
+      "& $meta": {
+        position: "static", float: "none", display: "inline-flex", alignSelf: "flex-end", margin: "2px 2px 0", padding: "1px 7px", borderRadius: 999,
+        color: c.textSecondary, backgroundColor: c.chatChip, boxShadow: c.shadow, textShadow: "none",
+      },
     },
     reactBtn: {
       alignSelf: "center", flex: "none", width: 30, height: 30, borderRadius: "50%", border: 0, padding: 0, margin: "0 6px", cursor: "pointer",
@@ -879,7 +884,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
                 </div>
               )}
               {!showText && (
-                <span className={clsx(classes.meta, mediaOnly && classes.metaOnMedia)} title={fullDate(m.createdAt)}>
+                <span className={clsx(classes.meta, mediaOnly && !isSticker && classes.metaOnMedia)} title={fullDate(m.createdAt)}>
                   {m.starred && <Star style={{ fontSize: 12 }} />}
                   {clock(m.createdAt)}
                   {ack(m)}
