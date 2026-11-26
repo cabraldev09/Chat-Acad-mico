@@ -1,7 +1,7 @@
 import { publicFile } from "../helpers/PublicFile";
 import { assertConnectionUse } from "../middleware/outboundScope";
 import { Request, Response } from "express";
-import { fn, col, Op, QueryTypes } from "sequelize";
+import { fn, col, literal, Op, QueryTypes } from "sequelize";
 
 import sequelize from "../database";
 import { portable } from "../helpers/sqlDialect";
@@ -24,7 +24,9 @@ import { withLeadScope } from "../middleware/scope";
 import AppError from "../errors/AppError";
 import { getIO } from "../libs/socket";
 import makeCrud from "./crudFactory";
-import { assertOwnList, tutorIdOf, tutoriaConnectionId } from "../services/CampaignServices/Access";
+import { assertListVisible, assertOwnList, tutorIdOf, tutoriaConnectionId } from "../services/CampaignServices/Access";
+import { listVisibleSql, numbersInPolos } from "../helpers/ListScope";
+import { crmPolosOf } from "../middleware/scope";
 import { assertCampaignCost, campaignCost } from "../services/CampaignServices/CostGate";
 import { assertCampaignQuota, quotaOf } from "../services/CampaignServices/SendQuota";
 import User from "../models/User";
@@ -92,6 +94,8 @@ const crud = makeCrud(Campaign, {
     if (data.objective !== undefined) data.objective = String(data.objective || "").replace(/\s+/g, " ").trim().slice(0, 300);
     if (!existing && !data.objective) throw new AppError("ERR_CAMPAIGN_OBJECTIVE", 400);
     if (existing && data.objective === "" && existing.objective) throw new AppError("ERR_CAMPAIGN_OBJECTIVE", 400);
+    // the coordination uses only the lists of its polos (helpers/ListScope)
+    if (data.contactListId !== undefined || !existing) await assertListVisible(_req, data.contactListId !== undefined ? data.contactListId : existing?.contactListId);
     if (tutorIdOf(_req)) {
       data.whatsappId = await tutoriaConnectionId();
       await assertOwnList(_req, data.contactListId !== undefined ? data.contactListId : existing?.contactListId);
@@ -171,8 +175,10 @@ const withCounters = async (campaigns: Campaign[]) => {
 
 export const index = async (_req: Request, res: Response): Promise<Response> => {
   const me = tutorIdOf(_req);
+  // the coordination: the campaigns it made and the ones made with lists of its polos
+  const polos = await crmPolosOf(_req);
   const campaigns = await Campaign.findAll({
-    ...(me ? { where: { createdById: me } as any } : {}),
+    ...(me ? { where: { createdById: me } as any } : polos ? { where: { [Op.or]: [{ createdById: Number(_req.user.id) }, literal(`EXISTS (SELECT 1 FROM "ContactLists" "ContactList" WHERE "ContactList"."id" = "Campaign"."contactListId" AND ${listVisibleSql(polos, Number(_req.user.id))})`)] } as any } : {}),
     include: [
       { model: ContactList, as: "contactList", attributes: ["id", "name"] },
       { model: Whatsapp, as: "whatsapp", attributes: ["id", "name", "channel"] }
@@ -365,6 +371,7 @@ export const preflightDraft = async (req: Request, res: Response): Promise<Respo
   const body = req.body || {};
   if (!Number(body.contactListId)) throw new AppError("ERR_CAMPAIGN_LIST_REQUIRED", 400);
   await assertOwnList(req, body.contactListId);
+  await assertListVisible(req, body.contactListId);
   if (tutorIdOf(req)) body.whatsappId = await tutoriaConnectionId();
   const draft: any = Campaign.build(Object.fromEntries(DRAFT_FIELDS.filter(k => body[k] !== undefined && body[k] !== "").map(k => [k, body[k]])) as any);
   draft.intervalMin = Number(body.intervalMin) || draft.intervalMin || 20;
@@ -496,8 +503,9 @@ export const lists = {
   },
   index: async (_req: Request, res: Response): Promise<Response> => {
     const me = tutorIdOf(_req);
+    const polos = await crmPolosOf(_req);
     const rows = await ContactList.findAll({
-      ...(me ? { where: { createdById: me } as any } : {}),
+      ...(me ? { where: { createdById: me } as any } : polos ? { where: literal(listVisibleSql(polos, Number(_req.user.id))) as any } : {}),
       attributes: ["id", "name", "createdAt", [fn("COUNT", col("items.id")), "itemCount"]],
       include: [{ model: ContactListItem, as: "items", attributes: [] }],
       group: ["ContactList.id"],
@@ -585,6 +593,7 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
     list = await ContactList.findByPk(b.listId);
     if (!list) throw new AppError("ERR_NOT_FOUND", 404);
     await assertOwnList(req, list.id);
+    await assertListVisible(req, list.id);
   } else {
     const name = String(b.name || "").trim();
     if (!name) throw new AppError("ERR_FIELD_REQUIRED_name");
@@ -613,8 +622,18 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
 export const importItems = async (req: Request, res: Response): Promise<Response> => {
   const list = await ContactList.findByPk(req.params.id);
   if (!list) throw new AppError("ERR_NOT_FOUND", 404);
-  const incoming: Array<{ name?: string; number?: string; email?: string }> =
+  let incoming: Array<{ name?: string; number?: string; email?: string }> =
     req.body.items || [];
+  // the coordination adds only people of its polos: a number that is nobody's lead or contact there stays out (only the administration holds it)
+  let outOfScope = 0;
+  const polos = await crmPolosOf(req);
+  if (polos) {
+    const inside = await numbersInPolos(polos, incoming.map(i => withCountry(i.number || "")).filter(n => n.length >= 10));
+    const kept = incoming.filter(i => inside.has(withCountry(i.number || "")) || withCountry(i.number || "").length < 10);
+    outOfScope = incoming.length - kept.length;
+    if (outOfScope && !kept.some(i => withCountry(i.number || "").length >= 10)) throw new AppError("ERR_NO_PERMISSION", 403);
+    incoming = kept;
+  }
 
   const existing = new Set(
     (await ContactListItem.findAll({ where: { contactListId: list.id }, attributes: ["number"] })).map(
@@ -665,7 +684,7 @@ export const importItems = async (req: Request, res: Response): Promise<Response
       }
     }
   }
-  return res.json({ imported: toCreate.length, skipped, invalid, duplicated: skipped - invalid });
+  return res.json({ imported: toCreate.length, skipped, invalid, duplicated: skipped - invalid, outOfScope });
 };
 
 export const removeItem = async (req: Request, res: Response): Promise<Response> => {

@@ -5976,6 +5976,17 @@ CREATE INDEX contacts_parent_group_idx ON public."Contacts" USING btree ("parent
 
 
 --
+-- Name: contacts_phone_key_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_phone_key_idx ON public."Contacts" USING btree ((
+CASE
+    WHEN (((number)::text ~~ '55%'::text) AND (length((number)::text) = ANY (ARRAY[12, 13]))) THEN ((substr((number)::text, 3, 2) || "right"((number)::text, 8)))::character varying
+    ELSE number
+END));
+
+
+--
 -- Name: contacts_pic_checked_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6344,6 +6355,17 @@ CREATE INDEX leads_owner_id ON public."Leads" USING btree ("ownerId");
 --
 
 CREATE INDEX leads_phone ON public."Leads" USING btree (phone);
+
+
+--
+-- Name: leads_phone_key_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_phone_key_idx ON public."Leads" USING btree ((
+CASE
+    WHEN (((phone)::text ~~ '55%'::text) AND (length((phone)::text) = ANY (ARRAY[12, 13]))) THEN ((substr((phone)::text, 3, 2) || "right"((phone)::text, 8)))::character varying
+    ELSE phone
+END));
 
 
 --
@@ -8290,6 +8312,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') 
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000104-api-token-usage.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tried.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000352-phone-key-indexes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;

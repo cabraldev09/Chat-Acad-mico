@@ -52,12 +52,22 @@ atendidas, nome, exclusão, importação) dos polos em que está.
   - em `/dashboard/manager`, as metas de todos os polos continuam visíveis;
   - estatísticas de consultores e "Equipe agora": coordenação sem polo não vê ninguém.
 
-**Ainda NÃO isolado por polo para a coordenação (fica para um PR próprio):**
-- agendamentos (`/schedules`: o texto da mensagem e o contato; evento em tempo real `schedule`);
-- campanhas e listas de contatos (`/campaigns`, `/contact-lists`; eventos `campaign` e `contactList`): só o tutor é limitado
-  ao que é dele; a gestão (administração e coordenação) vê todas.
+## Agendamentos, campanhas e listas de contatos por polo (helpers/ListScope.ts)
 
-Até lá, não crie usuários de coordenação nem de relacionamento para franquias diferentes.
+| Perfil | Vê e usa |
+|---|---|
+| admin | todos |
+| coordenacao | os agendamentos que fez e os de contatos dos seus polos; as listas que criou ou cujas pessoas estão TODAS nos seus polos; as campanhas que criou ou feitas com essas listas. Pessoa que não é lead nem contato de nenhum polo (número colado) é da administração. Sem polo, só o que ela mesma criou |
+| consultor, tutor | sem mudança (o consultor vê as listas e campanhas como antes; o tutor só o que criou) |
+
+- A regra vale no SQL da lista e em abrir, editar, apagar, cancelar, exportar, iniciar, pausar, duplicar, testar, relatório e eventos em tempo real
+  (`schedule`, `campaign`, `contactList`).
+- A coordenação só coloca em lista (do CRM ou número colado) pessoas dos seus polos; o resto fica de fora (`outOfScope` na resposta).
+- Ao iniciar uma campanha da coordenação, os destinatários são conferidos de novo contra os polos de quem a criou: quem entrou na lista depois e é de outro polo não recebe.
+- Fora desta regra (continua como estava): afiliados e a lista de usuários.
+
+Com agendamentos, campanhas e listas isolados, a trava "não crie usuários de coordenação nem de relacionamento para franquias diferentes" depende
+só dos itens acima e das outras áreas da coordenação (análises, alunos do portal, boletins e conexões: ESP-011).
 
 ## Públicas (sem login)
 
@@ -190,21 +200,21 @@ Até lá, não crie usuários de coordenação nem de relacionamento para franqu
 - PUT /contacts/:contactId/tags → canAccessContact
 - POST /campaigns → salesStaff
 - POST /campaigns/preflight → salesStaff
-- PUT /campaigns/:id → salesStaff, ownCampaign
-- DELETE /campaigns/:id → salesStaff, ownCampaign
-- POST /campaigns/:id/start → salesStaff, ownCampaign
-- POST /campaigns/:id/pause → salesStaff, ownCampaign
-- POST /campaigns/:id/cancel → salesStaff, ownCampaign
-- POST /campaigns/:id/retry-failed → salesStaff, ownCampaign
-- POST /campaigns/:id/duplicate → salesStaff, ownCampaign
-- POST /campaigns/:id/test → salesStaff, ownCampaign
-- POST /campaigns/:id/remove-no-consent → salesStaff, ownCampaign
+- PUT /campaigns/:id → salesStaff, ownCampaign, campaignVisible
+- DELETE /campaigns/:id → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/start → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/pause → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/cancel → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/retry-failed → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/duplicate → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/test → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/remove-no-consent → salesStaff, ownCampaign, campaignVisible
 - POST /contact-lists → salesStaff
 - POST /contact-lists/from-leads → salesStaff
-- PUT /contact-lists/:id → salesStaff, ownList
-- DELETE /contact-lists/:id → salesStaff, ownList
-- POST /contact-lists/:id/import → salesStaff, notTutor
-- DELETE /contact-lists/:id/items/:itemId → salesStaff, ownList
+- PUT /contact-lists/:id → salesStaff, ownList, listVisible
+- DELETE /contact-lists/:id → salesStaff, ownList, listVisible
+- POST /contact-lists/:id/import → salesStaff, notTutor, listVisible
+- DELETE /contact-lists/:id/items/:itemId → salesStaff, ownList, listVisible
 - PUT /retention/config → loadCrmPolos, isRetentionOperator
 - POST /retention/run → loadCrmPolos, isRetentionOperator
 - POST /retention/contact/:leadId → loadCrmPolos

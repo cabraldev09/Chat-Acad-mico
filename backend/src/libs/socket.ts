@@ -9,7 +9,9 @@ import { sessionUser } from "../helpers/SessionUser";
 import { isManagerRole } from "../helpers/Roles";
 import { maskConfig } from "../helpers/Secrets";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
-import { assertLead } from "../middleware/scope";
+import { assertLead, crmPolosOf } from "../middleware/scope";
+import { assertCampaignVisible } from "../services/CampaignServices/Access";
+import { listVisibleTo } from "../helpers/ListScope";
 import { hasContactAccess } from "../middleware/canAccessContact";
 import Ticket from "../models/Ticket";
 import Lead from "../models/Lead";
@@ -85,7 +87,10 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     }
     if (event === "schedule") {
       const row = data.row || await Schedule.findByPk(data.id);
-      return !!row && (manager || Number(row.userId) === Number(user.id));
+      if (!row) return false;
+      if (Number(row.userId) === Number(user.id) || user.role === "admin" || user.profile === "admin") return true;
+      // the coordination: only the messages for people of its polos (the same rule of the list)
+      return user.role === "coordenacao" && (await hasContactAccess(req, Number(row.contactId)));
     }
     if (event === "affiliate" || event === "affiliateBonus") {
       if (manager) return true;
@@ -119,7 +124,18 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
       return canSeeConsultant(user, target);
     }
     if (["aiLearning", "flow", "automationTrigger"].includes(event)) return manager;
-    if (["campaign", "contactList"].includes(event)) return manager || user.role === "consultor";
+    // campaigns and contact lists: the administration and the consultants as before; the coordination only the ones of its polos (an event that carries only
+    // an id, such as a deletion, is not sent to it: the lists refresh on their own)
+    if (["campaign", "contactList"].includes(event)) {
+      if (user.role === "consultor" || user.role === "admin" || user.profile === "admin") return true;
+      if (user.role !== "coordenacao") return false;
+      const id = Number(data.row?.id);
+      if (!id) return false;
+      const polos = await crmPolosOf(req);
+      if (!polos) return true;
+      if (event === "campaign") { await assertCampaignVisible(req, id); return true; }
+      return listVisibleTo(id, polos, Number(user.id));
+    }
     // ids of the conversations pinned on the phone of a number: the lists of everyone who sees that number follow them
     if (["tag", "queue", "quickAnswer", "course", "leadStage", "polo", "ticketPins"].includes(event)) return true;
     // the rest (lists of settings screens, institution, templates...) are for the administration and the coordination
