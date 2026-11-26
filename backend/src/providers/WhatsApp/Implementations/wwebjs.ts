@@ -58,6 +58,7 @@ import {
   WhatsappContextPayload
 } from "../../../handlers/handleWhatsappEvents";
 import { killLeftoverBrowsers } from "./browserProcesses";
+import { chatBehind, eachLimited, isTransientState, settledChats, stateToWrite } from "./chatSync";
 
 interface Session extends Client {
   id?: number;
@@ -189,9 +190,11 @@ const resolvePhones = async (
 
 const convertToContactPayload = async (
   msgContact: WbotContact,
-  wbot: Session
+  wbot: Session,
+  opts: { withPic?: boolean } = {}
 ): Promise<ContactPayload> => {
-  const profilePicUrl = await getProfilePic(msgContact);
+  // the history copy leaves the pictures for later (one picture is a round trip to the phone; hundreds of chats wait on them)
+  const profilePicUrl = opts.withPic === false ? undefined : await getProfilePic(msgContact);
   const isLid = msgContact.id.server === "lid";
 
   if (isLid) {
@@ -643,11 +646,16 @@ const syncUnreadMessages = async (wbot: Session, whatsappId: number, opts: { per
     }
     const checked = (gapChecked.get(whatsappId) || new Map<string, number>());
     gapChecked.set(whatsappId, checked);
+    // While the conversations of the phone were never copied, the copy brings them (silently, as history): here they would arrive as new
+    // messages, ringing and opening conversations for things that are days old. After the copy, a chat with nothing stored (a group copied
+    // empty) counts from the moment of the copy.
+    const conn = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "historyImportedAt"] });
+    const copiedAt = conn?.historyImportedAt ? new Date(conn.historyImportedAt).getTime() : null;
     const behind = (chat: any): boolean => {
       const t = (chat.timestamp || 0) * 1000;
-      if (!t || checked.get(chat.id._serialized) === chat.timestamp) return false;
+      if (!t || copiedAt === null || checked.get(chat.id._serialized) === chat.timestamp) return false;
       const cid = known.get(`${chat.isGroup ? "g" : "p"}:${chat.id.user}`);
-      return !cid || !lastOf.has(cid) || t > (lastOf.get(cid) as number) + 5000;
+      return chatBehind(t, copiedAt, cid && lastOf.has(cid) ? (lastOf.get(cid) as number) : null);
     };
     const chats = allChats
       .filter(chat => !chat.id._serialized.includes("@broadcast") && !chat.id._serialized.endsWith("@newsletter") && ((chat.timestamp || 0) >= since || behind(chat)))
@@ -709,10 +717,14 @@ const RECONNECT_MAX_ATTEMPTS = 6;
 // a number with a long history takes minutes to load WhatsApp Web (it sits at 99% for a while): giving up early restarts the browser and the load begins again
 const READY_TIMEOUT_MS = Number(process.env.WHATSAPP_READY_TIMEOUT_MS) || 10 * 60 * 1000;
 const readyTimers = new Map<number, NodeJS.Timeout>();
+// the wait for "ready" of each number and when it began (it is renewed while the page shows loading progress, up to READY_MAX_MS)
+const READY_MAX_MS = Number(process.env.WHATSAPP_READY_MAX_MS) || 30 * 60 * 1000;
+const readyTimeouts = new Map<number, { fire: () => Promise<void>; since: number }>();
 const clearReadyTimer = (whatsappId: number) => {
   const t = readyTimers.get(whatsappId);
   if (t) clearTimeout(t);
   readyTimers.delete(whatsappId);
+  readyTimeouts.delete(whatsappId);
 };
 const memoryNote = () => `memória do processo ${Math.round(process.memoryUsage().rss / 1048576)} MB`;
 
@@ -723,6 +735,12 @@ const memoryNote = () => `memória do processo ${Math.round(process.memoryUsage(
 // What the watchdog worker needs to know (see workers/WhatsappWatchdog) is exported at the end.
 const clients = new Map<number, Session>();
 const INIT_TIMEOUT_MS = Number(process.env.WHATSAPP_INIT_TIMEOUT_MS) || 4 * 60 * 1000;
+// the first sync of a number (the phone sends every conversation) and the copy of them: the browser is not restarted for being slow then
+const SYNC_GRACE_MS = Number(process.env.WHATSAPP_SYNC_GRACE_MS) || 30 * 60 * 1000;
+const syncGraceUntil = new Map<number, number>();
+const inSyncGrace = (id: number): boolean => (syncGraceUntil.get(id) || 0) > Date.now() || historyRunning(id);
+let historyRunning: (id: number) => boolean = () => false;
+import("../../../services/WbotServices/ImportHistoryService").then(m => { historyRunning = m.isHistoryRunning; }).catch(() => undefined);
 const HEARTBEAT_MS = Number(process.env.WHATSAPP_HEARTBEAT_MS) || 90 * 1000;
 const initTimers = new Map<number, NodeJS.Timeout>();
 const heartbeats = new Map<number, NodeJS.Timeout>();
@@ -795,8 +813,9 @@ const retryLater = async (whatsappId: number, reason: string): Promise<void> => 
 };
 
 // state of the sessions for the watchdog worker
-export const sessionWatch = (whatsappId: number): { hasClient: boolean; live: boolean; initializing: boolean } => ({
+export const sessionWatch = (whatsappId: number): { hasClient: boolean; live: boolean; initializing: boolean; inGrace: boolean } => ({
   hasClient: clients.has(whatsappId),
+  inGrace: inSyncGrace(whatsappId),
   live: sessions.some(s => s.id === whatsappId),
   initializing: initTimers.has(whatsappId) || retrying.has(whatsappId) || readyTimers.has(whatsappId)
 });
@@ -820,6 +839,29 @@ const markAlive = (whatsappId: number): void => {
     .catch(() => undefined);
 };
 
+// A passing state of WhatsApp Web, confirmed before it reaches the screen (see change_state)
+const STATE_CHECK_MS = Number(process.env.WHATSAPP_STATE_CHECK_MS) || 90 * 1000;
+const stateChecks = new Set<number>();
+const confirmStateLater = (whatsapp: Whatsapp, wbot: Session, seen: string): void => {
+  if (stateChecks.has(whatsapp.id)) return;
+  stateChecks.add(whatsapp.id);
+  setTimeout(async () => {
+    if (!stateChecks.delete(whatsapp.id) || clients.get(whatsapp.id) !== wbot) return;
+    const grace = inSyncGrace(whatsapp.id);
+    const now = await withTimeout(wbot.getState() as Promise<string>, grace ? 60000 : 20000).then(String).catch(() => null);
+    const write = stateToWrite(seen, now, grace);
+    if (!write) return;
+    if (write === "CONNECTED") {
+      aliveAt.delete(whatsapp.id);
+      markAlive(whatsapp.id);
+      return;
+    }
+    logger.warn(`Session ${whatsapp.name}: o WhatsApp Web continua em ${write}; status atualizado`);
+    await whatsapp.update({ status: write }).catch(() => undefined);
+    getIO().emit("whatsappSession", { action: "update", session: whatsapp });
+  }, STATE_CHECK_MS);
+};
+
 // What the page of each number looks like from inside: registered for sending, "ready" seen, the state WhatsApp Web reports and whether the helpers of
 // whatsapp-web.js are injected in the page (without them nothing can be read or sent, even when the page says CONNECTED). Logged by the watchdog.
 export interface SessionHealth { id: number; registered: boolean; ready: boolean; state: string | null; injected: boolean | null }
@@ -827,7 +869,7 @@ export const sessionHealth = async (): Promise<SessionHealth[]> => {
   const out: SessionHealth[] = [];
   for (const [id, wbot] of clients) {
     // eslint-disable-next-line no-await-in-loop
-    const state = await withTimeout(wbot.getState() as Promise<string>, 15000).catch(() => null);
+    const state = await withTimeout(wbot.getState() as Promise<string>, inSyncGrace(id) ? 60000 : 15000).catch(() => null);
     // eslint-disable-next-line no-await-in-loop
     const injected = await withTimeout(wbot.pupPage!.evaluate(() => typeof (window as any).WWebJS !== "undefined"), 15000).catch(() => null);
     out.push({ id, registered: sessions.some(s => s.id === id), ready: readySeen.has(id), state: state ? String(state) : null, injected });
@@ -884,7 +926,7 @@ export const reconcileStatuses = async (): Promise<void> => {
       const registered = sessions.some(s => s.id === id);
       if (!row || (row.status === "CONNECTED" && registered)) continue;
       // eslint-disable-next-line no-await-in-loop
-      const state = await withTimeout(wbot.getState(), 15000).catch(() => null);
+      const state = await withTimeout(wbot.getState(), inSyncGrace(id) ? 60000 : 15000).catch(() => null);
       if (state !== "CONNECTED") continue;
       // the page is connected but the "ready" event never came: the session is alive, so it is registered like a ready one.
       // Without this the watchdog saw "connected but no session here" and opened a SECOND browser on the same profile, which failed and restarted everything.
@@ -1056,6 +1098,26 @@ const HISTORY_LABELS: Record<string, string> = {
   poll_creation: "📊 Enquete"
 };
 
+// two chats at a time: the page also has to keep receiving the phone's sync (more than this froze it, and the phone said "sync stopped")
+const IMPORT_PARALLEL = Number(process.env.WHATSAPP_IMPORT_PARALLEL || 2);
+const IMPORT_CHAT_TIMEOUT_MS = Number(process.env.WHATSAPP_IMPORT_CHAT_TIMEOUT_MS || 25000);
+
+// The pictures of the chats copied, after the copy, a few at a time (never in the way of the copy itself)
+const fillPictures = async (wbot: Session, chats: any[]): Promise<void> => {
+  await eachLimited(chats, 3, async chat => {
+    try {
+      const contact = await withTimeout(wbot.getContactById(chat.id._serialized), 10000);
+      const url = await getProfilePic(contact);
+      if (!url) return;
+      const number = chat.isGroup ? chat.id._serialized.split("@")[0] : onlyDigits(chat.id.user);
+      const found = await Contact.findOne({ where: { number } as any, attributes: ["id", "profilePicUrl"] });
+      if (found && !found.getDataValue("profilePicUrl")) await found.update({ profilePicUrl: url });
+    } catch (e) {
+      /* a picture that does not come is not a problem */
+    }
+  });
+};
+
 const importChats = async (
   sessionId: number,
   options: HistoryOptions,
@@ -1063,77 +1125,91 @@ const importChats = async (
   onProgress?: (done: number, total: number) => void
 ): Promise<void> => {
   const wbot = getWbot(sessionId);
-  const all = await wbot.getChats();
+  const only = options.onlyChatIds && options.onlyChatIds.length ? new Set(options.onlyChatIds) : null;
+  // one or a few chats asked by name are read directly (the whole list of a number with hundreds of chats is heavy)
+  const all: any[] = only
+    ? ((await Promise.all(Array.from(only).map(id => withTimeout(wbot.getChatById(id), 20000).catch(() => null)))).filter(Boolean) as any[])
+    : options.waitForSync
+      ? await settledChats(wbot)
+      : await withTimeout(wbot.getChats(), 9 * 60 * 1000);
   const chats = all
     .filter(chat => {
       const id = chat.id._serialized;
       if (id.includes("@broadcast") || chat.id.server === "newsletter") return false;
+      if (only && !only.has(id)) return false;
       return options.includeGroups || !chat.isGroup;
     })
     .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-  let done = 0;
-  for (const chat of chats) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const contact = await wbot.getContactById(chat.id._serialized);
-      // eslint-disable-next-line no-await-in-loop
-      const payload = await convertToContactPayload(contact, wbot);
-      // eslint-disable-next-line no-await-in-loop
-      const raw = await chat.fetchMessages({ limit: options.perChat });
-      // in groups each message carries who wrote it (looked up once per person)
-      const authors = new Map<string, { name: string; number: string; lid?: string }>();
-      const authorOf = async (m: WbotMessage) => {
-        if (!chat.isGroup || m.fromMe) return undefined;
-        const id = (m as any).author || (m as any).participant;
-        if (!id) return undefined;
-        if (!authors.has(id)) {
-          try {
-            const c = await convertToContactPayload(await wbot.getContactById(id), wbot);
-            authors.set(id, { name: c.name, number: c.number, lid: c.lid });
-          } catch (err) {
-            authors.set(id, { name: String(id).split("@")[0], number: String(id).split("@")[0] });
-          }
+  // what one chat becomes: its contact (with the name saved on the phone), its latest messages, and for groups who wrote each one
+  const read = async (chat: any): Promise<ProviderHistoryChat | null> => {
+    const contact = await wbot.getContactById(chat.id._serialized);
+    const payload = await convertToContactPayload(contact, wbot, { withPic: false });
+    const raw: WbotMessage[] = await chat.fetchMessages({ limit: options.perChat });
+    const authors = new Map<string, { name: string; number: string; lid?: string }>();
+    const authorOf = async (m: WbotMessage) => {
+      if (!chat.isGroup || m.fromMe) return undefined;
+      const id = (m as any).author || (m as any).participant;
+      if (!id) return undefined;
+      if (!authors.has(id)) {
+        try {
+          const c = await convertToContactPayload(await wbot.getContactById(id), wbot, { withPic: false });
+          authors.set(id, { name: c.name, number: c.number, lid: c.lid });
+        } catch (err) {
+          authors.set(id, { name: String(id).split("@")[0], number: String(id).split("@")[0] });
         }
-        return authors.get(id);
-      };
+      }
+      return authors.get(id);
+    };
+    const messages: ProviderHistoryChat["messages"] = [];
+    for (const m of raw) {
+      if (m.from === "status@broadcast" || m.to === "status@broadcast") continue;
+      const body = (m.body && (m.type === "chat" || m.hasMedia) ? m.body : "") || HISTORY_LABELS[m.type] || "";
+      if (!body) continue;
+      // eslint-disable-next-line no-await-in-loop
+      messages.push({ id: m.id.id, body, fromMe: m.fromMe, timestamp: m.timestamp, ack: mapMessageAck(m.ack), type: m.type, author: await authorOf(m) });
+    }
+    // a person's chat with nothing in it is left out; a group stays even empty (it is part of the number, as on the phone)
+    if (!messages.length && !chat.isGroup) return null;
+    return {
+      chatId: chat.id._serialized,
+      isGroup: chat.isGroup,
+      pinned: !!(chat as any).pinned,
+      archived: !!chat.archived,
+      timestamp: chat.timestamp || undefined,
+      unreadCount: Number(chat.unreadCount) > 0 ? Number(chat.unreadCount) : 0,
+      community: chat.isGroup ? communityOf(chat, wbot) : undefined,
+      name: chat.name || payload.name,
+      contact: { name: chat.isGroup ? chat.name || payload.name : payload.name, number: payload.number, lid: payload.lid, isGroup: chat.isGroup },
+      messages
+    };
+  };
 
-      const messages: ProviderHistoryChat["messages"] = [];
-      for (const m of raw) {
-        if (m.from === "status@broadcast" || m.to === "status@broadcast") continue;
-        const body =
-          (m.body && (m.type === "chat" || m.hasMedia) ? m.body : "") ||
-          HISTORY_LABELS[m.type] ||
-          "";
-        if (!body) continue;
-        messages.push({
-          id: m.id.id,
-          body,
-          fromMe: m.fromMe,
-          timestamp: m.timestamp,
-          ack: mapMessageAck(m.ack),
-          type: m.type,
-          // eslint-disable-next-line no-await-in-loop
-          author: await authorOf(m)
-        });
-      }
-      if (messages.length) {
-        // eslint-disable-next-line no-await-in-loop
-        await onChat({
-          isGroup: chat.isGroup,
-          pinned: !!(chat as any).pinned,
-          archived: !!chat.archived,
-          name: chat.name || payload.name,
-          contact: { name: payload.name, number: payload.number, lid: payload.lid, isGroup: chat.isGroup },
-          messages
-        });
-      }
+  let done = 0;
+  const later: any[] = [];
+  const copy = async (chat: any, lastTry: boolean) => {
+    let item: ProviderHistoryChat | null = null;
+    try {
+      // a slow chat (a huge group, a page that froze) never holds the others: it waits for a second try at the end
+      item = await withTimeout(read(chat), IMPORT_CHAT_TIMEOUT_MS);
     } catch (err) {
+      if (!lastTry) { later.push(chat); return; }
       logger.warn(`History: could not copy chat ${chat.id._serialized}: ${err}`);
+    }
+    if (item) {
+      try {
+        await onChat(item);
+      } catch (err) {
+        logger.warn(`History: could not save chat ${chat.id._serialized}: ${err}`);
+      }
     }
     done += 1;
     if (onProgress && (done % 10 === 0 || done === chats.length)) onProgress(done, chats.length);
-  }
+  };
+  await eachLimited(chats, IMPORT_PARALLEL, chat => copy(chat, false));
+  await eachLimited(later, 2, chat => copy(chat, true));
+  // the pictures come afterwards, in the background
+  if (!only) fillPictures(wbot, chats.slice(0, 500)).catch(() => undefined);
 };
 
 const sendReaction = async (
@@ -1223,26 +1299,30 @@ const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
   return Object.assign(result, { stats });
 };
 
-// The first time a number connects: its address book becomes the company's contacts (only for the company's own
-// numbers and administrators; the address book of a regular user is personal and uses "Importar contatos"), and its
-// existing conversations are copied as history for whoever owns the number.
-const afterFirstConnection = async (whatsapp: Whatsapp) => {
+// When a number connects: the first time, its address book becomes the company's contacts (only for the company's own numbers and
+// administrators; the address book of a regular user is personal and uses "Importar contatos"). And while its conversations were never
+// copied, they are: everything the phone has (people, groups, communities), silently, as history for whoever owns the number
+// (ImportHistoryService.autoImportHistory waits for WhatsApp Web to finish receiving the chats and tries again when nothing came).
+const afterConnection = async (whatsapp: Whatsapp, firstConnection: boolean) => {
   try {
-    // WhatsApp Web needs a moment to load everything after "ready"
-    await new Promise(resolve => setTimeout(resolve, 20000));
+    // WhatsApp Web needs a moment to load after "ready" (the copy itself waits until the list of chats stops growing)
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
-    let shareContacts = true;
-    if (whatsapp.ownerId) {
-      const owner = await User.findByPk(whatsapp.ownerId, { attributes: ["profile"] });
-      shareContacts = owner?.profile === "admin";
-    }
-    if (shareContacts) {
-      const saved = await SaveImportedContacts(await getContacts(whatsapp.id));
-      logger.info(`Session ${whatsapp.name}: ${saved.created} contacts imported from the phone, ${saved.updated} completed`);
+    if (firstConnection) {
+      let shareContacts = true;
+      if (whatsapp.ownerId) {
+        const owner = await User.findByPk(whatsapp.ownerId, { attributes: ["profile"] });
+        shareContacts = owner?.profile === "admin";
+      }
+      if (shareContacts) {
+        const saved = await SaveImportedContacts(await getContacts(whatsapp.id));
+        logger.info(`Session ${whatsapp.name}: ${saved.created} contacts imported from the phone, ${saved.updated} completed`);
+      }
     }
 
-    const { startHistoryImport } = await import("../../../services/WbotServices/ImportHistoryService");
-    startHistoryImport(whatsapp, whatsapp.ownerId || null);
+    const { autoImportHistory } = await import("../../../services/WbotServices/ImportHistoryService");
+    const report = await autoImportHistory(whatsapp);
+    if (report) logger.info(`Session ${whatsapp.name}: ${report.chats} conversas copiadas do celular (${report.messages} mensagens)`);
   } catch (err) {
     logger.error(err, "Could not import contacts and history after connecting");
   }
@@ -1419,6 +1499,9 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
         // headless: false, // TODO make sure chromium closes on session disconnection / delete
         executablePath: process.env.CHROME_BIN || undefined,
         browserWSEndpoint: process.env.CHROME_WS || undefined,
+        // a number with hundreds of chats answers the list of chats slowly while the phone is still sending them: the default 3 minutes
+        // of the browser protocol cut the copy ("Runtime.callFunctionOn timed out")
+        protocolTimeout: Number(process.env.WHATSAPP_PROTOCOL_TIMEOUT_MS) || 10 * 60 * 1000,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -1527,9 +1610,7 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
           healInjection(whatsapp.id, wbot).catch(() => undefined);
         }
       }, 60000));
-      readyTimers.set(
-        whatsapp.id,
-        setTimeout(async () => {
+      const readyTimeout = async () => {
           readyTimers.delete(whatsapp.id);
           logger.error(
             `Session: ${sessionName} não ficou pronta em ${READY_TIMEOUT_MS / 1000}s depois de autenticar (${memoryNote()}). ` +
@@ -1551,12 +1632,20 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
           }
           if (clients.get(whatsapp.id) !== wbot) return;
           init(whatsapp);
-        }, READY_TIMEOUT_MS)
-      );
+      };
+      readyTimeouts.set(whatsapp.id, { fire: readyTimeout, since: Date.now() });
+      readyTimers.set(whatsapp.id, setTimeout(readyTimeout, READY_TIMEOUT_MS));
     });
 
     wbot.on("loading_screen", (percent: any, message: any) => {
       logger.info(`Session: ${sessionName} carregando ${percent}% ${message || ""}`);
+      // a big history keeps loading for a long time: while the page shows progress, the wait for "ready" starts again (up to READY_MAX_MS)
+      const pending = readyTimeouts.get(whatsapp.id);
+      const timer = readyTimers.get(whatsapp.id);
+      if (pending && timer && Date.now() - pending.since < READY_MAX_MS) {
+        clearTimeout(timer);
+        readyTimers.set(whatsapp.id, setTimeout(pending.fire, READY_TIMEOUT_MS));
+      }
     });
 
     wbot.on("auth_failure", async msg => {
@@ -1593,16 +1682,22 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
       // heartbeat: a frozen browser does not answer, and then no message would arrive until somebody noticed
       clearHeartbeat(whatsapp.id);
       let missed = 0;
+      // While the phone is still sending its conversations (the first minutes after a QR Code, and while they are copied), the page is busy and
+      // slow to answer: restarting the browser then cuts the sync ("Syncing with WhatsApp ... stopped" on the phone) and it starts over, again
+      // and again. In that window the heartbeat waits longer and tolerates more silence before restarting.
+      if (!whatsapp.historyImportedAt) syncGraceUntil.set(whatsapp.id, Date.now() + SYNC_GRACE_MS);
       heartbeats.set(
         whatsapp.id,
         setInterval(async () => {
+          const syncing = inSyncGrace(whatsapp.id);
           try {
-            await withTimeout(wbot.getState(), 20000);
+            await withTimeout(wbot.getState(), syncing ? 60000 : 20000);
             missed = 0;
           } catch (err) {
             missed += 1;
-            logger.warn(`Session: ${sessionName} did not answer the heartbeat (${missed}/2): ${(err as Error).message}`);
-            if (missed >= 2) {
+            const limit = syncing ? 8 : 2;
+            logger.warn(`Session: ${sessionName} did not answer the heartbeat (${missed}/${limit}${syncing ? ", sincronizando" : ""}): ${(err as Error).message}`);
+            if (missed >= limit) {
               clearHeartbeat(whatsapp.id);
               retryLater(whatsapp.id, "a sessão parou de responder").catch(e => logger.error(e, "retry after a frozen session failed"));
             }
@@ -1640,7 +1735,8 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
           if (clients.get(whatsapp.id) !== wbot) { clearInterval(catchUp); return; }
           syncUnreadMessages(wbot, whatsapp.id, { periodic: true }).catch(() => undefined);
         }, 5 * 60 * 1000);
-        if (firstConnection) afterFirstConnection(whatsapp);
+        // the conversations of the phone, copied silently while they never were (the first QR Code, or a copy that did not finish)
+        if (firstConnection || !whatsapp.historyImportedAt) afterConnection(whatsapp, firstConnection);
         // the communities of this number, a little after WhatsApp Web finished loading and then every 15 minutes
         scheduleCommunitySync(wbot, whatsapp.id, 30000);
         // the pins and pictures as the phone has them: a little after loading, then every 3 minutes
@@ -1661,6 +1757,14 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("change_state", async newState => {
       logger.info(`Monitor session: ${sessionName}, ${newState}`);
+      const state = String(newState);
+      // WhatsApp Web passes through OPENING / PAIRING / TIMEOUT while it syncs or the phone's network blinks; a ready session is not shown as fallen
+      // for that: the page is asked again a little later, and only a state that lasts (and a page that does not answer) is written
+      if (isTransientState(state) && readySeen.has(whatsapp.id)) {
+        confirmStateLater(whatsapp, wbot, state);
+        return;
+      }
+      if (state === "CONNECTED") stateChecks.delete(whatsapp.id);
       try {
         await whatsapp.update({ status: newState });
 

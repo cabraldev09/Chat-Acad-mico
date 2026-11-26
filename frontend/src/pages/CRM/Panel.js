@@ -2,7 +2,7 @@ import { fillDays } from "../../utils/chartDays";
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { Typography, TextField, MenuItem, makeStyles, Button, Menu } from "@material-ui/core";
-import { AlertTriangle, Download, Sprout, RefreshCw, ArrowUpRight, Clock, Hourglass, Users } from "lucide-react";
+import { AlertTriangle, Download, Sprout, RefreshCw, Clock, Hourglass, Users } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import GlowCard from "../../components/GlowCard";
@@ -77,6 +77,8 @@ const Panel = ({ mode = "now" }) => {
   const [period, setPeriod] = useState({ range: "month" });
   const cycle = useCycle();
   const { from, to } = useMemo(() => rangeDates(period, cycle), [period, cycle]);
+  // the cards open their lists already in the period chosen here
+  const periodQuery = `from=${from}&to=${to}`;
   const [ownerId, setOwnerId] = useState("");
   const [courseId, setCourseId] = useState("");
   const [d, setD] = useState(null);
@@ -204,7 +206,6 @@ const Panel = ({ mode = "now" }) => {
       <BoardHead title={results ? "Captação e resultados" : "Painel do CRM"}
         sub={results ? "Leads e matrículas do período escolhido, ao lado do período anterior." : "O período escolhido, o funil de agora e o que pede ação."}>
         <RangePicker value={period} onChange={setPeriod} cycle={cycle} />
-        {!results && <Button variant="contained" disableElevation startIcon={<ArrowUpRight size={16} />} onClick={() => history.push("/estatisticas/captacao")} style={{ background: "#fff", color: "#0b4279" }}>Ver resultados</Button>}
         {canExport && results && <Button variant="contained" disableElevation startIcon={<Download size={16} />} onClick={(e) => setExportEl(e.currentTarget)} style={{ background: "#fff", color: "#0b4279" }}>Exportar</Button>}
         <Menu anchorEl={exportEl} open={Boolean(exportEl)} onClose={() => setExportEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
           <MenuItem onClick={() => exportReport("owner")}>Por consultor (planilha)</MenuItem>
@@ -244,10 +245,10 @@ const Panel = ({ mode = "now" }) => {
           {!results && (
             <>
               <div className="gv-board" style={{ marginTop: 6 }}>
-                <CompareStat id="leads" title="Leads" nowLabel={nowLabel} beforeLabel={beforeLabel} loading={!month && !monthFailed} now={mk.leads} before={mprev ? mprev.leads : null} action="Ver leads" onOpen={() => history.push("/crm")} />
+                <CompareStat id="leads" title="Leads" nowLabel={nowLabel} beforeLabel={beforeLabel} loading={!month && !monthFailed} now={mk.leads} before={mprev ? mprev.leads : null} action="Ver leads" onOpen={() => history.push(`/crm?${periodQuery}`)} />
                 <CompareStat id="enrollments" title="Matrículas" nowLabel={nowLabel} beforeLabel={beforeLabel} loading={!month && !monthFailed} now={enrolledIn(month)} before={mprev && mprev.enrollments !== undefined ? mprev.enrollments : null}
-                  action={isManager ? "Ver matrículas" : "Ver resultados"} onOpen={() => history.push(isManager ? "/crm/matriculas" : "/estatisticas/captacao")} />
-                <CompareStat id="conversion" title="Conversão" nowLabel={nowLabel} beforeLabel={beforeLabel} loading={!month && !monthFailed} points format={pctText} now={mk.conversion} before={mprev ? mprev.conversion : null} action="Ver resultados" onOpen={() => history.push("/estatisticas/captacao")} />
+                  action={isManager ? "Ver matrículas" : "Meu desempenho"} onOpen={() => history.push(isManager ? `/crm/matriculas?${periodQuery}` : "/meu-desempenho")} />
+                <CompareStat id="conversion" title="Conversão" nowLabel={nowLabel} beforeLabel={beforeLabel} loading={!month && !monthFailed} points format={pctText} now={mk.conversion} before={mprev ? mprev.conversion : null} action={isManager ? "Ver por consultor" : "Meu desempenho"} onOpen={() => history.push(isManager ? `/estatisticas?aba=consultores&${periodQuery}` : "/meu-desempenho")} />
                 <section className="gv-card gv-funnel-card" data-panel="funnel">
                   <h3 className="gv-title">Funil agora</h3>
                   {lane && lane.total > 0 && (

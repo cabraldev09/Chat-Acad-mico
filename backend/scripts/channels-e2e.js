@@ -3264,6 +3264,17 @@ const postMeta = (id, payload, secret, badSig) => {
       const all = (await http.get("/leads", { params: { limit: 500, historical: "1" }, ...auth() })).data.leads.map(l => l.name);
       assert(all.includes("Conversa antiga"), "the historical lead should still be reachable on request");
     });
+    await test("leads of a period (the \"Ver leads\" of the Painel do CRM): from/to filter the list by the day the lead came", async () => {
+      const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
+      sql(`INSERT INTO Leads (name, stageId, isHistorical, createdAt, updatedAt) VALUES ('Periodo Antigo', ${stage}, false, '2025-03-10 12:00:00', NOW()), ('Periodo Dentro', ${stage}, false, '2025-04-15 12:00:00', NOW())`);
+      const names = async (params) => (await http.get("/leads", { params: { limit: 500, ...params }, ...auth() })).data.leads.map(l => l.name);
+      const april = await names({ from: "2025-04-01", to: "2025-04-30" });
+      assert(april.includes("Periodo Dentro") && !april.includes("Periodo Antigo"), `period filter: ${april.filter(n => n.startsWith("Periodo")).join(",")}`);
+      const all = await names({ search: "Periodo" });
+      assert(all.includes("Periodo Dentro") && all.includes("Periodo Antigo"), "without a period both should be listed");
+      // a broken date is ignored, never a server error
+      assert((await http.get("/leads", { params: { from: "abc" }, ...auth() })).status === 200, "a broken date broke the list");
+    });
     await test("working hours: answer time counts only business time, settings and alert threshold are saved", async () => {
       const { businessMinutes, normalizeBusiness } = require("../dist/helpers/BusinessTime");
       const cfg = normalizeBusiness({ enabled: true, days: { "1": [{ start: "08:00", end: "18:00" }], "2": [{ start: "08:00", end: "18:00" }] } });
@@ -3960,6 +3971,26 @@ const postMeta = (id, payload, secret, badSig) => {
       // the management still adds any connection through the usual route; a consultant still cannot
       assert((await http.post("/whatsapp", { name: "x" }, asUser(tc))).status === 403, "a consultant used the management's route");
       for (const id of [mine.data.id, tutors.data.id]) await http.delete(`/whatsapp/${id}`, auth());
+    });
+    await test("chats copied from the phone of a person's own QR number: the recent ones in Atendendo with the owner, in nobody else's list", async () => {
+      const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
+      const u1 = await mk("Copia Uma", "copia1@x.com"), u2 = await mk("Copia Dois", "copia2@x.com");
+      const t1 = (await http.post("/auth/login", { email: "copia1@x.com", password: "senha123" })).data.token;
+      const t2 = (await http.post("/auth/login", { email: "copia2@x.com", password: "senha123" })).data.token;
+      const made = (await http.post("/whatsapp", { name: "WhatsApp da Copia", channel: "whatsapp", ownerId: u1.id }, auth())).data;
+      const contact = (name, number) => sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const copied = (cid, status, userId, ago) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageAt, waChatTimestamp, closedAt, createdAt, updatedAt) VALUES ('${status}', ${cid}, ${made.id}, ${userId}, 2, false, 'sales', true, 'oi', 'copia-${cid}', NOW() - INTERVAL '${ago}', NOW() - INTERVAL '${ago}', ${status === "closed" ? "NOW()" : "NULL"}, NOW() - INTERVAL '${ago}', NOW() - INTERVAL '${ago}') RETURNING id`).split("\n")[0];
+      const recent = copied(contact("Amiga do celular", "5569977770001"), "open", u1.id, "1 day");
+      const old = copied(contact("Antiga do celular", "5569977770002"), "closed", u1.id, "90 days");
+      const ids = async (params, token) => (await http.get("/tickets", { params: { status: "open", queueIds: "[]", ...params }, ...asUser(token) })).data.tickets.map(t => String(t.id));
+      const mine = await ids({}, t1);
+      assert(mine.includes(String(recent)), "the recent copied chat is not in the owner's Atendendo");
+      assert(!mine.includes(String(old)), "an old copied chat is in Atendendo");
+      assert(!(await ids({ showAll: "true" }, t2)).includes(String(recent)), "another person sees the owner's copied chat");
+      // the history view still has both, for the owner only
+      const all = (await http.get("/tickets", { params: { historical: "all", queueIds: "[]" }, ...asUser(t1) })).data.tickets.map(t => String(t.id));
+      assert(all.includes(String(recent)) && all.includes(String(old)), "the owner's history view lost a copied chat");
+      await http.delete(`/whatsapp/${made.id}`, auth());
     });
     await test("a QR Code number given to a person by the management: only its owner sees it in Conexões, reads its QR Code and picks its groups", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
@@ -5023,7 +5054,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // "Quero me matricular hoje": straight to the consultant, even with nothing else known
       const Q3 = "5511920000242";
       // "Quero me matricular hoje": the agent first asks the course to present it; insisting goes to the consultant
-      out = await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor do seu polo/.test(x)), "enrollment worked first");
+      // (the answer comes in more than one balloon: the bridge to the consultant first, then the question of the course; both are waited for)
+      out = await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor do seu polo/.test(x)) && /curso/i.test(t.join(" ")), "enrollment worked first");
       assert(/curso/i.test(out.join(" ")) && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "1", `the course was not asked: ${out}`);
       await say(Q3, "wamid.qs-3b", "Quero me matricular agora mesmo", t => t.some(x => /consultor/.test(x)), "enrollment handed over");
       await waitFor(() => handoffOf(Q3) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "0", 15000, "the AI is out after the handoff");

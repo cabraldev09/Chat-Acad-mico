@@ -29,6 +29,13 @@ export interface CommunityInfo {
   readOnly?: boolean;
 }
 
+// a name that is only the number (or nothing) says nothing about the person
+const onlyNumber = (n: string | null | undefined, number: string | null | undefined): boolean =>
+  !n || String(n).replace(/\D/g, "") === String(number || "").replace(/\D/g, "") || /^\+?\d[\d\s()-]*$/.test(String(n).trim());
+// the name WhatsApp gives (saved on the phone, else the profile name, or the group's subject) replaces only a name that is still the number
+export const betterNameOf = (current: string | null | undefined, incoming: string | null | undefined, number: string | null | undefined): boolean =>
+  !!incoming && !onlyNumber(incoming, number) && onlyNumber(current, number);
+
 const emitContact = (action: "update" | "create", contact: Contact) => {
   const io = getIO();
 
@@ -90,7 +97,11 @@ const CreateOrUpdateContactService = async ({
   const communityFields = isGroup && community ? { kind: community.kind, parentGroupId: community.parentGroupId || null, communityRole: community.role || null, communityId: community.communityId || community.parentGroupId || null, readOnly: !!community.readOnly } : {};
 
   if (contactByNumber) {
+    // a person still known only by the number gets the name WhatsApp gives (the one saved on the phone, else the profile name); a name
+    // typed in the system is never replaced
+    const betterName = betterNameOf(contactByNumber.name, name, contactByNumber.number) ? { name } : {};
     await contactByNumber.update({
+      ...betterName,
       // the provider says this chat is a group: a contact saved before as a person is corrected
       ...(isGroup && !contactByNumber.isGroup ? { isGroup: true } : {}),
       ...(contactByNumber.kind === "community" && !community?.kind ? {} : communityFields),

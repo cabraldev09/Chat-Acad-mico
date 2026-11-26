@@ -253,7 +253,14 @@ const ListTicketsService = async ({
   // History (conversations copied from the phone) has its own view, and only the administrator and the person
   // who owns the number may open it: it is that person's personal chat history. "all" is the WhatsApp-like view:
   // every live conversation plus the history the person is allowed to see, newest first, pinned on top.
-  let finalWhere: any = { [Op.and]: [whereCondition || {}, { isHistorical: false }] };
+  // the person's own number (QR Code): the chats copied from the phone that are recent come open, with that person, and show in the
+  // usual lists as on the phone ("Atendendo"); the rest of the history stays in its own view
+  const mineCopied: any = {
+    isHistorical: true,
+    userId: Number(userId) || 0,
+    [Op.and]: [literal(portable(`Ticket.whatsappId IN (SELECT w.id FROM Whatsapps w WHERE w.ownerId = ${Number(userId) || 0})`))]
+  };
+  let finalWhere: any = { [Op.and]: [whereCondition || {}, { [Op.or]: [{ isHistorical: false }, mineCopied] }] };
   if (historical === "true" || historical === "all") {
     const owned =
       role === "admin"

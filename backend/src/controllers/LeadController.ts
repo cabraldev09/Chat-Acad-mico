@@ -86,6 +86,14 @@ const buildWhere = (q: any) => {
       ...(digits.length >= 4 ? [{ phone: { [Op.like]: `%${digits}%` } }] : [])
     ];
   }
+  // the leads that came in a period (the "Ver leads" of the Painel do CRM): from/to are days of the company, as in the panel's numbers
+  const isDay = (v: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+  if (isDay(q.from) || isDay(q.to)) {
+    where.createdAt = {
+      ...(isDay(q.from) ? { [Op.gte]: dayBounds(String(q.from)).start } : {}),
+      ...(isDay(q.to) ? { [Op.lte]: dayBounds(String(q.to)).end } : {})
+    };
+  }
   if (q.followUp === "overdue") where.nextFollowUpAt = { [Op.lt]: new Date() };
   if (q.followUp === "today") {
     const { start, end } = dayBounds();
