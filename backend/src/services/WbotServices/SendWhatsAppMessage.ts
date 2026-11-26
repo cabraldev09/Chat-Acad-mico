@@ -122,7 +122,8 @@ const sendMessage = async ({
       {
         quotedMessageId: quotedMsg?.id,
         quotedMessageFromMe: quotedMsg?.fromMe,
-        linkPreview: false
+        // a link a person writes goes with its card (title and picture), as on the phone; automatic messages stay plain
+        linkPreview: !automated
       }
     );
 
