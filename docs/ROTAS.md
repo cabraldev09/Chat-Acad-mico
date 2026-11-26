@@ -32,9 +32,17 @@ atendidas, nome, exclusão, importação) dos polos em que está.
   - conversa, mensagens, alterar, excluir e marcar como lida (`assertTicketAccess`, `readAll`);
   - tempo real (`joinChatBox`, `ticket`, `appMessage`, `typing`, `aiHandoff`, `handoffAlert`);
   - contatos: lista, planilha, ficha, busca por número (`POST /contact`) e exclusão.
-- **Avisos do sino com dados de pessoas** (lead encaminhado pela IA, prazo escalado, treinamento sugerido) vão à administração e
-  só à coordenação do polo envolvido (`managerIdsOfPolos`, `managerIdsOfUser`).
-- **Metas:** todos leem as metas de todos os polos e consultores. A coordenação muda só:
+- **Conversa sem polo é da administração (triagem de entrada):** o primeiro contato no número compartilhado, antes de virar lead
+  com polo, não aparece para nenhuma coordenação; a coordenação sem polo vinculado não vê nenhuma conversa nem contato. Antes de
+  liberar a coordenação, confira os vínculos de polo (Polos e equipes).
+- **Avisos com dados de pessoas** vão à administração e só à coordenação do polo envolvido (`managerIdsOfPolos`,
+  `managerIdsOfUser`); lead ou análise sem polo, só à administração:
+  - lead encaminhado pela IA, prazo escalado e treinamento sugerido (sino);
+  - indicação de afiliado (e-mail com nome, telefone e curso; `ReferralNotice`);
+  - ambientação atrasada (sino com o nome do aluno; `OnboardingSla`);
+  - retorno da análise curricular sem resposta há dois dias úteis (e-mail e tempo real com os candidatos; `FollowUpAlert`).
+- **Metas:** todos os logados leem as metas de todos os polos e consultores (`GET /goals`, `/goals/polos`,
+  `/dashboard/polos-progress`; decisão do dono registrada em 2026-11-25). A coordenação muda só:
   - a linha dos seus polos (e não cria polo pela importação);
   - metas de equipe em que todas as pessoas estão nos seus polos.
 
@@ -43,6 +51,13 @@ atendidas, nome, exclusão, importação) dos polos em que está.
   - a coordenação vê os números dos seus polos;
   - em `/dashboard/manager`, as metas de todos os polos continuam visíveis;
   - estatísticas de consultores e "Equipe agora": coordenação sem polo não vê ninguém.
+
+**Ainda NÃO isolado por polo para a coordenação (fica para um PR próprio):**
+- agendamentos (`/schedules`: o texto da mensagem e o contato; evento em tempo real `schedule`);
+- campanhas e listas de contatos (`/campaigns`, `/contact-lists`; eventos `campaign` e `contactList`): só o tutor é limitado
+  ao que é dele; a gestão (administração e coordenação) vê todas.
+
+Até lá, não crie usuários de coordenação nem de relacionamento para franquias diferentes.
 
 ## Públicas (sem login)
 

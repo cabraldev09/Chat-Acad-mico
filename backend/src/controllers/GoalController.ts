@@ -138,7 +138,7 @@ const writeMembers = async (goalId: number, list: any[]): Promise<void> => {
   if (rows.length) await GoalMember.bulkCreate(rows as any);
 };
 
-// WHO CHANGES WHICH GOAL. Everybody reads every goal (decision of 25/11/2026: the whole team follows all the polos and consultants).
+// WHO CHANGES WHICH GOAL. Everybody reads every goal (decisão do dono registrada em 2026-11-25: the whole team follows all the polos and consultants).
 // The administration changes any goal. The coordination changes only what belongs to its polos:
 //   - the line of a polo (target, manual, canceled): only its polos;
 //   - a team goal: only when every person in it works in one of its polos;

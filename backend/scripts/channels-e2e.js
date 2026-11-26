@@ -2444,7 +2444,9 @@ const postMeta = (id, payload, secret, badSig) => {
       try {
         const decode = raw => raw.replace(/=\r?\n/g, "").replace(/=3D/g, "=").replace(/=C3=A7/g, "ç").replace(/=C3=A3/g, "ã");
         // the administrators that exist (creating another one would change what other tests assume about the last administrator)
-        const admins = sql(`SELECT email FROM Users WHERE (profile='admin' OR role IN ('admin','coordenacao')) AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
+        // (this referral has no polo: only the administration hears of it, never the coordination; see the test of the notices by polo)
+        const admins = sql(`SELECT email FROM Users WHERE (profile='admin' OR role='admin') AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
+        const coordEmails = sql(`SELECT email FROM Users WHERE role='coordenacao' AND COALESCE(profile, '') <> 'admin' AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
         assert(admins.length >= 1, "no administrator with an e-mail");
         await http.post("/users", { name: "Cons Indicações", email: "cons-ind@x.com", password: "senha123", role: "consultor" }, auth());
         await new Promise(r => setTimeout(r, 800));
@@ -2471,6 +2473,7 @@ const postMeta = (id, payload, secret, badSig) => {
         const mailA = decode(got(admins[0])[0].raw);
         assert(mailA.includes("administra o sistema") && !mailA.includes("esperando o seu primeiro"), "the administration got the consultant's text");
         assert(new Set(inbox.map(m => m.to)).size === inbox.length, "someone got the same notice twice");
+        assert(!inbox.some(m => coordEmails.includes(m.to)), "the coordination got the e-mail of a referral with no polo");
 
         // the same person again: the CRM keeps one, and the consultant is told it was already there
         const before = inbox.length;
@@ -2783,13 +2786,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const mgrDue = (await http.get("/analysis/curricular?due=1", auth())).data;
       assert(mgrDue.some(x => x.id === a.id && x.requesterName === "Outro Consultor"), `manager filter ${JSON.stringify(mgrDue).slice(0, 200)}`);
 
-      // still unanswered after two business days: the coordination is told, once (the polo's coordinators, or every coordinator when the polo has none)
+      // still unanswered after two business days: the management of the polo is told, once (the administration and only the coordination of
+      // the analysis' polo; a coordinator of no polo is not told: see the test of the notices by polo below)
       const coordUser = (await http.post("/users", { name: "Coordenadora do Polo", email: "coord-an@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth())).data;
       assert(coordUser && coordUser.id, "the coordinator of the escalation was not created");
       sql(`UPDATE CurricularAnalyses SET createdAt = now() - interval '9 days', followUpDueAt = now() - interval '6 days' WHERE id = ${a.id}`);
       const runDb = code => execFileSync(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ ${code} })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 25000 }).toString();
       const esc1 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:00:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
-      assert(esc1.analyses >= 1 && esc1.coordinators >= 1, `escalation: ${JSON.stringify(esc1)}`);
+      assert(esc1.analyses >= 1 && esc1.managers >= 1, `escalation: ${JSON.stringify(esc1)}`);
       assert(sql(`SELECT CASE WHEN followUpEscalatedAt IS NULL THEN 0 ELSE 1 END FROM CurricularAnalyses WHERE id = ${a.id}`) === "1", "the escalation was not recorded");
       const esc2 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:05:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
       assert(esc2.analyses === 0, `the coordination was told twice: ${JSON.stringify(esc2)}`);
@@ -2832,6 +2836,137 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: tgContact }, asUser(owner))).status === 403, "another consultant sent someone else's proposal");
       // the polos of the later scenarios start as before
       assert((await http.delete(`/polos/${sql("SELECT id FROM Polos WHERE code='ANL1'")}`, auth())).status < 300, "the analysis polo was not removed");
+    });
+
+    await test("notices with a lead's data reach only the management of the lead's polo: affiliate referral (e-mail), late onboarding (bell) and the escalated curricular return (e-mail); a lead with no polo, only the administration", async () => {
+      const net = require("net");
+      const { execFile } = require("child_process");
+      const mk = async (name, email, role, extra = {}) => {
+        const r = await http.post("/users", { name, email, password: "senha123", role, ...extra }, auth());
+        assert(r.status === 200 && r.data.id, `user ${email} ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+        return r.data;
+      };
+      const poloA = (await http.post("/polos", { name: "Polo Avisos A", code: "AVSA", state: "RO" }, auth())).data;
+      const poloB = (await http.post("/polos", { name: "Polo Avisos B", code: "AVSB", state: "RO" }, auth())).data;
+      assert(poloA.id && poloB.id, "the polos of the notices were not created");
+      const coordA = await mk("Coordenação Avisos A", "coord-avisos-a@x.com", "coordenacao", { coordArea: "comercial" });
+      const coordB = await mk("Coordenação Avisos B", "coord-avisos-b@x.com", "coordenacao", { coordArea: "comercial" });
+      const consB = await mk("Consultor Avisos B", "cons-avisos-b@x.com", "consultor");
+      const consN = await mk("Consultor Avisos Sem Polo", "cons-avisos-n@x.com", "consultor");
+      assert((await http.put(`/polos/${poloA.id}/members`, { members: [{ userId: coordA.id, role: "coordenacao" }] }, auth())).status === 200, "members of polo A");
+      assert((await http.put(`/polos/${poloB.id}/members`, { members: [{ userId: coordB.id, role: "coordenacao" }, { userId: consB.id, role: "comercial" }] }, auth())).status === 200, "members of polo B");
+      const adminIds = sql(`SELECT id FROM Users WHERE profile='admin' OR role='admin'`).split("\n").map(Number).filter(Boolean).sort((x, y) => x - y);
+      const adminEmails = sql(`SELECT email FROM Users WHERE (profile='admin' OR role='admin') AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim().toLowerCase()).filter(Boolean);
+      assert(adminIds.length >= 1 && adminEmails.length >= 1, "no administrator with an e-mail");
+      const leads = [];
+      const affs = [];
+
+      // a tiny SMTP server that keeps who each e-mail went to
+      const inbox = [];
+      const smtp = net.createServer(sock => {
+        let mode = "cmd", buf = "", rec = { to: [], raw: "" };
+        sock.write("220 mock ESMTP\r\n");
+        sock.on("data", chunk => {
+          buf += chunk.toString();
+          if (mode === "data") {
+            if (buf.endsWith("\r\n.\r\n")) { rec.raw = buf.replace(/=\r?\n/g, ""); inbox.push(rec); rec = { to: [], raw: "" }; buf = ""; mode = "cmd"; sock.write("250 queued\r\n"); }
+            return;
+          }
+          const lines = buf.split("\r\n"); buf = lines.pop();
+          for (const line of lines) {
+            if (/^EHLO|^HELO/i.test(line)) sock.write("250-mock\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n");
+            else if (/^AUTH PLAIN/i.test(line)) sock.write("235 ok\r\n");
+            else if (/^RCPT TO/i.test(line)) { rec.to.push(((line.match(/<([^>]+)>/) || [])[1] || "").toLowerCase()); sock.write("250 ok\r\n"); }
+            else if (/^DATA/i.test(line)) { mode = "data"; sock.write("354 go\r\n"); }
+            else if (/^QUIT/i.test(line)) { sock.write("221 bye\r\n"); sock.end(); }
+            else sock.write("250 ok\r\n");
+          }
+        });
+        sock.on("error", () => {});
+      });
+      // (the welcome e-mails of the new accounts are not part of this check)
+      await sleep(800);
+      await new Promise(r => smtp.listen(SMTP_PORT, "127.0.0.1", r));
+      const got = (email, text) => inbox.filter(m => m.to.includes(email) && (!text || m.raw.includes(text)));
+      try {
+        // 1. affiliate referral: the e-mail with the name, the number and the course
+        const mkAff = async (owner, name, phone) => {
+          const a = (await http.post("/affiliates", { name, phone, ownerId: owner.id }, auth())).data;
+          assert(a && a.id && a.portalToken, `affiliate ${JSON.stringify(a).slice(0, 160)}`);
+          affs.push(a.id);
+          return a;
+        };
+        const affB = await mkAff(consB, "Afiliada Avisos B", "(69) 97000-7101");
+        const affN = await mkAff(consN, "Afiliada Avisos Sem Polo", "(69) 97000-7102");
+        inbox.length = 0;
+        const refB = await http.post(`/affiliate-portal/${affB.portalToken}/referrals`, { name: "Indicada Avisos B", phone: "(69) 98111-7201", consent: true });
+        assert(refB.status === 201, `referral B ${refB.status}`);
+        const leadB = Number(sql(`SELECT id FROM Leads WHERE name='Indicada Avisos B'`));
+        leads.push(leadB);
+        assert(sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id=${leadB}`) === String(poloB.id), "the referral of the consultant of polo B is not in polo B");
+        await waitFor(() => got("cons-avisos-b@x.com", "Indicada Avisos B").length === 1 && got("coord-avisos-b@x.com", "Indicada Avisos B").length === 1 && adminEmails.every(e => got(e, "Indicada Avisos B").length === 1), 10000, "the referral e-mails of polo B");
+        const refN = await http.post(`/affiliate-portal/${affN.portalToken}/referrals`, { name: "Indicada Avisos Sem Polo", phone: "(69) 98111-7202", consent: true });
+        assert(refN.status === 201, `referral with no polo ${refN.status}`);
+        const leadN = Number(sql(`SELECT id FROM Leads WHERE name='Indicada Avisos Sem Polo'`));
+        leads.push(leadN);
+        assert(sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id=${leadN}`) === "", "the referral of a consultant with no polo got a polo");
+        await waitFor(() => got("cons-avisos-n@x.com", "Indicada Avisos Sem Polo").length === 1 && adminEmails.every(e => got(e, "Indicada Avisos Sem Polo").length === 1), 10000, "the referral e-mails with no polo");
+        await sleep(800);
+        assert(got("coord-avisos-a@x.com", "Indicada Avisos").length === 0, "the coordination of polo A got a referral of another polo or with no polo");
+        assert(got("coord-avisos-b@x.com", "Indicada Avisos Sem Polo").length === 0, "the coordination of polo B got a referral with no polo");
+
+        // 2. late onboarding: the notice in the bell with the student's name
+        const stage = sql(`SELECT id FROM LeadStages ORDER BY position LIMIT 1`).split("\n")[0];
+        const lateLead = (name, polo) => Number(sql(`INSERT INTO Leads (name, source, stageId, poloId, isHistorical, onboardingStatus, enrolledAt, createdAt, updatedAt) VALUES ('${name}', 'Teste', ${stage}, ${polo || "NULL"}, false, 'pending', NOW() - INTERVAL '3 days', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+        const lateB = lateLead("Aluno Atrasado Avisos B", poloB.id);
+        const lateN = lateLead("Aluno Atrasado Avisos Sem Polo", null);
+        leads.push(lateB, lateN);
+        const bell = id => sql(`SELECT string_agg(userId::text, ',' ORDER BY userId) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${id}'`).split(",").map(Number).filter(Boolean);
+        const expectB = [...adminIds, coordB.id].sort((x, y) => x - y);
+        await waitFor(() => bell(lateB).length === expectB.length && bell(lateN).length === adminIds.length, 20000, "the late onboarding notices");
+        await sleep(500);
+        assert(JSON.stringify(bell(lateB)) === JSON.stringify(expectB), `late onboarding of polo B went to ${bell(lateB)} (expected ${expectB})`);
+        assert(JSON.stringify(bell(lateN)) === JSON.stringify(adminIds), `late onboarding with no polo went to ${bell(lateN)} (expected only the administration ${adminIds})`);
+        const coordATok = (await http.post("/auth/login", { email: "coord-avisos-a@x.com", password: "senha123" })).data.token;
+        assert(coordATok, "login of the coordination of polo A");
+        assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${coordA.id} AND kind='onboarding_late'`)) === 0, "the coordination of polo A got the late onboarding of another polo or with no polo");
+
+        // 3. the curricular return escalated after two business days: the e-mail with the candidates' names
+        const sample = fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf"));
+        const analysis = async name => {
+          const f = new FormData();
+          f.append("file", sample, { filename: "analise.pdf", contentType: "application/pdf" });
+          f.append("candidateName", name);
+          f.append("poloId", String(poloB.id));
+          const r = await http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${token}` } });
+          assert(r.status === 201, `analysis ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+          return r.data.id;
+        };
+        const anB = await analysis("Candidata Escala Avisos B");
+        const anN = await analysis("Candidata Escala Avisos Sem Polo");
+        await waitFor(() => sql(`SELECT COUNT(*) FROM CurricularAnalyses WHERE id IN (${anB}, ${anN}) AND status='COMPLETED'`) === "2", 15000, "the analyses completed");
+        sql(`UPDATE CurricularAnalyses SET poloId = NULL WHERE id = ${anN}`);
+        sql(`UPDATE CurricularAnalyses SET createdAt = now() - interval '9 days', followUpDueAt = now() - interval '6 days', followUpEscalatedAt = NULL WHERE id IN (${anB}, ${anN})`);
+        inbox.length = 0;
+        // (another process, without blocking this one: the e-mails go to the SMTP server above before the process ends)
+        const out = await new Promise((resolve, reject) => execFile(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:00:00Z")))); await new Promise(r=>setTimeout(r,4000)); })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 30000 }, (err, stdout, stderr) => (err ? reject(new Error(`${err.message} ${stderr}`)) : resolve(stdout))));
+        const esc = JSON.parse(String(out).split("\n").filter(l => l.startsWith("{")).pop());
+        assert(esc.analyses >= 2 && esc.managers >= 2, `escalation ${JSON.stringify(esc)}`);
+        assert(sql(`SELECT COUNT(*) FROM CurricularAnalyses WHERE id IN (${anB}, ${anN}) AND followUpEscalatedAt IS NOT NULL`) === "2", "the escalation was not recorded");
+        await waitFor(() => got("coord-avisos-b@x.com", "Candidata Escala Avisos B").length === 1 && adminEmails.every(e => got(e, "Candidata Escala Avisos B").length === 1 && got(e, "Candidata Escala Avisos Sem Polo").length === 1), 10000, "the escalation e-mails");
+        assert(got("coord-avisos-a@x.com", "Escala Avisos").length === 0, "the coordination of polo A got the escalation of another polo or with no polo");
+        assert(got("coord-avisos-b@x.com", "Candidata Escala Avisos Sem Polo").length === 0, "the coordination of polo B got the escalation of an analysis with no polo");
+        sql(`UPDATE CurricularAnalyses SET enrollmentStatus = 'ENROLLED', followUpDueAt = NULL WHERE id IN (${anB}, ${anN})`);
+      } finally {
+        smtp.close();
+        // the users, polos and leads of the later scenarios stay as before
+        for (const id of leads) await http.delete(`/leads/${id}`, auth()).catch(() => undefined);
+        for (const id of affs) await http.delete(`/affiliates/${id}`, auth()).catch(() => undefined);
+        sql(`UPDATE Leads SET poloId = NULL WHERE poloId IN (${poloA.id}, ${poloB.id})`);
+        sql(`UPDATE CurricularAnalyses SET poloId = NULL WHERE poloId IN (${poloA.id}, ${poloB.id})`);
+        for (const u of [coordA, coordB, consB, consN]) await http.delete(`/users/${u.id}`, auth()).catch(() => undefined);
+        for (const p of [poloA, poloB]) assert((await http.delete(`/polos/${p.id}`, auth())).status < 300, "a polo of the notices was not removed");
+      }
     });
 
     await test("no route answers 500 to a malformed or unknown id (each route with a :param, three bad values, as the administrator)", async () => {
@@ -6273,9 +6408,10 @@ const postMeta = (id, payload, secret, badSig) => {
       // and none of them ever closed) and a notice in the bell of every manager, once
       sql(`UPDATE Leads SET onboardingStatus='pending', onboardingAlertAt=NULL, enrolledAt=NOW() - INTERVAL '2 days' WHERE id=${lead.id}`);
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the management");
-      const admins = Number(sql(`SELECT COUNT(*) FROM Users WHERE profile='admin' OR role IN ('admin','coordenacao')`));
+      // (the bell: the administration and only the coordination of the student's polo; see the test of the notices by polo)
+      const managersOfLead = Number(sql(`SELECT COUNT(*) FROM Users u WHERE u.profile='admin' OR u.role='admin' OR (u.role='coordenacao' AND u.id IN (SELECT pm.userId FROM PoloMembers pm JOIN Leads l ON l.poloId=pm.poloId WHERE l.id=${lead.id}))`));
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%' AND userId IS NULL AND kind='onboarding_late' AND priority='high'`)) === 1, "one task without a person expected");
-      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${lead.id}'`)) === admins, 8000, "a notice for every manager");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${lead.id}'`)) === managersOfLead, 8000, "a notice for the management of the student's polo");
     });
     await test("grades: reading them again rewrites the WhatsApp text of every matrix and lists only real internships", async () => {
       const r = await http.post("/grades/refresh", {}, auth());

@@ -2,17 +2,17 @@ import { Op } from "sequelize";
 
 import Lead from "../models/Lead";
 import LeadTask from "../models/LeadTask";
-import User from "../models/User";
 import { getSetting } from "../helpers/AppSettings";
 import { getIO } from "../libs/socket";
-import { notify } from "../services/NotificationServices/Notify";
+import { notify, managerIdsOfPolos } from "../services/NotificationServices/Notify";
 import { logger } from "../utils/logger";
 import { addActivity } from "../services/CrmServices/LeadCore";
 import LeadReminderLog from "../models/LeadReminderLog";
 
 // A student waiting for the tutor longer than the SLA (setting onboarding_sla_hours, default 24h)
-// raises one alert to the tutor, and one task plus a live notice to every administrator and coordinator (so nobody misses it even when
-// not looking at the screen).
+// raises one alert to the tutor, and one task plus a notice in the bell of the administration and of the coordination of the student's
+// polo only (the notice carries the student's name: a student of another polo, or with no polo, never reaches the coordination of a
+// polo; see managerIdsOfPolos).
 const tick = async (): Promise<void> => {
   try {
     const hours = Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24);
@@ -43,7 +43,13 @@ const tick = async (): Promise<void> => {
       await LeadReminderLog.create({ leadId: lead.id, key } as any);
       getIO().emit("onboardingReminder", { leadId: lead.id, leadName: lead.name, tutorId: lead.onboardingTutorId, hours, left: lead4 });
     }
-    const managers = late.length ? await User.findAll({ where: { [Op.or]: [{ profile: "admin" }, { role: ["admin", "coordenacao"] }] } as any, attributes: ["id"] }) : [];
+    // the management of each polo, read once per tick
+    const managersOf = new Map<number, number[]>();
+    const managersOfPolo = async (poloId: number | null | undefined): Promise<number[]> => {
+      const key = Number(poloId) || 0;
+      if (!managersOf.has(key)) managersOf.set(key, await managerIdsOfPolos([key || null]));
+      return managersOf.get(key) as number[];
+    };
     for (const lead of late) {
       // eslint-disable-next-line no-await-in-loop
       await lead.update({ onboardingAlertAt: new Date() });
@@ -53,7 +59,7 @@ const tick = async (): Promise<void> => {
       // eslint-disable-next-line no-await-in-loop
       await LeadTask.create({ leadId: lead.id, userId: null, type: "whatsapp", kind: "onboarding_late", priority: "high", title: `Ambientação atrasada: ${lead.name} está há mais de ${hours} horas sem o primeiro contato do tutor`, dueAt: new Date() } as any).catch(() => undefined);
       // eslint-disable-next-line no-await-in-loop
-      await notify(managers.map(m => m.id), { kind: "onboarding_late", level: "warning", title: `Ambientação atrasada: ${lead.name}`, body: `Mais de ${hours} horas sem o primeiro contato do tutor.`, link: `/crm?lead=${lead.id}`, dedupeKey: `onboarding-late:${lead.id}` });
+      await notify(await managersOfPolo(lead.poloId), { kind: "onboarding_late", level: "warning", title: `Ambientação atrasada: ${lead.name}`, body: `Mais de ${hours} horas sem o primeiro contato do tutor.`, link: `/crm?lead=${lead.id}`, dedupeKey: `onboarding-late:${lead.id}` });
       getIO().emit("onboardingAlert", { leadId: lead.id, leadName: lead.name, tutorId: lead.onboardingTutorId, hours });
     }
   } catch (err) {

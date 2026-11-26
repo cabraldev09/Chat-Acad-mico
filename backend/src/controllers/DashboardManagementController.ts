@@ -386,7 +386,7 @@ export const myDay = async (req: Request, res: Response): Promise<Response> => {
 // period in four numbers. Administration and coordination only.
 type Alert = { key: string; label: string; count: number; tone: "danger" | "warn"; to: string };
 
-// scopePolos = the coordination's polos (null = every polo). The goals of every polo stay visible to everybody (decision of 25/11/2026);
+// scopePolos = the coordination's polos (null = every polo). The goals of every polo stay visible to everybody (decisão do dono registrada em 2026-11-25);
 // what is stuck (people waiting, leads, tasks, students) counts only the polos the person may see.
 const buildManagerOverview = async (p: ReturnType<typeof period>, scopePolos: number[] | null = null): Promise<any> => {
   const onboardingHours = Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24);
