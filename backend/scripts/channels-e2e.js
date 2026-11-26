@@ -8579,7 +8579,11 @@ const postMeta = (id, payload, secret, badSig) => {
       const cTok = (await http.post("/auth/login", { email: "oferta@x.com", password: "senha123" })).data.token;
       const course = (await http.post("/courses", { name: "Pedagogia Oferta Teste", modality: "EAD", category: "Graduação - Teste", semesters: 8, monthlyFee: 500, active: true }, auth())).data;
       const lost = sql(`SELECT id FROM LeadStages WHERE type='lost' ORDER BY position LIMIT 1`);
-      const lead = (name, phone) => sql(`INSERT INTO Leads (name, phone, stageId, courseId, ownerId, source, admissionType, isHistorical, lostAt, lostReason, recoveryState, recoveryAt, recoveryReason, recoveryObjection, createdAt, updatedAt) VALUES ('${name}', '${phone}', ${lost}, ${course.id}, ${consultant.id}, 'WhatsApp', 'ENEM', false, NOW(), 'Preço / mensalidade', 'aberta', NOW(), 'Achou caro', 'preco', NOW() - INTERVAL '20 days', NOW()) RETURNING id`).split("\n")[0];
+      // people who wrote to the official number before (their consent was noted when they wrote) and gave up on the price
+      const lead = (name, phone) => {
+        const contact = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, consentAt, createdAt, updatedAt) VALUES ('${name}', '${phone}', '', false, 'person', 'whatsapp', NOW() - INTERVAL '20 days', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return sql(`INSERT INTO Leads (name, phone, contactId, stageId, courseId, ownerId, source, admissionType, isHistorical, lostAt, lostReason, recoveryState, recoveryAt, recoveryReason, recoveryObjection, createdAt, updatedAt) VALUES ('${name}', '${phone}', ${contact}, ${lost}, ${course.id}, ${consultant.id}, 'WhatsApp', 'ENEM', false, NOW(), 'Preço / mensalidade', 'aberta', NOW(), 'Achou caro', 'preco', NOW() - INTERVAL '20 days', NOW()) RETURNING id`).split("\n")[0];
+      };
       const rafa = lead("Rafa Oferta", "5511944440101");
       lead("Sara Oferta", "5511944440102");
       // the list comes from Recuperação (the leads of the consultant that gave up)
