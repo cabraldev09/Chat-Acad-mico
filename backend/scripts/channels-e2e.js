@@ -8785,6 +8785,99 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put("/tutoria/audit/settings", { enabled: false, maxPerDay: 5 }, auth())).data.maxPerDay === 5, "settings");
       await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 40 }, auth());
     });
+    await test("recovery campaign: only the management sets the offer, it is reviewed person by person, the template carries each one's values, and the answer gets the proposal with its last day", async () => {
+      const consultant = (await http.post("/users", { name: "Consultor Oferta", email: "oferta@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const cTok = (await http.post("/auth/login", { email: "oferta@x.com", password: "senha123" })).data.token;
+      const course = (await http.post("/courses", { name: "Pedagogia Oferta Teste", modality: "EAD", category: "Graduação - Teste", semesters: 8, monthlyFee: 500, active: true }, auth())).data;
+      const lost = sql(`SELECT id FROM LeadStages WHERE type='lost' ORDER BY position LIMIT 1`);
+      // people who wrote to the official number before (their consent was noted when they wrote) and gave up on the price
+      const lead = (name, phone) => {
+        const contact = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, consentAt, createdAt, updatedAt) VALUES ('${name}', '${phone}', '', false, 'person', 'whatsapp', NOW() - INTERVAL '20 days', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return sql(`INSERT INTO Leads (name, phone, contactId, stageId, courseId, ownerId, source, admissionType, isHistorical, lostAt, lostReason, recoveryState, recoveryAt, recoveryReason, recoveryObjection, createdAt, updatedAt) VALUES ('${name}', '${phone}', ${contact}, ${lost}, ${course.id}, ${consultant.id}, 'WhatsApp', 'ENEM', false, NOW(), 'Preço / mensalidade', 'aberta', NOW(), 'Achou caro', 'preco', NOW() - INTERVAL '20 days', NOW()) RETURNING id`).split("\n")[0];
+      };
+      const rafa = lead("Rafa Oferta", "5511944440101");
+      lead("Sara Oferta", "5511944440102");
+      // the list comes from Recuperação (the leads of the consultant that gave up)
+      const list = (await http.post("/contact-lists/from-leads", { audience: "recovery", name: "Recuperação e2e", ownerId: consultant.id }, auth())).data;
+      assert(list.imported === 2, `recovery list ${JSON.stringify(list)}`);
+      const until = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);
+      const offer = { monthlyMode: "bolsa", bolsaPct: 40, enrollmentExempt: true, startDate: "2027-02-10", validUntil: until };
+      const base = { objective: "Recuperar quem achou caro", name: "Recuperação com oferta", message: "Oi {{name}}, a sua solicitação segue em aberto.", contactListId: list.id, whatsappId: cid, templateName: "recuperacao_oferta", templateLanguage: "pt_BR", templateParams: JSON.stringify(["primeiro_nome", "oferta_mensalidade", "oferta_prazo"]), intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 };
+      // only the management sets an offer, and only after reviewing it
+      assert((await http.post("/campaigns", { ...base, offer, approach: "proposta", offerReviewed: true }, asUser(cTok))).status === 403, "a consultant set an offer");
+      const unreviewed = await http.post("/campaigns", { ...base, offer, approach: "proposta" }, auth());
+      assert(unreviewed.status === 400 && unreviewed.data.error === "ERR_OFFER_REVIEW", `an offer saved without review ${unreviewed.status}`);
+      const bad = await http.post("/campaigns", { ...base, offer: { ...offer, bolsaPct: 0 }, approach: "proposta", offerReviewed: true }, auth());
+      assert(bad.status === 400 && bad.data.error === "ERR_OFFER_BOLSA", `a broken offer ${bad.status} ${JSON.stringify(bad.data)}`);
+      // person by person: 40% over the price of the course
+      const preview = (await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, auth())).data;
+      assert(preview.total === 2 && preview.rows.every(r => r.monthly === "R$ 300,00" && r.fee === "isenta"), `preview ${JSON.stringify(preview)}`);
+      assert((await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(cTok))).status === 403, "a consultant saw the offer preview");
+      await http.put("/operations/config", { outbound_allow_templates: "true", outbound_allow_marketing: "true" }, auth());
+      const c = await http.post("/campaigns", { ...base, offer, approach: "proposta", offerReviewed: true }, auth());
+      assert(c.status < 300 && c.data.approach === "proposta", `campaign ${c.status} ${JSON.stringify(c.data).slice(0, 200)}`);
+      const before = graph.sent.length;
+      const started = await http.post(`/campaigns/${c.data.id}/start`, {}, auth());
+      assert(started.status === 200, `start ${started.status} ${JSON.stringify(started.data)}`);
+      const sent = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "template" && x.body.to === "5511944440101"), 20000, "the template of the offer");
+      const params = sent.body.template.components[0].parameters.map(p => p.text);
+      assert(params[0] === "Rafa" && params[1] === "R$ 300,00" && params[2] === until.split("-").reverse().join("/"), `template values ${JSON.stringify(params)}`);
+      // Rafa answers: the proposal of the offer is made in the consultant's name and sent, with its last day; the consultant gets a task
+      // the shipping is marked as sent right after the call to the Meta returns: the reply comes after that, as in real life
+      await waitFor(() => sql(`SELECT COUNT(*) FROM CampaignShippings WHERE campaignId=${c.data.id} AND sentAt IS NOT NULL AND number LIKE '%944440101'`) === "1", 10000, "the shipping marked as sent");
+      const out = graph.sent.length;
+      await postMeta(cid, cloudEvent([{ from: "5511944440101", id: "wamid.recovery.1", type: "text", text: { body: "Tenho interesse sim" } }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${rafa} AND status='sent'`) === "1", 25000, "the proposal of the offer was sent");
+      const p = sql(`SELECT CONCAT(createdBy,'|',firstMonthly,'|',validUntil) FROM Proposals WHERE leadId=${rafa}`).split("|");
+      assert(p[0] === String(consultant.id) && Number(p[1]) === 300 && p[2] === until, `proposal ${p}`);
+      await waitFor(() => graph.sent.slice(out).some(x => x.body && JSON.stringify(x.body).includes(`vale até ${until.split("-").reverse().join("/")}`)), 15000, "the proposal says its last day");
+      assert(sql(`SELECT recoveryState FROM Leads WHERE id=${rafa}`) === "voltou", "the lead is still in Recuperação");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${rafa} AND userId=${consultant.id} AND automationKey='recovery-reply-${c.data.id}-${rafa}'`) === "1", "the consultant has no task");
+      // a second message does not make a second proposal
+      await postMeta(cid, cloudEvent([{ from: "5511944440101", id: "wamid.recovery.2", type: "text", text: { body: "Pode mandar de novo?" } }]), cloudCfg.appSecret);
+      await new Promise(r => setTimeout(r, 4500));
+      assert(sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${rafa}`) === "1", "a second proposal was made");
+      // a Utility template (approved, cheaper) never carries the values: the offer goes when the person answers
+      sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('meta_template_categories', '{"solicitacao_em_aberto":"UTILITY"}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
+      const sara = sql(`SELECT id FROM Leads WHERE phone='5511944440102'`);
+      const saraList = (await http.post("/contact-lists/from-leads", { audience: "recovery", name: "Recuperação Sara", leadIds: [Number(sara)] }, auth())).data;
+      const utility = { ...base, name: "Recuperação por Utilidade", contactListId: saraList.id, templateName: "solicitacao_em_aberto", offer, approach: "consultor", offerReviewed: true };
+      const withValues = await http.post("/campaigns", { ...utility, templateParams: JSON.stringify(["primeiro_nome", "oferta_mensalidade"]) }, auth());
+      assert(withValues.status === 400 && withValues.data.error === "ERR_OFFER_UTILITY_VALUES", `the values went in a Utility template ${withValues.status}`);
+      const u = (await http.post("/campaigns", { ...utility, templateParams: JSON.stringify(["primeiro_nome", "curso"]) }, auth())).data;
+      const uBefore = graph.sent.length;
+      assert((await http.post(`/campaigns/${u.id}/start`, {}, auth())).status === 200, "start the Utility campaign");
+      const uSent = await waitFor(() => graph.sent.slice(uBefore).find(x => x.body && x.body.type === "template" && x.body.to === "5511944440102"), 20000, "the Utility template");
+      assert(!JSON.stringify(uSent.body).includes("300,00"), "a value went in the Utility template");
+      await waitFor(() => sql(`SELECT COUNT(*) FROM CampaignShippings WHERE campaignId=${u.id} AND sentAt IS NOT NULL`) === "1", 10000, "the Utility shipping marked as sent");
+      const sOut = graph.sent.length;
+      await postMeta(cid, cloudEvent([{ from: "5511944440102", id: "wamid.recovery.sara", type: "text", text: { body: "Oi, ainda tenho interesse" } }]), cloudCfg.appSecret);
+      // the offer goes in the window her reply opened, then the consultant follows (a task)
+      const offerMsg = await waitFor(() => graph.sent.slice(sOut).find(x => x.body && x.body.to === "5511944440102" && x.body.text && /R\$ 300,00/.test(x.body.text.body)), 20000, "the offer after the reply");
+      assert(/isenta/.test(offerMsg.body.text.body) && offerMsg.body.text.body.includes(until.split("-").reverse().join("/")), `the offer text ${offerMsg.body.text.body}`);
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${sara} AND automationKey='recovery-reply-${u.id}-${sara}'`) === "1", "the consultant has no task for Sara");
+      assert(sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${sara}`) === "0", "a proposal was made in the consultant approach");
+      // "SAIR" to the campaign: the opt-out as always, and nothing of the offer (no proposal, no offer text, no task); out of Recuperação
+      const tiago = lead("Tiago Oferta", "5511944440103");
+      const tiagoList = (await http.post("/contact-lists/from-leads", { audience: "recovery", name: "Recuperação Tiago", leadIds: [Number(tiago)] }, auth())).data;
+      const t = (await http.post("/campaigns", { ...base, name: "Recuperação que pede para sair", contactListId: tiagoList.id, offer, approach: "proposta", offerReviewed: true }, auth())).data;
+      assert((await http.post(`/campaigns/${t.id}/start`, {}, auth())).status === 200, "start the campaign of Tiago");
+      await waitFor(() => sql(`SELECT COUNT(*) FROM CampaignShippings WHERE campaignId=${t.id} AND sentAt IS NOT NULL`) === "1", 20000, "the shipping to Tiago");
+      const tOut = graph.sent.length;
+      await postMeta(cid, cloudEvent([{ from: "5511944440103", id: "wamid.recovery.sair", type: "text", text: { body: "SAIR" } }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT COUNT(*) FROM Contacts WHERE number='5511944440103' AND optOut = true`) === "1", 10000, "the opt-out of Tiago");
+      await new Promise(r => setTimeout(r, 4500));
+      assert(sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${tiago}`) === "0", "a proposal went to who asked to stop");
+      assert(!graph.sent.slice(tOut).some(x => x.body && x.body.to === "5511944440103" && JSON.stringify(x.body).includes("300,00")), "the offer went to who asked to stop");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${tiago} AND automationKey LIKE 'recovery-%'`) === "0", "a recovery task for who asked to stop");
+      assert(sql(`SELECT recoveryState FROM Leads WHERE id=${tiago}`) === "descartada", "who asked to stop is still in Recuperação");
+      // the preview of the offer shows only the leads the person may see: a coordination without polo sees no course nor value
+      await http.post("/users", { name: "Coordenação Sem Polo Oferta", email: "coord-oferta@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
+      const coordTok = (await http.post("/auth/login", { email: "coord-oferta@x.com", password: "senha123" })).data.token;
+      const blind = (await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(coordTok))).data;
+      assert(blind.rows.every(r => r.course === null && r.monthly === "o consultor informa"), `the preview crossed leads out of scope ${JSON.stringify(blind.rows)}`);
+      await http.put("/operations/config", { outbound_allow_marketing: "false" }, auth());
+    });
     await test("the conversations copied from a consultant's phone are read once: real leads in the funnel with a summary, enrollments with the RGM, the ones without it to confirm, who gave up in Recuperação with the reason; one notice; OpenBot takes masked readings through the API", async () => {
       const u = (await http.post("/users", { name: "Consultora Leitura", email: "leitura@x.com", password: "senha123", role: "consultor" }, auth())).data;
       const uTok = (await http.post("/auth/login", { email: "leitura@x.com", password: "senha123" })).data.token;

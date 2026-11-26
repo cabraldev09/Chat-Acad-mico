@@ -71,16 +71,28 @@ export const categoryOf = async (name: string): Promise<"MARKETING" | "UTILITY" 
   ((await templateCategories())[name] as any) || "MARKETING";
 
 // the values the {{n}} of a template can take, for one person of the list
-export const TEMPLATE_VARIABLES = ["primeiro_nome", "nome", "curso", "polo", "consultor", "numero", "vencimento", "valor", "prazo", "situacao", "tutoria"] as const;
-export const templateValues = async (contactId: number | null, name: string, number: string): Promise<Record<string, string>> => {
+export const TEMPLATE_VARIABLES = ["primeiro_nome", "nome", "curso", "polo", "consultor", "numero", "vencimento", "valor", "prazo", "situacao", "tutoria", "oferta_mensalidade", "oferta_taxa", "oferta_inicio", "oferta_prazo"] as const;
+// the values of the offer of a recovery campaign for one person (the scholarship over the price of their course)
+const offerValuesOf = async (offerJson: string | null | undefined, courseId: number | null): Promise<Record<string, string>> => {
+  if (!offerJson) return {};
+  const { offerFor } = await import("./Offer");
+  try {
+    const course = courseId ? await Course.findByPk(courseId, { attributes: ["monthlyFee"] }) : null;
+    return offerFor(JSON.parse(offerJson), course ? Number((course as any).monthlyFee) || null : null).text;
+  } catch (e) {
+    return {};
+  }
+};
+export const templateValues = async (contactId: number | null, name: string, number: string, offerJson?: string | null): Promise<Record<string, string>> => {
   const { getSetting } = await import("../../helpers/AppSettings");
   const prazo = await getSetting("rematricula_prazo", "");
   const { tutoriaNumber, prettyPhone } = await import("../CrmServices/TutoriaContact");
   const tutoria = prettyPhone((await tutoriaNumber()).number);
   const base: Record<string, string> = { primeiro_nome: (name || "").split(" ")[0] || "", nome: name || "", numero: number || "", curso: "", polo: "", consultor: "", vencimento: "", valor: "", prazo, situacao: "cancelada", tutoria };
-  if (!contactId) return base;
+  if (!contactId) return { ...base, ...(await offerValuesOf(offerJson, null)) };
   const lead = await Lead.findOne({ where: { contactId }, attributes: ["id", "courseId", "poloId", "ownerId", "lostAt", "enrolledAt"], order: [["updatedAt", "DESC"]] });
-  if (!lead) return base;
+  if (!lead) return { ...base, ...(await offerValuesOf(offerJson, null)) };
+  Object.assign(base, await offerValuesOf(offerJson, lead.courseId || null));
   // the open charge of the student (aviso de boleto): its due date and amount
   const Payment = (await import("../../models/Payment")).default;
   const due = await Payment.findOne({ where: { leadId: (lead as any).id, status: ["pending", "scheduled", "active", "waiting"] } as any, order: [["dueDate", "ASC"]], attributes: ["dueDate", "amount"] });

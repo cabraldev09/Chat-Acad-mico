@@ -29,7 +29,7 @@ export const deliverStep = async (opts: {
     // each {{n}} of the approved template gets the value chosen for it (first name, course, polo, consultant...)
     let keys: string[] = [];
     try { keys = JSON.parse(campaign.templateParams || "[]"); } catch (e) { keys = []; }
-    const filled = fillTemplate(Array.isArray(keys) ? keys : [], await templateValues(contact.id, name || contact.name, number), campaign.templateBody || null);
+    const filled = fillTemplate(Array.isArray(keys) ? keys : [], await templateValues(contact.id, name || contact.name, number, campaign.offer || null), campaign.templateBody || null);
     template = { name: campaign.templateName, language: campaign.templateLanguage || "pt_BR", params: filled.params };
     // the conversation keeps what the person really received
     if (filled.text) sentText = filled.text;

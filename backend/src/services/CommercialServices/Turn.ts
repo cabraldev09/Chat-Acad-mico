@@ -15,6 +15,8 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
+import { todayInAppTz } from "../../helpers/AppTime";
+import { OfferValues, offerIntro, offerTokens, offerValid } from "../CampaignServices/Offer";
 import { DOUBTS_QUESTION, ENTRY_LABEL, modalityShortOf, PRESENT_BRIDGE, REUSE_TEXT, PRESENT_BRIDGE_PLAIN, ENROLL_BRIDGE, PRICE_ASKS, THINK_PROBE, THINK_BYE, laneAsksName, lanePending, personName, affirms, asksSomething, asksForTime, saysNoInterest, cityCandidateOf, priorStudy, afterCourseChange, formatPending, reuseAlreadySaid, VALUE_BRIDGE, VALUE_BRIDGE_SHORT, holdsProposal, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, modalityMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion, oneQuestion, RESUME_QUESTION, wantsAnotherCourse } from "./Rules";
 import { coreOf, foldCourse, sameCourseName } from "./CourseMatch";
 import { is20, offer20Text, previousFrom, regularText, routeFor, text20, twinOf } from "./Graduacao2";
@@ -448,6 +450,8 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
 
   // 1) the obvious: no model
   const fast = d.input === null ? null : fastIntent(lastText);
+  // the offer of a recovery campaign this person answered (CampaignServices/RecoveryReply), while it holds
+  const recoveryOffer = state.slots.recoveryOffer && offerValid(String(state.slots.recoveryOffer.until || ""), todayInAppTz()) ? (state.slots.recoveryOffer as OfferValues) : null;
   // the price, the scholarship or the enrollment asked before the course was worked: the agent presents the course and asks the data for the
   // scholarship, and the consultant is called after that (Rules.holdsProposal)
   // (once: whoever asks the price again is handed over)
@@ -480,6 +484,12 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     // everything the consultant needs is known: the conversation goes to them now
     return run(`${head}${scriptTexts(d).handoff || FIXED.toProposal}`.trim(), {}, false);
   };
+  // a recovery campaign answered: the offer the management set (only its values), once; the price asked again, the consultant
+  // (the template that went out is a Utility one, with no value: the first answer to the person's reply is the offer, whatever they wrote;
+  // the price asked afterwards goes the usual way, to the consultant)
+  if (recoveryOffer && d.input !== null && !state.slots.offerTold) {
+    return answered(offerIntro(recoveryOffer), null, "price", { fast: undefined, patch: { offerTold: true } });
+  }
   if (fast && fast.intent !== "human") {
     // (the price asked again: the consultant now, with what is known; "quero me matricular" is never "insisting on the price")
     // (the wish to enroll said again instead of answering what was asked: the candidate is ready, the consultant takes it with what is known)
@@ -719,7 +729,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
 
   if (thinkProbe && !hook.exit) text = THINK_PROBE;
   // what the person reads is also decided by the rules; what the model wrote is checked against what the tools and the base returned
-  const guard = unsafeAnswer(text, `${result.evidence}\n${lastText}`);
+  const guard = unsafeAnswer(text, `${result.evidence}\n${lastText}`, recoveryOffer ? offerTokens(recoveryOffer) : []);
   const moneyLike = guard.unsafe && (guard.kind === "price" || guard.kind === "percent" || guard.kind === "free");
   // a qualified lead keeps the answer to the last question; the handover message follows it (the flow says it)
   if (hook.exit === "human" && hook.why !== "qualified") text = d.agent.handoffMessage || FIXED.human;
