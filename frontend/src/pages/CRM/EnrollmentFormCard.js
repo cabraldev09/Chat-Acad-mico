@@ -23,7 +23,24 @@ const useStyles = makeStyles((theme) => ({
   files: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 },
   file: { display: "inline-flex", alignItems: "center", gap: 6, textTransform: "none", borderRadius: 10 },
   img: { display: "block", maxWidth: "100%", maxHeight: "70vh", margin: "0 auto", borderRadius: 8 },
+  // the full form in one view: grouped as the lead filled it; a tap on a value copies it (to type it in the institution's system)
+  sheetSec: { marginBottom: 18 },
+  sheetTitle: { fontSize: 12, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: theme.palette.text.secondary, marginBottom: 6 },
+  sheetRow: {
+    display: "grid", gridTemplateColumns: "minmax(110px, 36%) 1fr auto", gap: 10, alignItems: "center", width: "100%", textAlign: "left", font: "inherit",
+    padding: "9px 10px", border: 0, borderRadius: 10, background: "transparent", color: "inherit", cursor: "copy",
+    "&:hover, &:focus-visible": { background: theme.palette.action.hover }, "&:hover $copyIcon, &:focus-visible $copyIcon": { opacity: 0.8 },
+  },
+  copyIcon: { opacity: 0.25, transition: "opacity .15s" },
 }));
+
+// the same groups the lead fills in (pages/EnrollmentForm)
+const GROUPS = [
+  ["Dados pessoais", ["nome", "nascimento", "cpf", "mae"]],
+  ["Documento", ["rgNumero", "rgOrgao", "rgUf"]],
+  ["Endereço", ["cep", "rua", "numero", "complemento", "bairro", "cidade", "uf"]],
+  ["Contato", ["celular", "email"]],
+];
 
 const fmt = (key, v) => {
   const d = String(v || "").replace(/\D/g, "");
@@ -54,6 +71,7 @@ const EnrollmentFormCard = ({ lead, onChanged }) => {
   const [viewer, setViewer] = useState(null);
   const [erase, setErase] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [sheet, setSheet] = useState(false);
 
   // a failed load is said as such (it used to look like "not sent yet")
   const load = useCallback(() => {
@@ -149,13 +167,10 @@ const EnrollmentFormCard = ({ lead, onChanged }) => {
         <Button size="small" variant="outlined" className={classes.btn} startIcon={<ClipboardCopy size={15} />} disabled={!!busy} onClick={copy}>Copiar link</Button>
       </div>
       {filled && (
-        <div className={classes.data}>
-          {(form.fields || []).filter((f) => form.data[f.key]).map((f) => (
-            <React.Fragment key={f.key}>
-              <span className={classes.key}>{f.label}</span>
-              <span className={classes.value}>{fmt(f.key, form.data[f.key])}</span>
-            </React.Fragment>
-          ))}
+        <div className={classes.actions}>
+          <Button size="small" variant="contained" color="primary" disableElevation className={classes.btn} startIcon={<Eye size={15} />} onClick={() => setSheet(true)}>
+            Ver ficha{form.submittedAt ? "" : " (em preenchimento)"}
+          </Button>
         </div>
       )}
       {form && form.files && form.files.length > 0 && (
@@ -182,6 +197,56 @@ const EnrollmentFormCard = ({ lead, onChanged }) => {
         <DialogTitle>{viewer && viewer.label}</DialogTitle>
         <DialogContent>{viewer && <img src={viewer.url} alt={viewer.label} className={classes.img} />}</DialogContent>
         <DialogActions><Button onClick={() => { URL.revokeObjectURL(viewer.url); setViewer(null); }}>Fechar</Button></DialogActions>
+      </Dialog>
+      <Dialog open={sheet} onClose={() => setSheet(false)} maxWidth="sm" fullWidth scroll="paper" aria-labelledby="ficha-title">
+        <DialogTitle id="ficha-title">Ficha de matrícula{lead.name ? ` · ${lead.name}` : ""}</DialogTitle>
+        <DialogContent dividers>
+          <div className={classes.hint} style={{ marginBottom: 12 }}>Toque num dado para copiar.{form && form.submittedAt ? ` Recebida em ${when(form.submittedAt)}.` : " O lead ainda está preenchendo."}</div>
+          {form && (() => {
+            const byKey = Object.fromEntries((form.fields || []).map((f) => [f.key, f]));
+            const used = new Set(GROUPS.flatMap(([, keys]) => keys));
+            const extra = (form.fields || []).map((f) => f.key).filter((k) => !used.has(k));
+            return [...GROUPS, ["Outros", extra]].map(([title, keys]) => {
+              const rows = keys.filter((k) => byKey[k] && form.data[k]);
+              if (!rows.length) return null;
+              return (
+                <div key={title} className={classes.sheetSec}>
+                  <div className={classes.sheetTitle}>{title}</div>
+                  {rows.map((k) => {
+                    const value = fmt(k, form.data[k]);
+                    return (
+                      <button key={k} type="button" className={classes.sheetRow} title="Copiar"
+                        onClick={async () => { if (await copyText(String(value))) toast.success(`${byKey[k].label} copiado.`); }}>
+                        <span className={classes.key}>{byKey[k].label}</span>
+                        <span className={classes.value}>{value}</span>
+                        <ClipboardCopy size={15} className={classes.copyIcon} />
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            });
+          })()}
+          {form && form.files && form.files.length > 0 && (
+            <div className={classes.sheetSec}>
+              <div className={classes.sheetTitle}>Documentos enviados</div>
+              <div className={classes.files} style={{ marginTop: 0 }}>
+                {form.files.map((f) => (
+                  <Button key={f.kind} size="small" variant="outlined" className={classes.file} disabled={!!busy} onClick={() => open(f)} startIcon={busy === `f${f.kind}` ? <CircularProgress size={14} /> : f.mime === "application/pdf" ? <FileText size={15} /> : <Eye size={15} />}>
+                    {f.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={async () => {
+            const text = (form ? GROUPS.flatMap(([, keys]) => keys) : []).filter((k) => form && form.data[k]).map((k) => `${((form.fields || []).find((f) => f.key === k) || { label: k }).label}: ${fmt(k, form.data[k])}`).join("\n");
+            if (await copyText(text)) toast.success("Ficha copiada.");
+          }}>Copiar tudo</Button>
+          <Button variant="contained" color="primary" disableElevation onClick={() => setSheet(false)}>Fechar</Button>
+        </DialogActions>
       </Dialog>
       <Dialog open={erase} onClose={() => setErase(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Apagar os dados da ficha?</DialogTitle>

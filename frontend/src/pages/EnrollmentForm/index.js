@@ -67,6 +67,9 @@ const useStyles = makeStyles(() => ({
   page: { minHeight: "100vh", background: "#F3F6FA", color: "#0F172A", fontFamily: "inherit", paddingBottom: 120 },
   top: { background: `linear-gradient(135deg, ${BLUE} 0%, #0a5ba8 100%)`, color: "#fff", padding: "28px 16px 72px" },
   topIn: { maxWidth: 640, margin: "0 auto" },
+  // the logo of the university on a white tag (a colored logo would disappear on the blue)
+  brand: { display: "inline-flex", alignItems: "center", gap: 10, background: "#fff", borderRadius: 14, padding: "8px 14px", marginBottom: 16, boxShadow: "0 6px 18px rgba(2,32,71,.18)", maxWidth: "100%" },
+  brandImg: { height: 34, width: "auto", maxWidth: 200, display: "block", objectFit: "contain" },
   kicker: { fontSize: 12.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", opacity: 0.85 },
   h1: { margin: "6px 0 6px", fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 },
   lead: { margin: 0, fontSize: 15, lineHeight: 1.5, opacity: 0.92 },
@@ -306,6 +309,7 @@ const EnrollmentForm = () => {
     return (
       <div className={classes.page}>
         <div className={classes.center}>
+          {view.logo && <img src={view.logo} alt={view.institutionName || "Logo da instituição"} style={{ height: 40, width: "auto", maxWidth: 220, display: "block", margin: "0 auto 18px" }} />}
           <div className={classes.bigIcon} style={{ background: "#DCFCE7", color: "#15803D" }}><CheckCircle2 size={32} /></div>
           <h1 style={{ fontSize: 24, margin: "0 0 8px" }}>{locked ? "Sua matrícula já foi confirmada" : "Recebemos a sua ficha"}</h1>
           <p style={{ color: "#475569", lineHeight: 1.6, margin: "0 0 20px" }}>
@@ -328,7 +332,8 @@ const EnrollmentForm = () => {
     <div className={classes.page}>
       <header className={classes.top}>
         <div className={classes.topIn}>
-          <div className={classes.kicker}>Ficha de matrícula</div>
+          {view.logo && <div className={classes.brand}><img src={view.logo} alt={view.institutionName || "Logo da instituição"} className={classes.brandImg} /></div>}
+          <div className={classes.kicker}>Ficha de matrícula{view.institutionName ? ` · ${view.institutionName}` : ""}</div>
           <h1 className={classes.h1}>{view.firstName ? `${view.firstName}, falta pouco para a sua matrícula` : "Falta pouco para a sua matrícula"}</h1>
           <p className={classes.lead}>{view.courseName ? `Curso: ${view.courseName}. ` : ""}Preencha os dados e envie a foto do seu documento. Dá para parar e continuar depois pelo mesmo link.</p>
         </div>
