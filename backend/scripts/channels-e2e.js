@@ -1058,6 +1058,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sentTo("5569911120001") === 1, "a limited or refused call sent a message");
       } finally {
         if (qrRows.length) sql(`UPDATE Whatsapps SET status = 'CONNECTED' WHERE id IN (${qrRows.join(",")})`);
+        // the connection made only for this test goes away: it counted as a QR number and the later tests that connect one hit the
+        // limit of QR numbers (WHATSAPP_MAX_QR)
+        sql(`DELETE FROM WhatsappQueues WHERE whatsappId=${unlinked}`);
+        sql(`DELETE FROM Whatsapps WHERE id=${unlinked}`);
       }
     });
 
@@ -7503,6 +7507,61 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(again.target === 30 && again.done === 5 && again.manual === 4, `import discounts the CRM ${JSON.stringify([again.target, again.done, again.manual])}`);
       // the team goals list does not show the polo semester
       assert(!(await http.get("/goals", auth())).data.some(g => g.id === goal.id), "polo goal leaked into the team goals");
+    });
+    await test("WhatsApp por QR Code: the consultant confirms the enrollment of a lead who talks on the consultant's own number; the student goes to the tutor on the Tutoria number, the consultant's conversation closes, nothing is sent by itself, and the tutor's welcome and access leave from the Tutoria number", async () => {
+      const idOf = email => Number(sql(`SELECT id FROM Users WHERE email='${email}'`));
+      const consult = idOf("consultorm@matricula.test");
+      const tutors = [idOf("tutora@matricula.test"), idOf("tutorb@matricula.test")];
+      const poloId = Number(sql(`SELECT id FROM Polos WHERE code='MAT1'`));
+      const ctok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
+      // the real setup: each consultant reads the QR Code of their own phone, and the institution has a number with the function Tutoria (by QR Code too)
+      const otherTutoring = sql(`SELECT COALESCE(string_agg(id::text, ','), '') FROM Whatsapps WHERE team='tutoria'`);
+      if (otherTutoring) sql(`UPDATE Whatsapps SET team=NULL WHERE id IN (${otherTutoring})`);
+      const ownQr = Number(sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, ownerId, team, createdAt, updatedAt) VALUES ('WhatsApp do Consultor M', 'CONNECTED', 'whatsapp', false, ${consult}, 'atendimento', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const tutoringQr = Number(sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, team, createdAt, updatedAt) VALUES ('Tutoria QR', 'CONNECTED', 'whatsapp', false, 'tutoria', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      let leadId = 0;
+      try {
+        const lead = await mkLead("Aluna Do QR", "5569955553001", { ownerId: consult });
+        leadId = lead.id;
+        const contactId = Number(sql(`SELECT contactId FROM Leads WHERE id=${lead.id}`)) || Number(sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Aluna Do QR', '5569955553001', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+        sql(`UPDATE Leads SET contactId=${contactId} WHERE id=${lead.id}`);
+        const sales = Number(sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, leadId, createdAt, updatedAt) VALUES ('open', ${contactId}, ${ownQr}, ${consult}, 0, false, 'sales', ${lead.id}, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+        sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('qr-mat-${sales}', ${sales}, ${contactId}, 'Fiz a matricula, meu RGM chegou', false, true, 'chat', 0, NOW(), NOW())`);
+        const sentBefore = Number(sql(`SELECT COUNT(*) FROM OutboundMessages`));
+        // the dialog of the CRM sends no number: the conversation of the lead decides where the sale was, the Tutoria number where the tutoring goes
+        const r = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId, tutorId: "auto", fee: "paid", note: "Matrícula pelo QR" }, asUser(ctok));
+        assert(r.status === 200, `enroll from the QR conversation ${r.status} ${JSON.stringify(r.data)}`);
+        const tutorId = r.data.tutor && r.data.tutor.id;
+        assert(tutors.includes(tutorId), `the tutor is not of the polo: ${JSON.stringify(r.data.tutor)}`);
+        assert(!(r.data.warnings || []).some(w => /número do consultor/.test(w)), `a warning about the consultant's number with a Tutoria number set: ${JSON.stringify(r.data.warnings)}`);
+        const ob = Number(r.data.ticketId);
+        assert(sql(`SELECT CONCAT(whatsappId,'|',segment,'|',status,'|',userId) FROM Tickets WHERE id=${ob}`) === `${tutoringQr}|onboarding|open|${tutorId}`, `the tutoring conversation: ${sql(`SELECT CONCAT(whatsappId,'|',segment,'|',status,'|',userId) FROM Tickets WHERE id=${ob}`)}`);
+        assert(sql(`SELECT status FROM Tickets WHERE id=${sales}`) === "closed", "the consultant's conversation on the own number stayed open");
+        assert(sql(`SELECT onboardingStatus FROM Leads WHERE id=${lead.id}`) === "pending" && sql(`SELECT s.name FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.id=${lead.id}`) === "Matriculado", "the lead was not enrolled");
+        assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND userId=${tutorId} AND title LIKE 'Ambientar%'`)) === 1, "the tutor has no task");
+        assert(Number(sql(`SELECT COUNT(*) FROM OutboundMessages`)) === sentBefore, "the enrollment sent a message by itself");
+        // the consultant does not read the tutoring; the tutor does, with the welcome ready
+        const ttok = (await http.post("/auth/login", { email: tutorId === tutors[0] ? "tutora@matricula.test" : "tutorb@matricula.test", password: "senha123" })).data.token;
+        assert((await http.get(`/messages/${ob}`, asUser(ctok))).status === 403, "the consultant reads the tutoring conversation");
+        const welcome = (await http.get(`/tickets/${ob}/welcome`, asUser(ttok))).data;
+        assert(welcome.show === true && /Aluna/.test(welcome.text), `the welcome is not ready: ${JSON.stringify(welcome).slice(0, 200)}`);
+        // the welcome leaves from the Tutoria number (the send is stored on the tutoring conversation, never on the consultant's)
+        const sent = await http.post(`/messages/${ob}`, { body: welcome.text }, asUser(ttok));
+        assert(sent.status !== 403 && sent.status !== 404, `the tutor could not send the welcome: ${sent.status} ${JSON.stringify(sent.data)}`);
+        assert(Number(sql(`SELECT COUNT(*) FROM OutboundMessages WHERE ticketId=${ob}`)) >= 1, `the welcome was not sent through the tutoring conversation: ${sent.status} ${JSON.stringify(sent.data)}`);
+        assert(Number(sql(`SELECT COUNT(*) FROM OutboundMessages WHERE ticketId=${sales}`)) === 0, "something went out from the consultant's own number");
+        // the student writes again to the consultant's phone: a new sale is not opened for an enrolled student by the AI
+        assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ob}`) !== "1", "the AI was turned on in the tutoring");
+      } finally {
+        sql(`DELETE FROM OutboundMessages WHERE ticketId IN (SELECT id FROM Tickets WHERE whatsappId IN (${ownQr}, ${tutoringQr}))`);
+        sql(`UPDATE Tickets SET status='closed' WHERE whatsappId IN (${ownQr}, ${tutoringQr})`);
+        sql(`UPDATE Tickets SET whatsappId=NULL WHERE whatsappId IN (${ownQr}, ${tutoringQr})`);
+        sql(`DELETE FROM WhatsappQueues WHERE whatsappId IN (${ownQr}, ${tutoringQr})`);
+        sql(`DELETE FROM Whatsapps WHERE id IN (${ownQr}, ${tutoringQr})`);
+        if (otherTutoring) sql(`UPDATE Whatsapps SET team='tutoria' WHERE id IN (${otherTutoring})`);
+        // its conversations are gone: the student is not left as the "last enrolled, waiting" that the next tests pick up
+        if (leadId) sql(`UPDATE Leads SET onboardingStatus='done', onboardingDoneAt=NOW() WHERE id=${leadId}`);
+      }
     });
     await test("goals per polo: an enrollment counts in the semester of the student's entry term, and the screen opens on the semester that started last", async () => {
       const iso = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho" }).format(new Date(Date.now() + n * 86400000));
