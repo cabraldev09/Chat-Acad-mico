@@ -55,4 +55,4 @@ jobs:
       - name: Erros recentes da API (números mascarados)
         if: ${{ inputs.secao == 'erros' }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" 'docker logs --since 60m chat-academico-api-1 2>&1 | grep -iE -A6 "ERROR|logout|Unhandled|whatsappsession" | sed -E "s/[0-9]{6,}/#/g; s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/@/g" | cut -c1-300 | tail -80'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" 'docker logs --since 60m chat-academico-api-1 2>&1 | grep -iE -A6 "ERROR|logout|Unhandled|whatsappsession|forward batch|Outbound|deliver" | sed -E "s/[0-9]{6,}/#/g; s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/@/g" | cut -c1-300 | tail -80'

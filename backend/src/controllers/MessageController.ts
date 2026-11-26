@@ -352,3 +352,12 @@ export const sendSticker = async (req: Request, res: Response): Promise<Response
   await row.reload();
   return res.status(row.status === "sent" ? 200 : 202).json({ id: row.id, clientKey: row.clientKey, status: row.status, duplicate });
 };
+
+// the card (title, line and picture) of the first link written in the message; null when the page has nothing to show
+export const linkCard = async (req: Request, res: Response): Promise<Response> => {
+  const message = await Message.findByPk(req.params.messageId, { attributes: ["id", "body"] });
+  const url = String(message?.body || "").match(/https?:\/\/[^\s<>"'`]+/i)?.[0]?.replace(/[).,;!?\]]+$/, "") || null;
+  if (!url) return res.json({ card: null });
+  const { linkPreview } = await import("../services/MessageServices/LinkPreview");
+  return res.json({ card: await linkPreview(url) });
+};

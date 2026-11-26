@@ -35,6 +35,7 @@ import MessageOptionsMenu, { REACTIONS } from "../MessageOptionsMenu";
 import ReactionBar from "../ReactionBar";
 import Audio from "../Audio";
 import FileCard from "../FileCard";
+import LinkCard, { hasLink } from "../LinkCard";
 import MediaPlaceholder, { needsMedia } from "../MediaPlaceholder";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -874,6 +875,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
               {hasMedia && renderMedia(m)}
               {showText && (
                 <div className={classes.text}>
+                  {!hasMedia && !m.isDeleted && hasLink(m.body) && <LinkCard messageId={m.id} fromMe={mine} />}
                   <MarkdownWrapper>{friendlyBody(m.body)}</MarkdownWrapper>
                   <span className={classes.meta} title={fullDate(m.createdAt)}>
                     {m.starred && <Star style={{ fontSize: 12 }} />}

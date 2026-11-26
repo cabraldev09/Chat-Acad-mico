@@ -46,7 +46,7 @@ const swap = async (lead: Lead, add: Tag, remove: Tag[]): Promise<void> => {
     await TicketTag.destroy({ where: { ticketId: t.id, tagId: { [Op.in]: removeIds } } });
     // eslint-disable-next-line no-await-in-loop
     const tags = await (t as any).$get("tags", { attributes: ["id", "name", "color"], joinTableAttributes: [] });
-    getIO().to(t.status).to(String(t.id)).emit("ticket", { action: "tags", ticketId: t.id, tags });
+    getIO().to(t.status).to(String(t.id)).to("notification").emit("ticket", { action: "tags", ticketId: t.id, tags });
   }
 };
 

@@ -254,6 +254,8 @@ const TicketListItem = ({ ticket }) => {
   const kindOf = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
   const previewText = cardName || (ticket.lastMessageType === "vcard" ? String(ticket.lastMessage || "").replace(/^👤\s*/, "") : null) || (kindOf[1] && (looksLikeFileName(ticket.lastMessage) || /^[\p{Extended_Pictographic}\s]*(Foto|Imagem|Áudio|Mensagem de voz|Vídeo|Figurinha)$/u.test(plain(ticket.lastMessage))) ? kindOf[1] : plain(/^\[unsupported\]$/i.test(String(ticket.lastMessage || "").trim()) ? "Mensagem não suportada pelo WhatsApp oficial" : ticket.lastMessage)) || kindOf[1] || "";
   const [KindIcon, kindLabel] = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
+  const isReaction = ticket.lastMessageType === "reaction" || /^Reagiu com /.test(String(previewText || ""));
+  const groupAuthor = ticket.lastMessageFromMe ? "Você" : ticket.lastMessageAuthor ? String(ticket.lastMessageAuthor).split(" ")[0] : null;
   // two lines like WhatsApp: the third (queue, attendant, tags) only when it says something new. The person's own conversations do
   // not repeat their own name on every row.
   const otherAttendant = !!(ticket.user && ticket.user.name && (!user || ticket.user.id !== user.id));
@@ -340,11 +342,10 @@ const TicketListItem = ({ ticket }) => {
               </>
             ) : (
               <>
-                {ticket.isGroup && ticket.lastMessageAuthor && !ticket.lastMessageFromMe && (
-                  <span style={{ opacity: 0.85 }}>{ticket.lastMessageAuthor.split(" ")[0]}: </span>
-                )}
+                {/* in a group, who wrote, sent the sticker or the audio, or reacted (as on WhatsApp: "Ana: Figurinha", "Você: Áudio", "Ana reagiu com ...") */}
+                {ticket.isGroup && groupAuthor && !isReaction && <span style={{ opacity: 0.85 }}>{groupAuthor}: </span>}
                 {KindIcon && <KindIcon size={14} style={{ verticalAlign: -2, marginRight: 4, opacity: 0.7 }} />}
-                {previewText || "Sem mensagens"}
+                {(ticket.isGroup && groupAuthor && isReaction ? `${groupAuthor} ${String(previewText).replace(/^Reagiu/, "reagiu")}` : previewText) || "Sem mensagens"}
               </>
             )}
           </span>

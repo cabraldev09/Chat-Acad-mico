@@ -44,5 +44,7 @@ messageRoutes.post("/messages/:messageId/react", isAuth, canWriteMessage, Messag
 messageRoutes.post("/messages/:messageId/forward", isAuth, canWriteMessage, MessageController.forward);
 // who received, read and listened to a message sent from a number by QR Code (the phone keeps this only for what was sent)
 messageRoutes.get("/messages/:messageId/info", isAuth, canReadMessage, MessageController.info);
+// the card of the first link of a message the person may read (never any address: only what is in the message)
+messageRoutes.get("/messages/:messageId/link-preview", isAuth, canReadMessage, MessageController.linkCard);
 
 export default messageRoutes;
