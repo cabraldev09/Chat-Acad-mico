@@ -1,4 +1,5 @@
 import { hasContactAccessOrFree } from "../middleware/canAccessContact";
+import { maskQueueTicket, queueContactIds } from "../helpers/LeadQueue";
 import { ticketPoloSql, ticketPolosOf } from "../helpers/TicketPoloScope";
 import { chatIdOf } from "../helpers/ChatId";
 import { Request, Response } from "express";
@@ -58,6 +59,7 @@ type IndexQuery = {
   communities: string;
   attendantId: string;
   connectionId: string;
+  fila: string;
 };
 
 interface TicketData {
@@ -88,7 +90,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     allQueues,
     communities,
     attendantId,
-    connectionId
+    connectionId,
+    fila
   } = req.query as IndexQuery;
 
   const userId = req.user.id;
@@ -128,9 +131,15 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     allQueues,
     communities,
     attendantId,
-    connectionId
+    connectionId,
+    fila
   });
 
+  // the conversations of the common queue show only masked text (helpers/LeadQueue)
+  if (roleOf(req.user) === "consultor") {
+    const queued = await queueContactIds(tickets.filter(t => !t.userId && !t.isGroup).map(t => t.contactId));
+    if (queued.size) return res.status(200).json({ tickets: tickets.map(t => (!t.userId && !t.isGroup && queued.has(t.contactId) ? maskQueueTicket(t) : t)), count, hasMore });
+  }
   return res.status(200).json({ tickets, count, hasMore });
 };
 
@@ -150,13 +159,15 @@ export const counts = async (req: Request, res: Response): Promise<Response> => 
   const key = `ticket-counts:${userId}:${queueIds.join(",")}:${q.allQueues || ""}:${q.attendantId || ""}:${q.connectionId || ""}:${q.tagId || ""}:${q.showAll || ""}`;
   const { remember } = await import("../helpers/TtlCache");
   const result = await remember(key, Number(process.env.TICKET_COUNTS_MS ?? 1500), async () => {
-    const [open, pending, unreadPrivate, unreadGroups] = await Promise.all([
+    const [open, pending, unreadPrivate, unreadGroups, queue] = await Promise.all([
       ListTicketsService({ ...base, groups: "exclude", tagId: q.tagId, status: "open", showAll: q.showAll === "true" ? "true" : undefined }),
       ListTicketsService({ ...base, groups: "exclude", tagId: q.tagId, status: "pending" }),
       ListTicketsService({ ...base, groups: "exclude", withUnreadMessages: "true", showAll: "true" }),
-      ListTicketsService({ ...base, groups: "only", withUnreadMessages: "true", showAll: "true" })
+      ListTicketsService({ ...base, groups: "only", withUnreadMessages: "true", showAll: "true" }),
+      // the common queue (zero while it is off or for the profiles that do not take from it)
+      ListTicketsService({ ...base, groups: "exclude", fila: "true", status: "pending" })
     ]);
-    return { open: open.count, pending: pending.count, unread: unreadPrivate.count, groupUnread: unreadGroups.count };
+    return { open: open.count, pending: pending.count, unread: unreadPrivate.count, groupUnread: unreadGroups.count, queue: queue.count };
   });
   return res.json(result);
 };
@@ -202,6 +213,7 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await ShowTicketService(ticketId);
   const pinned = (await TicketPin.count({ where: { ticketId, userId: Number(req.user.id) } })) > 0;
 
+  if ((req as any).queueView) return res.status(200).json({ ...maskQueueTicket(ticket), pinned });
   return res.status(200).json({ ...ticket.toJSON(), pinned });
 };
 

@@ -18,14 +18,28 @@ import Whatsapp from "../models/Whatsapp";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { startOfTodayApp } from "../helpers/AppTime";
 import { QueryTypes } from "sequelize";
+import { connectionOwnerInPolos, coordinationReachesConnection, polosOfCoordination } from "../helpers/PoloAccess";
 
 const isAdminReq = (req: Request) => isManagerRole(roleOf(req.user));
 const me = (req: Request) => Number(req.user.id);
-// QR Codes are only shown to administrators, coordinators and to the person who owns the number
+// QR Codes are only shown to the administrators and to the person who owns the number: the QR Code is the login of that WhatsApp
 const present = (req: Request, w: Whatsapp) => {
   const json: any = w.toJSON();
-  if (!isAdminReq(req) && w.ownerId !== me(req)) delete json.qrcode;
+  if (roleOf(req.user) !== "admin" && w.ownerId !== me(req)) delete json.qrcode;
   return json;
+};
+
+// The connections the person may see: the administration all of them; the coordination only the numbers of people of its polos (a connection with no
+// owner, the institution's, is the administration's); everybody else the shared numbers plus their own (never someone else's personal number)
+const visibleTo = async (req: Request, all: Whatsapp[]): Promise<Whatsapp[]> => {
+  const polos = await polosOfCoordination(req);
+  if (polos) {
+    const owners = [...new Set(all.map(w => w.ownerId).filter(Boolean) as number[])];
+    const ok = new Set<number>();
+    for (const id of owners) if (await connectionOwnerInPolos(polos, me(req), id)) ok.add(id); // eslint-disable-line no-await-in-loop
+    return all.filter(w => !!w.ownerId && ok.has(w.ownerId));
+  }
+  return isAdminReq(req) ? all : all.filter(w => !w.ownerId || w.ownerId === me(req));
 };
 
 interface WhatsappData {
@@ -44,7 +58,7 @@ interface WhatsappData {
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const all = await ListWhatsAppsService();
   // shared numbers (the administrator's) plus the person's own; never someone else's personal number
-  const visible = isAdminReq(req) || isManagerRole(roleOf(req.user)) ? all : all.filter(w => !w.ownerId || w.ownerId === me(req));
+  const visible = await visibleTo(req, all);
 
   return res.status(200).json(visible.map(w => present(req, w)));
 };
@@ -52,7 +66,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 // The state of every connection the person may see, with what it did today: who is down, since when, the last message.
 export const health = async (req: Request, res: Response): Promise<Response> => {
   const all = await ListWhatsAppsService();
-  const visible = isAdminReq(req) || isManagerRole(roleOf(req.user)) ? all : all.filter(w => !w.ownerId || w.ownerId === me(req));
+  const visible = await visibleTo(req, all);
   const start = startOfTodayApp();
   const [today, last] = await Promise.all([
     Whatsapp.sequelize!.query(
@@ -108,6 +122,9 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     outOfHoursMessage
   }: WhatsappData = req.body;
   let ownerId: number | null = req.body.ownerId ? Number(req.body.ownerId) : null;
+  // the coordination creates only numbers of people of its polos (a number with no owner is the institution's: the administration's)
+  const myPolos = await polosOfCoordination(req);
+  if (myPolos && !(await connectionOwnerInPolos(myPolos, me(req), ownerId))) throw new AppError("ERR_NO_PERMISSION", 403);
 
   // each QR Code number runs its own Chromium (about 500 MB): past the server's capacity everything would be killed
   if ((channel || "whatsapp") === "whatsapp" || !isAdminReq(req)) {
@@ -216,6 +233,7 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   const { whatsappId } = req.params;
 
   const whatsapp = await ShowWhatsAppService(whatsappId);
+  if (!(await coordinationReachesConnection(req, whatsapp.ownerId))) throw new AppError("ERR_NO_PERMISSION", 403);
   if (!isAdminReq(req) && whatsapp.ownerId && whatsapp.ownerId !== me(req)) throw new AppError("ERR_NO_PERMISSION", 403);
 
   return res.status(200).json(present(req, whatsapp));
@@ -226,6 +244,9 @@ export const update = async (
   res: Response
 ): Promise<Response> => {
   const { whatsappId } = req.params;
+  // the coordination hands a number only to people of its polos (never back to the institution: that is the administration's)
+  const polosOf = await polosOfCoordination(req);
+  if (polosOf && req.body.ownerId !== undefined && !(await connectionOwnerInPolos(polosOf, me(req), Number(req.body.ownerId) > 0 ? Number(req.body.ownerId) : null))) throw new AppError("ERR_NO_PERMISSION", 403);
   // the owner of a QR Code number chooses which of its groups become conversations; everything else is the management's
   const whatsappData = isAdminReq(req)
     ? req.body
@@ -276,7 +297,7 @@ export const update = async (
     });
   }
 
-  return res.status(200).json(whatsapp);
+  return res.status(200).json(present(req, whatsapp));
 };
 
 export const remove = async (
@@ -286,6 +307,7 @@ export const remove = async (
   const { whatsappId } = req.params;
 
   const existing = await ShowWhatsAppService(whatsappId);
+  if (!(await coordinationReachesConnection(req, existing.ownerId))) throw new AppError("ERR_NO_PERMISSION", 403);
   await DeleteWhatsAppService(whatsappId);
   if (existing.channel !== "whatsapp") {
     await getAdapter(existing.channel).stop(existing);

@@ -2,6 +2,8 @@ import { NextFunction, Request, Response } from "express";
 
 import AppError from "../../errors/AppError";
 import { roleOf } from "../../helpers/Roles";
+import { crmPolosOf } from "../../middleware/scope";
+import { listVisibleTo } from "../../helpers/ListScope";
 import Campaign from "../../models/Campaign";
 import ContactList from "../../models/ContactList";
 import { connectionOfTeam } from "../ChannelServices/ConnectionTeam";
@@ -44,4 +46,31 @@ export const tutoriaConnectionId = async (): Promise<number> => {
   const w = await connectionOfTeam("tutoria");
   if (!w) throw new AppError("ERR_TUTORIA_NO_NUMBER", 400);
   return w.id;
+};
+
+// THE COORDINATION sees only the lists of its polos and the campaigns made with them (helpers/ListScope): its own, or the ones whose people are all
+// in its polos. Admin, consultant and tutor keep the rules above. The answer is 403 (404 when it does not exist).
+export const assertListVisible = async (req: Request, listId: number | string | null | undefined): Promise<void> => {
+  if (!listId) return;
+  const polos = await crmPolosOf(req);
+  if (!polos) return;
+  if (await listVisibleTo(listId, polos, Number(req.user.id))) return;
+  const exists = await ContactList.findByPk(listId, { attributes: ["id"] });
+  throw new AppError(exists ? "ERR_NO_PERMISSION" : "ERR_NOT_FOUND", exists ? 403 : 404);
+};
+export const assertCampaignVisible = async (req: Request, campaignId: number | string): Promise<void> => {
+  const polos = await crmPolosOf(req);
+  if (!polos) return;
+  const c = await Campaign.findByPk(campaignId, { attributes: ["id", "createdById", "contactListId"] });
+  if (!c) throw new AppError("ERR_NOT_FOUND", 404);
+  if (Number(c.createdById) === Number(req.user.id)) return;
+  if (!(await listVisibleTo(c.contactListId, polos, Number(req.user.id)))) throw new AppError("ERR_NO_PERMISSION", 403);
+};
+export const listVisible = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  await assertListVisible(req, req.params.id);
+  next();
+};
+export const campaignVisible = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  await assertCampaignVisible(req, req.params.id);
+  next();
 };

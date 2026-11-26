@@ -9,7 +9,11 @@ import { sessionUser } from "../helpers/SessionUser";
 import { isManagerRole } from "../helpers/Roles";
 import { maskConfig } from "../helpers/Secrets";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
-import { assertLead } from "../middleware/scope";
+import { assertLead, assertLeadRead, crmPolosOf } from "../middleware/scope";
+import { isQueueLead, maskQueueMessage, maskQueueTicket, queueContactIds, redactQueueLead } from "../helpers/LeadQueue";
+import { assertCampaignVisible } from "../services/CampaignServices/Access";
+import { listVisibleTo } from "../helpers/ListScope";
+import { coordinationReachesConnection, ownerOfConnection } from "../helpers/PoloAccess";
 import { hasContactAccess } from "../middleware/canAccessContact";
 import Ticket from "../models/Ticket";
 import Lead from "../models/Lead";
@@ -51,10 +55,14 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
       await assertTicketAccess(req, id, "read");
       return true;
     }
+    // a lead of the common queue was taken: the other consultants drop its card (only ids travel in it; the administration and the coordination too)
+    if (event === "lead" && data.action === "claimed") return manager || user.role === "consultor";
     if (["lead", "payment", "leadAlert", "onboardingAlert", "onboardingReminder", "crmReminder"].includes(event)) {
       const id = data.leadId || data.lead?.id;
       if (!id) return manager;
-      await assertLead(req, id);
+      // the consultants also hear of the leads of the common queue (as a card, see send); everything else follows the owner
+      if (event === "lead") await assertLeadRead(req, id);
+      else await assertLead(req, id);
       return true;
     }
     // the conversation the AI agent handed over, and the alert that nobody answered it: the person it was given to, the management and, while
@@ -80,12 +88,20 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     if (event === "contact") return contactAllowed(req, Number(data.contact?.id || data.contactId));
     if (["whatsapp", "whatsappSession", "whatsappAlert", "safety", "historyImport"].includes(event)) {
       const item = data.session || data.whatsapp || data;
-      // the coordination has the same powers as the administration
-      return manager || Number(item.ownerId || data.userId) === Number(user.id);
+      // the QR Code travels in these events: the administration and the owner of the number; the coordination only for the numbers of people of its polos
+      // (a connection with no owner is the administration's)
+      if (user.role === "admin" || user.profile === "admin") return true;
+      let ownerId = Number(item.ownerId || data.userId) || null;
+      if (!ownerId && user.role === "coordenacao" && (item.id || data.whatsappId)) ownerId = await ownerOfConnection(item.id || data.whatsappId);
+      if (ownerId && ownerId === Number(user.id)) return true;
+      return user.role === "coordenacao" && (await coordinationReachesConnection(req, ownerId));
     }
     if (event === "schedule") {
       const row = data.row || await Schedule.findByPk(data.id);
-      return !!row && (manager || Number(row.userId) === Number(user.id));
+      if (!row) return false;
+      if (Number(row.userId) === Number(user.id) || user.role === "admin" || user.profile === "admin") return true;
+      // the coordination: only the messages for people of its polos (the same rule of the list)
+      return user.role === "coordenacao" && (await hasContactAccess(req, Number(row.contactId)));
     }
     if (event === "affiliate" || event === "affiliateBonus") {
       if (manager) return true;
@@ -119,7 +135,18 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
       return canSeeConsultant(user, target);
     }
     if (["aiLearning", "flow", "automationTrigger"].includes(event)) return manager;
-    if (["campaign", "contactList"].includes(event)) return manager || user.role === "consultor";
+    // campaigns and contact lists: the administration and the consultants as before; the coordination only the ones of its polos (an event that carries only
+    // an id, such as a deletion, is not sent to it: the lists refresh on their own)
+    if (["campaign", "contactList"].includes(event)) {
+      if (user.role === "consultor" || user.role === "admin" || user.profile === "admin") return true;
+      if (user.role !== "coordenacao") return false;
+      const id = Number(data.row?.id);
+      if (!id) return false;
+      const polos = await crmPolosOf(req);
+      if (!polos) return true;
+      if (event === "campaign") { await assertCampaignVisible(req, id); return true; }
+      return listVisibleTo(id, polos, Number(user.id));
+    }
     // ids of the conversations pinned on the phone of a number: the lists of everyone who sees that number follow them
     if (["tag", "queue", "quickAnswer", "course", "leadStage", "polo", "ticketPins"].includes(event)) return true;
     // the rest (lists of settings screens, institution, templates...) are for the administration and the coordination
@@ -135,6 +162,8 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
   // open at once) used to repeat the database checks once per connection. Nothing is kept after this event, so a transfer is
   // always judged with fresh data.
   const decisions = new Map<string, Promise<boolean>>();
+  // one read of "is this person still in the common queue" for the event, shared by every consultant who receives it
+  let queuedOf: Promise<Set<number>> | null = null;
   await Promise.all(Array.from(io.sockets.sockets.values()).map(async socket => {
     if (rooms.length && !rooms.some(room => socket.rooms.has(room))) return;
     const token = socket.data.token;
@@ -165,7 +194,21 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
       if (event === "whatsapp" || event === "whatsappSession") {
         const key = event === "whatsapp" ? "whatsapp" : "session";
         const item = data[key];
-        if (item) outgoing = { ...data, [key]: { ...item, config: maskConfig(item.config) } };
+        if (item) {
+          const masked: any = { ...item, config: maskConfig(item.config) };
+          // the QR Code is the login of the number: only the administration and the owner of the number get it (not the coordination)
+          if (user.role !== "admin" && user.profile !== "admin" && Number(item.ownerId) !== Number(user.id)) { delete masked.qrcode; delete masked.qrCode; }
+          outgoing = { ...data, [key]: masked };
+        }
+      }
+      // a lead nobody owns yet (the common queue) reaches a consultant only as a card: no CPF, notes or e-mail before "Assumir"
+      if (event === "lead" && data.lead && user.role === "consultor" && user.profile !== "admin" && isQueueLead(data.lead)) outgoing = { ...data, lead: redactQueueLead(data.lead) };
+      // the conversation of a person still in the common queue reaches a consultant as masked text without attachments, until they assume it
+      if ((event === "appMessage" || event === "ticket") && user.role === "consultor" && user.profile !== "admin" && data.ticket && !data.ticket.userId && !data.ticket.isGroup && data.ticket.contactId) {
+        if (!queuedOf) queuedOf = queueContactIds([Number(data.ticket.contactId)]);
+        if ((await queuedOf).has(Number(data.ticket.contactId))) {
+          outgoing = { ...data, ticket: maskQueueTicket(data.ticket), ...(data.message ? { message: maskQueueMessage(data.message) } : {}) };
+        }
       }
       const id = data.ticket?.id || data.ticketId || data.message?.ticketId;
       if (id) socket.data.visibleTickets.add(String(id));

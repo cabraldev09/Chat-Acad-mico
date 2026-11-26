@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { publicFile } from "../helpers/PublicFile";
 import { asSticker, stickersOf } from "../helpers/Stickers";
+import { maskQueueMessage, maskQueueTicket } from "../helpers/LeadQueue";
 import { noteSuggestionSent } from "../services/CopilotServices/Feedback";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
@@ -58,6 +59,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   // opening the conversation marks it read; scrolling back through older pages must not repeat that
   if (!silent && (!pageNumber || Number(pageNumber) <= 1)) SetTicketMessagesAsRead(ticket, Number(req.user.id));
 
+  // a conversation of the common queue, before it is assumed: masked text, no attachments (helpers/LeadQueue)
+  if ((req as any).queueView) return res.json({ count, messages: messages.map(maskQueueMessage), ticket: maskQueueTicket(ticket), hasMore, inQueue: true });
   return res.json({ count, messages, ticket, hasMore });
 };
 
@@ -160,6 +163,8 @@ export const forwardTargetsIndex = async (req: Request, res: Response): Promise<
 export const listByKind = async (req: Request, res: Response): Promise<Response> => {
   const ticketId = Number(req.params.ticketId);
   const kind = String(req.query.kind || "media");
+  // media, documents, links and starred messages are attachments: they come after "Assumir"
+  if ((req as any).queueView) return res.json([]);
   const base: any = { ticketId, isDeleted: false };
   const attributes = ["id", "body", "mediaType", "mediaUrl", "fromMe", "createdAt", "starred"];
 

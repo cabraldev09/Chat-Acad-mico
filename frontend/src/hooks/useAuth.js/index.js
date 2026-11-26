@@ -30,9 +30,14 @@ const useAuth = () => {
     (async () => {
       if (localStorage.getItem("token")) {
         // shares the renewal with any request that was refused while this one runs
-        const data = await refreshSession();
+        let data = null;
+        let transient = false;
+        try { data = await refreshSession(); } catch (_) { transient = true; }
         if (active) {
-          if (data) { api.defaults.headers.Authorization = `Bearer ${data.token}`; setIsAuth(true); setUser(data.user); } else clear();
+          if (data) { api.defaults.headers.Authorization = `Bearer ${data.token}`; setIsAuth(true); setUser(data.user); }
+          // the server could not be reached (not the same as a login that is gone): the login stays saved, the person is told to try again
+          else if (transient) toast.warn("Não foi possível falar com o servidor agora. Confira a internet e recarregue a página.");
+          else clear();
         }
       }
       if (active) setLoading(false);

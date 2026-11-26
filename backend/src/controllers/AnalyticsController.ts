@@ -55,6 +55,8 @@ export const team = async (req: Request, res: Response): Promise<Response> => {
       totals: totalsOf(bundles),
       polos: await byPolo(bundles),
       alerts: await withCoaching(alertsOf(bundles, config), bundles.map(b => ({ id: b.user.id, name: b.user.name }))),
+      // what the OpenBot recommends to the management (no personal data): the administrators only; the coordination gets an empty list
+      openbotInsights: roleOf(req.user) === "admin" ? await (await import("../services/InsightServices/OpenbotInsights")).activeInsights() : [],
       unassigned: await unassignedTasks(),
       config
     };

@@ -2793,6 +2793,47 @@ ALTER SEQUENCE public."NpsSurveys_id_seq" OWNED BY public."NpsSurveys".id;
 
 
 --
+-- Name: OpenbotInsights; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."OpenbotInsights" (
+    id integer NOT NULL,
+    "tokenId" integer,
+    kind character varying(40) NOT NULL,
+    level character varying(10) DEFAULT 'info'::character varying NOT NULL,
+    title character varying(120) NOT NULL,
+    body character varying(400) NOT NULL,
+    link character varying(200),
+    "dedupeKey" character varying(160) NOT NULL,
+    source character varying(20) DEFAULT 'OpenBot'::character varying NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    "resolvedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: OpenbotInsights_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."OpenbotInsights_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: OpenbotInsights_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."OpenbotInsights_id_seq" OWNED BY public."OpenbotInsights".id;
+
+
+--
 -- Name: OutboundDeliveries; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4519,6 +4560,13 @@ ALTER TABLE ONLY public."NpsSurveys" ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: OpenbotInsights id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OpenbotInsights" ALTER COLUMN id SET DEFAULT nextval('public."OpenbotInsights_id_seq"'::regclass);
+
+
+--
 -- Name: OutboundDeliveries id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5347,6 +5395,14 @@ ALTER TABLE ONLY public."NpsSurveys"
 
 
 --
+-- Name: OpenbotInsights OpenbotInsights_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OpenbotInsights"
+    ADD CONSTRAINT "OpenbotInsights_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: OutboundDeliveries OutboundDeliveries_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6064,6 +6120,17 @@ CREATE INDEX contacts_parent_group_idx ON public."Contacts" USING btree ("parent
 
 
 --
+-- Name: contacts_phone_key_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_phone_key_idx ON public."Contacts" USING btree ((
+CASE
+    WHEN (((number)::text ~~ '55%'::text) AND (length((number)::text) = ANY (ARRAY[12, 13]))) THEN ((substr((number)::text, 3, 2) || "right"((number)::text, 8)))::character varying
+    ELSE number
+END));
+
+
+--
 -- Name: contacts_pic_checked_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6456,10 +6523,28 @@ CREATE INDEX leads_phone ON public."Leads" USING btree (phone);
 
 
 --
+-- Name: leads_phone_key_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_phone_key_idx ON public."Leads" USING btree ((
+CASE
+    WHEN (((phone)::text ~~ '55%'::text) AND (length((phone)::text) = ANY (ARRAY[12, 13]))) THEN ((substr((phone)::text, 3, 2) || "right"((phone)::text, 8)))::character varying
+    ELSE phone
+END));
+
+
+--
 -- Name: leads_polo_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX leads_polo_id_idx ON public."Leads" USING btree ("poloId") WHERE ("poloId" IS NOT NULL);
+
+
+--
+-- Name: leads_queue_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_queue_idx ON public."Leads" USING btree ("updatedAt" DESC) WHERE (("ownerId" IS NULL) AND ("enrolledAt" IS NULL) AND ("wonAt" IS NULL) AND ("lostAt" IS NULL) AND ("isHistorical" = false) AND (("onboardingStatus")::text = 'none'::text));
 
 
 --
@@ -6586,6 +6671,20 @@ CREATE INDEX nps_surveys_lead_id_kind ON public."NpsSurveys" USING btree ("leadI
 --
 
 CREATE INDEX nps_surveys_sent_at_idx ON public."NpsSurveys" USING btree ("sentAt");
+
+
+--
+-- Name: openbot_insights_dedupe_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX openbot_insights_dedupe_live ON public."OpenbotInsights" USING btree ("dedupeKey") WHERE ("resolvedAt" IS NULL);
+
+
+--
+-- Name: openbot_insights_expires; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX openbot_insights_expires ON public."OpenbotInsights" USING btree ("expiresAt");
 
 
 --
@@ -8430,10 +8529,13 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') 
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000104-api-token-usage.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tried.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000301-leads-queue-index.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000352-phone-key-indexes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000001-conversation-readings.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000001-openbot-insights.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000002-recovery-offer.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000003-recovery-reply-index.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270104000001-proposal-standalone.js') ON CONFLICT DO NOTHING;

@@ -3,7 +3,7 @@ import rateLimit from "../middleware/rateLimit";
 import express from "express";
 import isAuth from "../middleware/isAuth";
 import isAdmin from "../middleware/isAdmin";
-import { canReadTicket, canWriteTicket, canSendTicket } from "../middleware/canAccessTicket";
+import { canReadTicket, canWriteTicket, canSendTicket, canClaimTicket } from "../middleware/canAccessTicket";
 
 import * as CopilotController from "../controllers/CopilotController";
 import * as TicketController from "../controllers/TicketController";
@@ -56,7 +56,7 @@ ticketRoutes.get(
 ticketRoutes.post("/tickets", isAuth, TicketController.store);
 
 ticketRoutes.put("/tickets/:ticketId/pin", isAuth, canReadTicket, TicketController.pin);
-ticketRoutes.post("/tickets/:ticketId/claim", isAuth, canWriteTicket, TicketController.claim);
+ticketRoutes.post("/tickets/:ticketId/claim", isAuth, canClaimTicket, TicketController.claim);
 ticketRoutes.post("/tickets/:ticketId/take", isAuth, canReadTicket, TicketController.take);
 ticketRoutes.post("/tickets/:ticketId/ai", isAuth, canWriteTicket, TicketController.ai);
 ticketRoutes.post("/tickets/:ticketId/reply-dismiss", isAuth, canWriteTicket, TicketController.dismissReply);

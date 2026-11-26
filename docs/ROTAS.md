@@ -1,6 +1,6 @@
-# Rotas da API (619)
+# Rotas da API (623)
 
-Públicas: 40 · logado (qualquer perfil): 337 · gestão: 184 · admin: 47
+Públicas: 40 · logado (qualquer perfil): 338 · gestão: 184 · admin: 49
 
 ## Quem vê quais leads no CRM (middleware/scope.ts)
 
@@ -8,7 +8,7 @@ Públicas: 40 · logado (qualquer perfil): 337 · gestão: 184 · admin: 47
 |---|---|
 | admin | todos os leads, de todos os polos |
 | coordenacao | só os leads dos polos em que está (Polos e equipes); sem polo, nenhum. Um lead ainda sem polo fica com a administração |
-| consultor | só os leads em que é o responsável |
+| consultor | só os leads em que é o responsável. Com a **fila comum** ligada (`crm_queue_mode`, desligada por padrão) também lê, como cartão sem CPF/documentos/anotações, os leads novos sem dono; para agir neles precisa **assumir** antes (`POST /leads/:id/claim`) |
 | tutor, academico | os leads em que é o responsável e os alunos dados a ele (Ambientação e Alunos da tutoria: também os do seu polo ainda sem tutor) |
 | relacionamento | só os matriculados dos polos em que está; sem polo, nenhum |
 
@@ -17,6 +17,21 @@ cobranças, documentos), contagens do Painel do CRM, novos para conferir, tarefa
 realizadas, comissões, Alunos da tutoria e Avisos da tutoria, Retenção e os avisos em tempo real de lead, risco e satisfação.
 A coordenação continua com os poderes da gestão (`isAdminReq`): o que muda é o que ela vê. Ela só muda a equipe e os dados (cidades
 atendidas, nome, exclusão, importação) dos polos em que está.
+
+## Análises, alunos do portal e conexões por polo (helpers/PoloAccess.ts)
+
+| Perfil | Análises curriculares e acadêmicas, alunos do portal | Conexões (WhatsApp, Telegram...) e QR Code |
+|---|---|---|
+| admin | todos | todas; vê o QR Code |
+| coordenacao | as dos polos em que está e as que ela mesma fez; análise ou aluno sem polo é da administração. Sem polo, só o que ela fez | só as conexões cujo dono é pessoa dos seus polos (ou ela mesma); conexão sem dono (a da instituição) é da administração; **nunca recebe o QR Code** (só a administração e o dono do número) |
+| tutor, consultor | sem mudança | sem mudança (os números compartilhados e o próprio) |
+
+- A regra vale na lista, na ficha, no arquivo (download), no reenvio de proposta e convite, na edição, na exclusão e nos eventos em tempo real
+  (`whatsapp`, `whatsappSession`, `safety`, `whatsappAlert`).
+- A análise acadêmica segue o aluno do portal ou o lead (o polo vem deles); a curricular tem polo próprio. A coordenação só cria análise ou aluno nos seus polos
+  e só cria ou repassa conexão para pessoas dos seus polos.
+- Os "boletins" do pedido (`/commercial-grades`) são o catálogo de grades dos cursos: não têm pessoa nem polo e não entraram.
+- Fora desta regra: afiliados (não têm polo) e a lista de usuários.
 
 ## Conversas, contatos, metas e painéis por polo (helpers/TicketPoloScope.ts)
 
@@ -52,12 +67,22 @@ atendidas, nome, exclusão, importação) dos polos em que está.
   - em `/dashboard/manager`, as metas de todos os polos continuam visíveis;
   - estatísticas de consultores e "Equipe agora": coordenação sem polo não vê ninguém.
 
-**Ainda NÃO isolado por polo para a coordenação (fica para um PR próprio):**
-- agendamentos (`/schedules`: o texto da mensagem e o contato; evento em tempo real `schedule`);
-- campanhas e listas de contatos (`/campaigns`, `/contact-lists`; eventos `campaign` e `contactList`): só o tutor é limitado
-  ao que é dele; a gestão (administração e coordenação) vê todas.
+## Agendamentos, campanhas e listas de contatos por polo (helpers/ListScope.ts)
 
-Até lá, não crie usuários de coordenação nem de relacionamento para franquias diferentes.
+| Perfil | Vê e usa |
+|---|---|
+| admin | todos |
+| coordenacao | os agendamentos que fez e os de contatos dos seus polos; as listas que criou ou cujas pessoas estão TODAS nos seus polos; as campanhas que criou ou feitas com essas listas. Pessoa que não é lead nem contato de nenhum polo (número colado) é da administração. Sem polo, só o que ela mesma criou |
+| consultor, tutor | sem mudança (o consultor vê as listas e campanhas como antes; o tutor só o que criou) |
+
+- A regra vale no SQL da lista e em abrir, editar, apagar, cancelar, exportar, iniciar, pausar, duplicar, testar, relatório e eventos em tempo real
+  (`schedule`, `campaign`, `contactList`).
+- A coordenação só coloca em lista (do CRM ou número colado) pessoas dos seus polos; o resto fica de fora (`outOfScope` na resposta).
+- Ao iniciar uma campanha da coordenação, os destinatários são conferidos de novo contra os polos de quem a criou: quem entrou na lista depois e é de outro polo não recebe.
+- Fora desta regra (continua como estava): afiliados e a lista de usuários.
+
+Com agendamentos, campanhas e listas isolados, a trava "não crie usuários de coordenação nem de relacionamento para franquias diferentes" depende
+só dos itens acima e das outras áreas da coordenação (análises, alunos do portal, boletins e conexões: ESP-011).
 
 ## Públicas (sem login)
 
@@ -190,21 +215,21 @@ Até lá, não crie usuários de coordenação nem de relacionamento para franqu
 - PUT /contacts/:contactId/tags → canAccessContact
 - POST /campaigns → salesStaff
 - POST /campaigns/preflight → salesStaff
-- PUT /campaigns/:id → salesStaff, ownCampaign
-- DELETE /campaigns/:id → salesStaff, ownCampaign
-- POST /campaigns/:id/start → salesStaff, ownCampaign
-- POST /campaigns/:id/pause → salesStaff, ownCampaign
-- POST /campaigns/:id/cancel → salesStaff, ownCampaign
-- POST /campaigns/:id/retry-failed → salesStaff, ownCampaign
-- POST /campaigns/:id/duplicate → salesStaff, ownCampaign
-- POST /campaigns/:id/test → salesStaff, ownCampaign
-- POST /campaigns/:id/remove-no-consent → salesStaff, ownCampaign
+- PUT /campaigns/:id → salesStaff, ownCampaign, campaignVisible
+- DELETE /campaigns/:id → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/start → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/pause → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/cancel → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/retry-failed → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/duplicate → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/test → salesStaff, ownCampaign, campaignVisible
+- POST /campaigns/:id/remove-no-consent → salesStaff, ownCampaign, campaignVisible
 - POST /contact-lists → salesStaff
 - POST /contact-lists/from-leads → salesStaff
-- PUT /contact-lists/:id → salesStaff, ownList
-- DELETE /contact-lists/:id → salesStaff, ownList
-- POST /contact-lists/:id/import → salesStaff, notTutor
-- DELETE /contact-lists/:id/items/:itemId → salesStaff, ownList
+- PUT /contact-lists/:id → salesStaff, ownList, listVisible
+- DELETE /contact-lists/:id → salesStaff, ownList, listVisible
+- POST /contact-lists/:id/import → salesStaff, notTutor, listVisible
+- DELETE /contact-lists/:id/items/:itemId → salesStaff, ownList, listVisible
 - POST /leads/:id/recovery → canAccessLead
 - PUT /retention/config → loadCrmPolos, isRetentionOperator
 - POST /retention/run → loadCrmPolos, isRetentionOperator
@@ -219,6 +244,7 @@ Até lá, não crie usuários de coordenação nem de relacionamento para franqu
 - POST /leads/:id/enrollment-form → canAccessLead
 - POST /leads/:id/enrollment-form/send → canAccessLead
 - POST /tickets/:ticketId/enrollment-form → canWriteTicket
+- POST /leads/:id/claim → canClaimLead
 - PUT /leads/:id → canAccessLead
 - PUT /leads/:id/stage → canAccessLead
 - POST /leads/:id/relation → canAccessLead
@@ -265,7 +291,7 @@ Até lá, não crie usuários de coordenação nem de relacionamento para franqu
 - PUT /tickets/:ticketId/copilot/requests/:requestId/feedback → canReadTicket
 - PUT /tickets/:ticketId/copilot/requests/:requestId/take → canSendTicket
 - PUT /tickets/:ticketId/pin → canReadTicket
-- POST /tickets/:ticketId/claim → canWriteTicket
+- POST /tickets/:ticketId/claim → canClaimTicket
 - POST /tickets/:ticketId/take → canReadTicket
 - POST /tickets/:ticketId/ai → canWriteTicket
 - POST /tickets/:ticketId/reply-dismiss → canWriteTicket

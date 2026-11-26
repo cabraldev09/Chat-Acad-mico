@@ -495,7 +495,22 @@ const test = async (name, fn) => {
 const assert = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 
 let token;
-const http = axios.create({ baseURL: API, validateStatus: () => true });
+// No reused connections: a server that closes an idle one used to give "read ECONNRESET" on the first call after a pause. If one still
+// happens, ONLY idempotent calls (GET, HEAD) are tried once more, and every retry is printed and counted in the final report (never silent).
+// POST, PUT and DELETE are never repeated.
+const http = axios.create({ baseURL: API, validateStatus: () => true, httpAgent: new (require("http").Agent)({ keepAlive: false }) });
+const connectionRetries = [];
+http.interceptors.response.use(undefined, async error => {
+  const config = error.config || {};
+  const method = String(config.method || "").toLowerCase();
+  if (error.code === "ECONNRESET" && (method === "get" || method === "head") && !config.__retried) {
+    config.__retried = true;
+    connectionRetries.push(`${method.toUpperCase()} ${config.url}`);
+    console.log(`      (ECONNRESET: ${method.toUpperCase()} ${config.url} repetida uma vez)`);
+    return http(config);
+  }
+  throw error;
+});
 // Public-form tests use isolated documentation-only IPs so their fixture traffic
 // cannot consume the same per-IP throttle bucket as unrelated E2E requests.
 const postLeadForm = (path, body, testIp) => http.post(path, body, {
@@ -3838,7 +3853,16 @@ const postMeta = (id, payload, secret, badSig) => {
       const mine = await ids({ allQueues: "true", attendantId: String(a2.id) }, asUser(t1a));
       assert(!mine.includes(t2), "an attendant saw a colleague's conversation");
       assert(!(await ids({ allQueues: "true" }, asUser(t1a))).includes(t2), "allQueues worked for a non-manager");
-      assert((await http.get("/whatsapp", asUser(tc))).data.length >= 1, "coordinator does not list the connections");
+      // the connections the coordination lists (ESP-011): the ones whose owner is in its polos; one with no owner is the administration's
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${polo}, ${a1.id}, 'comercial', NOW(), NOW())`);
+      const ownConn = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, ownerId, createdAt, updatedAt) VALUES ('Conexão do Atendente Um', 'DISCONNECTED', 'telegram', false, ${a1.id}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      try {
+        const listed = (await http.get("/whatsapp", asUser(tc))).data.map(w => String(w.id));
+        assert(listed.includes(String(ownConn)), "coordinator does not list the connection of a person of its polo");
+        assert(!listed.includes(String(tgId)), "coordinator lists a connection with no owner");
+      } finally {
+        sql(`DELETE FROM Whatsapps WHERE id=${ownConn}`);
+      }
     });
     await test("the last administrator cannot be demoted, and the user form shows the effective role", async () => {
       // the list is paged: look for the administrator by e-mail instead of hoping it is on the first page
@@ -5030,7 +5054,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const leadStage = number => sql(`SELECT s.name FROM Leads l JOIN LeadStages s ON s.id=l.stageId JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}'`);
       const leadId = number => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}'`);
       const runOf = number => sql(`SELECT CONCAT(r.status,'|',COALESCE(r.nodeId,'')) FROM ChatFlowRuns r JOIN Tickets t ON t.id=r.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${number}' AND r.flowId=${flowId} ORDER BY r.id DESC LIMIT 1`);
-      const say = async (from, id, body, until, label) => {
+      // `settle`: a turn of the agent may come in several bubbles (the answer, then the list). With settle, after the awaited text the wait goes on until
+      // NOTHING new goes to this person for that many milliseconds (at most 10 s), so the checks read the whole turn and not only its first bubble.
+      const say = async (from, id, body, until, label, { settle = 0 } = {}) => {
         const mark = graph.sent.length;
         await inboundCloud(from, id, body);
         try { await waitFor(() => until(texts(mark)), 20000, label); } catch (err) { err.message += ` | sent to everyone meanwhile: ${JSON.stringify(graph.sent.slice(mark).filter(x => x.body && x.body.text).map(x => [x.body.to, x.body.text.body && x.body.text.body.slice(0, 120)]))}`; err.message += ` | lead: ${sql(`SELECT COALESCE(string_agg(CONCAT(l.id,'/polo=',COALESCE(l.poloId::text,'-'),'/city=',COALESCE(l.city,'-')), ' ; '), 'no lead') FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`)} | polos: ${sql(`SELECT string_agg(CONCAT(id,':',name,':',city,':',active), ' ; ') FROM Polos WHERE name LIKE 'Polo %'`).slice(0, 500)} | queues: ${sql(`SELECT string_agg(CONCAT(id,':',COALESCE(poloId::text,'-'),':',role), ' ; ') FROM Queues`).slice(0, 400)} | routing: ${sql(`SELECT COALESCE(string_agg(e.note, ' || '), '') FROM TicketEvents e JOIN Tickets t ON t.id=e.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND e.type = 'transfer'`).slice(0, 700)}`; throw err; }
@@ -5038,6 +5064,15 @@ const postMeta = (id, payload, secret, badSig) => {
         // only what went to this person counts: another conversation may still be sending
         const toThem = () => graph.sent.slice(mark).filter(x => x.path === "/PN1/messages" && x.body && x.body.type === "text" && x.body.text && x.body.to === from).length;
         await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND m.fromMe=true`)) >= toThem(), 8000, "replies stored");
+        if (settle) {
+          let seenCount = toThem(), quietSince = Date.now();
+          const limit = Date.now() + 10000;
+          while (Date.now() - quietSince < settle && Date.now() < limit) {
+            await sleep(100);
+            if (toThem() !== seenCount) { seenCount = toThem(); quietSince = Date.now(); }
+          }
+          await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND m.fromMe=true`)) >= toThem(), 8000, "replies stored (whole turn)");
+        }
         return texts(mark);
       };
 
@@ -5414,13 +5449,13 @@ const postMeta = (id, payload, secret, badSig) => {
       const QA = "5511920000258";
       await say(QA, "wamid.qs-a1", "Boa tarde", t => t.some(x => /Qual curso/.test(x)), "greeting before the area");
       const llmArea = anthropic.requests.length;
-      out = await say(QA, "wamid.qs-a2", "Gostaria de saber sobre os cursos na área da saúde", t => t.some(x => /área de saúde/.test(x)), "the area is answered from the catalogue");
+      out = await say(QA, "wamid.qs-a2", "Gostaria de saber sobre os cursos na área da saúde", t => t.some(x => /área de saúde/.test(x)), "the area is answered from the catalogue", { settle: 1500 });
       assert(anthropic.requests.length === llmArea, "the area question should not call the model");
       assert(/Radiologia \(tecnólogo\)/.test(out.join("\n")) && /Biomedicina/.test(out.join("\n")), `the health courses of the catalogue are missing: ${out}`);
       assert(!/Medicina|Enfermagem|Cst Em/.test(out.join("\n")), `a course that is not offered, or a raw name, was told: ${out}`);
       // "nessa área": the area comes from what the agent just said, and the list is again the one of the catalogue, without the model
       const llmArea2 = anthropic.requests.length;
-      out = await say(QA, "wamid.qs-a2b", "Quais são os cursos nessa área?", t => t.some(x => /área de saúde/.test(x)), "the area said before is kept");
+      out = await say(QA, "wamid.qs-a2b", "Quais são os cursos nessa área?", t => t.some(x => /área de saúde/.test(x)), "the area said before is kept", { settle: 1500 });
       assert(anthropic.requests.length === llmArea2 && /Radiologia \(tecnólogo\)/.test(out.join("\n")), `the follow-up about the area went to the model: ${out}`);
       out = await say(QA, "wamid.qs-a3", "Tem o curso de radiologia semi presencial?", t => t.length > 0, "radiologia is found");
       assert(!/não oferece/.test(out.join("\n")), `an offered course was denied: ${out}`);
@@ -7654,7 +7689,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.affiliateId=${aff.id} AND s.name='Indicações de afiliados' AND l.ownerId=${ow.id} AND l.source='Indicação'`) === "2", "leads not in the affiliate column with the right owner");
       assert(sql(`SELECT COUNT(*) FROM LeadTags lt JOIN Tags t ON t.id=lt.tagId JOIN Leads l ON l.id=lt.leadId WHERE l.affiliateId=${aff.id} AND t.name='Afiliado'`) === "2", "tag Afiliado missing");
       assert(sql(`SELECT COUNT(*) FROM Leads WHERE name='Estranho'`) === "0", "a stranger's card created a lead");
-      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE userId=${ow.id} AND title LIKE '%Marta Indicadora%'`) === "2", "first-contact tasks missing");
+      // the first-contact tasks are written a moment after the leads (a side effect, not part of the answer): wait for them, then the same check
+      try { await waitFor(() => sql(`SELECT COUNT(*) FROM LeadTasks WHERE userId=${ow.id} AND title LIKE '%Marta Indicadora%'`) === "2", 10000, "first-contact tasks"); } catch (err) { /* the assertion below says what was found */ }
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE userId=${ow.id} AND title LIKE '%Marta Indicadora%'`) === "2", `first-contact tasks missing: ${sql(`SELECT COUNT(*) FROM LeadTasks WHERE userId=${ow.id} AND title LIKE '%Marta Indicadora%'`)} of 2`);
       // a normal lead does not land in the affiliate column
       const normal = (await http.post("/leads", { name: "Lead comum", phone: "69988887777", source: "Site" }, auth())).data;
       const nl = normal.lead || normal;
@@ -9225,11 +9262,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!graph.sent.slice(tOut).some(x => x.body && x.body.to === "5511944440103" && JSON.stringify(x.body).includes("300,00")), "the offer went to who asked to stop");
       assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${tiago} AND automationKey LIKE 'recovery-%'`) === "0", "a recovery task for who asked to stop");
       assert(sql(`SELECT recoveryState FROM Leads WHERE id=${tiago}`) === "descartada", "who asked to stop is still in Recuperação");
-      // the preview of the offer shows only the leads the person may see: a coordination without polo sees no course nor value
+      // the preview of the offer follows the lists by polo (ESP-001): a coordination without polo does not open a list that is not its own,
+      // so it sees no name, course nor value of it
       await http.post("/users", { name: "Coordenação Sem Polo Oferta", email: "coord-oferta@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
       const coordTok = (await http.post("/auth/login", { email: "coord-oferta@x.com", password: "senha123" })).data.token;
-      const blind = (await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(coordTok))).data;
-      assert(blind.rows.every(r => r.course === null && r.monthly === "o consultor informa"), `the preview crossed leads out of scope ${JSON.stringify(blind.rows)}`);
+      const blind = await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(coordTok));
+      assert(blind.status === 403 && !blind.data.rows, `the preview crossed a list out of scope ${blind.status} ${JSON.stringify(blind.data)}`);
       await http.put("/operations/config", { outbound_allow_marketing: "false" }, auth());
     });
     await test("the conversations copied from a consultant's phone are read once: real leads in the funnel with a summary, enrollments with the RGM, the ones without it to confirm, who gave up in Recuperação with the reason; one notice; OpenBot takes masked readings through the API", async () => {
@@ -9426,6 +9464,43 @@ const postMeta = (id, payload, secret, badSig) => {
       const caps = await http.post("/auth/login", { email: "ADMIN@Whaticket.com", password: "admin" });
       assert(caps.status === 200, `login with capitals ${caps.status}`);
     });
+    // The renewal also has a limit on REFUSED calls (no cookie or a bad one), apart from the general one: 30 in 15 minutes for each address; the
+    // renewals that work are not what fills it (ESP-008 audit, #218). Its own network address (X-Forwarded-For is trusted in this suite), so the
+    // other tests that renew from this machine are not blocked by it, in whatever order they run.
+    await test("refresh_token: refused calls are limited early (429) and the renewals that work are not counted", async () => {
+      const origin = "http://localhost:3000";
+      const own = { Origin: origin, "X-Forwarded-For": "198.51.100.201" };
+      const login = await http.post("/auth/login", { email: "admin@whaticket.com", password: "admin" });
+      const cookie = (login.headers["set-cookie"] || []).map(c => c.split(";")[0]).join("; ");
+      assert(/jrt=/.test(cookie), "no refresh cookie at the login");
+      for (let i = 0; i < 40; i += 1) assert((await http.post("/auth/refresh_token", {}, { headers: { ...own, Cookie: cookie } })).status === 200, `renewal ${i} with the cookie was refused: the working ones must not be counted`);
+      let refused = 0, limited = null;
+      for (let i = 0; i < 40 && !limited; i += 1) {
+        const r = await http.post("/auth/refresh_token", {}, { headers: own });
+        if (r.status === 429) limited = r; else if (r.status === 401) refused += 1;
+      }
+      assert(limited && refused >= 25 && refused <= 31, `refused calls before the 429: ${refused}`);
+      assert(limited.headers["retry-after"] && limited.headers["access-control-allow-origin"] === origin && limited.data.error === "ERR_TOO_MANY_REQUESTS", `the 429: ${JSON.stringify(limited.headers)} ${JSON.stringify(limited.data)}`);
+    });
+    // The renewal of the login (ESP-008, QA-01): the server does not burn the refresh cookie when it renews, so two renewals at once with the same
+    // cookie both work; no cookie, or a person who left (logout changes the version), is a plain 401 and the cookie is cleared.
+    await test("session renewal: two at once with the same cookie both work; no cookie or a logout is a 401", async () => {
+      const email = "renova-sessao@x.com";
+      const made = await http.post("/users", { name: "Renova Sessao", email, password: "senha123", role: "consultor", profile: "user" }, auth());
+      assert(made.status === 200, `user ${made.status} ${JSON.stringify(made.data)}`);
+      const login = await http.post("/auth/login", { email, password: "senha123" });
+      const cookie = (login.headers["set-cookie"] || []).map(c => c.split(";")[0]).join("; ");
+      assert(/jrt=/.test(cookie) && login.status === 200, `login ${login.status}`);
+      const [a, b] = await Promise.all([1, 2].map(() => http.post("/auth/refresh_token", {}, { headers: { Cookie: cookie } })));
+      assert(a.status === 200 && b.status === 200 && a.data.token && b.data.token, `two renewals: ${a.status} ${b.status}`);
+      const again = await http.post("/auth/refresh_token", {}, { headers: { Cookie: cookie } });
+      assert(again.status === 200, `a third renewal with the same cookie: ${again.status}`);
+      const none = await http.post("/auth/refresh_token", {});
+      assert(none.status === 401 && none.data.error === "ERR_SESSION_EXPIRED", `no cookie: ${none.status} ${JSON.stringify(none.data)}`);
+      assert((await http.delete("/auth/logout", { headers: { Authorization: `Bearer ${a.data.token}`, Cookie: cookie } })).status === 200, "logout");
+      const after = await http.post("/auth/refresh_token", {}, { headers: { Cookie: cookie } });
+      assert(after.status === 401 && after.data.error === "ERR_SESSION_EXPIRED", `renewal after the logout: ${after.status}`);
+    });
     await test("refresh rate limit keeps CORS headers on 429", async () => {
       const origin = "http://localhost:3000";
       let limited;
@@ -9462,6 +9537,8 @@ const postMeta = (id, payload, secret, badSig) => {
   }
   const failed = results.filter(r => !r[0]);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+  if (connectionRetries.length) console.log(`ECONNRESET repetidos (só GET/HEAD): ${connectionRetries.length} -> ${connectionRetries.join("; ")}`);
+  require("./e2e-logs").save(__filename, global.__backendLog ? global.__backendLog() : "");
   failed.forEach(f => console.log(" FAIL", f[1]));
   if (failed.length && global.__backendLog) console.log("--- backend log tail ---\n" + global.__backendLog().slice(-2500));
   process.exit(failed.length ? 1 : 0);

@@ -8,6 +8,7 @@ Rode tudo isto antes de enviar ao GitHub e de atualizar a VPS. Qualquer falha im
 | Testes de unidade (motor de análise, proposta, e-mails) | `npx vitest run` | `backend` |
 | Testes de ponta a ponta (API inteira com WhatsApp/Telegram/Efí simulados) | `NODE_ENV=test CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" CHROME_ARGS="--no-sandbox --disable-setuid-sandbox" LOGIN_RATE_MAX=100 node scripts/channels-e2e.js` | `backend` |
 | Responsabilidade pela conversa (visualizar não assume; enviar atribui de forma atômica; ninguém toma a conversa de outro; IA silenciada; concorrência e idempotência) | `NODE_ENV=test npm run test:assign` | `backend` |
+| Fila comum + carteira (lead sem dono visível a todos os consultores, "Assumir" com um só vencedor, concorrência, avisos, desempenho) | `NODE_ENV=test npm run test:queue` | `backend` |
 | Estatísticas e Centro de Gestão Comercial (mesmos números nas duas telas, permissões, tempo real) e o CRM por polo (coordenação e relacionamento só nos seus polos) | `NODE_ENV=test npm run test:analytics` | `backend` |
 | Bloqueio de publicação (conferência dos testes e do rótulo `publicar`) | `node --test deploy/vps/check-ci.test.js deploy/vps/check-label.test.js` | raiz |
 | Textos em português e códigos de erro traduzidos | `node scripts/i18n-check.js` | `backend` |
@@ -20,6 +21,38 @@ Rode tudo isto antes de enviar ao GitHub e de atualizar a VPS. Qualquer falha im
 | Build do frontend | `npx vite build` | `frontend` |
 | Varredura de todas as rotas GET da API como administrador, consultor e tutor: falha em erro 500 ou rota da gestão aberta para quem não é da gestão | `API=http://localhost:8080 PGDATABASE=telas node scripts/route-sweep.js` (API em 8080) | `backend` |
 | Varredura de todas as telas, 4 perfis + a Central do Afiliado pública (abas, QR Code e arte em Story e Feed), digitando nos formulários | `node scripts/smoke-pages.js portal admin coordenacao consultor tutor` (API em 8080 e `vite preview` em 3000) | `frontend` |
+
+## Como subir a pilha local do zero (pré-requisitos)
+
+O que cada verificação precisa antes de rodar. Sem segredos nem endereços reais: tudo é local e os dados dos testes são fictícios.
+Conferido em um Mac com Node mais novo que o pedido e no CI (Node 22); o passo a passo **não foi validado em máquina limpa** (contêiner).
+
+- **Node:** 22.14 ou mais novo, abaixo de 23 (`backend/package.json`: `"node": ">=22.14.0 <23"`). Com outra versão o `npm` só avisa, mas o
+  CI usa a 22: prefira ela.
+- **Instalação:** `npm ci --legacy-peer-deps` em `backend` e em `frontend`. Os testes do frontend (`vitest`, `jsdom`, `@testing-library/react`)
+  o CI instala à parte, sem gravar no `package.json`: `npm install --no-save --legacy-peer-deps vitest@3.2.4 jsdom@26.1.0 @testing-library/react@12.1.5`.
+- **`whatsapp-web.js` vem por `git+ssh`** (`ssh://git@github.com/...`). Sem chave SSH do GitHub a instalação falha. Sem criar chave, mande o git
+  usar https só para esse endereço **e só naquele comando**, sem gravar nada na configuração do git:
+  `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf GIT_CONFIG_VALUE_0=ssh://git@github.com/ npm ci --legacy-peer-deps`.
+  (`git config --local` não resolve: o `npm` baixa esse pacote num diretório temporário, fora do seu clone; evite `--global`, que muda o git de
+  tudo na sua máquina.) Nunca coloque token no endereço nem em documento. Esse pacote baixa um Chromium no `postinstall`; se o download falhar,
+  use `PUPPETEER_SKIP_DOWNLOAD=1` na instalação e aponte `CHROME_BIN` para um Chrome já instalado (o CI usa `CHROME_BIN=/usr/bin/google-chrome`).
+- **PostgreSQL:** um servidor 16 rodando e um usuário que crie bancos (`PGUSER`, `PGHOST`; o CI usa `postgres` sem senha). Os testes de ponta a
+  ponta (`channels-e2e.js`, `assign-e2e.js`, `analytics-e2e.js`) **criam e apagam o próprio banco**, migram e semeiam sozinhos (`E2E_KEEP_DB=1`
+  guarda o banco para diagnóstico). `psql` precisa estar no `PATH` (ou `PG_BIN`). Não use o banco de trabalho.
+- **Só para teste, nunca em servidor de verdade:** `LOGIN_RATE_MAX=100` (afrouxa o limite de tentativas de login), `ALLOW_SWEEP=1` (deixa a
+  varredura de telas criar dados e marca o `/health` como "varrível") e `SKIP_WHATSAPP_SESSIONS=1` (não abre sessões de WhatsApp). Nenhuma delas
+  concede acesso, mas todas existem só para os testes e não devem ir para o `.env` de um servidor.
+- **Ponta a ponta:** `npm run build` e então `NODE_ENV=test LOGIN_RATE_MAX=100 CHROME_BIN=... CHROME_ARGS="--no-sandbox --disable-setuid-sandbox" node scripts/channels-e2e.js`
+  (cerca de 15 minutos). `LOGIN_RATE_MAX=100` evita o limite de tentativas de login do próprio teste. Portas livres são escolhidas sozinhas.
+- **Varredura de rotas e de telas:** crie e migre um banco de teste (`npx sequelize db:migrate` e `db:seed:all` com `NODE_ENV=test` e `DB_*`
+  apontando para ele), suba a API em 8080 com `ALLOW_SWEEP=1` (deixa a varredura criar dados; um servidor real nunca diz isso) e
+  `SKIP_WHATSAPP_SESSIONS=1`; a varredura de telas (`smoke-pages.js`) também lê `SKIP_WHATSAPP_SESSIONS=1` **no ambiente do próprio script**
+  (para preparar uma conversa de teste sem abrir sessão de WhatsApp) e precisa do `vite preview` em 3000 (`npx vite build` antes).
+- **Testes que falham de vez em quando:** quando um trabalho de ponta a ponta falha no GitHub, o log da API de teste fica no
+  arquivo `log-api-<script>` (guardado por 3 dias; como o repositório é público, antes de guardar são removidos `Authorization`, `Bearer`,
+  cookies, `jrt=` e tokens: `backend/scripts/e2e-logs.js`, com teste). Uma chamada GET/HEAD que levou `ECONNRESET` é repetida uma vez e aparece no relatório
+  ("ECONNRESET repetidos"); POST/PUT/DELETE nunca são repetidos. Nenhum teste é pulado nem tem tentativa automática do trabalho inteiro.
 
 ## Por que existe a verificação de leitura tardia de evento
 

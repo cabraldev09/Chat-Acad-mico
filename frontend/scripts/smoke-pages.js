@@ -159,6 +159,11 @@ async function seed(auth, userIds) {
   const poloList = await http.get("/polos", auth).catch(() => null);
   const poloId = polo && polo.data && polo.data.id || rowsOf(poloList && poloList.data, ["rows", "polos"]).find((row) => row.code === "VAR" || row.name === "Polo Varredura")?.id;
   if (poloId) {
+    // the coordination sees only the analyses of its polos (ESP-011): the sweep's coordination is in the polo of the fixture
+    if (userIds.coordenacao) {
+      const member = await http.post(`/polos/${poloId}/members/${userIds.coordenacao}`, { role: "coordenacao" }, auth).catch(() => null);
+      if (!member || member.status !== 200) setupIssues.push({ role: "setup", route: "/polos/:id/members", kind: "setup", text: `could not put the coordination in the sweep polo: ${member ? member.status : "no answer"}` });
+    }
     const curricularForm = new FormData();
     curricularForm.append("file", fs.readFileSync(path.resolve(__dirname, "../../backend/scripts/fixtures/sample-analise.pdf")), { filename: "analise-smoke.pdf", contentType: "application/pdf" });
     curricularForm.append("entryPeriod", "2");
@@ -174,6 +179,20 @@ async function seed(auth, userIds) {
 
   const academicForm = new FormData();
   academicForm.append("file", academicPdf(), { filename: "historico-smoke.pdf", contentType: "application/pdf" });
+  // the coordination sees an academic analysis through its student's polo (ESP-011): a student of the sweep polo (there is no route to delete one)
+  if (poloId) {
+    // the RGM is the one in the PDF (the analysis checks it); a student from an earlier run is reused and put in the sweep polo
+    let studentId = null;
+    const made = await http.post("/students", { name: "Aluno Teste Portal", rgm: "9000001", poloId }, auth).catch(() => null);
+    if (made && [200, 201].includes(made.status) && made.data && made.data.id) studentId = made.data.id;
+    else if (made && made.status === 409) {
+      const found = await http.get("/students", { ...auth, params: { search: "9000001" } }).catch(() => null);
+      const row = rowsOf(found && found.data, ["students", "rows"]).find((s) => String(s.rgm) === "9000001");
+      if (row && (await http.put(`/students/${row.id}`, { poloId }, auth).catch(() => null) || {}).status === 200) studentId = row.id;
+    }
+    if (studentId) academicForm.append("studentId", String(studentId));
+    else setupIssues.push({ role: "setup", route: "/students", kind: "setup", text: `could not prepare the student of the sweep polo: ${made ? made.status : "no answer"}` });
+  }
   const academic = await http.post("/analysis/academic", academicForm, { headers: { ...auth.headers, ...academicForm.getHeaders() } }).catch(() => null);
   if (academic && [200, 201].includes(academic.status) && academic.data && academic.data.id) {
     created.push(`/analysis/academic/${academic.data.id}`);
