@@ -18,7 +18,7 @@ import { logger } from "../../utils/logger";
 import { applyToLead } from "../AiServices/Tools";
 import AutoAssignTicket from "../AutomationServices/AutoAssignTicket";
 import { isWithinBusinessHours } from "../AutomationServices/BusinessHours";
-import { addActivity, changeStage, pickOwner, upsertLead } from "../CrmServices/LeadCore";
+import { addActivity, changeStage, ensureLead as ensureContactLead, pickOwner, upsertLead } from "../CrmServices/LeadCore";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
@@ -112,6 +112,12 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     const existing = await leadOf();
     if (existing) return existing;
     const contact = await Contact.findByPk(ticket.contactId);
+    // the same creation the inbound message starts (one per contact at a time): a bot that acts on the first message does not make a second
+    // lead next to the one the CRM is creating for the same person
+    if (contact) {
+      const shared = await ensureContactLead(contact, ticket.whatsapp?.channel || "whatsapp").catch(() => null);
+      if (shared) return shared;
+    }
     const out = await upsertLead(
       { name: vars.nome || contact?.name, phone: contact?.number, contactId: ticket.contactId, source: node.data?.source || "Chatbot", channel: ticket.whatsapp?.channel },
       null
