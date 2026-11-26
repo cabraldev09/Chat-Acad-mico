@@ -12,8 +12,11 @@ export const INSIGHT_LINKS = [
   "/estatisticas", "/estatisticas/captacao", "/estatisticas/tutoria", "/gestao-comercial", "/connections", "/reports", "/integrations"
 ];
 export const MAX_ACTIVE_INSIGHTS = Number(process.env.OPENBOT_INSIGHTS_MAX_ACTIVE || 20);
+// one token (or all the old tokens of full access together) cannot fill the panel alone: the rest stays free for the others
+export const MAX_ACTIVE_PER_TOKEN = Number(process.env.OPENBOT_INSIGHTS_MAX_PER_TOKEN || 8);
+// a recommendation is about the week: it lives at most 7 days (the OpenBot sends it again, as a new occurrence, if it still holds)
 export const DEFAULT_INSIGHT_DAYS = 7;
-export const MAX_INSIGHT_DAYS = 30;
+export const MAX_INSIGHT_DAYS = 7;
 
 // "looks like a person": an e-mail or any @; a run of 8 digits or more (phone, CPF, RGM, ids); a phone written with separators
 // ("(69) 99999-8888", "9999-8888", "+55 69 ..."); a CPF with mask; "cpf" or "rgm" followed by a number. Totals written with thousand

@@ -73,14 +73,22 @@ Corpo (exemplo fictício):
   `javascript:` ou outro caminho: `400 ERR_INSIGHT_INVALID_LINK`.
 - `dedupeKey` (obrigatório, até 160: letras, números, `:`, `.`, `_`, `-`; convenção `tema:AAAA-MM-DD`): o mesmo assunto em vigor vale uma
   vez só. Repetir a chave devolve `200 {"duplicado": true}` sem criar linha nem aviso (o conteúdo não muda). Um assunto novo usa chave nova.
-  `expiresInDays` de 1 a 30 (padrão 7).
+  `expiresInDays` de 1 a **7** (padrão 7): uma recomendação é da semana; se ainda valer depois, o OpenBot envia de novo.
+- **"Sem dados de pessoas" é regra de uso do OpenBot; a validação do servidor é só a rede de proteção.** Ela barra telefone, e-mail,
+  CPF, RGM, endereço da internet e qualquer sequência de 8 dígitos ou mais, mas **não** reconhece nome de pessoa (aluno, consultor ou lead),
+  códigos curtos (id de lead, protocolo), nem esconde dígitos escritos por extenso, de largura total ou separados um a um. Por isso o OpenBot
+  deve enviar só totais, percentuais e tendências; quem lê (só a administração) deve tratar o texto como dado, nunca como instrução.
 - **Sem dado pessoal, conferido no servidor:** título ou texto com telefone (8 dígitos seguidos ou escrito com separadores), e-mail ou
   qualquer `@`, CPF, RGM ou endereço da internet: `400 ERR_INSIGHT_PERSONAL_DATA` e nada é gravado. Totais, percentuais e números com
   separador de milhar passam ("1.250.000"). É a última defesa: envie só agregados.
 - Resposta `201 {"aceito": true}` (sem id). Limites: os 120 por minuto de todo token, mais **30 gravações por hora por token** (`429
-  ERR_TOO_MANY_REQUESTS`) e no máximo **20 recomendações em vigor** no painel (`429 ERR_INSIGHT_LIMIT` com `Retry-After`).
-- O administrador pode **dispensar** cada uma na tela (`PUT /openbot-insights/:id/resolve`, só administrador): some do painel e a linha
+  ERR_TOO_MANY_REQUESTS`) no máximo **8 em vigor por token** (`429 ERR_INSIGHT_TOKEN_LIMIT`; os tokens antigos de acesso total contam como um só) e **20 em vigor** no painel (`429 ERR_INSIGHT_LIMIT`, com `Retry-After`): um token sozinho não toma o painel.
+- O administrador pode **dispensar** cada uma (`PUT /openbot-insights/:id/resolve`) ou **todas de uma vez** (`PUT /openbot-insights/resolve-all`, botão "Dispensar todos" com confirmação), só administrador: some do painel e a linha
   fica. Dispensadas ou vencidas há mais de 30 dias são apagadas pela limpeza noturna.
+- **O sino toca uma vez por ocorrência:** o aviso do sino usa a chave do assunto mais o id da linha. O mesmo assunto ainda em vigor
+  (resposta `200 duplicado`) não toca de novo; o assunto que volta depois de dispensado ou vencido é uma ocorrência nova e toca de novo.
+  Para um aviso novo antes disso, use uma `dedupeKey` diferente (por exemplo com a semana).
+- **Quem é administrador:** a mesma definição em tudo (`roleOf` = perfil `admin` ou papel `admin`): recebe o aviso, vê o bloco e dispensa.
 - Erros do corpo: `ERR_INSIGHT_INVALID_KIND`, `_LEVEL`, `_TITLE`, `_BODY`, `_DEDUPE`, `_LINK`, `_EXPIRY` (todos `400`).
 - **Recomendação ao dono:** criar para o OpenBot um token novo só com `indicators:read` e `insights:write` (hoje o token "API Open Bot" tem
   acesso total, risco aceito em 25/11). A troca depende de decisão do dono; esta rota não a exige.

@@ -212,7 +212,7 @@ export const createInsight = async (req: Request, res: Response): Promise<Respon
     result = await recordInsight(input, caller.id);
   } catch (err: any) {
     // a full panel clears as the recommendations expire or are dismissed: try again in an hour
-    if (err?.message === "ERR_INSIGHT_LIMIT") res.setHeader("Retry-After", "3600");
+    if (err?.message === "ERR_INSIGHT_LIMIT" || err?.message === "ERR_INSIGHT_TOKEN_LIMIT") res.setHeader("Retry-After", "3600");
     throw err;
   }
   if (result.duplicated) return res.status(200).json({ duplicado: true });

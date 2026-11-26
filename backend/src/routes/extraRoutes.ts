@@ -176,6 +176,7 @@ r.put("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.update);
 r.delete("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.remove);
 r.post("/webhooks-config/:id/test", isAuth, isSystemAdmin, Webhook.test);
 // the recommendations of the OpenBot (written through POST /api/v1/insights): only the administrator dismisses them
+r.put("/openbot-insights/resolve-all", isAuth, isSystemAdmin, OpenbotInsight.resolveAll);
 r.put("/openbot-insights/:id/resolve", isAuth, isSystemAdmin, OpenbotInsight.resolve);
 r.get("/api-tokens", isAuth, isSystemAdmin, ApiToken.index);
 r.get("/api-tokens/scopes", isAuth, isSystemAdmin, ApiToken.scopes);

@@ -276,17 +276,59 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(!(await panel(admin)).data.openbotInsights.some(i => i.title === "<b>Atenção</b>"), "an expired insight stayed in the panel");
       assert((await call(writer, { ...base, dedupeKey: "html-1", title: "De novo", body: "Texto novo" })).status === 201, "an expired subject could not come back");
 
-      // limits: at most 20 in force (429 ERR_INSIGHT_LIMIT with Retry-After) and, apart, 30 calls an hour per token (429 of the limiter)
+      // validity: at most 7 days
+      assert((await call(writer, { ...base, dedupeKey: "valid-8", expiresInDays: 8 })).data.error === "ERR_INSIGHT_INVALID_EXPIRY", "8 days were accepted");
+      assert((await call(writer, { ...base, dedupeKey: "valid-30", expiresInDays: 30 })).data.error === "ERR_INSIGHT_INVALID_EXPIRY", "30 days were accepted");
+
+      // the bell rings once for each OCCURRENCE: the subject that comes back after being dismissed or after expiring rings again
+      sql(`UPDATE OpenbotInsights SET resolvedAt = NOW() WHERE resolvedAt IS NULL`);
+      const ringing = await mkToken(["insights:write"]);
+      const bellBefore = (await bell(admin)).length;
+      assert((await call(ringing, { ...base, dedupeKey: "volta:semana", title: "Assunto que volta" })).status === 201, "occurrence 1");
+      assert((await call(ringing, { ...base, dedupeKey: "volta:semana", title: "Assunto que volta" })).status === 200, "the duplicate in force");
+      assert((await bell(admin)).length === bellBefore + 1, "the duplicate in force rang the bell again");
+      const back = (await panel(admin)).data.openbotInsights.find(i => i.title === "Assunto que volta");
+      assert((await http.put(`/openbot-insights/${back.id}/resolve`, {}, as(admin))).status === 200, "dismiss before the return");
+      assert((await call(ringing, { ...base, dedupeKey: "volta:semana", title: "Assunto que volta" })).status === 201, "occurrence 2");
+      assert((await bell(admin)).length === bellBefore + 2, "the subject that came back did not ring the bell again");
+
+      // one definition of administrator: the profile admin (with another role) gets the notice AND sees the block; the bell and the screens agree
+      const adm2 = await http.post("/users", { name: "Admin Dois", email: "admin2@x.com", password: "senha123", profile: "admin", role: "consultor", queueIds: [queueId] }, as(admin));
+      assert(adm2.status === 200, `second administrator ${adm2.status} ${JSON.stringify(adm2.data)}`);
+      // (the screen creates people as profile "user"; an old account can still carry profile admin with another role)
+      sql(`UPDATE Users SET profile = 'admin' WHERE email = 'admin2@x.com'`);
+      const admin2 = (await http.post("/auth/login", { email: "admin2@x.com", password: "senha123" })).data.token;
+      assert((await call(ringing, { ...base, dedupeKey: "para-admin-2", title: "Para os dois administradores" })).status === 201, "insight for two administrators");
+      assert((await bell(admin2)).some(n => n.title === "OpenBot: Para os dois administradores"), `the administrator by profile got no notice: user ${sql("SELECT CONCAT(profile, '|', role) FROM Users WHERE email = 'admin2@x.com'")}, notices ${JSON.stringify((await bell(admin2)).map(n => n.title))}`);
+      assert((await panel(admin2)).data.openbotInsights.some(i => i.title === "Para os dois administradores"), "the administrator by profile did not see the block");
+      assert((await http.put("/openbot-insights/resolve-all", {}, as(admin2))).status === 200, "the administrator by profile could not dismiss");
+
+      // "dispensar todos": only the administrator; clears everything in force, the rows stay
+      assert((await call(ringing, { ...base, dedupeKey: "todos-1", title: "Um" })).status === 201 && (await call(ringing, { ...base, dedupeKey: "todos-2", title: "Dois" })).status === 201, "two to dismiss");
+      assert((await http.put("/openbot-insights/resolve-all", {}, as(coord))).status === 403 && (await http.put("/openbot-insights/resolve-all", {}, as(joao))).status === 403, "someone other than the administrator dismissed all");
+      const dismissedAll = await http.put("/openbot-insights/resolve-all", {}, as(admin));
+      assert(dismissedAll.status === 200 && dismissedAll.data.dismissed === 2, `dismiss all: ${dismissedAll.status} ${JSON.stringify(dismissedAll.data)}`);
+      assert((await panel(admin)).data.openbotInsights.length === 0 && Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE dedupeKey IN ('todos-1', 'todos-2') AND resolvedAt IS NOT NULL`)) === 2, "dismiss all did not clear the block and keep the rows");
+
+      // limits: at most 8 in force for each token (429 ERR_INSIGHT_TOKEN_LIMIT), 20 in all (429 ERR_INSIGHT_LIMIT with Retry-After) and, apart,
+      // 30 calls an hour per token (429 of the limiter)
       sql(`UPDATE OpenbotInsights SET resolvedAt = NOW() WHERE resolvedAt IS NULL`);
       const busy = await mkToken(["insights:write"]);
-      for (let i = 0; i < 20; i++) { const r = await call(busy, { ...base, dedupeKey: `lote-${i}`, title: `Recomendação ${i}` }); assert(r.status === 201, `fill ${i}: ${r.status} ${JSON.stringify(r.data)}`); }
-      const over = await call(busy, { ...base, dedupeKey: "lote-20", title: "Recomendação 20" });
+      for (let i = 0; i < 8; i++) { const r = await call(busy, { ...base, dedupeKey: `lote-${i}`, title: `Recomendação ${i}` }); assert(r.status === 201, `fill ${i}: ${r.status} ${JSON.stringify(r.data)}`); }
+      const perToken = await call(busy, { ...base, dedupeKey: "lote-8", title: "Recomendação 8" });
+      assert(perToken.status === 429 && perToken.data.error === "ERR_INSIGHT_TOKEN_LIMIT" && perToken.headers["retry-after"], `the 9th of one token: ${perToken.status} ${JSON.stringify(perToken.data)}`);
+      assert((await call(busy, { ...base, dedupeKey: "lote-3", title: "Recomendação 3" })).status === 200, "a duplicate was refused by the token limit");
+      // another token still has room: the panel is not taken by one token
+      const second = await mkToken(["insights:write"]), third = await mkToken(["insights:write"]);
+      for (let i = 0; i < 8; i++) assert((await call(second, { ...base, dedupeKey: `s-${i}`, title: `Segundo ${i}` })).status === 201, `second token ${i}`);
+      for (let i = 0; i < 4; i++) assert((await call(third, { ...base, dedupeKey: `t-${i}`, title: `Terceiro ${i}` })).status === 201, `third token ${i}`);
+      const over = await call(third, { ...base, dedupeKey: "t-4", title: "Terceiro 4" });
       assert(over.status === 429 && over.data.error === "ERR_INSIGHT_LIMIT" && over.headers["retry-after"], `the 21st in force: ${over.status} ${JSON.stringify(over.data)}`);
-      assert((await call(busy, { ...base, dedupeKey: "lote-3", title: "Recomendação 3" })).status === 200, "a duplicate was refused by the panel limit");
-      for (let i = 0; i < 8; i++) assert((await call(busy, { ...base, dedupeKey: `lote-x${i}` })).status === 429, "the panel limit let one in");
+      assert(Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE resolvedAt IS NULL AND expiresAt > NOW()`)) === 20, "more than 20 in force");
+      // 30 calls an hour: the 31st call of the token `busy` (8 + 1 refused + 1 duplicate so far) is limited by the limiter itself
+      for (let i = 0; i < 20; i++) assert((await call(busy, { ...base, dedupeKey: `x-${i}` })).status === 429, "a limit let one in");
       const limited = await call(busy, { ...base, dedupeKey: "lote-y" });
       assert(limited.status === 429 && limited.data.error === "ERR_TOO_MANY_REQUESTS" && limited.headers["retry-after"], `the 31st call in an hour: ${limited.status} ${JSON.stringify(limited.data)}`);
-      assert(Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE resolvedAt IS NULL AND expiresAt > NOW()`)) === 20, "more than 20 in force");
     });
 
     await test("polo supervisor feedback skips OpenAI when the sample is insufficient", async () => {

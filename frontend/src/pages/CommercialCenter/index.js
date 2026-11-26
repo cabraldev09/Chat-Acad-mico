@@ -507,8 +507,10 @@ const PoloBoard = ({ data, polos, history, feedbackPeriod }) => {
 // on every item, and only totals: the server refuses personal data. "Dispensar" hides the item; nothing runs because of what it says.
 const INSIGHT_TONE = { urgent: "bad", warning: "warn", info: "info" };
 const INSIGHT_COLOR = { urgent: "#dc2626", warning: "#d97706", info: "#0693E3" };
-const OpenbotInsights = ({ items, onDismiss, onOpen }) => {
+const OpenbotInsights = ({ items, onDismiss, onDismissAll, onOpen }) => {
   const c = useKit();
+  // "Dispensar todos" asks once more in the same place (no browser dialog): a second click confirms
+  const [confirming, setConfirming] = useState(false);
   if (!items || items.length === 0) return null;
   const day = (iso) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Porto_Velho", day: "2-digit", month: "2-digit" });
   return (
@@ -519,6 +521,22 @@ const OpenbotInsights = ({ items, onDismiss, onOpen }) => {
           <h3 className="mx-title">Recomendações do OpenBot</h3>
           <div className="mx-sub">Sugestões geradas pelo OpenBot a partir dos indicadores consolidados, sem dados de pessoas. Só a administração vê.</div>
         </div>
+        {onDismissAll && items.length > 1 && (
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flex: "none" }}>
+            {confirming && (
+              <button type="button" style={{ border: 0, background: "none", cursor: "pointer", padding: "6px 0", font: "inherit", fontSize: 12.5, fontWeight: 650, color: "#64748b" }} onClick={() => setConfirming(false)}>
+                Cancelar
+              </button>
+            )}
+            <button
+              type="button"
+              style={{ border: 0, background: "none", cursor: "pointer", padding: "6px 0", font: "inherit", fontSize: 12.5, fontWeight: 650, color: confirming ? "#dc2626" : "#64748b" }}
+              onClick={() => { if (confirming) { setConfirming(false); onDismissAll(); } else setConfirming(true); }}
+            >
+              {confirming ? `Confirmar: dispensar as ${items.length}` : "Dispensar todos"}
+            </button>
+          </div>
+        )}
       </div>
       <div className="mx-list" style={{ marginTop: 8 }}>
         {items.map((item) => (

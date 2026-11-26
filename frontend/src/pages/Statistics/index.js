@@ -339,6 +339,16 @@ const Now = ({ params }) => {
       toastError(err);
     }
   };
+  const dismissAllInsights = async () => {
+    const ids = (data && data.openbotInsights ? data.openbotInsights : []).map((i) => i.id);
+    setDismissed((list) => [...list, ...ids]);
+    try {
+      await api.put("/openbot-insights/resolve-all");
+    } catch (err) {
+      setDismissed((list) => list.filter((x) => !ids.includes(x)));
+      toastError(err);
+    }
+  };
   if (error && !data) return <Failed onRetry={reload} />;
   if (!data) return <div className={c.cols}><div className={c.panel} style={{ minHeight: 160, opacity: 0.6 }} /><div className={c.panel} style={{ minHeight: 160, opacity: 0.6 }} /></div>;
   return (
@@ -365,6 +375,7 @@ const Now = ({ params }) => {
         items={(data.openbotInsights || []).filter((i) => !dismissed.includes(i.id))}
         onOpen={(link) => history.push(link)}
         onDismiss={dismissInsight}
+        onDismissAll={dismissAllInsights}
       />
       {selected && <Detail userId={selected} period={live} defs={defs} onClose={() => setSelected(null)} />}
     </div>
