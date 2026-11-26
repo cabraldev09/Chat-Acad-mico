@@ -1,6 +1,15 @@
 import { toast } from "react-toastify";
 
 import openSocket from "../services/socket-io";
+import { i18n } from "../translate/i18n";
+
+// the reason of the first pair that did not go, in words (the server sends an error code)
+export const failureReason = (pairs) => {
+  const code = ((pairs || []).find((x) => x && x.reason) || {}).reason;
+  if (!code) return "";
+  const key = `backendErrors.${code}`;
+  return i18n.exists(key) ? i18n.t(key) : "";
+};
 
 // What the person forwarded keeps going in the background: a toast shows "Enviando 3/12" and ends with the result.
 export const trackForward = ({ batchId, total }) => {
@@ -17,7 +26,10 @@ export const trackForward = ({ batchId, total }) => {
         return;
       }
       stop();
-      if (p.failed) toast.update(id, { render: `${p.done} enviadas, ${p.failed} não saíram. Tente de novo as que faltam.`, type: toast.TYPE.WARNING, autoClose: 8000 });
+      if (p.failed) {
+        const why = failureReason(p.failedPairs);
+        toast.update(id, { render: `${p.done} enviadas, ${p.failed} não saíram.${why ? ` ${why}` : " Tente de novo as que faltam."}`, type: toast.TYPE.WARNING, autoClose: 10000 });
+      }
       else toast.update(id, { render: p.total > 1 ? "Mensagens encaminhadas." : "Mensagem encaminhada.", type: toast.TYPE.SUCCESS, autoClose: 3000 });
     });
     // never leave the toast hanging if the answer gets lost

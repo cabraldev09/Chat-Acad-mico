@@ -387,7 +387,8 @@ export const update = async (
     if (target?.role === "tutoria" && current && current.status !== "closed" && sideOfSegment(current.segment) !== "tutoria") {
       const number = await connectionOfTeam("tutoria");
       if (number && number.id !== current.whatsappId) {
-        const done = await handoffToTeam(current.id, "tutoria", Number(req.user.id), note || "");
+        // the attendant chosen in the transfer (a tutor of that queue) gets the student; and the client is told when asked
+        const done = await handoffToTeam(current.id, "tutoria", Number(req.user.id), note || "", { userId: changes.userId ? Number(changes.userId) : null, queueId: Number(changes.queueId), notifyClient: Boolean(notifyClient) });
         return res.status(200).json({ ...(await ShowTicketService(String(current.id))).toJSON(), teamHandoff: done });
       }
     }

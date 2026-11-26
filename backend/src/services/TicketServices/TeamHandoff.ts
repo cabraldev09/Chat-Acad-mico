@@ -83,7 +83,11 @@ export interface TeamHandoffResult {
 // "Chamar a tutoria" / "Chamar o consultor": the student's conversation on the OTHER side's number is opened (or found) and given to the
 // owner of that side (the student's tutor, or the client's consultant; without one, the polo's queue of that side). The person called gets a
 // summary of this conversation and the note; this conversation stays where it is, with the same attendant, and neither side reads the other.
-export const handoffToTeam = async (ticketId: number, team: Team, actorId: number | null, note = ""): Promise<TeamHandoffResult> => {
+// Who the person chose in "Transferir" (an attendant and the queue of the other side) and whether the client is told: the chosen one gets the
+// student, as long as they work in that queue; without a choice it goes to the student's tutor (or the client's consultant), as before.
+export interface HandoffChoice { userId?: number | null; queueId?: number | null; notifyClient?: boolean }
+
+export const handoffToTeam = async (ticketId: number, team: Team, actorId: number | null, note = "", choice: HandoffChoice = {}): Promise<TeamHandoffResult> => {
   const source = await Ticket.findByPk(ticketId);
   if (!source) throw new AppError("ERR_NO_TICKET_FOUND", 404);
   if (source.isGroup) throw new AppError("ERR_TEAM_HANDOFF_GROUP", 400);
@@ -93,9 +97,20 @@ export const handoffToTeam = async (ticketId: number, team: Team, actorId: numbe
   if (target.id === source.whatsappId) throw new AppError("ERR_TEAM_HANDOFF_SAME_SIDE", 400);
 
   const lead = await Lead.findOne({ where: { contactId: source.contactId }, attributes: ["id", "poloId", "ownerId", "onboardingTutorId"], order: [["updatedAt", "DESC"]] });
-  const ownerId = (team === "tutoria" ? lead?.onboardingTutorId : lead?.ownerId) || null;
-  const owner = ownerId ? await User.findByPk(ownerId, { attributes: ["id", "name"] }) : null;
-  const queue = lead?.poloId ? await Queue.findOne({ where: { poloId: lead.poloId, role: QUEUE_ROLE[team] } as any, attributes: ["id"] }) : null;
+  const chosenQueue = choice.queueId ? await Queue.findByPk(choice.queueId, { attributes: ["id", "name", "role"] }) : null;
+  if (choice.queueId && (!chosenQueue || chosenQueue.role !== QUEUE_ROLE[team])) throw new AppError("ERR_QUEUE_NOT_FOUND", 404);
+  let owner: User | null = null;
+  if (choice.userId) {
+    owner = await User.findByPk(choice.userId, { attributes: ["id", "name", "profile"], include: [{ model: Queue, as: "queues", attributes: ["id"] }] });
+    if (!owner) throw new AppError("ERR_NO_USER_FOUND", 404);
+    // the attendant must belong to the queue the conversation goes to (the same rule as any transfer)
+    const inQueue = chosenQueue ? (owner.queues || []).some(q => q.id === chosenQueue.id) : true;
+    if (!inQueue && owner.profile !== "admin") throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
+  } else {
+    const ownerId = (team === "tutoria" ? lead?.onboardingTutorId : lead?.ownerId) || null;
+    owner = ownerId ? await User.findByPk(ownerId, { attributes: ["id", "name"] }) : null;
+  }
+  const queue = chosenQueue || (lead?.poloId ? await Queue.findOne({ where: { poloId: lead.poloId, role: QUEUE_ROLE[team] } as any, attributes: ["id", "name"] }) : null);
   const actor = actorId ? await User.findByPk(actorId, { attributes: ["id", "name"] }) : null;
   const summary = await summaryFor(source, team, actorId || 0);
   const cleanNote = String(note || "").trim().slice(0, 1000);
@@ -107,6 +122,17 @@ export const handoffToTeam = async (ticketId: number, team: Team, actorId: numbe
   await TicketEvent.create({ ticketId: other.id, type: "team_handoff_in", actorId, toUserId: other.userId || null, note: text.slice(0, 4000) } as any);
   await TicketEvent.create({ ticketId: source.id, type: "team_handoff_out", actorId, toUserId: other.userId || null, note: `Chamou ${team === "tutoria" ? "a tutoria" : "o consultor"} (conversa nº ${other.id} no número ${target.name}).${cleanNote ? ` Recado: ${cleanNote}` : ""}`.slice(0, 1000) } as any);
   if (lead) await addActivity(lead.id, actorId, "note", text.slice(0, 2000)).catch(() => undefined);
+  // "Avisar o cliente": the client hears it where they are talking now, with who will answer and from which number
+  if (choice.notifyClient) {
+    try {
+      const { default: SendWhatsAppMessage } = await import("../WbotServices/SendWhatsAppMessage");
+      const { default: ShowTicketService } = await import("./ShowTicketService");
+      const where = owner ? `*${owner.name}*, da ${team === "tutoria" ? "tutoria" : "equipe comercial"}` : `a ${team === "tutoria" ? "tutoria" : "equipe comercial"}`;
+      await SendWhatsAppMessage({ body: `Seu atendimento foi encaminhado para ${where}. A conversa continua pelo número ${target.name}.`, ticket: await ShowTicketService(String(source.id)) });
+    } catch (err) {
+      logger.warn(`Aviso ao cliente do repasse (ticket ${source.id}) não enviado: ${(err as Error).message}`);
+    }
+  }
   await emitTicketUpdate(other.id);
   return { ticketId: other.id, userId: other.userId || null, connectionName: target.name, summary };
 };

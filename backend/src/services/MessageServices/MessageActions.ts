@@ -1,3 +1,4 @@
+import { forwardBodyOf } from "./ForwardBody";
 import { bodyOfMedia } from "../../helpers/MediaLabel";
 import { Op } from "sequelize";
 import { fire } from "../../helpers/Fire";
@@ -172,7 +173,10 @@ export const forwardMessage = async (req: Request, id: string, ticketIds: number
   const ids = [...new Set(ticketIds.map(Number))].filter(Boolean).slice(0, 10);
   if (!ids.length) throw new AppError("ERR_FORWARD_NO_TARGET", 400);
 
-  const rawMedia = message.getDataValue("mediaUrl") as string | null;
+  // a location goes as its description and map link, a file never downloaded (or removed) is refused with the reason
+  const what = forwardBodyOf({ ...message.get({ plain: true }), mediaUrl: message.getDataValue("mediaUrl") as string | null });
+  if (!what.ok) throw new AppError(what.reason, what.reason === "ERR_NO_MESSAGE_FOUND" ? 404 : 400);
+  const rawMedia = what.media;
   const source = rawMedia ? publicFile(rawMedia) : null;
   if (source && !fs.existsSync(source)) throw new AppError("ERR_MEDIA_NOT_FOUND", 404);
 
@@ -190,7 +194,7 @@ export const forwardMessage = async (req: Request, id: string, ticketIds: number
       // SendWhatsAppMedia consumes the file it sends: hand it a copy
       const copyName = `fwd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${path.extname(rawMedia)}`;
       fs.copyFileSync(source, path.join(PUBLIC_DIR, copyName));
-      const caption = message.body && message.body !== rawMedia && !/^\d{10,}\.\w{2,5}$/.test(message.body) ? message.body : "";
+      const caption = what.body;
       // eslint-disable-next-line no-await-in-loop
       await SendWhatsAppMedia({
         media: {
@@ -204,7 +208,7 @@ export const forwardMessage = async (req: Request, id: string, ticketIds: number
       });
     } else {
       // eslint-disable-next-line no-await-in-loop
-      await SendWhatsAppMessage({ body: message.body, ticket });
+      await SendWhatsAppMessage({ body: what.body, ticket });
     }
     sent += 1;
   }
@@ -220,7 +224,8 @@ export interface ForwardProgress {
   failed: number;
   total: number;
   finished: boolean;
-  failedPairs: Array<{ messageId: string; ticketId: number }>;
+  // each pair that did not go, with the reason (an error code the screen translates)
+  failedPairs: Array<{ messageId: string; ticketId: number; reason?: string }>;
 }
 
 export const forwardBatch = async (req: Request, messageIds: string[], ticketIds: number[]): Promise<{ batchId: string; total: number }> => {
@@ -254,6 +259,11 @@ export const forwardBatch = async (req: Request, messageIds: string[], ticketIds
     const raw = m.getDataValue("mediaUrl") as string | null;
     if (raw && !fs.existsSync(path.join(PUBLIC_DIR, raw))) throw new AppError("ERR_MEDIA_NOT_FOUND", 404);
   }
+  // what each one sends; one that cannot go (a file never downloaded, removed content) counts as a failure with its reason, and when
+  // none can go the person is answered at once
+  const plan = new Map(ordered.map(m => [m.id, forwardBodyOf({ ...m.get({ plain: true }), mediaUrl: m.getDataValue("mediaUrl") as string | null })]));
+  const first = [...plan.values()].find(p => !p.ok);
+  if (first && !first.ok && [...plan.values()].every(p => !p.ok)) throw new AppError(first.reason, 400);
 
   const batchId = `fb${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const total = ordered.length * tickets.length;
@@ -265,20 +275,22 @@ export const forwardBatch = async (req: Request, messageIds: string[], ticketIds
 
   const sendOne = async (message: Message, target: Ticket): Promise<void> => {
     // the same rule as any message a person sends: the first one claims a conversation nobody attends, a conversation of someone else refuses
+    const what = plan.get(message.id);
+    if (!what || !what.ok) throw new AppError(what && !what.ok ? what.reason : "ERR_NO_MESSAGE_FOUND", 400);
     const ticket = await ActivateForSending(target, userId);
-    const rawMedia = message.getDataValue("mediaUrl") as string | null;
+    const rawMedia = what.media;
     if (rawMedia) {
       // SendWhatsAppMedia consumes the file it sends: hand it a copy
       const copyName = `fwd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${path.extname(rawMedia)}`;
       fs.copyFileSync(path.join(PUBLIC_DIR, rawMedia), path.join(PUBLIC_DIR, copyName));
-      const caption = message.body && message.body !== rawMedia && !/^\d{10,}\.\w{2,5}$/.test(message.body) ? message.body : "";
+      const caption = what.body;
       await SendWhatsAppMedia({
         media: { filename: copyName, originalname: rawMedia, mimetype: mimeFromName(rawMedia), path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
         ticket,
         body: caption
       });
     } else {
-      await SendWhatsAppMessage({ body: message.body, ticket });
+      await SendWhatsAppMessage({ body: what.body, ticket });
     }
   };
 
@@ -298,7 +310,8 @@ export const forwardBatch = async (req: Request, messageIds: string[], ticketIds
             } catch (err) {
               logger.warn(`forward batch ${batchId}: message ${message.id} to ticket ${ticket.id} failed: ${(err as Error).message}`);
               progress.failed += 1;
-              progress.failedPairs.push({ messageId: message.id, ticketId: ticket.id });
+              const reason = err instanceof AppError ? String(err.message) : "ERR_SENDING_WAPP_MSG";
+              progress.failedPairs.push({ messageId: message.id, ticketId: ticket.id, reason });
             }
             tell();
           }
