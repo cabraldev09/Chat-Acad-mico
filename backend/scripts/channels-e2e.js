@@ -522,7 +522,10 @@ const postMeta = (id, payload, secret, badSig) => {
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "150",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`, INSTAGRAM_TOKEN_URL: `http://localhost:${GRAPH_PORT}/ig/oauth/access_token`, INSTAGRAM_GRAPH_URL: `http://localhost:${GRAPH_PORT}/ig`, CHANNEL_TOKEN_REFRESH_MS: "2500", CHANNEL_TOKEN_FIRST_MS: "1500",
       SKIP_WHATSAPP_SESSIONS: "1", TRUST_PROXY: "loopback", SKIP_DEFAULT_DATA: "1", SETTINGS_CACHE_MS: "0", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
-      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ONBOARDING_SLA_MS: "4000", REACTIVATION_MS: "3000", ALLOW_PRIVATE_URLS: "true", CRM_WATCH: "off"
+      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000",
+      // this suite counts the transcriptions of the AI agent exactly: the background transcription of the conversations between people
+      // (workers/HumanTranscription) is tested on its own in analytics-e2e.js
+      HUMAN_TRANSCRIBE_MS: "86400000", ONBOARDING_SLA_MS: "4000", REACTIVATION_MS: "3000", ALLOW_PRIVATE_URLS: "true", CRM_WATCH: "off"
 
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
@@ -8313,6 +8316,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${u.id}, 0, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const lines = [[false, "Oi, quero fazer Direito mas achei caro. Meu CPF 123.456.789-09"], [true, "Oi Pedro, o valor é esse mesmo"], [false, "Me liga no 69 99999-1234"], [true, "Certo, vou mandar a proposta"]];
       lines.forEach(([fromMe, body], i) => sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('rev-${ticketId}-${i}', ${ticketId}, ${contactId}, '${body}', ${fromMe}, true, 'chat', 1, NOW() - INTERVAL '${10 - i} minutes', NOW())`));
+      // voice notes: the one with a transcript is read as its text (with the same removal of personal data), the other one is a marker
+      sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, mediaUrl, transcript, ack, createdAt, updatedAt) VALUES ('rev-${ticketId}-a1', ${ticketId}, ${contactId}, 'rev-a1.ogg', false, true, 'audio', 'rev-a1.ogg', 'Pedro de novo, também queria saber da bolsa, meu email pedro@exemplo.com', 1, NOW() - INTERVAL '5 minutes', NOW())`);
+      sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, mediaUrl, ack, createdAt, updatedAt) VALUES ('rev-${ticketId}-a2', ${ticketId}, ${contactId}, 'rev-a2.ogg', false, true, 'audio', 'rev-a2.ogg', 1, NOW() - INTERVAL '4 minutes', NOW())`);
       sql(`INSERT INTO OutboundMessages (ticketId, userId, clientKey, payload, status, attempts, sentAt, providerMsgId, createdAt, updatedAt) VALUES (${ticketId}, ${u.id}, 'rev-${ticketId}', '{}', 'sent', 1, NOW(), 'rev-${ticketId}-1', NOW(), NOW())`);
       // without an OpenAI agent nothing is read and nothing is spent
       const none = await http.post("/analytics/coaching/run", {}, auth());
@@ -8326,7 +8332,8 @@ const postMeta = (id, payload, secret, badSig) => {
         assert(run.status === 200 && run.data.reviewed >= 1, `run ${run.status} ${JSON.stringify(run.data)}`);
         const sent = (anthropic.openai || []).map(b => JSON.stringify(b.messages)).find(m => /valor/.test(m) && /proposta/.test(m));
         assert(sent, "the conversation did not reach the model");
-        assert(!/123\.456|99999|Pedro|Revisada/.test(sent), `personal data went to the model: ${sent.slice(0, 300)}`);
+        assert(!/123\.456|99999|Pedro|Revisada|pedro@exemplo|rev-a1\.ogg/.test(sent), `personal data went to the model: ${sent.slice(0, 300)}`);
+        assert(/\[áudio\] \[NOME\] de novo, também queria saber da bolsa/.test(sent) && /\[áudio sem transcrição\]/.test(sent), `the voice notes did not reach the review: ${sent.slice(0, 600)}`);
         const kept = sql(`SELECT objections::text || '|' || skipped::text || '|' || COALESCE(note, '') FROM ConsultantReviews WHERE ticketId=${ticketId}`);
         assert(/"preco"/.test(kept) && /false/.test(kept) && /grade/.test(kept), `review kept ${kept}`);
         // a second run the same day reads nothing again (and spends nothing)

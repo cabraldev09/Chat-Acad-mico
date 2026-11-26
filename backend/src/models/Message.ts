@@ -39,6 +39,10 @@ class Message extends Model<Message> {
   @Column(DataType.TEXT)
   transcript: string;
 
+  // when the transcription was tried (once per voice note, also when it had no speech): see AiServices/HumanTranscription
+  @Column(DataType.DATE)
+  transcribeTriedAt: Date;
+
   @Column(DataType.TEXT)
   get mediaUrl(): string | null {
     if (this.getDataValue("mediaUrl")) {

@@ -46,7 +46,7 @@ const assert = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 
 // ------------------------------------------------------------------ Telegram mock
 const tg = { updates: [], sent: [], n: 100, failChats: new Set(), delayMs: 0 };
-const aiMock = { requests: [], poloId: 0 };
+const aiMock = { requests: [], poloId: 0, transcriptions: 0 };
 const startTelegramMock = () => {
   const app = express();
   app.use(express.json());
@@ -77,6 +77,12 @@ const startTelegramMock = () => {
 const startAiMock = () => {
   const app = express();
   app.use(express.json());
+  // OpenAI audio transcription (simulated): what a voice note of a conversation between people said
+  app.post("/v1/audio/transcriptions", (req, res) => {
+    aiMock.transcriptions += 1;
+    req.resume();
+    req.on("end", () => res.json({ text: "Quero saber o valor da mensalidade de Direito", duration: 4 }));
+  });
   app.post("/v1/chat/completions", (req, res) => {
     aiMock.requests.push(req.body);
     return res.json({
@@ -145,7 +151,9 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       ...process.env, DATABASE_URL: "", DATABASE_URL_POOL: "", DB_SSL: "false", NODE_ENV: "test", DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: process.env.PGPASSWORD || "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API, FRONTEND_URL: "http://localhost:3000",
       JWT_SECRET: "e2e", DASHBOARD_CACHE_MS: "0", JWT_REFRESH_SECRET: "e2e-r", LOGIN_RATE_MAX: "1000", TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`,
-      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn"
+      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn",
+      // the background transcription of voice notes is run by the scenario itself (one run at a time, at the moment it wants)
+      HUMAN_TRANSCRIBE_MS: "86400000"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
@@ -845,6 +853,77 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(taskOf(task).reason === "transcript_received", `reason ${taskOf(task).reason}`);
       await waitFor(() => sql(`SELECT stageId FROM Leads WHERE id=${leadId}`) === String(analysis), 8000, "the lead left Aguardando histórico");
     });
+    await test("voice notes of the conversations between people: transcribed once in the background, only on WhatsApp numbers, never with the switch off or the cap reached, shown only to who sees the conversation", async () => {
+      const fs = require("fs");
+      const pub = path.join(ROOT, "public");
+      fs.mkdirSync(pub, { recursive: true });
+      const tag = `hv${process.pid}`;
+      // run asynchronously: the simulated OpenAI lives in this process and must keep answering while the child waits for it
+      const run = async () => {
+        const { stdout } = await require("util").promisify(require("child_process").execFile)("node", ["-e", "require('./dist/services/AiServices/HumanTranscription').transcribePending().then(r => { process.stdout.write('\\n' + JSON.stringify(r) + '\\n'); process.exit(0); }, e => { console.error(e); process.exit(1); })"], { cwd: ROOT, env });
+        return JSON.parse(String(stdout).trim().split("\n").pop());
+      };
+      const number = (channel) => sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('${channel} ${tag}', 'CONNECTED', '${channel}', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cloud = number("whatsapp_cloud"), qr = number("whatsapp");
+      let n = 0;
+      const conversation = (whatsappId, { group = false, owner = ids.joao } = {}) => {
+        n += 1;
+        const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Voz ${n}', '55690000${tag.length}${n}${process.pid % 1000}', '', ${group}, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, aiActive, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('open', ${contactId}, ${whatsappId}, ${queueId}, ${owner || "NULL"}, false, 0, ${group}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return { contactId, ticketId };
+      };
+      const voice = (c, id, { fromMe = false, minutesAgo = 5 } = {}) => {
+        const f = `${tag}-${id}.ogg`;
+        fs.writeFileSync(path.join(pub, f), Buffer.alloc(8000));
+        sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, mediaUrl, ack, createdAt, updatedAt) VALUES ('${tag}-${id}', ${c.ticketId}, ${c.contactId}, '${f}', ${fromMe}, true, 'audio', '${f}', 0, NOW() - INTERVAL '${minutesAgo} minutes', NOW())`);
+        return f;
+      };
+      const transcriptOf = (id) => sql(`SELECT COALESCE(transcript, '') FROM Messages WHERE id='${tag}-${id}'`);
+      const files = [];
+      try {
+        assert((await http.put("/ai-settings", { openai: "sk-openai-test" }, as(admin))).status === 200, "openai key");
+        const lead = conversation(cloud), team = conversation(qr), group = conversation(cloud, { group: true }), telegram = conversation(connectionId);
+        files.push(voice(lead, "lead"), voice(team, "team", { fromMe: true }), voice(group, "group"), voice(telegram, "telegram"), voice(lead, "fresh", { minutesAgo: 0 }));
+        // off by default (the owner turns it on after telling the team and the leads): nothing is sent
+        assert((await http.get("/ai-handoff", as(admin))).data.settings.transcribeHuman === false, "the transcription of the team should start off");
+        assert((await run()).stopped === "off" && aiMock.transcriptions === 0, "transcribed while off by default");
+        assert((await http.put("/ai-handoff", { transcribeHuman: true }, as(admin))).data.settings.transcribeHuman === true, "turn on");
+        const first = await run();
+        assert(first.transcribed === 2 && first.failed === 0, `first run ${JSON.stringify(first)}`);
+        assert(aiMock.transcriptions === 2, `the OpenAI was called ${aiMock.transcriptions} times`);
+        assert(transcriptOf("lead") === "Quero saber o valor da mensalidade de Direito" && transcriptOf("team") === "Quero saber o valor da mensalidade de Direito", "the transcript of the lead and of the team was not kept");
+        // a group, another channel and a voice note that just arrived (left to the AI agent and to the download) are not sent
+        assert(!transcriptOf("group") && !transcriptOf("telegram") && !transcriptOf("fresh"), "a voice note out of the rule was transcribed");
+        // once: the next run sends nothing again
+        const second = await run();
+        assert(second.transcribed === 0 && aiMock.transcriptions === 2, `second run ${JSON.stringify(second)} / ${aiMock.transcriptions}`);
+        // the cost is counted with no agent, as a reading of the conversation
+        assert(Number(sql(`SELECT COUNT(*) FROM AiUsage WHERE kind='reading' AND agentId IS NULL AND model='whisper-1'`)) === 2, "the usage was not logged");
+
+        // who sees the conversation sees the text; a colleague who does not, does not
+        const shown = (await http.get(`/messages/${lead.ticketId}`, as(joao)));
+        assert(shown.status === 200 && shown.data.messages.some(m => m.transcript === "Quero saber o valor da mensalidade de Direito"), "the owner does not see the transcript");
+        assert((await http.get(`/messages/${lead.ticketId}`, as(gabrielli))).status === 403, "another consultant read the conversation");
+
+        // the switch of the conversations between people off (only the management changes it): nothing is sent
+        assert((await http.put("/ai-handoff", { transcribeHuman: false }, as(joao))).status === 403, "a consultant changed the switch");
+        const off = await http.put("/ai-handoff", { transcribeHuman: false }, as(admin));
+        assert(off.status === 200 && off.data.settings.transcribeHuman === false, `switch off ${JSON.stringify(off.data.settings)}`);
+        files.push(voice(lead, "off"));
+        assert((await run()).stopped === "off" && !transcriptOf("off") && aiMock.transcriptions === 2, "transcribed with the switch off");
+        // on again, but the own cap of the day reached (8 seconds used of 0 minutes): nothing is sent and the voice note waits
+        const capped = await http.put("/ai-handoff", { transcribeHuman: true, humanMinutes: 0 }, as(admin));
+        assert(capped.status === 200 && capped.data.settings.humanMinutes === 0, "cap");
+        assert((await run()).stopped === "own_cap" && !transcriptOf("off") && aiMock.transcriptions === 2, "transcribed with the cap reached");
+        // room in the cap again: the one that waited is sent
+        await http.put("/ai-handoff", { humanMinutes: 120 }, as(admin));
+        assert((await run()).transcribed === 1 && transcriptOf("off") && aiMock.transcriptions === 3, "the voice note that waited was not transcribed");
+      } finally {
+        await http.put("/ai-settings", { openai: "" }, as(admin)).catch(() => null);
+        files.forEach(f => fs.rmSync(path.join(pub, f), { force: true }));
+      }
+    });
+
     await test("retention of conversations and voice notes: off deletes nothing, the simulation deletes nothing, on deletes only what is allowed and keeps the transcript", async () => {
       const fs = require("fs");
       const pub = path.join(ROOT, "public");
