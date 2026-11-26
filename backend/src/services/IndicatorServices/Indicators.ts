@@ -1,4 +1,4 @@
-import { Op, QueryTypes } from "sequelize";
+import { Op, QueryTypes, literal } from "sequelize";
 
 import sequelize from "../../database";
 import { dayBounds } from "../../helpers/AppTime";
@@ -16,9 +16,11 @@ import { getConfig } from "../../channels/types";
 //   follow-ups overdue          Leads.nextFollowUpAt already past (the filter "Follow-up atrasado" of the CRM) and tasks overdue
 //   Matrículas realizadas       EnrollmentController.index itself (the first course of each lead and the extra courses)
 //   goals                       GoalController.buildPoloBoard (the CRM and the hand adjustments kept apart)
-//   consultant review           ConsultantReview (objections raised/handled, steps with difficulty or skipped), by consultant id
+//   consultant review           ConsultantReview (objections raised/handled, steps with difficulty or skipped), by an opaque code of the
+//                               consultant: stable for the same token, different for another token, never the user id (consultantCode)
 //   connections                 Whatsapps: id, function, status, quality and the validity of the Meta token (never the name or the token)
-export { MAX_PERIOD_DAYS, cleanIndicatorQuery } from "./IndicatorQuery";
+export { MAX_PERIOD_DAYS, cleanIndicatorQuery, consultantCode, assertPseudonymSecret } from "./IndicatorQuery";
+import { consultantCode } from "./IndicatorQuery";
 import type { IndicatorQuery } from "./IndicatorQuery";
 
 const q = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
@@ -35,7 +37,19 @@ const key = (poloId: any): string => (poloId === null || poloId === undefined ? 
 
 const QUALITY: Array<[RegExp, string]> = [[/vermelha/i, "vermelha"], [/amarela/i, "amarela"]];
 
-export const buildIndicators = async (query: IndicatorQuery, now: Date = new Date()) => {
+// rows grouped by the key of their polo once (instead of filtering every array for every polo)
+const byPolo = <T extends Record<string, any>>(rows: T[], field = "polo"): Map<string, T[]> => {
+  const m = new Map<string, T[]>();
+  rows.forEach(r => {
+    const k = key(r[field]);
+    const list = m.get(k);
+    if (list) list.push(r);
+    else m.set(k, [r]);
+  });
+  return m;
+};
+
+export const buildIndicators = async (query: IndicatorQuery, now: Date = new Date(), tokenKey = "all") => {
   const start = dayBounds(query.from).start;
   const end = dayBounds(query.to).end;
   // the polos asked for: one, the ones of the token, or every polo (plus the leads with no polo)
@@ -63,30 +77,42 @@ export const buildIndicators = async (query: IndicatorQuery, now: Date = new Dat
 
   // Matrículas realizadas: the very rule of the screen (EnrollmentController.index), read as the administration and grouped by polo
   const { index: enrollmentIndex } = await import("../../controllers/EnrollmentController");
+  // (one polo asked: the screen's own filter by polo, so only that polo is read)
   const enrollments: any = await enrollmentIndex(
-    { query: { from: query.from, to: query.to }, user: { id: 0, profile: "admin", role: "admin" } } as any,
+    { query: { from: query.from, to: query.to, ...(ids.length === 1 && !withNone ? { poloId: String(ids[0]) } : {}) }, user: { id: 0, profile: "admin", role: "admin" } } as any,
     { json: (body: any) => body } as any
   );
   // the goals of the current semester: what came from the CRM and what was typed by hand, apart
   const { buildPoloBoard } = await import("../../controllers/GoalController");
   const board: any = await buildPoloBoard();
   // the review of the conversations of the period (codes only)
-  const reviews = await ConsultantReview.findAll({ where: { day: { [Op.between]: [query.from, query.to] } } as any, attributes: ["userId", "leadId", "objections", "difficulties", "skipped"] });
+  // only the reviews of the leads of the polos asked (plus the ones with no lead, for a token of every polo)
+  const leadsOfPolos = literal(`(SELECT l.id FROM "Leads" l WHERE ${portable(inPolos)})`);
+  const reviews = await ConsultantReview.findAll({
+    // (a token of every polo reads them all: no filter to pay for)
+    where: { day: { [Op.between]: [query.from, query.to] }, ...(wanted ? { leadId: { [Op.in]: leadsOfPolos } } : {}) } as any,
+    attributes: ["userId", "leadId", "objections", "difficulties", "skipped"]
+  });
   const reviewPolo = new Map<number, any>();
   const leadIds = [...new Set(reviews.map(r => r.leadId).filter(Boolean))] as number[];
   if (leadIds.length) (await q(`SELECT l.id, l.poloId AS polo FROM Leads l WHERE l.id IN (:ids)`, { ids: leadIds })).forEach(r => reviewPolo.set(Number(r.id), r.polo));
 
   const business = await getBusinessConfig();
+  // every list grouped by polo once
+  const G = { bySource: byPolo(bySource), byStage: byPolo(byStage), contacted: byPolo(contacted), followUps: byPolo(followUps), tasks: byPolo(tasks) };
+  const enrBy = byPolo((enrollments?.rows || []) as any[], "poloId");
+  const goalBy = new Map<number, any>(((board?.rows || []) as any[]).map(r => [Number(r.poloId), r]));
+  const rvBy = byPolo(reviews.map(r => ({ r, polo: r.leadId ? reviewPolo.get(Number(r.leadId)) : null })));
   const out = [...polos.map(p => ({ id: p.id as number | null, code: p.code || null })), ...(withNone ? [{ id: null, code: null }] : [])].map(p => {
     const k = key(p.id);
-    const mine = (rows: any[]) => rows.filter(r => key(r.polo) === k);
-    const firsts = mine(contacted).map(r => businessMinutes(business, new Date(r.c), new Date(r.f)));
-    const enr = ((enrollments?.rows || []) as any[]).filter(r => key(r.poloId) === k);
-    const goal = p.id ? ((board?.rows || []) as any[]).find(r => Number(r.poloId) === p.id) : null;
-    const rv = reviews.filter(r => key(r.leadId ? reviewPolo.get(Number(r.leadId)) : null) === k);
+    const mine = (group: Map<string, any[]>) => group.get(k) || [];
+    const firsts = mine(G.contacted).map(r => businessMinutes(business, new Date(r.c), new Date(r.f)));
+    const enr = mine(enrBy);
+    const goal = p.id ? goalBy.get(p.id) || null : null;
+    const rv = mine(rvBy).map(x => x.r);
     const byConsultant = new Map<number, any>();
     rv.forEach(r => {
-      const c = byConsultant.get(r.userId) || { consultor: r.userId, conversasLidas: 0, objecoes: {} as Record<string, { levantadas: number; tratadas: number }>, dificuldades: {} as Record<string, number>, puladas: {} as Record<string, number> };
+      const c = byConsultant.get(r.userId) || { consultor: consultantCode(tokenKey, r.userId), conversasLidas: 0, objecoes: {} as Record<string, { levantadas: number; tratadas: number }>, dificuldades: {} as Record<string, number>, puladas: {} as Record<string, number> };
       c.conversasLidas += 1;
       (r.objections || []).forEach((o: any) => { const cur = c.objecoes[o.type] || { levantadas: 0, tratadas: 0 }; cur.levantadas += 1; if (o.handled) cur.tratadas += 1; c.objecoes[o.type] = cur; });
       (r.difficulties || []).forEach((s: string) => { c.dificuldades[s] = (c.dificuldades[s] || 0) + 1; });
@@ -97,12 +123,12 @@ export const buildIndicators = async (query: IndicatorQuery, now: Date = new Dat
       poloId: p.id,
       codigo: p.code,
       leads: {
-        total: mine(bySource).reduce((t, r) => t + n(r.total), 0),
-        porOrigem: mine(bySource).map(r => ({ origem: String(r.origem), total: n(r.total), matriculados: n(r.won) })).sort((a, b) => b.total - a.total),
-        porEtapa: mine(byStage).sort((a, b) => n(a.position) - n(b.position)).map(r => ({ etapaId: Number(r.stage), etapa: String(r.name), tipo: String(r.type), total: n(r.total) }))
+        total: mine(G.bySource).reduce((t, r) => t + n(r.total), 0),
+        porOrigem: mine(G.bySource).map(r => ({ origem: String(r.origem), total: n(r.total), matriculados: n(r.won) })).sort((a, b) => b.total - a.total),
+        porEtapa: [...mine(G.byStage)].sort((a, b) => n(a.position) - n(b.position)).map(r => ({ etapaId: Number(r.stage), etapa: String(r.name), tipo: String(r.type), total: n(r.total) }))
       },
       primeiraResposta: { leadsRespondidos: firsts.length, medianaMinutos: median(firsts), horarioComercial: !!business.enabled },
-      followUps: { vencidos: n(mine(followUps)[0]?.total), tarefasVencidas: n(mine(tasks)[0]?.total) },
+      followUps: { vencidos: n(mine(G.followUps)[0]?.total), tarefasVencidas: n(mine(G.tasks)[0]?.total) },
       matriculasRealizadas: { total: enr.length, dentroDaMeta: enr.filter(r => r.inGoal).length, comPrint: enr.filter(r => r.proofId).length },
       metas: goal ? {
         meta: board?.goal?.title || null,
