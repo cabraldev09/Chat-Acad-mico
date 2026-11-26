@@ -707,6 +707,7 @@ const messages = {
         ERR_LEAD_CLAIM_FIRST: "Assuma este lead da fila antes de atendê-lo: clique em Assumir.",
         ERR_LEAD_ALREADY_ASSIGNED: "Outro consultor já assumiu este lead.",
         ERR_LEAD_NOT_CLAIMABLE: "Este lead não está mais na fila comum (já tem dono, foi matriculado, perdido ou é aluno da tutoria).",
+        ERR_HISTORY_COPY_OFF: "A cópia das conversas do celular está desligada em Conexões.",
         ERR_LEAD_NO_PHONE: "Este lead não tem telefone para iniciar a conversa.",
         ERR_LEAD_NEEDS_PHONE_OR_EMAIL: "Informe um telefone ou e-mail válido.",
         ERR_LOST_REASON_REQUIRED: "Escolha o motivo da perda.",
