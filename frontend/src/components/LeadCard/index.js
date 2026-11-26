@@ -80,9 +80,18 @@ const LeadCard = ({ contactId, attendantId }) => {
     return (
       <div className={classes.root}>
         <Typography className={classes.title}>Este contato ainda não está no CRM</Typography>
-        <Button size="small" variant="contained" color="primary" startIcon={<UserPlus size={16} />}
+        {/* a proposal for anyone of the conversation: the lead is made on the spot, with whoever generates it as responsible */}
+        <Button size="small" variant="contained" color="primary" startIcon={<FilePlus2 size={16} />} disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try { const { data } = await api.post(`/leads/from-contact/${contactId}`, {}); setLead(data); setStudio({}); load(); } catch (e) { toastError(e); }
+            setBusy(false);
+          }}>
+          Gerar proposta
+        </Button>
+        <Button size="small" variant="outlined" startIcon={<UserPlus size={16} />} disabled={busy}
           onClick={async () => { try { await api.post(`/leads/from-contact/${contactId}`, {}); toast.success("Lead criado"); load(); } catch (e) { toastError(e); } }}>
-          Criar lead
+          Só criar o lead
         </Button>
       </div>
     );

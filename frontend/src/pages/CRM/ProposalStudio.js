@@ -135,7 +135,10 @@ const toParams = (f) => {
   };
 };
 
-const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
+const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) => {
+  // a proposal "avulsa" has no lead: only the name of the person (it goes in the conversation open on screen, or as a link)
+  const standalone = !lead.id;
+  const who = standalone ? { recipientName: lead.name } : { leadId: lead.id };
   const classes = useStyles();
   const options = (ctx && ctx.options) || {};
   const [courses, setCourses] = useState([]);
@@ -177,7 +180,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   }, [f]);
 
   const loadDefaults = useCallback(async (cId, tId, keep) => {
-    const { data } = await api.get("/proposals/defaults", { params: { leadId: lead.id, courseId: cId || undefined, templateId: tId || undefined } });
+    const { data } = await api.get("/proposals/defaults", { params: { ...who, courseId: cId || undefined, templateId: tId || undefined } });
     setCourseId(data.courseId);
     setTemplateId(data.templateId);
     setSnapshot(data.snapshot);
@@ -206,7 +209,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   const openProposal = useCallback(async (id) => {
     const { data } = await api.get(`/proposals/${id}`);
     // the calendar, the price of the course and who may unlock it
-    const { data: d } = await api.get("/proposals/defaults", { params: { leadId: lead.id, courseId: data.courseId || undefined, templateId: data.templateId || undefined } });
+    const { data: d } = await api.get("/proposals/defaults", { params: { ...who, courseId: data.courseId || undefined, templateId: data.templateId || undefined } });
     setCalendar(d.calendar || []); setCurrentKey(d.turmaKey || ""); setCoursePrice(d.coursePrice); setCanUnlock(!!d.canUnlockGross);
     setSaved(data); setCourseId(data.courseId); setTemplateId(data.templateId);
     setSnapshot(data.params.snapshot); setF(toForm(data.params.params, d.calendar));
@@ -226,7 +229,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const bodyOf = () => ({ leadId: lead.id, courseId, templateId, params: toParams(f), snapshot, messageBlocks: blockEdits });
+  const bodyOf = () => ({ ...who, courseId, templateId, params: toParams(f), snapshot, messageBlocks: blockEdits });
   const snapOf = () => JSON.stringify(bodyOf());
   // the state right after opening counts as saved: closing without touching anything does not ask
   useEffect(() => {
@@ -240,7 +243,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     const seq = (loadSeq.current += 1);
     const t = setTimeout(async () => {
       try {
-        const { data } = await api.post("/proposals/preview", { leadId: lead.id, proposalId: saved ? saved.id : undefined, courseId, templateId, params: toParams(f), snapshot });
+        const { data } = await api.post("/proposals/preview", { ...who, proposalId: saved ? saved.id : undefined, courseId, templateId, params: toParams(f), snapshot });
         if (seq !== loadSeq.current) return;
         setHtml(data.html); setResult(data.result); setBlocks(data.messages || []); setError("");
       } catch (err) {
@@ -360,10 +363,18 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   });
   const send = run("send", async () => {
     const p = await persist();
-    await api.post(`/proposals/${p.id}/send`, { messages: blocks.map(textOf) });
+    await api.post(`/proposals/${p.id}/send`, { messages: blocks.map(textOf), ...(standalone ? { ticketId } : {}) });
     toast.success("Proposta enviada ao candidato");
     onSaved && onSaved();
     setSendOpen(false);
+    onClose(true);
+  });
+  // an "avulsa" without a conversation: the proposal is closed and its link copied, for whoever will send it
+  const share = run("share", async () => {
+    const p = await persist();
+    const { data } = await api.post(`/proposals/${p.id}/send`, { share: true });
+    try { await navigator.clipboard.writeText(data.link); toast.success("Link da proposta copiado. Envie a quem vai mandar ao candidato."); } catch (_) { toast.success(`Link da proposta: ${data.link}`); }
+    onSaved && onSaved();
     onClose(true);
   });
   // a sent proposal stays as it was: a copy becomes the new draft
@@ -671,7 +682,8 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
           const res = await api.get(`/proposals/${saved.id}/pdf`, { responseType: "blob" });
           const url = URL.createObjectURL(res.data); const a = document.createElement("a"); a.href = url; a.download = `Proposta - ${lead.name}.pdf`; a.click(); URL.revokeObjectURL(url);
         }) : download}>{busy === "pdf" ? "Gerando…" : "Baixar PDF"}</Button>
-        {!locked && <Button variant="contained" color="primary" startIcon={<SendHorizonal size={16} />} disabled={blocked || missing.length > 0} onClick={() => setSendOpen(true)}>Enviar ao candidato</Button>}
+        {!locked && standalone && <Button variant="outlined" color="primary" disabled={blocked || missing.length > 0 || busy === "share"} onClick={share}>{busy === "share" ? "Gerando..." : "Gerar link"}</Button>}
+        {!locked && (!standalone || ticketId) && <Button variant="contained" color="primary" startIcon={<SendHorizonal size={16} />} disabled={blocked || missing.length > 0} onClick={() => setSendOpen(true)}>Enviar ao candidato</Button>}
       </div>
 
       <Dialog open={leaveOpen} onClose={() => setLeaveOpen(false)} maxWidth="sm">

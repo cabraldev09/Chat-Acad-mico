@@ -3201,7 +3201,7 @@ CREATE TABLE public."Proposals" (
     params text NOT NULL,
     "sentAt" timestamp with time zone,
     "viewedAt" timestamp with time zone,
-    "leadId" integer NOT NULL,
+    "leadId" integer,
     "courseId" integer,
     "templateId" integer,
     "institutionId" integer,
@@ -3209,7 +3209,8 @@ CREATE TABLE public."Proposals" (
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
     "affiliateId" integer,
-    "validUntil" date
+    "validUntil" date,
+    "recipientName" character varying(120)
 );
 
 
@@ -8427,6 +8428,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-lev
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000001-conversation-readings.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000002-recovery-offer.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000003-recovery-reply-index.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270104000001-proposal-standalone.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000001-lead-course-level.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000001-whatsapp-history-report.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000002-campaign-flow.js') ON CONFLICT DO NOTHING;

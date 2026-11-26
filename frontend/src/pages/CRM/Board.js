@@ -5,7 +5,7 @@ import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
   Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper, Menu, IconButton, Drawer, useMediaQuery,
 } from "@material-ui/core";
-import { MonitorCheck, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass, Flame, MoreHorizontal, SlidersHorizontal } from "lucide-react";
+import { MonitorCheck, Search, Plus, Upload, FilePlus2, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass, Flame, MoreHorizontal, SlidersHorizontal } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -19,6 +19,7 @@ import LeadDrawer, { LostDialog } from "./LeadDrawer";
 import LeadFields from "./LeadFields";
 import EnrollDialog from "./EnrollDialog";
 import ImportDialog from "./ImportDialog";
+import StandaloneProposals from "./StandaloneProposals";
 import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, StagePill, ago, short, isOverdue, burst } from "./shared";
 import { tint } from "../../utils/color";
 import { NEXT_LABEL, TEMP_COLOR, TEMP_LABEL } from "../../utils/commercial";
@@ -230,6 +231,7 @@ const Board = () => {
   const boardRef = useRef(null);
   const pointer = useRef({ x: 0, y: 0 });
   const [newOpen, setNewOpen] = useState(false);
+  const [avulsas, setAvulsas] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [lostFor, setLostFor] = useState(null);
   const [enrollFor, setEnrollFor] = useState(null);
@@ -381,6 +383,7 @@ const Board = () => {
       </Menu>
       <NewLeadDialog open={newOpen} onClose={() => setNewOpen(false)} ctx={ctx} onCreated={(id) => { setOpenId(id); load(); }} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      <StandaloneProposals open={avulsas} onClose={() => setAvulsas(false)} ctx={ctx} />
       <LeadDrawer leadId={openId} ctx={ctx} onClose={() => { setOpenId(null); if (location.search) history.replace("/crm"); }} onChanged={load} />
 
       <MainHeader>
@@ -395,11 +398,13 @@ const Board = () => {
           {phone ? (
             <>
               <IconButton size="small" aria-label="Importar leads" onClick={() => setImportOpen(true)} style={{ border: "1px solid var(--line-strong)", borderRadius: 10, width: 40, height: 40 }}><Upload size={18} /></IconButton>
+              <IconButton size="small" aria-label="Proposta avulsa" title="Proposta avulsa" onClick={() => setAvulsas(true)} style={{ border: "1px solid var(--line-strong)", borderRadius: 10, width: 40, height: 40 }}><FilePlus2 size={18} /></IconButton>
               <Button variant="contained" color="primary" disableElevation startIcon={<Plus size={16} />} onClick={() => setNewOpen(true)} style={{ minHeight: 40 }}>Novo</Button>
             </>
           ) : (
             <>
               <Button variant="outlined" startIcon={<Upload size={16} />} onClick={() => setImportOpen(true)}>Importar</Button>
+              <Button variant="outlined" startIcon={<FilePlus2 size={16} />} onClick={() => setAvulsas(true)}>Proposta avulsa</Button>
               <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setNewOpen(true)}>Novo lead</Button>
             </>
           )}
