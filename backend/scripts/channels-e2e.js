@@ -8653,7 +8653,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(a[0] === leadA && a[2] === "open" && a[7] === String(u.id), `Ana ${a}`);
       assert(!(await http.get("/crm/triage", asUser(uTok))).data.items.some(i => String(i.id) === leadA), "a lead read from the copy is still in Novos para conferir");
       assert(Number(sql(`SELECT EXTRACT(EPOCH FROM (NOW() - createdAt)) FROM Leads WHERE id=${leadA}`)) > 5 * 86400, "the lead of an old conversation was counted as new this month");
-      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadA} AND text LIKE 'Leitura do WhatsApp:%'`)) === 1, "the consultant has no summary");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadA} AND body LIKE 'Leitura do WhatsApp:%'`)) === 1, "the consultant has no summary");
       const b = leadOf(B.c);
       assert(b[2] === "won" && b[3] === "7654321" && b[4] === "1", `Bia ${b}`);
       const c = leadOf(C.c);
