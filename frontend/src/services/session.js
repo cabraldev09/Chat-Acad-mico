@@ -24,21 +24,40 @@ export const expiresInSeconds = (token) => {
   }
 };
 
-// One renewal at a time for the whole screen: the first load (which reads who is signed in) and any request refused
-// meanwhile share the same call. Two at once would use the same refresh cookie twice, and the second one is refused.
+// What a renewal answers:
+//  - the new login (data), when it worked;
+//  - null, ONLY when the server says the login is gone (401 or 403): the person must sign in again;
+//  - a rejection with `transient = true`, when it failed for a reason of the moment (no network, 429, 5xx, a server restarting) even after
+//    a few tries (1, 2 and 4 seconds): the person stays signed in and the caller tries again later.
+export const RENEW_WAITS = [1000, 2000, 4000];
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const renewOnce = async () => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const { data } = await bare.post("/auth/refresh_token");
+      localStorage.setItem("token", JSON.stringify(data.token));
+      return data;
+    } catch (error) {
+      const status = error && error.response && error.response.status;
+      if (status === 401 || status === 403) return null;
+      if (attempt >= RENEW_WAITS.length) {
+        error.transient = true;
+        throw error;
+      }
+      await wait(RENEW_WAITS[attempt]);
+    }
+  }
+};
+
+// One renewal at a time for the whole screen: the first load (which reads who is signed in) and any request refused meanwhile share the
+// same call, so the server is not asked twice for the same thing. (The server does not rotate or burn the refresh cookie when it renews:
+// two calls at once would both work; sharing one is only to spare the server.)
 let renewing = null;
 export const refreshSession = () => {
   if (!renewing) {
-    renewing = bare
-      .post("/auth/refresh_token")
-      .then(({ data }) => {
-        localStorage.setItem("token", JSON.stringify(data.token));
-        return data;
-      })
-      .catch(() => null)
-      .finally(() => {
-        renewing = null;
-      });
+    renewing = renewOnce().finally(() => {
+      renewing = null;
+    });
   }
   return renewing;
 };

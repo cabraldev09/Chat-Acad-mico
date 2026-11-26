@@ -136,7 +136,18 @@ jobs:
           echo "PG_TEST_CONTAINER=$PG_TEST_CONTAINER" >> "$GITHUB_ENV"
       - name: Testes de ponta a ponta (${{ matrix.nome }})
         working-directory: backend
+        env:
+          # o log completo da API de teste fica guardado quando o job falha (dados fictícios): falha que não repete deixa evidência
+          E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
         run: node scripts/${{ matrix.script }}
+      - name: Guarda o log da API quando falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: log-api-${{ matrix.script }}
+          path: ${{ runner.temp }}/e2e-logs
+          retention-days: 3
+          if-no-files-found: ignore
 
   # todas as telas, como os seis perfis, digitando nos formulários e repetindo a varredura em 390×844
   telas:

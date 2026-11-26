@@ -21,13 +21,21 @@ api.interceptors.response.use(value => value, async error => {
 	const original = error.config;
 	const authRequest = /\/auth\/(login|refresh_token|logout|signup)/.test((original && original.url) || "");
 	const status = error.response && error.response.status;
-	if (status === 401 && original && !authRequest && !original._retry) {
+	// a request that left without a login (nobody signed in, e.g. the login page) is refused by design: nothing to renew, nobody to sign out
+	const hadLogin = !!(original && original.headers && original.headers.Authorization);
+	let transient = false;
+	if (status === 401 && original && !authRequest && !original._retry && hadLogin) {
 		original._retry = true;
-		const token = await renewToken(true);
-		if (token) { original.headers.Authorization = `Bearer ${token}`; return api(original); }
+		try {
+			const token = await renewToken(true);
+			if (token) { original.headers.Authorization = `Bearer ${token}`; return api(original); }
+		} catch (_) {
+			// the renewal failed for a reason of the moment (network, server restarting): the login is still good, so the person stays signed in
+			transient = true;
+		}
 	}
-	// the login cannot be renewed: the app signs the person out
-	if (status === 401 && !/\/auth\/login/.test((original && original.url) || "")) window.dispatchEvent(new Event("sessionExpired"));
+	// the login cannot be renewed (the server says so): the app signs the person out
+	if (status === 401 && hadLogin && !transient && !/\/auth\/login/.test((original && original.url) || "")) window.dispatchEvent(new Event("sessionExpired"));
 	return Promise.reject(error);
 });
 

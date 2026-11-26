@@ -14,9 +14,10 @@ let timerStarted = false;
 const startRenewal = () => {
   if (timerStarted) return;
   timerStarted = true;
-  setInterval(() => renewToken(), 9 * 60 * 1000);
+  // a renewal that fails for a reason of the moment is tried again at the next turn: nothing to do here
+  setInterval(() => renewToken().catch(() => null), 9 * 60 * 1000);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") renewToken();
+    if (document.visibilityState === "visible") renewToken().catch(() => null);
   });
 };
 
@@ -47,7 +48,7 @@ function createSocket() {
     while (tries.length && now - tries[0] > 60000) tries.shift();
     tries.push(now);
     if (tries.length > 4) return;
-    const token = await renewToken(true);
+    const token = await renewToken(true).catch(() => null);
     if (!token) return;
     socket.auth = { token };
     // authError arrives immediately before the server closes the connection.

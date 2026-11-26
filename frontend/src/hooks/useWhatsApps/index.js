@@ -1,8 +1,9 @@
-import { useState, useEffect, useReducer } from "react";
+import { useState, useEffect, useReducer, useContext } from "react";
 import openSocket from "../../services/socket-io";
 import toastError from "../../errors/toastError";
 
 import api from "../../services/api";
+import { AuthContext } from "../../context/Auth/AuthContext";
 
 const reducer = (state, action) => {
 	if (action.type === "LOAD_WHATSAPPS") {
@@ -59,8 +60,15 @@ const reducer = (state, action) => {
 const useWhatsApps = () => {
 	const [whatsApps, dispatch] = useReducer(reducer, []);
 	const [loading, setLoading] = useState(true);
+	// the connections and their live updates exist only for a signed-in person: with no login (the login page) nothing is asked or opened
+	const { isAuth } = useContext(AuthContext) || {};
 
 	useEffect(() => {
+		if (!isAuth) {
+			dispatch({ type: "RESET" });
+			setLoading(false);
+			return undefined;
+		}
 		setLoading(true);
 		const fetchSession = async () => {
 			try {
@@ -73,9 +81,11 @@ const useWhatsApps = () => {
 			}
 		};
 		fetchSession();
-	}, []);
+		return undefined;
+	}, [isAuth]);
 
 	useEffect(() => {
+		if (!isAuth) return undefined;
 		const socket = openSocket();
 
 		socket.on("whatsapp", data => {
@@ -99,7 +109,7 @@ const useWhatsApps = () => {
 		return () => {
 			socket.disconnect();
 		};
-	}, []);
+	}, [isAuth]);
 
 	return { whatsApps, loading };
 };

@@ -603,6 +603,7 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
   }
   const failed = results.filter(r => !r[0]);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+  require("./e2e-logs").save(__filename, global.__backendLog ? global.__backendLog() : "");
   failed.forEach(f => console.log(`  FAILED: ${f[1]}`));
   process.exit(failed.length ? 1 : 0);
 })();
