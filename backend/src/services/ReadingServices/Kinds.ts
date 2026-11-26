@@ -50,9 +50,13 @@ export const IMPORT_SYSTEM = [
   `etapa (só para em_andamento): ${OPEN_STAGES.join(", ")}.`,
   `objecao: ${OBJECTION_TYPES.join(", ")} ou nenhuma.`,
   "Responda só com JSON válido, sem markdown, exatamente no formato",
-  "{\"e_lead\":boolean,\"situacao\":string,\"curso\":string,\"etapa\":string,\"objecao\":string,\"motivo\":string,\"resumo\":string,\"proximo_passo\":string}.",
+  "{\"e_lead\":boolean,\"situacao\":string,\"curso\":string,\"etapa\":string,\"objecao\":string,\"motivo\":string,\"resumo\":string,\"proximo_passo\":string,\"parou_em\":string,\"pendente\":string,\"melhorar\":string,\"polo\":string}.",
   "curso: o nome do curso de interesse ou vazio. motivo: até 140 caracteres, por que não avançou (vazio se avançou).",
-  "resumo: até 300 caracteres, o que a pessoa quer e em que ponto parou, para o consultor retomar a venda. proximo_passo: até 140 caracteres."
+  "resumo: até 300 caracteres, o que a pessoa quer e em que ponto parou, para o consultor retomar a venda. proximo_passo: até 140 caracteres.",
+  "parou_em: até 80 caracteres, a etapa em que a conversa parou (ex.: esperando a proposta, enviando documentos, decidindo o curso).",
+  "pendente: até 140 caracteres, o que ficou combinado e não foi feito, por quem (consultor ou interessado), ou vazio.",
+  "melhorar: até 140 caracteres, o que o consultor poderia ter feito melhor no atendimento (ex.: responder mais rápido, mandar a grade, fazer uma pergunta por vez), ou vazio.",
+  "polo: o nome do polo ou da cidade de estudo citado na conversa, ou vazio. Nunca escreva valores, bolsas ou prazos que não estejam na conversa."
 ].join(" ");
 
 export interface ImportAnswer {
@@ -64,6 +68,10 @@ export interface ImportAnswer {
   reason: string;
   summary: string;
   next: string;
+  stalledAt: string;
+  pending: string;
+  improve: string;
+  polo: string;
 }
 
 export const parseImportAnswer = (text: string): ImportAnswer => {
@@ -78,7 +86,11 @@ export const parseImportAnswer = (text: string): ImportAnswer => {
     objection: oneOf(p.objecao, OBJECTION_TYPES as readonly string[]),
     reason: clean(p.motivo, 140),
     summary: clean(p.resumo, 300),
-    next: clean(p.proximo_passo, 140)
+    next: clean(p.proximo_passo, 140),
+    stalledAt: clean(p.parou_em, 80),
+    pending: clean(p.pendente, 140),
+    improve: clean(p.melhorar, 140),
+    polo: clean(p.polo, 80)
   };
 };
 

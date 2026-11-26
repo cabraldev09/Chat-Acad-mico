@@ -73,7 +73,12 @@ Ao ler o QR Code, o sistema copia o WhatsApp do celular, sem ninguém clicar em 
 - **De novo:** o botão "Copiar conversas" de Conexões refaz a cópia. O que já está aqui não se repete.
 
 ## Depois da cópia: a leitura das conversas e a Recuperação
-Terminada a cópia, cada conversa com mensagem nos últimos 120 dias é lida uma vez (`services/ReadingServices`). Quem lê é a IA do sistema, com o
+A cópia ao conectar traz só os **últimos 90 dias** (configuração `whatsapp_copy_days`; 0 = tudo): conversas sem mensagem nesse prazo
+ficam de fora, e de cada conversa só entram as mensagens desses dias (no máximo 100). Grupos não entram. O relatório da cópia diz quantas
+ficaram de fora por serem antigas.
+
+Terminada a cópia, cada conversa com mensagem nos últimos 90 dias é lida uma vez, em ordem, da mais antiga para a mais nova
+(`services/ReadingServices`). Só são lidos os números QR com dono. Quem lê é a IA do sistema, com o
 modelo mais barato, ou o OpenBot pela API (veja `docs/API-V1.md`, "Fila de leituras"). O texto vai pseudonimizado: nome, CPF, telefone, e-mail
 e números trocados por marcadores.
 
@@ -86,14 +91,20 @@ O que vira no CRM:
 - **Em andamento:**
   - o lead fica com o dono do número, na etapa que a conversa mostra (só para frente), com o resumo e o próximo passo;
   - a leitura não muda as datas que o lead já tem (criação, matrícula, perda); só preenche o que está vazio;
-  - não entra em "Novos para conferir".
+  - não entra em "Novos para conferir";
+  - se a última mensagem foi do consultor há 7 dias ou mais, sem resposta, vai para Recuperação, aba **Parados**.
 - **Matriculado:** a leitura **nunca matricula** ninguém, porque qualquer pessoa pode escrever "RGM 123" na conversa.
   - O lead vai para a coluna "Matrícula a confirmar", com a tarefa "Confirmar a matrícula" para o dono.
-  - Se a conversa tiver um RGM (lido no código, nunca pela IA), ele aparece só como sugestão na tarefa e no histórico do lead.
+  - Se a conversa tiver um RGM (lido no código, nunca pela IA), ele aparece só como sugestão (`rgmSuggested`), com a data da mensagem que
+    cita a matrícula (`enrolledAtSuggested`) e o polo citado, se o lead não tiver um.
+  - Em Recuperação, aba **Matrículas a confirmar**: "Confirmar matrícula" abre a tela de matrícula já com o RGM; "Não é matrícula" devolve ao funil.
   - Uma pessoa confirma pela tela de matrícula, com o comprovante. Até lá, nada conta em Matrículas nem em Metas.
 - **Parou de responder ou desistiu:** vai para "Sem resposta" ou "Sem interesse", com o motivo, e para **CRM, Recuperação**.
-  - Em Recuperação, o consultor vê os dele e a gestão vê os do seu polo, com o motivo, a objeção e o resumo.
-  - Os botões são "Voltar ao funil" e "Não recuperar".
+  - Em Recuperação, o consultor vê os dele e a gestão vê os do seu polo (e os sem polo dos consultores do seu polo), com o motivo, a
+    objeção, o resumo, **onde parou**, **o que ficou pendente** e **o que melhorar no atendimento** (frases curtas da leitura, sem dados pessoais).
+  - Os botões são "Retomar" / "Voltar ao funil" e "Não recuperar".
+- **Situação da leitura:** a gestão vê no topo da Recuperação quantas foram lidas, quantas estão na fila e, se parou, por quê (sem chave
+  de IA, desligada) e quantos números não têm dono. Sem chave de IA, a gestão recebe um aviso por dia no sino.
 - **Um aviso só** ao dono do número e à gestão do polo, quando a leitura termina: "Leitura do WhatsApp: 40 leads, 6 matrículas a confirmar, 9 para recuperar".
 
 Uma vez por dia, a conversa de cada lead que se matriculou ou se perdeu nos últimos 30 dias também é lida.

@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       secao:
-        description: "O que ler: tudo (leads, tarefas e logs) ou só o catálogo de cursos"
+        description: "O que ler: as contagens, o catálogo de cursos, ou os logs do WhatsApp (os logs podem ter números: o repositório é público)"
         type: choice
-        options: [tudo, cursos]
+        options: [tudo, cursos, logs]
         default: tudo
 
 jobs:
@@ -42,7 +42,12 @@ jobs:
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes backend/scripts/diag-dados.js root@"$VPS_HOST":/tmp/diag-dados.js
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" 'docker cp /tmp/diag-dados.js chat-academico-api-1:/app/backend/diag-dados.js && docker exec chat-academico-api-1 node /app/backend/diag-dados.js; docker exec chat-academico-api-1 rm -f /app/backend/diag-dados.js'
 
+      - name: Motivos de parada da leitura das conversas (só códigos, 24 h)
+        if: ${{ inputs.secao == 'tudo' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" 'docker logs --since 24h chat-academico-api-1 2>&1 | grep -oE "Leituras[^(]*\([a-z_]+\)" | tail -8'
+      # repositório público: os logs do WhatsApp podem trazer números de telefone; só quando pedido de propósito
       - name: Logs do WhatsApp (pilha completa do navegador, READY, mensagens)
-        if: ${{ inputs.secao != 'cursos' }}
+        if: ${{ inputs.secao == 'logs' }}
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" 'echo "== varredura de tarefas e conversas =="; docker logs --since 90m chat-academico-api-1 2>&1 | grep -iE "sweep|redistribute|unreachable" | cut -c1-500 | tail -15; docker logs --since 90m chat-academico-api-1 2>&1 | grep -E "Media|media|READY|Session|Starting WhatsApp|heartbeat|inject|inje|health|waiting for|Waiting failed|ProtocolError|Execution context|Target closed|message_create|Evaluation failed|watchdog|caught up|syncing|Error on whatsapp|Error sync|recuper" | cut -c1-700 | tail -40; echo "== pilha completa do primeiro TimeoutError =="; docker logs --since 90m chat-academico-api-1 2>&1 | grep -m1 -A22 "Waiting failed" | cut -c1-400; echo "== versao do whatsapp-web.js e do navegador =="; docker exec chat-academico-api-1 sh -c "grep -m1 \"\\\"version\\\"\" node_modules/whatsapp-web.js/package.json; chromium --version 2>/dev/null || chromium-browser --version 2>/dev/null"'

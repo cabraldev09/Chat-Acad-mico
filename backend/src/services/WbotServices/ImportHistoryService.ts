@@ -20,13 +20,16 @@ export interface HistoryReport {
   considered?: number;
   empty?: number;
   failed?: number;
+  // chats left out because nothing happened in them in the last days of the copy (whatsapp_copy_days)
+  old?: number;
+  days?: number;
   finishedAt?: string;
 }
 
 // "Trazidas 312 de 312 conversas do celular" / "300 de 312: 10 sem mensagem, 2 com erro"
 export const reportText = (r: HistoryReport): string => {
   if (r.considered === undefined) return `${r.chats} conversas copiadas`;
-  const parts = [r.empty ? `${r.empty} sem mensagem` : "", r.failed ? `${r.failed} com erro` : ""].filter(Boolean);
+  const parts = [r.empty ? `${r.empty} sem mensagem` : "", r.failed ? `${r.failed} com erro` : "", r.old ? `${r.old} sem conversa nos últimos ${r.days || 90} dias` : ""].filter(Boolean);
   const all = r.chats >= r.considered;
   return all
     ? `Trazidas ${r.chats} de ${r.considered} conversas do celular`
@@ -56,6 +59,21 @@ export const copyEnabled = async (): Promise<boolean> => {
 // older ones stay as history (in "Todas" and in the search). Everything copied stays HISTORY for the numbers of the system (dashboards,
 // CRM, response times), whatever list it shows in.
 export const RECENT_DAYS = Number(process.env.WHATSAPP_IMPORT_RECENT_DAYS || 30);
+
+// How far back the copy goes (Conexões: whatsapp_copy_days, 90 by default; 0 = everything the phone gives): only the chats with a message in
+// those days, and only those days of each chat, so the copy stays light and the reading sees the recent sales
+export const copyDays = async (): Promise<number> => {
+  const { getSetting } = await import("../../helpers/AppSettings");
+  const n = Number(await getSetting("whatsapp_copy_days", "90"));
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 90;
+};
+// the messages of a chat inside the window, and whether the chat is inside it at all (pure: tested alone)
+export const insideWindow = <M extends { timestamp: number }>(chat: { timestamp?: number; messages: M[] }, days: number, now = Date.now()): { keep: boolean; messages: M[] } => {
+  if (!days) return { keep: true, messages: chat.messages };
+  const cutoff = now - days * 86400000;
+  const messages = chat.messages.filter(m => m.timestamp * 1000 >= cutoff);
+  return { keep: messages.length > 0, messages };
+};
 export const placeOf = (
   chat: { archived?: boolean; isGroup?: boolean },
   ownerId: number | null | undefined,
@@ -80,7 +98,8 @@ export const importHistory = async (
   if (running.has(connection.id)) throw new AppError("ERR_HISTORY_RUNNING", 409);
   running.add(connection.id);
 
-  const report: HistoryReport = { pinned: 0, chats: 0, newConversations: 0, messages: 0 };
+  const days = options.onlyChatIds ? 0 : await copyDays();
+  const report: HistoryReport = { pinned: 0, chats: 0, newConversations: 0, messages: 0, old: 0, days };
 
   // the chats pinned on the phone are pinned here too, for the person who owns the number (the administrators
   // when the number belongs to the company)
@@ -99,6 +118,13 @@ export const importHistory = async (
         onlyChatIds: options.onlyChatIds
       },
       async chat => {
+        // a chat with nothing in the last days stays on the phone (no contact, no conversation, no message saved here)
+        const window = insideWindow(chat, days);
+        if (!window.keep) {
+          report.old = (report.old || 0) + 1;
+          return;
+        }
+        chat.messages = window.messages;
         const contact = await CreateOrUpdateContactService({
           name: chat.contact.name,
           number: chat.contact.number,
@@ -260,7 +286,8 @@ export const autoImportHistory = async (connection: Whatsapp, waits: number[] = 
     if (!fresh || fresh.historyImportedAt || fresh.status !== "CONNECTED") return null;
     if (running.has(fresh.id)) return null;
     // eslint-disable-next-line no-await-in-loop
-    const report = await startHistoryImport(fresh, fresh.ownerId || null, { waitForSync: true });
+    // the copy on connecting brings the private conversations only: groups are not leads and are the bulk of a phone
+    const report = await startHistoryImport(fresh, fresh.ownerId || null, { waitForSync: true, includeGroups: false });
     if (report && report.chats > 0) return report;
     // nothing came (the phone had not sent the chats yet) or it failed: the number is not marked as copied, so it is tried again
     if (report && report.chats === 0) await fresh.update({ historyImportedAt: null } as any);

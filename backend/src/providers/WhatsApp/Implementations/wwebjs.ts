@@ -1468,6 +1468,36 @@ const getMessageInfo = async (
   };
 };
 
+// Forwards a message the phone has to another chat of the same number, the way the phone does ("Encaminhada" on the other side, the
+// file is not uploaded again). null: the message is not on the phone (nothing was sent). The id of the copy is looked up in the
+// destination chat right after (the library does not return it); when it cannot be found, the copy arrives by message_create.
+const forwardMessage = async (
+  sessionId: number,
+  fromChatId: string,
+  messageId: string,
+  fromMe: boolean,
+  toChatId: string
+): Promise<{ id: string | null } | null> => {
+  const wbot = getWbot(sessionId);
+  const message: any = await findMessage(wbot, fromChatId, messageId, fromMe).catch(() => null);
+  if (!message || typeof message.forward !== "function") return null;
+  const startedAt = Math.floor(Date.now() / 1000) - 2;
+  await withTimeout(message.forward(toChatId), 30000);
+  for (let i = 0; i < 4; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise(r => setTimeout(r, 600));
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const chat: any = await wbot.getChatById(toChatId);
+      // eslint-disable-next-line no-await-in-loop
+      const last: any[] = await withTimeout(chat.fetchMessages({ limit: 5 }), 8000) as any[];
+      const copy = (last || []).reverse().find(m => m.fromMe && m.isForwarded && Number(m.timestamp) >= startedAt);
+      if (copy) return { id: copy.id.id };
+    } catch (err) { /* the copy is stored when WhatsApp reports it */ }
+  }
+  return { id: null };
+};
+
 const getMessageAck = async (
   sessionId: number,
   chatId: string,
@@ -2091,6 +2121,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendPoll,
   getGroupInfo,
   getMessageAck,
+  forwardMessage,
   getMessageInfo,
   getChatUnreadCount: async (sessionId, chatId) => {
     const chat = await getWbot(sessionId).getChatById(chatId);

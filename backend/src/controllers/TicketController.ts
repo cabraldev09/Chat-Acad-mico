@@ -432,6 +432,27 @@ export const update = async (
   return res.status(200).json(ticket);
 };
 
+// What a transfer will do before it is done: call the tutoring on its own number (the conversation stays), or move this conversation of
+// the official number to the tutor's WhatsApp by QR Code (the student starts receiving messages from a new number), or nothing special
+export const transferPreview = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await Ticket.findByPk(req.params.ticketId, { attributes: ["id", "segment", "whatsappId", "status", "userId"] });
+  if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  const queueId = Number(req.query.queueId) || 0;
+  const userId = Number(req.query.userId) || 0;
+  const queue = queueId ? await Queue.findByPk(queueId, { include: [{ model: User, as: "users", attributes: ["id", "name"] }] }) : null;
+  if (!queue || queue.role !== "tutoria" || ticket.status === "closed") return res.json({ kind: "none" });
+  if (sideOfSegment(ticket.segment) !== "tutoria") {
+    const number = await connectionOfTeam("tutoria");
+    if (number && number.id !== ticket.whatsappId) return res.json({ kind: "handoff", connectionName: number.name });
+  }
+  // the same choice the transfer makes: the person chosen, else who the queue would give it to (only looked at; a transfer to a queue
+  // without a person releases the conversation first)
+  const tutorId = userId || (await pickUserForQueue(queue, true, true))?.id || null;
+  const move = tutorId ? await tutorMoveFor(ticket, tutorId) : null;
+  if (!move) return res.json({ kind: "none" });
+  return res.json({ kind: "move", connectionName: move.whatsappName });
+};
+
 export const remove = async (
   req: Request,
   res: Response

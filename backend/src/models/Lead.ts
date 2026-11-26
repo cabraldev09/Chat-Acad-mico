@@ -151,6 +151,23 @@ class Lead extends Model<Lead> {
   @Column
   recoveryObjection: string;
 
+  // what the reading of the conversation found: where the sale stopped, what was left pending, what could have been better in the service
+  @Column
+  recoveryStage: string;
+
+  @Column(DataType.TEXT)
+  recoveryPending: string;
+
+  @Column(DataType.TEXT)
+  serviceTip: string;
+
+  // seems enrolled, by the conversation: the RGM and the day it shows (suggestions: a person confirms the enrollment)
+  @Column
+  rgmSuggested: string;
+
+  @Column
+  enrolledAtSuggested: Date;
+
   @Column
   wonAt: Date;
 
