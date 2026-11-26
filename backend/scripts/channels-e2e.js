@@ -6543,6 +6543,98 @@ const postMeta = (id, payload, secret, badSig) => {
     // Only the agent created by this suite is enabled for its function tests; other seeded
     // agents remain paused until cleanup so they cannot steal first-message flow fixtures.
     await http.put(`/ai-agents/${aiId}`, { active: true }, auth());
+    await test("SESTED bot on the shared official number: buttons qualify, the next consultant of the SESTED queue gets the lead and calls from their own WhatsApp; a campaign with the bot qualifies who answers", async () => {
+      const { sestedGraph } = require(path.join(ROOT, "dist/services/FlowServices/SestedBot"));
+      const instId = Number(sql(`INSERT INTO Institutions (name, shortName, slug, active, isDefault, createdAt, updatedAt) VALUES ('SESTED - Sistema de Ensino', 'SESTED', 'sested-e2e', true, false, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const queue = (await http.post("/queue", { name: "Comercial SESTED e2e", color: "#7c3aed" }, auth())).data;
+      const tag = (await http.post("/tags", { name: "SESTED e2e", color: "#7c3aed" }, auth())).data;
+      assert(instId && queue.id && tag.id, "setup of the SESTED university, queue and tag");
+      const mkUser = async (name, email) => (await http.post("/users", { name, email, password: "senha12345", role: "consultor" }, auth())).data.id;
+      const noNumber = await mkUser("Bia Sested", "bia.sested@e2e.test");
+      const withNumber = await mkUser("Caio Sested", "caio.sested@e2e.test");
+      sql(`INSERT INTO UserQueues (userId, queueId, createdAt, updatedAt) VALUES (${noNumber}, ${queue.id}, NOW(), NOW()), (${withNumber}, ${queue.id}, NOW(), NOW())`);
+      // Caio's own number: an existing QR Code connection lent for this scenario (the number of QR connections has a cap), given back at the end
+      const [qrId, qrOwner, qrStatus, qrPhone] = sql(`SELECT id||'|'||COALESCE(ownerId::text,'')||'|'||COALESCE(status,'')||'|'||COALESCE(pairingPhone,'') FROM Whatsapps WHERE channel='whatsapp' ORDER BY id LIMIT 1`).split("|");
+      const qr = Number(qrId);
+      assert(qr, "no QR Code connection to lend");
+      sql(`UPDATE Whatsapps SET ownerId=${withNumber}, status='CONNECTED', pairingPhone='5569998765432' WHERE id=${qr}`);
+      let flow = null;
+      try {
+      flow = (await http.post("/flows", { name: "Bot SESTED e2e", entry: { type: "keyword", keywords: ["sested"] }, whatsappId: cid, graph: sestedGraph({ institutionId: instId, queueId: queue.id, tagId: tag.id }) }, auth())).data;
+      const valid = await http.post(`/flows/${flow.id}/validate`, {}, auth());
+      assert(valid.status === 200 && !(valid.data.issues || []).some(i => i.level === "error"), `the SESTED bot has errors ${JSON.stringify(valid.data).slice(0, 300)}`);
+      assert((await http.post(`/flows/${flow.id}/publish`, {}, auth())).status === 200, "publish the SESTED bot");
+      const tap = (from, kind, title, n) => postMeta(cid, cloudEvent([{ from, id: `wamid.sst-${from}-${n}`, type: "interactive", interactive: kind === "button" ? { type: "button_reply", button_reply: { id: "x", title } } : { type: "list_reply", list_reply: { id: "x", title } } }], { contacts: [{ wa_id: from, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
+      const said = (since, text) => graph.sent.slice(since).some(x => JSON.stringify(x.body || {}).includes(text));
+      const from = "5569987650101";
+      let before = graph.sent.length;
+      await inboundCloud(from, "wamid.sst-0", "Quero conhecer os cursos da SESTED");
+      await waitFor(() => said(before, "Aqui é a SESTED"), 15000, "the SESTED welcome");
+      const welcome = graph.sent.slice(before).find(x => x.body && x.body.type === "interactive");
+      assert(welcome && welcome.body.interactive.type === "button" && welcome.body.interactive.action.buttons.length === 3, `welcome buttons ${JSON.stringify(welcome && welcome.body).slice(0, 300)}`);
+      await tap(from, "button", "Conhecer os cursos", 1);
+      await waitFor(() => said(before, "qual é o seu nome completo"), 15000, "the name question");
+      await inboundCloud(from, "wamid.sst-2", "Maria Sested");
+      await waitFor(() => said(before, "Em qual cidade"), 15000, "the city question");
+      await inboundCloud(from, "wamid.sst-3", "Porto Velho");
+      await waitFor(() => said(before, "O que você procura"), 15000, "the course type");
+      await tap(from, "list", "Técnico por competência", 4);
+      await waitFor(() => said(before, "Qual é a sua formação"), 15000, "the schooling");
+      await tap(from, "list", "Ensino médio completo", 5);
+      await waitFor(() => said(before, "trabalha nessa área"), 15000, "the experience question");
+      await tap(from, "button", "Sim", 6);
+      await waitFor(() => said(before, "Anotei: Técnico por competência, em Porto Velho"), 15000, "the summary");
+      await tap(from, "button", "Está certo", 7);
+      await waitFor(() => said(before, "Caio, da SESTED, vai te chamar pelo WhatsApp (69) 99876-5432"), 15000, "the consultant and their number");
+      const lead = sql(`SELECT l.id||'|'||COALESCE(l.institutionId,0)||'|'||COALESCE(l.courseLevel,'')||'|'||COALESCE(l.educationLevel,'')||'|'||COALESCE(l.ownerId,0)||'|'||COALESCE(l.source,'') FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`).split("|");
+      assert(lead[1] === String(instId) && lead[2] === "Técnico por competência" && lead[3] === "Ensino médio completo" && lead[4] === String(withNumber) && lead[5] === "Bot SESTED", `lead ${lead.join("|")}`);
+      assert(sql(`SELECT COUNT(*) FROM LeadTags WHERE leadId=${lead[0]} AND tagId=${tag.id}`) === "1", "the SESTED tag");
+      const told = sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${withNumber} AND kind='flow_lead'`);
+      const task = sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead[0]} AND userId=${withNumber} AND title LIKE 'Chamar%pelo seu WhatsApp'`);
+      assert(told === "1" && task === "1", `the consultant was not told: notices ${told}, tasks ${task}, all tasks ${sql(`SELECT string_agg(title || ' -> ' || COALESCE(userId,0), ' | ') FROM LeadTasks WHERE leadId=${lead[0]}`)}`);
+      const official = sql(`SELECT t.id||'|'||COALESCE(t.userId,0)||'|'||COALESCE(t.queueId,0) FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND t.whatsappId=${cid}`).split("|");
+      assert(official[1] === String(withNumber) && official[2] === String(queue.id), `the conversation went to the consultant ${official.join("|")}`);
+      // the consultant calls from their own WhatsApp; nobody else may use that number
+      const caio = (await http.post("/auth/login", { email: "caio.sested@e2e.test", password: "senha12345" })).data.token;
+      const bia = (await http.post("/auth/login", { email: "bia.sested@e2e.test", password: "senha12345" })).data.token;
+      assert((await http.post(`/leads/${lead[0]}/open-ticket`, { whatsappId: qr }, asUser(bia))).status === 403, "a colleague used Caio's own number");
+      const opened = await http.post(`/leads/${lead[0]}/open-ticket`, { whatsappId: qr }, asUser(caio));
+      assert(opened.status === 200 && sql(`SELECT whatsappId FROM Tickets WHERE id=${opened.data.ticketId}`) === String(qr), `open on own number ${opened.status} ${JSON.stringify(opened.data)}`);
+      assert(sql(`SELECT status FROM Tickets WHERE id=${official[0]}`) === "closed", "the official conversation stayed open");
+      // the next lead of the bot goes to the next of the round (Caio again: only he has his own number connected)
+      // someone who writes without the keyword keeps the usual service of the number
+      const other = "5569987650102";
+      before = graph.sent.length;
+      await inboundCloud(other, "wamid.sst-o", "quero saber de pedagogia");
+      await new Promise(r => setTimeout(r, 2500));
+      assert(!said(before, "Aqui é a SESTED"), "the SESTED bot answered without the keyword");
+      // a campaign with the bot: who answers it goes into the bot
+      const list = (await http.post("/contact-lists", { name: "Lista SESTED e2e" }, auth())).data;
+      const unpub = (await http.post("/flows", { name: "Rascunho e2e", entry: { type: "manual" }, graph: { nodes: [{ id: "s", type: "start", data: {} }], edges: [] } }, auth())).data;
+      assert((await http.post("/campaigns", { objective: "Teste de envio", name: "Campanha SESTED e2e", contactListId: list.id, whatsappId: cid, message: "Olá", flowId: unpub.id }, auth())).status === 400, "a draft flow was accepted as the bot of a campaign");
+      const camp = (await http.post("/campaigns", { objective: "Qualificar quem responder", name: "Campanha SESTED e2e", contactListId: list.id, whatsappId: cid, message: "Olá", flowId: flow.id }, auth())).data;
+      assert(camp.flowId === flow.id, `the campaign did not keep the bot ${JSON.stringify(camp).slice(0, 200)}`);
+      const answered = "5569987650103";
+      sql(`INSERT INTO CampaignShippings (campaignId, number, name, status, sentAt, stepsDone, createdAt, updatedAt) VALUES (${camp.id}, '${answered}', 'Pessoa da campanha', 'sent', NOW() - INTERVAL '1 hour', 1, NOW(), NOW())`);
+      before = graph.sent.length;
+      await inboundCloud(answered, "wamid.sst-c1", "oi, tenho interesse");
+      await waitFor(() => said(before, "Aqui é a SESTED"), 15000, "the bot of the campaign for who answered");
+      // only once per send: the bot does not start again after it ran
+      sql(`UPDATE ChatFlowRuns SET status='done' WHERE ticketId IN (SELECT t.id FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number='${answered}')`);
+      before = graph.sent.length;
+      await inboundCloud(answered, "wamid.sst-c2", "oi de novo");
+      await new Promise(r => setTimeout(r, 2500));
+      assert(!said(before, "Aqui é a SESTED"), "the campaign bot started twice for the same send");
+      } finally {
+        // the scenarios after this one run as before: no SESTED university, bot, queue member or personal number left behind
+        if (flow && flow.id) await http.post(`/flows/${flow.id}/unpublish`, {}, auth());
+        sql(`UPDATE Leads SET institutionId=NULL WHERE institutionId=${instId}`);
+        sql(`UPDATE Courses SET institutionId=NULL WHERE institutionId=${instId}`);
+        try { sql(`DELETE FROM Institutions WHERE id=${instId}`); } catch (e) { sql(`UPDATE Institutions SET active=false, name='Arquivada e2e', shortName=NULL, slug=NULL WHERE id=${instId}`); }
+        sql(`DELETE FROM UserQueues WHERE queueId=${queue.id}`);
+        sql(`UPDATE Whatsapps SET ownerId=${qrOwner ? qrOwner : "NULL"}, status='${qrStatus}', pairingPhone=${qrPhone ? `'${qrPhone}'` : "NULL"} WHERE id=${qr}`);
+      }
+    });
     await test("AI functions: the agent starts a published flow by itself and the flow takes over", async () => {
       const flow = (await http.post("/flows", { name: "Menu de cursos", entry: { type: "manual" }, graph: { nodes: [
         { id: "s", type: "start", data: {} }, { id: "m", type: "message", data: { text: "Menu de cursos do fluxo: Administração, Direito e Pedagogia." } }, { id: "e", type: "end", data: {} }],

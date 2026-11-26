@@ -96,6 +96,12 @@ const present = async (flow: ChatFlow, withGraph = false) => {
 };
 
 // the menus and automations of the chatbot (kind=flow, the default) or the AI agents built in blocks (kind=agent)
+// the bots a campaign can start for who answers it: published flows (not the AI agents), by name
+export const publishedList = async (_req: Request, res: Response): Promise<Response> => {
+  const rows = await ChatFlow.findAll({ where: { status: "published", kind: "flow" } as any, attributes: ["id", "name", "whatsappId"], order: [["name", "ASC"]] });
+  return res.json(rows.map(r => ({ id: r.id, name: r.name, whatsappId: r.whatsappId })));
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const kind = req.query.kind === "agent" ? "agent" : "flow";
   const flows = await ChatFlow.findAll({ where: { kind }, order: [["updatedAt", "DESC"]] });

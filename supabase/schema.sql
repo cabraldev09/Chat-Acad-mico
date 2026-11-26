@@ -924,7 +924,8 @@ CREATE TABLE public."Campaigns" (
     "institutionId" integer,
     objective text,
     offer text,
-    approach character varying(20)
+    approach character varying(20),
+    "flowId" integer
 );
 
 
@@ -2574,7 +2575,8 @@ CREATE TABLE public."Leads" (
     "recoveryState" character varying(20),
     "recoveryAt" timestamp with time zone,
     "recoveryReason" character varying(160),
-    "recoveryObjection" character varying(20)
+    "recoveryObjection" character varying(20),
+    "courseLevel" character varying(40)
 );
 
 
@@ -7079,6 +7081,14 @@ ALTER TABLE ONLY public."Campaigns"
 
 
 --
+-- Name: Campaigns Campaigns_flowId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Campaigns"
+    ADD CONSTRAINT "Campaigns_flowId_fkey" FOREIGN KEY ("flowId") REFERENCES public."ChatFlows"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: Campaigns Campaigns_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8418,6 +8428,9 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000001-conversation-readings
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000002-recovery-offer.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000003-recovery-reply-index.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270104000001-proposal-standalone.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000001-lead-course-level.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000002-campaign-flow.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000003-sested-bot.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

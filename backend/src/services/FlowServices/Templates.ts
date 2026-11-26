@@ -232,6 +232,16 @@ export const TEMPLATES: FlowTemplate[] = [
   }
 ];
 
+// the bot of the SESTED (its blocks need the university, the queue and the tag: they are chosen on the screen after using the model)
+TEMPLATES.push({
+  key: "sested-qualificacao",
+  name: "Bot SESTED: qualificação",
+  description: "Para os cursos da SESTED: com botões, pergunta o nome, a cidade, o que a pessoa procura (graduação, técnico, técnico por competência ou pós), a formação e se é a primeira graduação, e passa o lead ao próximo consultor da fila da SESTED, que chama pelo próprio WhatsApp.",
+  entry: { type: "keyword", keywords: ["sested"] },
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  get graph() { return require("./SestedBot").sestedGraph(); }
+} as FlowTemplate);
+
 export const blankGraph = (): Graph => ({ nodes: [{ id: uid("n"), type: "start", x: 60, y: 60, data: {} }], edges: [] });
 
 // The old menu of the chatbot (a tree of options) as a flow, so it can be seen and edited on the canvas.

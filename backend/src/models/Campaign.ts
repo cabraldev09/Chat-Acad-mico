@@ -44,6 +44,10 @@ class Campaign extends Model<Campaign> {
   @Column(DataType.TEXT)
   objective: string;
 
+  // the bot of the campaign: who answers goes into this flow (null: the usual answer of the number)
+  @Column
+  flowId: number;
+
   // the university of the group this belongs to (see models/Institution)
   @Column
   institutionId: number;
