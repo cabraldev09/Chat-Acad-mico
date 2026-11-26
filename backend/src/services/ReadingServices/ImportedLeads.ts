@@ -14,7 +14,10 @@ import { ImportAnswer, findRgm, lostReasonFor } from "./Kinds";
 // THE CONVERSATIONS COPIED FROM A CONSULTANT'S PHONE (WhatsApp by QR Code), read once each: who is a lead, who already enrolled, who stopped
 // and why. What it becomes in the CRM (see applyImport) is silent: one notice at the end for the owner of the number and the management.
 export const IMPORT_SOURCE = "WhatsApp do consultor";
-const LOOKBACK_DAYS = Number(process.env.READING_IMPORT_LOOKBACK_DAYS || 120);
+// the same 90 days of the copy (whatsapp_copy_days): older sales are not worth a reading
+const LOOKBACK_DAYS = Number(process.env.READING_IMPORT_LOOKBACK_DAYS || 90);
+// a lead still deciding whose last message was the consultant's, with no answer for these days, goes to Recuperação as stalled
+export const STALLED_DAYS = Number(process.env.READING_STALLED_DAYS || 7);
 const CONFIRM_STAGE = "Matrícula a confirmar";
 
 const rows = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
@@ -31,7 +34,7 @@ export const importCandidates = async (whatsappId?: number | null, limit = 500):
       AND EXISTS (SELECT 1 FROM Messages m WHERE m.ticketId = t.id AND m.fromMe = false)
       AND (t.isHistorical = true OR EXISTS (SELECT 1 FROM Messages m2 WHERE m2.ticketId = t.id AND m2.createdAt < COALESCE(w.historyImportedAt, w.createdAt)))
       AND NOT EXISTS (SELECT 1 FROM ConversationReadings r WHERE r.kind = 'importacao' AND r.ticketId = t.id)
-    ORDER BY t.lastMessageAt DESC LIMIT :limit`,
+    ORDER BY t.lastMessageAt ASC LIMIT :limit`,
   { whatsappId: whatsappId || 0, since: new Date(Date.now() - LOOKBACK_DAYS * 864e5), limit });
 
 export const enqueueImported = async (whatsappId?: number | null): Promise<number> => {
@@ -104,7 +107,15 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
   }
   await lead.update(patch);
   const [commercial] = await LeadCommercial.findOrCreate({ where: { leadId: lead.id }, defaults: { leadId: lead.id } as any });
-  await commercial.update({ summary: answer.summary || commercial.summary, nextAction: answer.next || commercial.nextAction });
+  // the summary of the sale; the next step the reading suggests is free text (LeadCommercials.nextAction is a code of 40 characters: a long
+  // "next step" there made every reading of a lead fail), so it goes, with what was left pending, into the lead
+  await commercial.update({ summary: answer.summary || commercial.summary });
+  const pending = [answer.pending, answer.next && answer.next !== answer.pending ? `Próximo passo: ${answer.next}` : ""].filter(Boolean).join(" ").slice(0, 400);
+  await lead.update({
+    recoveryStage: answer.stalledAt || lead.recoveryStage || null,
+    recoveryPending: pending || lead.recoveryPending || null,
+    serviceTip: answer.improve || lead.serviceTip || null
+  } as any);
   await addActivity(lead.id, null, "system", `Leitura do WhatsApp: ${answer.summary || "conversa lida"}${answer.next ? ` Próximo passo: ${answer.next}` : ""}`.slice(0, 600));
 
   const current = await LeadStage.findByPk(lead.stageId);
@@ -116,6 +127,13 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
     const to = target ? await LeadStage.findByPk(target) : null;
     // only forward (a stage the consultant already passed is kept)
     if (to && (!current || current.type !== "open" || to.position > current.position)) await changeStage(lead.id, to.id, null).catch(err => logger.warn(`Leitura: etapa do lead ${lead!.id}: ${err}`));
+    // still deciding, but the last word was the consultant's and nobody answered for days: it goes to Recuperação as stalled
+    const [last] = await rows(`SELECT m.fromMe, m.createdAt FROM Messages m WHERE m.ticketId = :ticketId ORDER BY m.createdAt DESC LIMIT 1`, { ticketId });
+    const quietDays = last ? (Date.now() - new Date(last.createdAt).getTime()) / 864e5 : 0;
+    if (last && (last.fromMe === true || last.fromMe === 1 || last.fromMe === "1" || last.fromMe === "t") && quietDays >= STALLED_DAYS && !lead.recoveryState) {
+      await lead.update({ recoveryState: "aberta", recoveryAt: new Date(), recoveryReason: "Parou de responder", recoveryObjection: answer.objection || null } as any);
+      return { action: "recuperar", leadId: lead.id };
+    }
     return { action: "andamento", leadId: lead.id };
   }
 
@@ -123,8 +141,22 @@ export const applyImport = async (reading: ConversationReading, answer: ImportAn
     // The reading NEVER enrolls anyone: a conversation (where anyone can write "RGM 123") is not proof. The lead goes to "Matrícula a
     // confirmar" with the RGM it found as a suggestion; a person confirms it on the enrollment screen, with the proof. No wonAt, no
     // enrolledAt, no RGM saved, nothing counted in Matrículas or Metas until then.
-    const texts = (await rows(`SELECT m.body FROM Messages m WHERE m.ticketId = :ticketId AND m.body IS NOT NULL ORDER BY m.createdAt DESC LIMIT 200`, { ticketId })).map(m => String(m.body || ""));
+    const messages = await rows(`SELECT m.body, m.createdAt FROM Messages m WHERE m.ticketId = :ticketId AND m.body IS NOT NULL ORDER BY m.createdAt DESC LIMIT 200`, { ticketId });
+    const texts = messages.map(m => String(m.body || ""));
     const rgm = findRgm(texts);
+    // the day of the enrollment: the message that shows the RGM, else the last one that talks about the enrollment
+    const said = messages.find(m => (rgm && findRgm([String(m.body || "")]) === rgm)) || messages.find(m => /matr[ií]cula (feita|realizada|confirmada|efetuada)|matriculad[oa]|fiz (a|minha) matr[ií]cula/i.test(String(m.body || "")));
+    const suggested: any = { rgmSuggested: rgm || lead.rgmSuggested || null, enrolledAtSuggested: said ? new Date(said.createdAt) : lead.enrolledAtSuggested || null };
+    // the polo the conversation names, when the lead has none: compared with the polos registered (name or city)
+    if (!lead.poloId && answer.polo) {
+      const { default: Polo } = await import("../../models/Polo");
+      const norm = (v: string) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+      const wanted = norm(answer.polo);
+      const polos = await Polo.findAll({ where: { active: true } as any, attributes: ["id", "name"] });
+      const hit = wanted.length >= 3 ? polos.find(p => { const n = norm(p.name); return n === wanted || n.includes(wanted) || wanted.includes(n.replace(/ polo$| - [a-z]{2}$/g, "")); }) : null;
+      if (hit) suggested.poloId = hit.id;
+    }
+    await lead.update(suggested);
     const stage = await confirmStage();
     if (!current || current.id !== stage.id) await changeStage(lead.id, stage.id, null).catch(() => undefined);
     await addActivity(lead.id, null, "system", rgm

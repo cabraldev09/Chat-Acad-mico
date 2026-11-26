@@ -148,7 +148,8 @@ const readingAnswer = (system, text) => {
   const t = String(text);
   if (/churrasco/i.test(t)) return { e_lead: false, situacao: "em_andamento" };
   if (/fiz a matr[ií]cula|j[aá] me matriculei/i.test(t)) return { e_lead: true, situacao: "matriculado", curso: "Pedagogia", etapa: "", objecao: "nenhuma", motivo: "", resumo: "Já fez a matrícula em Pedagogia.", proximo_passo: "Confirmar o RGM" };
-  if (/muito caro/i.test(t)) return { e_lead: true, situacao: "desistiu", curso: "Pedagogia", etapa: "", objecao: "preco", motivo: "Achou a mensalidade alta", resumo: "Queria Pedagogia, desistiu pelo valor.", proximo_passo: "Oferecer uma bolsa" };
+  if (/muito caro/i.test(t)) return { e_lead: true, situacao: "desistiu", curso: "Pedagogia", etapa: "", objecao: "preco", motivo: "Achou a mensalidade alta", resumo: "Queria Pedagogia, desistiu pelo valor.", proximo_passo: "Oferecer uma bolsa", parou_em: "Depois de saber o valor", pendente: "Mostrar a bolsa", melhorar: "Apresentar a bolsa antes do valor cheio" };
+  if (/vou ver com meu marido/i.test(t)) return { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Ia conversar em casa.", proximo_passo: "Perguntar se decidiu", parou_em: "Proposta enviada", pendente: "Saber se decidiu", melhorar: "Marcar um dia para o retorno" };
   return { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Quer Pedagogia e pediu a proposta.", proximo_passo: "Enviar a proposta" };
 };
 const isReading = (system) => /Você lê, para a equipe comercial|por que as vendas acontecem/.test(String(system || ""));
@@ -9173,13 +9174,19 @@ const postMeta = (id, payload, secret, badSig) => {
       const C = copied("Caio Confirmar Leitura", "5569955550003", [[false, "Oi"], [true, "Como posso ajudar?"], [false, "Fiz a matrícula ontem pelo site"]]);
       const D = copied("Dani Desistiu Leitura", "5569955550004", [[false, "Quero Pedagogia"], [true, "A mensalidade com bolsa fica ótima"], [false, "Achei muito caro, não vou fazer"], [true, "Entendo, qualquer coisa me chama"]]);
       const E = copied("Edu Amigo Leitura", "5569955550005", [[false, "oi amigo, churrasco sábado?"], [true, "Bora!"]]);
+      // Fabi: still deciding, the last word was the consultant's 8 days ago and no answer: "Parados" in Recuperação
+      const F = copied("Fabi Parada Leitura", "5569955550006", [[false, "Quero Pedagogia"], [true, "Te mandei a proposta"], [false, "Vou ver com meu marido"], [true, "Combinado, fico no aguardo"]]);
+      sql(`UPDATE Messages SET createdAt = NOW() - INTERVAL '8 days' WHERE ticketId=${F.t}`);
+      // a conversation older than 90 days is not read
+      const Old = copied("Gabi Antiga Leitura", "5569955550017", [[false, "Quero Pedagogia"], [true, "Claro"]]);
+      sql(`UPDATE Tickets SET lastMessageAt = NOW() - INTERVAL '120 days' WHERE id=${Old.t}`);
       // the catch-up of the first sync already made a lead for Ana, waiting in "Novos para conferir"
       const stage1 = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
       const leadA = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Ana Andamento Leitura', '5569955550001', ${stage1}, ${A.c}, ${u.id}, 'WhatsApp', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       assert((await http.get("/crm/triage", asUser(uTok))).data.items.some(i => String(i.id) === leadA), "the lead of the catch-up should be waiting before the reading");
       sql(`DELETE FROM Settings WHERE key IN ('readings_day', 'readings_count')`);
       const run = (await http.post("/readings/run", {}, auth())).data;
-      assert(run.read >= 5, `readings ${JSON.stringify(run)}`);
+      assert(run.read >= 6, `readings ${JSON.stringify(run)}`);
       // what went to the model is masked: no name, no RGM, no phone
       const sent = (anthropic.readingTexts || []).join(" ");
       assert(!/7654321|Bia Matriculada|Dani Desistiu|5569955550/.test(sent), "personal data went to the model");
@@ -9202,12 +9209,26 @@ const postMeta = (id, payload, secret, badSig) => {
       const d = leadOf(D.c);
       assert(d[2] === "lost" && d[5] === "aberta" && d[6] === "Preço / mensalidade", `Dani ${d}`);
       assert(sql(`SELECT COUNT(*) FROM Leads WHERE contactId=${E.c} AND isHistorical=false`) === "0", "a friend became a lead");
+      assert(sql(`SELECT COUNT(*) FROM ConversationReadings WHERE ticketId=${Old.t}`) === "0", "a conversation of 120 days was read");
+      // Bia: the RGM, the day it was said and nothing written as enrolled (only the suggestion)
+      assert(sql(`SELECT CONCAT(COALESCE(rgmSuggested,''),'|',CASE WHEN enrolledAtSuggested IS NULL THEN 0 ELSE 1 END) FROM Leads WHERE id=${b[0]}`) === "7654321|1", "no RGM or date suggested for Bia");
       // one notice for the owner of the number, pointing to Recuperação
       assert(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${u.id} AND kind='reading'`) === "1", "the owner should get one notice");
       // Recuperação: the consultant sees Dani with the reason and the objection; another consultant does not
       const rec = (await http.get("/crm/recovery", asUser(uTok))).data;
       const item = rec.items.find(i => String(i.id) === d[0]);
       assert(item && item.reason === "Achou a mensalidade alta" && item.objection === "preco" && rec.reasons.length >= 1, `recovery ${JSON.stringify(rec).slice(0, 400)}`);
+      assert(item.tab === "desistiram" && item.serviceTip === "Apresentar a bolsa antes do valor cheio" && item.recoveryStage === "Depois de saber o valor" && /Mostrar a bolsa/.test(item.recoveryPending), `the fields of the reading ${JSON.stringify(item)}`);
+      const fabi = rec.items.find(i => i.name === "Fabi Parada Leitura");
+      assert(fabi && fabi.tab === "parados" && fabi.reason === "Parou de responder" && fabi.recoveryPending, `Fabi is not in Parados ${JSON.stringify(fabi)}`);
+      const bia = rec.items.find(i => String(i.id) === b[0]);
+      assert(bia && bia.tab === "confirmar" && bia.rgmSuggested === "7654321" && rec.tabs.confirmar >= 2, `Bia is not to confirm ${JSON.stringify(bia)}`);
+      assert(rec.reading === null, "a consultant saw the status of the reading");
+      const st = (await http.get("/crm/recovery", auth())).data.reading;
+      assert(st && st.done >= 6 && st.stopped === null, `reading status ${JSON.stringify(st)}`);
+      // "Não é matrícula": Caio back to the funnel, the suggestion cleared
+      assert((await http.post(`/leads/${c[0]}/recovery`, { action: "nao_matricula" }, asUser(uTok))).status === 200, "not an enrollment");
+      assert(leadOf(C.c)[1] !== "Matrícula a confirmar" && !(await http.get("/crm/recovery", asUser(uTok))).data.items.some(i => String(i.id) === c[0]), "Caio is still to confirm");
       await http.post("/users", { name: "Outro Consultor Leitura", email: "leitura2@x.com", password: "senha123", role: "consultor" }, auth());
       const otherTok = (await http.post("/auth/login", { email: "leitura2@x.com", password: "senha123" })).data.token;
       assert(!(await http.get("/crm/recovery", asUser(otherTok))).data.items.some(i => String(i.id) === d[0]), "another consultant sees the recovery of someone else");

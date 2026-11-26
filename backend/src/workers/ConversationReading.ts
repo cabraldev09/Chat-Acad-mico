@@ -24,6 +24,19 @@ export const readingRound = async (): Promise<void> => {
       outcomes = await enqueueOutcomes();
     }
     const run = await runLocalReadings();
+    // stopped with no key of AI and conversations waiting: the management hears it once a day (before, it stayed quiet and Recuperação empty)
+    if (run.reason === "no_api_key" && (await getSetting("readings_nokey_day", "")) !== today) {
+      await setSetting("readings_nokey_day", today);
+      const { notify, managerIds } = await import("../services/NotificationServices/Notify");
+      await notify(await managerIds(), {
+        kind: "reading",
+        level: "warning",
+        title: "Leitura das conversas parada: falta a chave da IA",
+        body: "As conversas copiadas do WhatsApp esperam a leitura. Cadastre a chave em um agente de IA para os leads aparecerem no funil e em Recuperação.",
+        link: "/ai-agents",
+        dedupeKey: `reading-nokey:${today}`
+      });
+    }
     if (added || outcomes || run.read || run.failed) {
       logger.info(`Leituras: ${added} conversas copiadas e ${outcomes} resultados na fila; ${run.read} lidas pela IA do sistema, ${run.failed} falhas${run.stoppedByBudget ? ", parou no limite de gasto" : ""}${run.reason ? ` (${run.reason})` : ""}`);
     }

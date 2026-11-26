@@ -195,7 +195,7 @@ export const runLocalReadings = async (opts: { limit?: number; only?: ReadingKin
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      const answer = await askOnce(access.agent, access.apiKey, input.system, input.text, 400, { kind: "reading", ticketId: r.ticketId });
+      const answer = await askOnce(access.agent, access.apiKey, input.system, input.text, 600, { kind: "reading", ticketId: r.ticketId });
       const tokens = Number(answer.usage?.total_tokens || (answer.usage?.input_tokens || 0) + (answer.usage?.output_tokens || 0) || 0);
       spent += 1;
       // eslint-disable-next-line no-await-in-loop

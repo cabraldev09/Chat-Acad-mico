@@ -9,7 +9,7 @@ const q = async (title, sql) => {
   // Repositório público: só contagens e situações, nunca nome, telefone, polo ou trecho de conversa.
   // Leitura das conversas copiadas e Recuperação (só números)
   await q("leituras da cópia por situação", `SELECT status, COALESCE("doneBy",'-') AS feito_por, left(COALESCE(error,''), 80) AS erro, COUNT(*) AS n FROM "ConversationReadings" WHERE kind = 'importacao' GROUP BY 1,2,3 ORDER BY 4 DESC`);
-  await q("resultado das leituras feitas", `SELECT COALESCE(result->>'action','-') AS acao, COUNT(*) AS n FROM "ConversationReadings" WHERE kind = 'importacao' AND status = 'feita' GROUP BY 1 ORDER BY 2 DESC`);
+  await q("resultado das leituras feitas", `SELECT COALESCE(result::jsonb->>'action','-') AS acao, COUNT(*) AS n FROM "ConversationReadings" WHERE kind = 'importacao' AND status = 'feita' GROUP BY 1 ORDER BY 2 DESC`);
   await q("leituras por situação (todas)", `SELECT kind, status, COUNT(*) AS n FROM "ConversationReadings" GROUP BY 1,2 ORDER BY 1,2`);
   await q("números QR (dono, cópia)", `SELECT id, status, ("ownerId" IS NOT NULL) AS tem_dono, "historyImportedAt" IS NOT NULL AS copiado, to_char("historyImportedAt", 'DD/MM HH24:MI') AS quando, "historyReport" FROM "Whatsapps" WHERE channel = 'whatsapp' ORDER BY id`);
   await q("conversas copiadas por número", `SELECT t."whatsappId" AS wa, COUNT(*) AS conversas, COUNT(*) FILTER (WHERE t."lastMessageAt" > now() - interval '90 days') AS ultimos_90, COUNT(*) FILTER (WHERE t."isGroup") AS grupos FROM "Tickets" t WHERE t."isHistorical" = true GROUP BY 1 ORDER BY 1`);
