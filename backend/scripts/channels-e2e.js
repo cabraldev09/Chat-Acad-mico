@@ -975,6 +975,92 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(graph.sent.slice(before).some(x => x.body && x.body.to === "5511988887777"), "not sent through cloud api");
     });
 
+    // The old route POST /api/messages/send had only the login: any token (even one "only indicators") sent WhatsApp through any connection.
+    // Now it has the gate of the v1 (limit per token, scope messages:send) before anything is stored, and a token of some polos sends only to
+    // people of its polos through a connection that serves a queue of those polos. Nothing is created by a refused call.
+    await test("old route /api/messages/send: scope, polos of the token, connection of the polo and limit per token", async () => {
+      const old = (t, body) => http.post("/api/messages/send", body, { headers: { Authorization: `Bearer ${t}` } });
+      const mk = async body => { const r = await http.post("/api-tokens", body, auth()); assert(r.status === 201, `token ${r.status} ${JSON.stringify(r.data)}`); return r.data.token; };
+      const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const polo = code => sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('${code}', 'Polo ${code}', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const poloA = polo("OLA"), poloB = polo("OLB");
+      const queueA = sql(`INSERT INTO Queues (name, color, poloId, createdAt, updatedAt) VALUES ('Fila rota antiga A', '#a1b2c3', ${poloA}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Queues (name, color, poloId, createdAt, updatedAt) VALUES ('Fila rota antiga B', '#c3b2a1', ${poloB}, NOW(), NOW())`);
+      sql(`INSERT INTO WhatsappQueues (whatsappId, queueId, createdAt, updatedAt) VALUES (${cid}, ${queueA}, NOW(), NOW())`);
+      const unlinked = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('Conexão sem polo', 'DISCONNECTED', 'whatsapp', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Leads (name, phone, source, stageId, poloId, isHistorical, createdAt, updatedAt) VALUES ('ROTA ANTIGA A', '5569911120001', 'API', ${stage}, ${poloA}, false, NOW(), NOW()), ('ROTA ANTIGA B', '5569911120002', 'API', ${stage}, ${poloB}, false, NOW(), NOW())`);
+      const sentTo = n => graph.sent.filter(x => x.body && x.body.to === n).length;
+      const contactsOf = n => sql(`SELECT COUNT(*) FROM Contacts WHERE number = '${n}'`);
+      const ticketsOf = n => sql(`SELECT COUNT(*) FROM Tickets WHERE contactId IN (SELECT id FROM Contacts WHERE number = '${n}')`);
+      // the old route checks the number in a connected QR session when there is one; this scenario is about the official API only, so the
+      // QR rows left by other tests are put aside for the duration of the test and restored in the end
+      // the old route writes plain text (no template), so the person must have written in the last 24 h: an inbound message is put there
+      const opened = n => {
+        const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, isStaff, channel, createdAt, updatedAt) VALUES ('${n}', '${n}', '', false, false, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        const tk = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${c}, ${cid}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('old-route-${n}', ${tk}, 'oi', false, true, 'chat', 0, NOW(), NOW())`);
+      };
+      const qrRows = sql(`SELECT id FROM Whatsapps WHERE channel = 'whatsapp' AND status = 'CONNECTED'`).split("\n").filter(Boolean);
+      if (qrRows.length) sql(`UPDATE Whatsapps SET status = 'DISCONNECTED' WHERE id IN (${qrRows.join(",")})`);
+      try {
+
+      // scope: a token without messages:send is refused and nothing is created or sent
+      const reader = await mk({ name: "antiga só indicadores", scopes: ["indicators:read"] });
+      const denied = await old(reader, { number: "5569911120001", body: "oi", whatsappId: cid });
+      assert(denied.status === 403 && denied.data.error === "ERR_API_TOKEN_SCOPE", `token without scope: ${denied.status} ${JSON.stringify(denied.data)}`);
+      assert(sentTo("5569911120001") === 0 && ticketsOf("5569911120001") === "0", "a refused call sent or created something");
+
+      // a token of polo A: its own lead through the connection of its polo is sent as before
+      const ofA = await mk({ name: "antiga polo A", scopes: ["messages:send"], poloIds: [Number(poloA)] });
+      opened("5569911120001");
+      const ok = await old(ofA, { number: "5569911120001", body: "oi polo A", whatsappId: cid });
+      assert(ok.status === 200, `token of polo A, its lead, its connection: ${ok.status} ${JSON.stringify(ok.data)}`);
+      assert(sentTo("5569911120001") === 1, "the allowed message was not sent");
+      // a lead of polo B: refused, nothing created
+      const other = await old(ofA, { number: "5569911120002", body: "oi", whatsappId: cid });
+      // a refused call with a file leaves no file in public/ (the polo is checked after the upload, so the controller discards it)
+      const publicFiles = () => fs.readdirSync(path.join(ROOT, "public")).sort().join("|");
+      const withFile = (tok, fields) => { const form = new FormData(); Object.entries(fields).forEach(([k, v]) => form.append(k, String(v))); form.append("medias", PNG, { filename: "foto.png", contentType: "image/png" }); return http.post("/api/messages/send", form, { headers: { ...form.getHeaders(), Authorization: `Bearer ${tok}` } }); };
+      const filesBefore = publicFiles();
+      const refusedWithFile = await withFile(ofA, { number: "5569911120002", body: "oi", whatsappId: cid });
+      assert(refusedWithFile.status === 403 && refusedWithFile.data.error === "ERR_API_TOKEN_POLO", `refused call with a file: ${refusedWithFile.status} ${JSON.stringify(refusedWithFile.data)}`);
+      assert(publicFiles() === filesBefore, "a call refused for the polo left its file in public/");
+      const badNumber = await withFile(ofA, { number: "abc", body: "oi", whatsappId: cid });
+      assert(badNumber.status === 400 && publicFiles() === filesBefore, `a call with a bad number left its file: ${badNumber.status}`);
+      const noScopeFile = await withFile(reader, { number: "5569911120001", body: "oi", whatsappId: cid });
+      assert(noScopeFile.status === 403 && publicFiles() === filesBefore, "a call refused for the scope left its file in public/");
+      assert(other.status === 403 && other.data.error === "ERR_API_TOKEN_POLO", `lead of another polo: ${other.status} ${JSON.stringify(other.data)}`);
+      // its own lead, but a connection that serves no queue of its polos
+      const wrongConn = await old(ofA, { number: "5569911120001", body: "oi", whatsappId: unlinked });
+      assert(wrongConn.status === 403 && wrongConn.data.error === "ERR_API_TOKEN_POLO", `connection of no polo: ${wrongConn.status} ${JSON.stringify(wrongConn.data)}`);
+      assert((await old(ofA, { number: "5569911120001", body: "oi", whatsappId: 999999 })).status === 404, "unknown connection was not a 404");
+      // a token of polo B with a lead of polo B through the connection that serves only polo A: refused, no contact created
+      const ofB = await mk({ name: "antiga polo B", scopes: ["messages:send"], poloIds: [Number(poloB)] });
+      const crossed = await old(ofB, { number: "5569911120002", body: "oi", whatsappId: cid });
+      assert(crossed.status === 403 && crossed.data.error === "ERR_API_TOKEN_POLO", `polo B token with the connection of polo A: ${crossed.status} ${JSON.stringify(crossed.data)}`);
+      assert(sentTo("5569911120002") === 0 && contactsOf("5569911120002") === "0", "a refused call sent or created something (polo B)");
+      assert(sentTo("5569911120001") === 1, "a refused call sent a message");
+
+      // a token of every polo with the scope sends as before (a number that is no lead, any connection)
+      const everyPolo = await mk({ name: "antiga todos os polos", scopes: ["messages:send"] });
+      opened("5511977771234");
+      const all = await old(everyPolo, { number: "5511977771234", body: "oi todos", whatsappId: cid });
+      assert(all.status === 200 && sentTo("5511977771234") === 1, `token of every polo: ${all.status} ${JSON.stringify(all.data)}`);
+
+      // limit per token (the same bucket of the v1): 429 with Retry-After, after the 120 calls of the minute
+      let limited = null, refused = 0;
+      for (let i = 0; i < 130 && !limited; i++) {
+        const r = await old(reader, { number: "5569911120001", body: "oi", whatsappId: cid });
+        if (r.status === 429) limited = r; else if (r.status === 403) refused++;
+      }
+      assert(limited && limited.headers["retry-after"], "no 429 after 130 calls of one token in a minute");
+      assert(refused >= 100, `the limit came too early: ${refused}`);
+      assert(sentTo("5569911120001") === 1, "a limited or refused call sent a message");
+      } finally {
+        if (qrRows.length) sql(`UPDATE Whatsapps SET status = 'CONNECTED' WHERE id IN (${qrRows.join(",")})`);
+      }
+    });
+
     // API v1 tokens (docs/API-V1.md): each route asks for its scope, a token of some polos reads only those polos, a token that expired is
     // refused, the token itself is never in the database (only its SHA-256), the ones made before the scopes keep full access (legacy)
     // and the old single token of Configurações can be turned off.
@@ -3813,7 +3899,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const ids = async (params) => (await http.get("/tickets", { params: { showAll: "true", queueIds, ...params }, ...auth() })).data.tickets.map(t => String(t.id));
       assert((await ids({ groups: "only", historical: "all" })).includes(String(gt)), "group missing from the Grupos tab");
       assert(!(await ids({ groups: "exclude", historical: "all" })).includes(String(gt)), "group leaked into the private chats");
-      assert((await ids({ historical: "all" })).includes(String(gt)), "group missing from Todas");
+      // "Todas" (no groups filter) keeps the group; searched by its name so the check does not depend on the first page of 40 (the group is
+      // 3 days old and the tests before it create newer conversations)
+      assert((await ids({ historical: "all", searchParam: "Grupo da turma" })).includes(String(gt)), "group missing from Todas");
       const before = Number((await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data.totals.total);
       sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${gid}, ${tgId}, 0, true, 'sales', NOW(), NOW())`);
       assert(Number((await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data.totals.total) === before, "a group conversation was counted as a service ticket");
