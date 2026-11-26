@@ -21,6 +21,7 @@ import {
   Chip,
   FormControlLabel,
   MenuItem,
+  Switch,
 } from "@material-ui/core";
 import { DeleteOutline } from "@material-ui/icons";
 import PlayArrow from "@material-ui/icons/PlayArrow";
@@ -219,6 +220,64 @@ GET  ${base}/api/v1/connections`}
   );
 };
 
+// WHO READS THE CONVERSATIONS (services/ReadingServices): the system's own AI, or OpenBot through the API (GET /api/v1/leituras) with the
+// system's AI reading only what it leaves waiting. The counts show how much each one read and the tokens OpenBot saved.
+const ReadingsCard = () => {
+  const classes = useStyles();
+  const [cfg, setCfg] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const load = () => api.get("/readings/settings").then(({ data }) => { setCfg(data); setFailed(false); }).catch(() => setFailed(true));
+  useEffect(() => { load(); }, []);
+  const save = async (patch) => {
+    setSaving(true);
+    try {
+      const { data } = await api.put("/readings/settings", patch);
+      setCfg(data);
+      toast.success("Configuração salva.");
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+  if (failed) return (<Paper className={classes.paper}><Typography>Não foi possível carregar as leituras.</Typography><Button size="small" onClick={load}>Tentar de novo</Button></Paper>);
+  if (!cfg) return <Paper className={classes.paper}><Typography variant="body2">Carregando as leituras…</Typography></Paper>;
+  const s = cfg.summary || { byWho: {} };
+  return (
+    <Paper className={classes.paper}>
+      <Typography variant="h6">Leituras das conversas</Typography>
+      <Typography variant="body2" color="textSecondary" style={{ margin: "4px 0 12px" }}>
+        A leitura das conversas copiadas do WhatsApp, do resultado de cada venda e a revisão diária dos consultores. Com o OpenBot, ele pega as
+        conversas pela API (escopo "Fazer as leituras de conversas"), com o texto pseudonimizado (nome, telefone, CPF, e-mail e números trocados por marcadores), e a IA do sistema lê só o que ficar esperando. A leitura nunca matricula ninguém: a matrícula encontrada vai para "Matrícula a confirmar", para uma pessoa confirmar.
+      </Typography>
+      <FormControlLabel
+        control={<Switch color="primary" checked={cfg.enabled !== false} disabled={saving} onChange={(e) => { const on = e.target.checked; save({ enabled: on }); }} />}
+        label={cfg.enabled !== false ? "Leituras ligadas" : "Leituras desligadas: nenhuma conversa é lida"}
+        style={{ marginBottom: 8 }}
+      />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
+        <TextField select size="small" variant="outlined" label="Quem faz as leituras" value={cfg.provider} disabled={saving} onChange={(e) => save({ provider: e.target.value })} style={{ minWidth: 260 }}>
+          <MenuItem value="sistema">IA do sistema (modelo mais barato)</MenuItem>
+          <MenuItem value="openbot">OpenBot pela API</MenuItem>
+        </TextField>
+        {cfg.provider === "openbot" && (
+          <TextField select size="small" variant="outlined" label="IA do sistema lê o que esperar mais de" value={cfg.waitHours} disabled={saving} onChange={(e) => save({ waitHours: Number(e.target.value) })} style={{ minWidth: 260 }}>
+            {[1, 3, 6, 12, 24].map((h) => <MenuItem key={h} value={h}>{h} {h === 1 ? "hora" : "horas"}</MenuItem>)}
+          </TextField>
+        )}
+        <TextField select size="small" variant="outlined" label="Limite por dia da IA do sistema" value={cfg.maxPerDay} disabled={saving} onChange={(e) => save({ maxPerDay: Number(e.target.value) })} style={{ minWidth: 220 }}>
+          {[0, 50, 100, 300, 600, 1000].map((n) => <MenuItem key={n} value={n}>{n === 0 ? "Desligada" : `${n} leituras`}</MenuItem>)}
+        </TextField>
+      </div>
+      <Typography variant="body2" style={{ marginTop: 12 }}>
+        Na fila: {s.pending || 0} · feitas pela IA do sistema: {s.byWho.sistema || 0} · pelo OpenBot: {s.byWho.openbot || 0}
+        {s.tokensSaved ? ` · cerca de ${Number(s.tokensSaved).toLocaleString("pt-BR")} tokens economizados` : ""}
+      </Typography>
+    </Paper>
+  );
+};
+
 const Webhooks = () => {
   const classes = useStyles();
   const [events, setEvents] = useState([]);
@@ -234,6 +293,7 @@ const Webhooks = () => {
       </MainHeader>
       <div className={classes.wrap}>
         <ApiTokens />
+        <ReadingsCard />
         <div style={{ minHeight: 360, display: "flex", flexDirection: "column" }}>
           <CrudPage
             embedded

@@ -69,12 +69,16 @@ const matches = (config: Record<string, any>, ctx: Record<string, any>): boolean
   });
 
 // the conversation where the flow talks: the one of the event, else the latest open one of the person
+// a conversation copied from a phone (history) never runs a flow: the person did not write now
 const ticketFor = async (ctx: Record<string, any>): Promise<number | null> => {
-  if (ctx.ticketId) return Number(ctx.ticketId);
+  if (ctx.ticketId) {
+    const own = await Ticket.findByPk(Number(ctx.ticketId), { attributes: ["id", "isHistorical"] });
+    return own && !own.isHistorical ? own.id : null;
+  }
   let contactId = ctx.contactId ? Number(ctx.contactId) : null;
   if (!contactId && ctx.leadId) contactId = (await Lead.findByPk(Number(ctx.leadId), { attributes: ["contactId"] }))?.contactId || null;
   if (!contactId) return null;
-  const t = await Ticket.findOne({ where: { contactId, status: { [Op.in]: ["open", "pending"] }, isGroup: false } as any, order: [["updatedAt", "DESC"]], attributes: ["id"] });
+  const t = await Ticket.findOne({ where: { contactId, status: { [Op.in]: ["open", "pending"] }, isGroup: false, isHistorical: false } as any, order: [["updatedAt", "DESC"]], attributes: ["id"] });
   return t ? t.id : null;
 };
 

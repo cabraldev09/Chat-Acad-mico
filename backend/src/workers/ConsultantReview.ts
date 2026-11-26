@@ -9,6 +9,13 @@ export const runConsultantReview = async (day: string) => {
   const { configOf } = await import("../services/CopilotServices/Settings");
   const { reviewDay } = await import("../services/AnalyticsServices/ConsultantReview");
   const steps = (await configOf()).steps.map((s: any) => ({ key: s.key, label: s.label }));
+  // with OpenBot reading through the API, the day's conversations go to the queue (the system's AI reads what it leaves behind)
+  const { readingSettings } = await import("../services/ReadingServices/Queue");
+  if ((await readingSettings()).provider === "openbot") {
+    const { enqueueReviewDay } = await import("../services/ReadingServices/Reviews");
+    const queued = await enqueueReviewDay(day);
+    return { reviewed: 0, skipped: 0, failed: 0, stoppedByBudget: false, reason: `queued:${queued}` };
+  }
   return reviewDay(day, steps);
 };
 

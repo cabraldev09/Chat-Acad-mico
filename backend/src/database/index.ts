@@ -82,6 +82,7 @@ import LeadReminderLog from "../models/LeadReminderLog";
 import LeadDocument from "../models/LeadDocument";
 import EnrollmentForm from "../models/EnrollmentForm";
 import TutoringIssue from "../models/TutoringIssue";
+import ConversationReading from "../models/ConversationReading";
 import SendRelease from "../models/SendRelease";
 import NpsSurvey from "../models/NpsSurvey";
 import RetentionMessage from "../models/RetentionMessage";
@@ -192,6 +193,7 @@ const models = [
   LeadDocument,
   EnrollmentForm,
   TutoringIssue,
+  ConversationReading,
   SendRelease,
   NpsSurvey,
   RetentionMessage,

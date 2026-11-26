@@ -140,6 +140,18 @@ const auditAnswer = (text) => {
   if (/protocolo|chamado|CAA/i.test(String(text))) return { pendencias: [{ tipo: "protocolo", resumo: "Tutor abriu chamado sobre o acesso à plataforma e prometeu retorno ao aluno" }], resolvidas: [], ideia: "Cobrar a resposta do setor em até 48 horas" };
   return { pendencias: [], resolvidas: [], ideia: "" };
 };
+// the readings of conversations (services/ReadingServices): the copied conversation is classified by what it says; a finished sale gets codes
+const readingAnswer = (system, text) => {
+  anthropic.readings = (anthropic.readings || 0) + 1;
+  anthropic.readingTexts = [...(anthropic.readingTexts || []), String(text)];
+  if (/por que as vendas acontecem/.test(system)) return { resultado: "perdeu", motivo: "Preço / mensalidade", objecoes: ["preco"], o_que_funcionou: ["rapidez"], faltou: ["proposta_no_dia"] };
+  const t = String(text);
+  if (/churrasco/i.test(t)) return { e_lead: false, situacao: "em_andamento" };
+  if (/fiz a matr[ií]cula|j[aá] me matriculei/i.test(t)) return { e_lead: true, situacao: "matriculado", curso: "Pedagogia", etapa: "", objecao: "nenhuma", motivo: "", resumo: "Já fez a matrícula em Pedagogia.", proximo_passo: "Confirmar o RGM" };
+  if (/muito caro/i.test(t)) return { e_lead: true, situacao: "desistiu", curso: "Pedagogia", etapa: "", objecao: "preco", motivo: "Achou a mensalidade alta", resumo: "Queria Pedagogia, desistiu pelo valor.", proximo_passo: "Oferecer uma bolsa" };
+  return { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Quer Pedagogia e pediu a proposta.", proximo_passo: "Enviar a proposta" };
+};
+const isReading = (system) => /Você lê, para a equipe comercial|por que as vendas acontecem/.test(String(system || ""));
 const startAnthropicMock = () => {
   const app = express();
   app.use(express.json({ limit: "5mb" }));
@@ -153,6 +165,9 @@ const startAnthropicMock = () => {
   app.post("/v1/chat/completions", (req, res) => {
     anthropic.openai = [...(anthropic.openai || []), req.body];
     const sys = (req.body.messages || []).find(m => m.role === "system");
+    if (sys && isReading(sys.content)) {
+      return res.json({ choices: [{ message: { content: JSON.stringify(readingAnswer(String(sys.content), req.body.messages[req.body.messages.length - 1].content)) } }], usage: { prompt_tokens: 300, completion_tokens: 60, total_tokens: 360 } });
+    }
     if (sys && /Você audita, para a coordenação acadêmica/.test(String(sys.content))) {
       anthropic.audits = (anthropic.audits || 0) + 1;
       return res.json({ choices: [{ message: { content: JSON.stringify(auditAnswer(req.body.messages[req.body.messages.length - 1].content)) } }], usage: { prompt_tokens: 200, completion_tokens: 40, total_tokens: 240 } });
@@ -164,6 +179,9 @@ const startAnthropicMock = () => {
     const usage = { input_tokens: 120, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
     const last = req.body.messages[req.body.messages.length - 1];
     const text = t => res.json({ content: [{ type: "text", text: t }], stop_reason: "end_turn", usage });
+    if (typeof req.body.system === "string" && isReading(req.body.system)) {
+      return text(JSON.stringify(readingAnswer(req.body.system, typeof last.content === "string" ? last.content : JSON.stringify(last.content))));
+    }
     if (typeof req.body.system === "string" && /Você audita, para a coordenação acadêmica/.test(req.body.system)) {
       anthropic.audits = (anthropic.audits || 0) + 1;
       anthropic.auditModels = [...(anthropic.auditModels || []), req.body.model];
@@ -955,6 +973,92 @@ const postMeta = (id, payload, secret, badSig) => {
       const r = await http.post("/api/v1/messages/send", { number: "5511988887777", body: "Olá {{name}}!", whatsappId: cid, name: "Lead API" }, { headers: { Authorization: `Bearer ${t}` } });
       assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
       assert(graph.sent.slice(before).some(x => x.body && x.body.to === "5511988887777"), "not sent through cloud api");
+    });
+
+    // The old route POST /api/messages/send had only the login: any token (even one "only indicators") sent WhatsApp through any connection.
+    // Now it has the gate of the v1 (limit per token, scope messages:send) before anything is stored, and a token of some polos sends only to
+    // people of its polos through a connection that serves a queue of those polos. Nothing is created by a refused call.
+    await test("old route /api/messages/send: scope, polos of the token, connection of the polo and limit per token", async () => {
+      const old = (t, body) => http.post("/api/messages/send", body, { headers: { Authorization: `Bearer ${t}` } });
+      const mk = async body => { const r = await http.post("/api-tokens", body, auth()); assert(r.status === 201, `token ${r.status} ${JSON.stringify(r.data)}`); return r.data.token; };
+      const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const polo = code => sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('${code}', 'Polo ${code}', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const poloA = polo("OLA"), poloB = polo("OLB");
+      const queueA = sql(`INSERT INTO Queues (name, color, poloId, createdAt, updatedAt) VALUES ('Fila rota antiga A', '#a1b2c3', ${poloA}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Queues (name, color, poloId, createdAt, updatedAt) VALUES ('Fila rota antiga B', '#c3b2a1', ${poloB}, NOW(), NOW())`);
+      sql(`INSERT INTO WhatsappQueues (whatsappId, queueId, createdAt, updatedAt) VALUES (${cid}, ${queueA}, NOW(), NOW())`);
+      const unlinked = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('Conexão sem polo', 'DISCONNECTED', 'whatsapp', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Leads (name, phone, source, stageId, poloId, isHistorical, createdAt, updatedAt) VALUES ('ROTA ANTIGA A', '5569911120001', 'API', ${stage}, ${poloA}, false, NOW(), NOW()), ('ROTA ANTIGA B', '5569911120002', 'API', ${stage}, ${poloB}, false, NOW(), NOW())`);
+      const sentTo = n => graph.sent.filter(x => x.body && x.body.to === n).length;
+      const contactsOf = n => sql(`SELECT COUNT(*) FROM Contacts WHERE number = '${n}'`);
+      const ticketsOf = n => sql(`SELECT COUNT(*) FROM Tickets WHERE contactId IN (SELECT id FROM Contacts WHERE number = '${n}')`);
+      // the old route checks the number in a connected QR session when there is one; this scenario is about the official API only, so the
+      // QR rows left by other tests are put aside for the duration of the test and restored in the end
+      // the old route writes plain text (no template), so the person must have written in the last 24 h: an inbound message is put there
+      const opened = n => {
+        const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, isStaff, channel, createdAt, updatedAt) VALUES ('${n}', '${n}', '', false, false, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        const tk = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${c}, ${cid}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('old-route-${n}', ${tk}, 'oi', false, true, 'chat', 0, NOW(), NOW())`);
+      };
+      const qrRows = sql(`SELECT id FROM Whatsapps WHERE channel = 'whatsapp' AND status = 'CONNECTED'`).split("\n").filter(Boolean);
+      if (qrRows.length) sql(`UPDATE Whatsapps SET status = 'DISCONNECTED' WHERE id IN (${qrRows.join(",")})`);
+      try {
+
+      // scope: a token without messages:send is refused and nothing is created or sent
+      const reader = await mk({ name: "antiga só indicadores", scopes: ["indicators:read"] });
+      const denied = await old(reader, { number: "5569911120001", body: "oi", whatsappId: cid });
+      assert(denied.status === 403 && denied.data.error === "ERR_API_TOKEN_SCOPE", `token without scope: ${denied.status} ${JSON.stringify(denied.data)}`);
+      assert(sentTo("5569911120001") === 0 && ticketsOf("5569911120001") === "0", "a refused call sent or created something");
+
+      // a token of polo A: its own lead through the connection of its polo is sent as before
+      const ofA = await mk({ name: "antiga polo A", scopes: ["messages:send"], poloIds: [Number(poloA)] });
+      opened("5569911120001");
+      const ok = await old(ofA, { number: "5569911120001", body: "oi polo A", whatsappId: cid });
+      assert(ok.status === 200, `token of polo A, its lead, its connection: ${ok.status} ${JSON.stringify(ok.data)}`);
+      assert(sentTo("5569911120001") === 1, "the allowed message was not sent");
+      // a lead of polo B: refused, nothing created
+      const other = await old(ofA, { number: "5569911120002", body: "oi", whatsappId: cid });
+      // a refused call with a file leaves no file in public/ (the polo is checked after the upload, so the controller discards it)
+      const publicFiles = () => fs.readdirSync(path.join(ROOT, "public")).sort().join("|");
+      const withFile = (tok, fields) => { const form = new FormData(); Object.entries(fields).forEach(([k, v]) => form.append(k, String(v))); form.append("medias", PNG, { filename: "foto.png", contentType: "image/png" }); return http.post("/api/messages/send", form, { headers: { ...form.getHeaders(), Authorization: `Bearer ${tok}` } }); };
+      const filesBefore = publicFiles();
+      const refusedWithFile = await withFile(ofA, { number: "5569911120002", body: "oi", whatsappId: cid });
+      assert(refusedWithFile.status === 403 && refusedWithFile.data.error === "ERR_API_TOKEN_POLO", `refused call with a file: ${refusedWithFile.status} ${JSON.stringify(refusedWithFile.data)}`);
+      assert(publicFiles() === filesBefore, "a call refused for the polo left its file in public/");
+      const badNumber = await withFile(ofA, { number: "abc", body: "oi", whatsappId: cid });
+      assert(badNumber.status === 400 && publicFiles() === filesBefore, `a call with a bad number left its file: ${badNumber.status}`);
+      const noScopeFile = await withFile(reader, { number: "5569911120001", body: "oi", whatsappId: cid });
+      assert(noScopeFile.status === 403 && publicFiles() === filesBefore, "a call refused for the scope left its file in public/");
+      assert(other.status === 403 && other.data.error === "ERR_API_TOKEN_POLO", `lead of another polo: ${other.status} ${JSON.stringify(other.data)}`);
+      // its own lead, but a connection that serves no queue of its polos
+      const wrongConn = await old(ofA, { number: "5569911120001", body: "oi", whatsappId: unlinked });
+      assert(wrongConn.status === 403 && wrongConn.data.error === "ERR_API_TOKEN_POLO", `connection of no polo: ${wrongConn.status} ${JSON.stringify(wrongConn.data)}`);
+      assert((await old(ofA, { number: "5569911120001", body: "oi", whatsappId: 999999 })).status === 404, "unknown connection was not a 404");
+      // a token of polo B with a lead of polo B through the connection that serves only polo A: refused, no contact created
+      const ofB = await mk({ name: "antiga polo B", scopes: ["messages:send"], poloIds: [Number(poloB)] });
+      const crossed = await old(ofB, { number: "5569911120002", body: "oi", whatsappId: cid });
+      assert(crossed.status === 403 && crossed.data.error === "ERR_API_TOKEN_POLO", `polo B token with the connection of polo A: ${crossed.status} ${JSON.stringify(crossed.data)}`);
+      assert(sentTo("5569911120002") === 0 && contactsOf("5569911120002") === "0", "a refused call sent or created something (polo B)");
+      assert(sentTo("5569911120001") === 1, "a refused call sent a message");
+
+      // a token of every polo with the scope sends as before (a number that is no lead, any connection)
+      const everyPolo = await mk({ name: "antiga todos os polos", scopes: ["messages:send"] });
+      opened("5511977771234");
+      const all = await old(everyPolo, { number: "5511977771234", body: "oi todos", whatsappId: cid });
+      assert(all.status === 200 && sentTo("5511977771234") === 1, `token of every polo: ${all.status} ${JSON.stringify(all.data)}`);
+
+      // limit per token (the same bucket of the v1): 429 with Retry-After, after the 120 calls of the minute
+      let limited = null, refused = 0;
+      for (let i = 0; i < 130 && !limited; i++) {
+        const r = await old(reader, { number: "5569911120001", body: "oi", whatsappId: cid });
+        if (r.status === 429) limited = r; else if (r.status === 403) refused++;
+      }
+      assert(limited && limited.headers["retry-after"], "no 429 after 130 calls of one token in a minute");
+      assert(refused >= 100, `the limit came too early: ${refused}`);
+      assert(sentTo("5569911120001") === 1, "a limited or refused call sent a message");
+      } finally {
+        if (qrRows.length) sql(`UPDATE Whatsapps SET status = 'CONNECTED' WHERE id IN (${qrRows.join(",")})`);
+      }
     });
 
     // API v1 tokens (docs/API-V1.md): each route asks for its scope, a token of some polos reads only those polos, a token that expired is
@@ -3795,7 +3899,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const ids = async (params) => (await http.get("/tickets", { params: { showAll: "true", queueIds, ...params }, ...auth() })).data.tickets.map(t => String(t.id));
       assert((await ids({ groups: "only", historical: "all" })).includes(String(gt)), "group missing from the Grupos tab");
       assert(!(await ids({ groups: "exclude", historical: "all" })).includes(String(gt)), "group leaked into the private chats");
-      assert((await ids({ historical: "all" })).includes(String(gt)), "group missing from Todas");
+      // "Todas" (no groups filter) keeps the group; searched by its name so the check does not depend on the first page of 40 (the group is
+      // 3 days old and the tests before it create newer conversations)
+      assert((await ids({ historical: "all", searchParam: "Grupo da turma" })).includes(String(gt)), "group missing from Todas");
       const before = Number((await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data.totals.total);
       sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${gid}, ${tgId}, 0, true, 'sales', NOW(), NOW())`);
       assert(Number((await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data.totals.total) === before, "a group conversation was counted as a service ticket");
@@ -3971,6 +4077,80 @@ const postMeta = (id, payload, secret, badSig) => {
       // the management still adds any connection through the usual route; a consultant still cannot
       assert((await http.post("/whatsapp", { name: "x" }, asUser(tc))).status === 403, "a consultant used the management's route");
       for (const id of [mine.data.id, tutors.data.id]) await http.delete(`/whatsapp/${id}`, auth());
+    });
+    await test("the copy of a phone is silent: no 'Novo contato' trigger runs on a copied contact or conversation (a real trigger, a real fire), the switch stops the copy, and the administrator erases what was copied", async () => {
+      const owner = (await http.post("/users", { name: "Dona Silenciosa", email: "silenciosa@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const oTok = (await http.post("/auth/login", { email: "silenciosa@x.com", password: "senha123" })).data.token;
+      const qr = (await http.post("/whatsapp", { name: "WhatsApp Silencioso", channel: "whatsapp", ownerId: owner.id }, auth())).data;
+      // a published flow on "Novo contato": the danger is it talking to an old contact of the phone
+      const flow = (await http.post("/flows", { name: "Boas-vindas ao contato novo", entry: { type: "manual" }, graph: { nodes: [
+        { id: "s", type: "start", data: {} }, { id: "m", type: "message", data: { text: "Bem-vindo, {{primeiro_nome}}!" } }, { id: "e", type: "end", data: {} }],
+        edges: [{ id: "1", source: "s", target: "m" }, { id: "2", source: "m", target: "e" }] } }, auth())).data;
+      assert((await http.post(`/flows/${flow.id}/publish`, {}, auth())).status === 200, "publish");
+      const trig = (await http.post("/automation-triggers", { name: "Novo contato", event: "contact.created", flowId: flow.id }, auth())).data;
+      const runs = () => Number(sql(`SELECT runCount FROM AutomationTriggers WHERE id=${trig.id}`));
+      const script = `
+        const http = require("http");
+        require("./dist/database");
+        const { initIO } = require("./dist/libs/socket");
+        initIO(http.createServer());
+        const { whatsappProvider } = require("./dist/providers/WhatsApp");
+        const { importHistory } = require("./dist/services/WbotServices/ImportHistoryService");
+        const { fire } = require("./dist/helpers/Fire");
+        const Whatsapp = require("./dist/models/Whatsapp").default;
+        const Contact = require("./dist/models/Contact").default;
+        const Ticket = require("./dist/models/Ticket").default;
+        const now = Math.floor(Date.now() / 1000);
+        // the phone: a person who talked yesterday (recent: the conversation comes open) and a group with an author never seen
+        whatsappProvider.importChats = async (_id, _opts, onChat) => {
+          await onChat({ isGroup: false, chatId: "5511933330101@c.us", timestamp: now - 86400, unreadCount: 1, pinned: false, archived: false, name: "Amiga Antiga",
+            contact: { name: "Amiga Antiga", number: "5511933330101", isGroup: false },
+            messages: [{ id: "silent-1", body: "oi, tudo bem?", fromMe: false, timestamp: now - 86400, ack: 0 }] });
+          await onChat({ isGroup: true, chatId: "120363000000000777@g.us", timestamp: now - 3600, unreadCount: 0, pinned: false, archived: false, name: "Grupo da Família",
+            contact: { name: "Grupo da Família", number: "120363000000000777", isGroup: true },
+            messages: [{ id: "silent-2", body: "bom dia", fromMe: false, timestamp: now - 3600, ack: 0, author: { name: "Primo Novo", number: "5511933330102" } }] });
+        };
+        (async () => {
+          const conn = await Whatsapp.findByPk(${qr.id});
+          const report = await importHistory(conn, {});
+          // the guard of the triggers too: even a "Novo contato" fired for the copied person does not run on the copied conversation
+          const copied = await Contact.findOne({ where: { number: "5511933330101" } });
+          fire("contact.created", { contactId: copied.id });
+          // the control: a person who wrote now (a live conversation) does get the flow
+          const live = await Contact.create({ name: "Pessoa Nova Agora", number: "5511933330103", isGroup: false });
+          await Ticket.create({ contactId: live.id, whatsappId: ${cid}, status: "pending", isGroup: false, isHistorical: false, unreadMessages: 1 });
+          fire("contact.created", { contactId: live.id });
+          await new Promise(r => setTimeout(r, 4000));
+          console.log(JSON.stringify({ chats: report.chats, copied: copied.id, live: live.id }));
+          process.exit(0);
+        })().catch(e => { console.error(e); process.exit(1); });`;
+      const out = JSON.parse(execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim().split("\n").pop());
+      assert(out.chats === 2, `copy ${JSON.stringify(out)}`);
+      assert(runs() === 1, `the trigger ran ${runs()} times (expected only the live person)`);
+      const copiedTicket = sql(`SELECT CONCAT(status,'|',CASE WHEN isHistorical THEN 1 ELSE 0 END) FROM Tickets WHERE contactId=${out.copied}`);
+      assert(copiedTicket === "open|1", `the copied conversation ${copiedTicket}`);
+      assert(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId IN (SELECT id FROM Tickets WHERE contactId=${out.copied}) AND fromMe=true`) === "0", "a message went to a contact of the phone");
+      // the switch: off, no copy (the button answers that it is off)
+      sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${qr.id}`);
+      assert((await http.put("/settings/whatsapp_copy_enabled", { value: "false" }, auth())).status === 200, "switch off");
+      const off = await http.post(`/whatsapp/${qr.id}/import-history`, {}, asUser(oTok));
+      assert(off.status === 409 && off.data.error === "ERR_HISTORY_COPY_OFF", `copy with the switch off ${off.status} ${JSON.stringify(off.data)}`);
+      await http.put("/settings/whatsapp_copy_enabled", { value: "true" }, auth());
+      // erasing what was copied: only the administrator (not the owner, not the coordination); the copied conversations and their messages leave,
+      // a conversation already in use stays, and the number is not copied again by itself
+      assert((await http.delete(`/whatsapp/${qr.id}/copied-history`, asUser(oTok))).status === 403, "the owner erased the copy");
+      await http.post("/users", { name: "Coordenação Cópia", email: "coord-copia@x.com", password: "senha123", role: "coordenacao" }, auth());
+      const coordTok = (await http.post("/auth/login", { email: "coord-copia@x.com", password: "senha123" })).data.token;
+      assert((await http.delete(`/whatsapp/${qr.id}/copied-history`, asUser(coordTok))).status === 403, "the coordination erased the copy");
+      const inUse = Number(sql(`SELECT id FROM Tickets WHERE whatsappId=${qr.id} AND isHistorical=true AND isGroup=true LIMIT 1`));
+      sql(`UPDATE Tickets SET isHistorical=false WHERE id=${inUse}`);
+      const erased = await http.delete(`/whatsapp/${qr.id}/copied-history`, auth());
+      assert(erased.status === 200 && erased.data.conversations === 1, `erase ${erased.status} ${JSON.stringify(erased.data)}`);
+      assert(sql(`SELECT COUNT(*) FROM Tickets WHERE whatsappId=${qr.id} AND isHistorical=true`) === "0", "copied conversations stayed");
+      assert(sql(`SELECT COUNT(*) FROM Tickets WHERE id=${inUse}`) === "1", "a conversation in use was erased");
+      assert(sql(`SELECT CASE WHEN historyImportedAt IS NULL THEN 0 ELSE 1 END FROM Whatsapps WHERE id=${qr.id}`) === "1", "the number would be copied again by itself");
+      await http.put(`/automation-triggers/${trig.id}`, { active: false }, auth());
+      sql(`UPDATE Whatsapps SET status='DISCONNECTED' WHERE id=${qr.id}`);
     });
     await test("chats copied from the phone of a person's own QR number: the recent ones in Atendendo with the owner, in nobody else's list", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
@@ -6366,6 +6546,9 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // a person of the team answers
       // the handoff already gave the conversation to a consultant of the queue; a person of the team answering is simulated by taking it over
+      // (only after the handoff finished assigning it: taking it over before that, the late assignment won and the team's reply got 409)
+      await waitFor(() => sql(`SELECT COALESCE(userId::text, '') FROM Tickets WHERE id=${t}`) !== "", 8000, "the handoff assigned the conversation").catch(() => undefined);
+      await new Promise(r => setTimeout(r, 300));
       sql(`UPDATE Tickets SET status='open', userId=1 WHERE id=${t}`);
       const taken = { status: 200, data: {} };
       before = graph.sent.length;
@@ -8552,6 +8735,114 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/tutoria/issues", { summary: " " }, auth())).status === 400, "an empty issue was accepted");
       assert((await http.put("/tutoria/audit/settings", { enabled: false, maxPerDay: 5 }, auth())).data.maxPerDay === 5, "settings");
       await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 40 }, auth());
+    });
+    await test("the conversations copied from a consultant's phone are read once: real leads in the funnel with a summary, enrollments with the RGM, the ones without it to confirm, who gave up in Recuperação with the reason; one notice; OpenBot takes masked readings through the API", async () => {
+      const u = (await http.post("/users", { name: "Consultora Leitura", email: "leitura@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const uTok = (await http.post("/auth/login", { email: "leitura@x.com", password: "senha123" })).data.token;
+      const qr = (await http.post("/whatsapp", { name: "WhatsApp da Leitura", channel: "whatsapp", ownerId: u.id }, auth())).data;
+      sql(`UPDATE Whatsapps SET historyImportedAt=NOW() WHERE id=${qr.id}`);
+      const copied = (name, number, lines) => {
+        const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        const t = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageAt, closedAt, createdAt, updatedAt) VALUES ('closed', ${c}, ${qr.id}, ${u.id}, 0, false, 'sales', true, 'x', NOW() - INTERVAL '3 days', NOW(), NOW() - INTERVAL '10 days', NOW() - INTERVAL '3 days') RETURNING id`).split("\n")[0];
+        lines.forEach(([fromMe, body], i) => sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('rd-${t}-${i}', ${t}, ${c}, '${body}', ${fromMe}, true, 'chat', 1, NOW() - INTERVAL '${10 - i} days', NOW())`));
+        return { c, t };
+      };
+      const A = copied("Ana Andamento Leitura", "5569955550001", [[false, "Oi, quero saber de Pedagogia"], [true, "Claro! Te mando a grade"], [false, "Me manda a proposta por favor"]]);
+      const B = copied("Bia Matriculada Leitura", "5569955550002", [[false, "Oi"], [true, "Oi, tudo bem?"], [false, "Já fiz a matrícula, meu RGM é 7654321"]]);
+      const C = copied("Caio Confirmar Leitura", "5569955550003", [[false, "Oi"], [true, "Como posso ajudar?"], [false, "Fiz a matrícula ontem pelo site"]]);
+      const D = copied("Dani Desistiu Leitura", "5569955550004", [[false, "Quero Pedagogia"], [true, "A mensalidade com bolsa fica ótima"], [false, "Achei muito caro, não vou fazer"], [true, "Entendo, qualquer coisa me chama"]]);
+      const E = copied("Edu Amigo Leitura", "5569955550005", [[false, "oi amigo, churrasco sábado?"], [true, "Bora!"]]);
+      // the catch-up of the first sync already made a lead for Ana, waiting in "Novos para conferir"
+      const stage1 = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
+      const leadA = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Ana Andamento Leitura', '5569955550001', ${stage1}, ${A.c}, ${u.id}, 'WhatsApp', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      assert((await http.get("/crm/triage", asUser(uTok))).data.items.some(i => String(i.id) === leadA), "the lead of the catch-up should be waiting before the reading");
+      sql(`DELETE FROM Settings WHERE key IN ('readings_day', 'readings_count')`);
+      const run = (await http.post("/readings/run", {}, auth())).data;
+      assert(run.read >= 5, `readings ${JSON.stringify(run)}`);
+      // what went to the model is masked: no name, no RGM, no phone
+      const sent = (anthropic.readingTexts || []).join(" ");
+      assert(!/7654321|Bia Matriculada|Dani Desistiu|5569955550/.test(sent), "personal data went to the model");
+      const leadOf = c => sql(`SELECT CONCAT(l.id,'|',s.name,'|',s.type,'|',COALESCE(l.rgm,''),'|',CASE WHEN l.enrolledAt IS NULL THEN 0 ELSE 1 END,'|',COALESCE(l.recoveryState,''),'|',COALESCE(l.lostReason,''),'|',COALESCE(l.ownerId::text,''),'|',CASE WHEN l.isHistorical THEN 1 ELSE 0 END) FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.contactId=${c}`).split("|");
+      const a = leadOf(A.c);
+      assert(a[0] === leadA && a[2] === "open" && a[7] === String(u.id), `Ana ${a}`);
+      assert(!(await http.get("/crm/triage", asUser(uTok))).data.items.some(i => String(i.id) === leadA), "a lead read from the copy is still in Novos para conferir");
+      // the reading never rewrites the dates the lead already has (the audit of #205): Ana keeps the day she was created
+      assert(Number(sql(`SELECT EXTRACT(EPOCH FROM (NOW() - createdAt)) FROM Leads WHERE id=${leadA}`)) < 86400, "the reading rewrote the createdAt of a lead");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadA} AND body LIKE 'Leitura do WhatsApp:%'`)) === 1, "the consultant has no summary");
+      // the reading NEVER enrolls: Bia wrote "meu RGM é 7654321" (anyone can write that) and goes to "Matrícula a confirmar", with the RGM only
+      // as a suggestion in the task; no RGM saved, no wonAt or enrolledAt, nothing in Matrículas
+      const b = leadOf(B.c);
+      assert(b[1] === "Matrícula a confirmar" && b[2] === "open" && b[3] === "" && b[4] === "0", `Bia ${b}`);
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE id=${b[0]} AND (wonAt IS NOT NULL OR enrolledAt IS NOT NULL OR rgm IS NOT NULL)`) === "0", "the reading enrolled Bia");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${b[0]} AND automationKey='confirm-enroll-${b[0]}' AND title LIKE '%7654321%'`)) === 1, "the suggested RGM is not in the task");
+      const c = leadOf(C.c);
+      assert(c[1] === "Matrícula a confirmar" && c[4] === "0", `Caio ${c}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${c[0]} AND automationKey='confirm-enroll-${c[0]}' AND userId=${u.id}`)) === 1, "no task to confirm the enrollment");
+      const d = leadOf(D.c);
+      assert(d[2] === "lost" && d[5] === "aberta" && d[6] === "Preço / mensalidade", `Dani ${d}`);
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE contactId=${E.c} AND isHistorical=false`) === "0", "a friend became a lead");
+      // one notice for the owner of the number, pointing to Recuperação
+      assert(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${u.id} AND kind='reading'`) === "1", "the owner should get one notice");
+      // Recuperação: the consultant sees Dani with the reason and the objection; another consultant does not
+      const rec = (await http.get("/crm/recovery", asUser(uTok))).data;
+      const item = rec.items.find(i => String(i.id) === d[0]);
+      assert(item && item.reason === "Achou a mensalidade alta" && item.objection === "preco" && rec.reasons.length >= 1, `recovery ${JSON.stringify(rec).slice(0, 400)}`);
+      await http.post("/users", { name: "Outro Consultor Leitura", email: "leitura2@x.com", password: "senha123", role: "consultor" }, auth());
+      const otherTok = (await http.post("/auth/login", { email: "leitura2@x.com", password: "senha123" })).data.token;
+      assert(!(await http.get("/crm/recovery", asUser(otherTok))).data.items.some(i => String(i.id) === d[0]), "another consultant sees the recovery of someone else");
+      assert((await http.post(`/leads/${d[0]}/recovery`, { action: "voltar" }, asUser(otherTok))).status === 403, "another consultant acted on the lead");
+      // nothing is read twice; the sale that ended (Dani) is read for "por que perdemos"
+      sql(`DELETE FROM Settings WHERE key='readings_outcome_day'`);
+      const readsBefore = anthropic.readings;
+      await http.post("/readings/run", {}, auth());
+      assert(anthropic.readings - readsBefore === 1, `only the outcome of Dani should be read now (${anthropic.readings - readsBefore})`);
+      const why = (await http.get("/analytics/outcomes", { params: { range: "custom", from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
+      assert(why.lost >= 1 && why.reasons.some(r => r.reason === "Preço / mensalidade"), `outcomes ${JSON.stringify(why).slice(0, 300)}`);
+      // back to the funnel: out of Recuperação, in an open column
+      assert((await http.post(`/leads/${d[0]}/recovery`, { action: "voltar" }, asUser(uTok))).status === 200, "back to the funnel");
+      assert(leadOf(D.c)[2] === "open" && !(await http.get("/crm/recovery", asUser(uTok))).data.items.some(i => String(i.id) === d[0]), "the lead stayed in Recuperação");
+      // OpenBot: with it reading, the system's AI leaves the new reading waiting; the token takes it masked and answers
+      assert((await http.put("/readings/settings", { provider: "openbot", waitHours: 6 }, asUser(uTok))).status === 403, "a consultant changed who reads");
+      // only the administrator, not the coordination, turns the readings on or off and runs a round (the audit of #205)
+      await http.post("/users", { name: "Coordenação Leitura", email: "leitura.coord@x.com", password: "senha123", role: "coordenacao" }, auth());
+      const coordTok = (await http.post("/auth/login", { email: "leitura.coord@x.com", password: "senha123" })).data.token;
+      assert((await http.get("/readings/settings", asUser(coordTok))).status === 200, "the coordination should see the readings");
+      assert((await http.put("/readings/settings", { enabled: false }, asUser(coordTok))).status === 403, "the coordination turned the readings off");
+      assert((await http.post("/readings/run", {}, asUser(coordTok))).status === 403, "the coordination ran a round");
+      assert((await http.get("/readings/settings", auth())).data.enabled === true, "the readings should come on by default");
+      // off: nothing is read nor handed out, and "Ler agora" says why
+      assert((await http.put("/readings/settings", { enabled: false }, auth())).data.enabled === false, "the switch did not turn off");
+      const offBefore = anthropic.readings;
+      const offRun = await http.post("/readings/run", {}, auth());
+      assert(offRun.status === 409 && offRun.data.error === "ERR_READINGS_DISABLED", `run with the readings off ${offRun.status}`);
+      assert(anthropic.readings === offBefore, "something was read with the readings off");
+      assert((await http.put("/readings/settings", { enabled: true }, auth())).data.enabled === true, "the switch did not turn on");
+      assert((await http.put("/readings/settings", { provider: "openbot", waitHours: 6 }, auth())).data.provider === "openbot", "provider not saved");
+      const G = copied("Gabi Openbot Leitura", "5569955550007", [[false, "Oi, quero Pedagogia"], [true, "Te mando a grade"], [false, "Me manda a proposta"]]);
+      const before = anthropic.readings;
+      await http.post("/readings/run", {}, auth());
+      assert(anthropic.readings === before, "the system's AI read what OpenBot should read");
+      const worker = (await http.post("/api-tokens", { name: "openbot", scopes: ["readings:work"] }, auth())).data.token;
+      const noScope = (await http.post("/api-tokens", { name: "leitor", scopes: ["leads:read"] }, auth())).data.token;
+      const polo = sql(`SELECT id FROM Polos ORDER BY id LIMIT 1`);
+      const ofPolo = polo ? (await http.post("/api-tokens", { name: "openbot polo", scopes: ["readings:work"], poloIds: [Number(polo)] }, auth())).data.token : null;
+      const bearer = t => ({ headers: { Authorization: `Bearer ${t}` } });
+      assert((await http.get("/api/v1/leituras", bearer(noScope))).status === 403, "a token without the scope took readings");
+      if (ofPolo) assert(!(await http.get("/api/v1/leituras", bearer(ofPolo))).data.leituras.some(l => l.conversa.includes("Pedagogia")), "a token of one polo took a reading of no polo");
+      const taken = (await http.get("/api/v1/leituras", { params: { limite: 5 }, ...bearer(worker) })).data.leituras;
+      const mine = taken.find(l => l.tipo === "importacao");
+      assert(mine && /Pedagogia/.test(mine.conversa) && !/Gabi|5569955550007/.test(mine.conversa) && /JSON/.test(mine.instrucoes), `taken ${JSON.stringify(taken).slice(0, 300)}`);
+      assert((await http.post(`/api/v1/leituras/${mine.id}`, { resposta: "isso não é JSON" }, bearer(worker))).status === 422, "a broken answer was accepted");
+      // a broken answer gives the reading back to the queue: the worker takes it again
+      const again = (await http.get("/api/v1/leituras", { params: { limite: 5 }, ...bearer(worker) })).data.leituras.find(l => l.id === mine.id);
+      assert(again, "the reading did not come back after a broken answer");
+      const done = await http.post(`/api/v1/leituras/${mine.id}`, { resposta: { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Quer Pedagogia, pediu a proposta.", proximo_passo: "Enviar a proposta" } }, bearer(worker));
+      assert(done.status === 200 && done.data.resultado.action === "andamento", `answer ${done.status} ${JSON.stringify(done.data)}`);
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE contactId=${G.c} AND ownerId=${u.id} AND isHistorical=false`) === "1", "the answer of OpenBot was not applied");
+      assert((await http.post(`/api/v1/leituras/${mine.id}`, { resposta: {} }, bearer(worker))).status === 409, "a reading was answered twice");
+      const cfg = (await http.get("/readings/settings", auth())).data;
+      assert(cfg.summary.byWho.openbot >= 1, `summary ${JSON.stringify(cfg.summary)}`);
+      await http.put("/readings/settings", { provider: "sistema" }, auth());
     });
     await test("the daily review: the AI reads a consultant's conversation without CPF, phone or names, keeps only codes, and the management sees the training needed", async () => {
       const u = (await http.post("/users", { name: "Consultora Revisada", email: "review-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;

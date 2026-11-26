@@ -266,7 +266,7 @@ const syncCommunities = async (wbot: Session): Promise<number> => {
     let pic: string | undefined;
     try { pic = (await wbot.getProfilePicUrl(id)) || undefined; } catch (e) { pic = undefined; }
     // eslint-disable-next-line no-await-in-loop
-    await CreateOrUpdateContactService({ name: chat.name || chat.id.user, number: chat.id.user, isGroup: true, profilePicUrl: pic, community: info });
+    await CreateOrUpdateContactService({ name: chat.name || chat.id.user, number: chat.id.user, isGroup: true, profilePicUrl: pic, community: info, silent: true });
     found += 1;
   }
   for (const parentId of parents) {
@@ -279,7 +279,7 @@ const syncCommunities = async (wbot: Session): Promise<number> => {
       pic = (await wbot.getProfilePicUrl(parentId)) || undefined;
     } catch (e) { /* the name stays generic until WhatsApp tells it */ }
     // eslint-disable-next-line no-await-in-loop
-    await CreateOrUpdateContactService({ name, number: parentId.split("@")[0], isGroup: true, profilePicUrl: pic, community: { kind: "community", role: "parent", communityId: parentId, parentGroupId: null, readOnly: true } });
+    await CreateOrUpdateContactService({ name, number: parentId.split("@")[0], isGroup: true, profilePicUrl: pic, community: { kind: "community", role: "parent", communityId: parentId, parentGroupId: null, readOnly: true }, silent: true });
     found += 1;
   }
   return found;
@@ -1206,7 +1206,8 @@ const importChats = async (
     done += 1;
     if (onProgress && (done % 10 === 0 || done === chats.length)) onProgress(done, chats.length);
   };
-  await eachLimited(chats, IMPORT_PARALLEL, chat => copy(chat, false));
+  // (a chat asked by name, the scroll or a contact opened by hand, is not tried again: past 25 s the reading stops there)
+  await eachLimited(chats, IMPORT_PARALLEL, chat => copy(chat, !!only));
   await eachLimited(later, 2, chat => copy(chat, true));
   // the pictures come afterwards, in the background
   if (!only) fillPictures(wbot, chats.slice(0, 500)).catch(() => undefined);

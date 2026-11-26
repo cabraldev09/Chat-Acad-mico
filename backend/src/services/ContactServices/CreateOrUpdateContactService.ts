@@ -19,6 +19,8 @@ interface Request {
   profilePicUrl?: string;
   extraInfo?: ExtraInfo[];
   community?: CommunityInfo;
+  // the copy of a phone's history: no socket event per contact and no "Novo contato" trigger (an old contact of the phone is not new)
+  silent?: boolean;
 }
 
 export interface CommunityInfo {
@@ -36,7 +38,7 @@ const onlyNumber = (n: string | null | undefined, number: string | null | undefi
 export const betterNameOf = (current: string | null | undefined, incoming: string | null | undefined, number: string | null | undefined): boolean =>
   !!incoming && !onlyNumber(incoming, number) && onlyNumber(current, number);
 
-const emitContact = (action: "update" | "create", contact: Contact) => {
+const emitContactEvent = (action: "update" | "create", contact: Contact) => {
   const io = getIO();
 
   io.emit("contact", { action, contact });
@@ -50,8 +52,10 @@ const CreateOrUpdateContactService = async ({
   isGroup,
   email = "",
   extraInfo = [],
-  community
+  community,
+  silent = false
 }: Request): Promise<Contact> => {
+  const emitContact = (action: "update" | "create", contact: Contact) => { if (!silent) emitContactEvent(action, contact); };
   const number = isGroup ? String(rawNumber || "") : String(rawNumber || "").replace(/[^0-9]/g, "");
   if (!number && !lid) throw new Error("Either number or lid must be provided");
 
@@ -147,7 +151,7 @@ const CreateOrUpdateContactService = async ({
   }
 
   emitContact("create", created);
-  fire("contact.created", { contactId: created.id });
+  if (!silent) fire("contact.created", { contactId: created.id });
   return created;
 };
 
