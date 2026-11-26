@@ -140,7 +140,7 @@ export const dayLabel = (date) => {
 };
 
 export const clock = (date) =>
-  new Date(date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  new Date(date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 // messages the official API does not deliver were saved, in older versions, as "[unsupported]": shown in words
 export const friendlyBody = (body) => (/^\[unsupported\]$/i.test(String(body || "").trim())
