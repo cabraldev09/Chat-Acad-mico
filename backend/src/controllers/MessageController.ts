@@ -209,19 +209,40 @@ export const sendPoll = async (req: Request, res: Response): Promise<Response> =
 
 // Sends a contact card. The card is built here from the contact record and the message is stored at once (the screen
 // does not wait for the phone to report it back), without the human-like pause meant for bulk sending.
+// Shares a contact as a card (QR Code: a vCard the phone shows as a contact; official number: message type "contacts"). Only a contact the
+// person may see (one of their leads or conversations, or one nobody works yet); the send goes through the same gate as every other one
+// (opt-out, the 24 h window of the official number, the daily limits, the record of the send).
 export const sendContact = async (req: Request, res: Response): Promise<Response> => {
   let ticket = await ShowTicketService(req.params.ticketId);
-  if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp") throw new AppError("ERR_CONTACT_CARD_UNSUPPORTED", 400);
-  ticket = await ActivateForSending(ticket, Number(req.user.id));
+  const channelOf = (t: typeof ticket) => t.whatsapp?.channel || "whatsapp";
+  if (!["whatsapp", "whatsapp_cloud"].includes(channelOf(ticket))) throw new AppError("ERR_CONTACT_CARD_UNSUPPORTED", 400);
   const contact = await Contact.findByPk(Number(req.body.contactId), { attributes: ["id", "name", "number", "isGroup"] });
   if (!contact || contact.isGroup || !contact.number || !/^\d{8,15}$/.test(contact.number)) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  const { hasContactAccessOrFree } = await import("../middleware/canAccessContact");
+  if (!(await hasContactAccessOrFree(req, contact.id))) throw new AppError("ERR_NO_PERMISSION", 403);
+  ticket = await ActivateForSending(ticket, Number(req.user.id));
+  const channel = channelOf(ticket);
+  if (!["whatsapp", "whatsapp_cloud"].includes(channel)) throw new AppError("ERR_CONTACT_CARD_UNSUPPORTED", 400);
 
-  const name = contact.name.replace(/[\r\n]+/g, " ").trim();
-  const card = `BEGIN:VCARD\nVERSION:3.0\nFN:${name}\nTEL;type=CELL;waid=${contact.number}:+${contact.number}\nEND:VCARD`;
-  let sent;
+  const { vcardOf } = await import("../helpers/ContactCards");
+  const { deliver } = await import("../services/OutboundServices/Deliver");
+  const card = vcardOf(contact.name, contact.number);
+  let sent: { id: string };
   try {
-    sent = await whatsappProvider.sendMessage(ticket.whatsappId, chatIdOf(ticket.contact, ticket.isGroup), card, { linkPreview: false });
+    sent = await deliver(ticket, { key: req.body.clientKey ? `contact:${ticket.id}:${String(req.body.clientKey).slice(0, 80)}` : undefined }, async () => {
+      if (channel === "whatsapp_cloud") {
+        const { getAdapter } = await import("../channels");
+        const { default: Whatsapp } = await import("../models/Whatsapp");
+        const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
+        const adapter = getAdapter("whatsapp_cloud");
+        if (!whatsapp || !adapter.sendContacts) throw new AppError("ERR_CONTACT_CARD_UNSUPPORTED", 400);
+        return adapter.sendContacts(whatsapp, ticket.contact as any, { name: contact.name, number: contact.number });
+      }
+      return whatsappProvider.sendMessage(ticket.whatsappId, chatIdOf(ticket.contact, ticket.isGroup), card, { linkPreview: false });
+    });
   } catch (err) {
+    // the gate's own answers (window closed, opted out, limits) reach the screen as they are
+    if (err instanceof AppError) throw err;
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
   const message = await CreateMessageService({

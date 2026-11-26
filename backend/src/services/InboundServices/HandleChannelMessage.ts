@@ -16,6 +16,7 @@ import CreateMessageService from "../MessageServices/CreateMessageService";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
 import RunInboundAutomation from "../AutomationServices/RunInboundAutomation";
 import { isLate } from "../../helpers/LateMessage";
+import { previewOf } from "../../helpers/MessagePreview";
 import { PUBLIC_DIR } from "../../config/paths";
 import processOptOut from "../SafetyServices/OptOut";
 
@@ -37,6 +38,8 @@ export interface InboundChannelMessage {
   body: string;
   media?: InboundMedia;
   quotedMsgId?: string;
+  // a message that is not plain text and carries no file (a contact card: "vcard")
+  mediaType?: string;
   // when the person sent it (the provider's own time): a message delivered late keeps its place in the conversation
   sentAt?: Date;
 }
@@ -130,8 +133,9 @@ const HandleChannelMessage = async (
       body: input.body,
       fromMe: false,
       read: false,
-      mediaType: "chat",
-      quotedMsgId: input.quotedMsgId,
+      mediaType: input.mediaType || "chat",
+      // the answered message, when it is stored here (a reply to something older than the conversation is kept without the quote)
+      quotedMsgId: input.quotedMsgId && (await Message.findByPk(input.quotedMsgId, { attributes: ["id"] })) ? input.quotedMsgId : undefined,
       ack: 0
     };
     // the time the person sent it orders the conversation (never a time in the future)
@@ -146,7 +150,7 @@ const HandleChannelMessage = async (
       messageData.body = bodyOfMedia(input.body, messageData.mediaType, filename, filename, input.media.mimetype);
     }
 
-    await ticket.update({ lastMessage: messageData.body });
+    await ticket.update({ lastMessage: previewOf(messageData.body, messageData.mediaType) });
     const message = await CreateMessageService({ messageData });
 
     if (late) {

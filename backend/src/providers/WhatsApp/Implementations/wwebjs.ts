@@ -30,6 +30,7 @@ import AppError from "../../../errors/AppError";
 import type { PhoneName } from "../../../helpers/PhoneNames";
 import CreateOrUpdateContactService from "../../../services/ContactServices/CreateOrUpdateContactService";
 import { isPhoneNumber } from "../../../helpers/ChatId";
+import { vcardsOfWbot } from "../../../helpers/ContactCards";
 import Contact from "../../../models/Contact";
 import Message from "../../../models/Message";
 import Ticket from "../../../models/Ticket";
@@ -417,13 +418,15 @@ const convertToMessagePayload = async (
 
   const quotedMsgId = await verifyQuotedMessage(processedMsg);
 
-  const labelled = msg.type === "poll_creation" || msg.type === "multi_vcard";
+  // several contacts in one message: every card is kept (one after the other), as one contact card message
+  const cards = msg.type === "multi_vcard" ? vcardsOfWbot(msg as any) : "";
+  const labelled = msg.type === "poll_creation" || (msg.type === "multi_vcard" && !cards);
   return {
     id: processedMsg.id.id,
-    body: labelled ? `${HISTORY_LABELS[msg.type]}${(msg as any).pollName ? `: ${(msg as any).pollName}` : ""}` : processedMsg.body,
+    body: cards || (labelled ? `${HISTORY_LABELS[msg.type]}${(msg as any).pollName ? `: ${(msg as any).pollName}` : ""}` : processedMsg.body),
     fromMe: processedMsg.fromMe,
     hasMedia: processedMsg.hasMedia,
-    type: labelled ? "chat" : mapMessageType(processedMsg.type),
+    type: cards ? "vcard" : labelled ? "chat" : mapMessageType(processedMsg.type),
     timestamp: processedMsg.timestamp,
     from: processedMsg.from,
     to: processedMsg.to,
