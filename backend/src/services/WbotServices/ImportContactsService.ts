@@ -58,6 +58,9 @@ const startContactsImport = async (userId: number, whatsappId?: number) => {
     }
     const stats = phoneContacts.stats || {};
     const people = await SaveImportedContacts(phoneContacts);
+    // and the people who talk to this number without being saved on the phone get their profile name instead of the number
+    const { completeNamesFromPhone } = await import("./CompletePhoneNames");
+    const named = await completeNamesFromPhone(connection).catch(() => 0);
 
     // Every group of the number becomes a contact (marked "Grupo") so it can be found and opened. Whether the
     // group's messages become conversations is a separate choice of the connection (none, chosen ones, all).
@@ -83,7 +86,7 @@ const startContactsImport = async (userId: number, whatsappId?: number) => {
       saved: stats.saved ?? phoneContacts.length,
       withPhone: phoneContacts.length,
       created: people.created,
-      updated: people.updated,
+      updated: people.updated + named,
       groupsMode: mode,
       groupsFound,
       groupsCreated

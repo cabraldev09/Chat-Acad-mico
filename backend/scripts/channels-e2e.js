@@ -6078,7 +6078,9 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => ticketOf(from), 8000, "ticket of the quiet lead");
       const tk = ticketOf(from);
       sql(`UPDATE Tickets SET chatbotNodeId=-1 WHERE id=${tk}`);
-      const leadId = await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`), 8000, "lead of the quiet person");
+      // the inbound hook creates the lead and only then writes lastInboundAt=now (LeadCore.hookInbound): wait for that write, or it
+      // lands after the update below and the lead is not quiet anymore
+      const leadId = await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}' AND l.lastInboundAt IS NOT NULL`), 8000, "lead of the quiet person");
       sql(`UPDATE Leads SET lastInboundAt=NOW() - INTERVAL '5 days', lastContactAt=NOW() - INTERVAL '5 days', createdAt=NOW() - INTERVAL '6 days' WHERE id=${leadId}`);
       let before = graph.sent.length;
       const r1 = await http.post("/crm/cadences/run", {}, auth());
