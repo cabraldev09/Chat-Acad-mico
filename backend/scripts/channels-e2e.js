@@ -8464,6 +8464,31 @@ const postMeta = (id, payload, secret, badSig) => {
         const before=await Event.count({where:{ticketId:ticket.id,type:"sla"}});
         try{await new Promise(r=>setTimeout(r,1200));await runLeadSlaAlertOnce();await runLeadSlaAlertOnce();assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before+1);}finally{await msg.destroy();await ticket.update({lastMessageFromMe:wasFromMe});await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
     });
+    await test("SLA: a closing message or a wait that started days ago raises no alert (the old one goes once a day in the bell)", async () => {
+      inDb(`const Ticket=require("./dist/models/Ticket").default,Message=require("./dist/models/Message").default,Lead=require("./dist/models/Lead").default,Event=require("./dist/models/TicketEvent").default,Notification=require("./dist/models/Notification").default,sequelize=require("./dist/database").default;
+        const {setSetting}=require("./dist/helpers/AppSettings"),{runLeadSlaAlertOnce}=require("./dist/workers/LeadSlaAlert");
+        const ticket=await Ticket.findByPk(${tgTicket}),lead=await Lead.findOne({where:{contactId:ticket.contactId}});
+        await ticket.update({status:"open",isHistorical:false,archivedAt:null});const wasFromMe=ticket.lastMessageFromMe;
+        const owner=ticket.userId||lead.ownerId;
+        await setSetting("business_hours",JSON.stringify({enabled:false}));await setSetting("crm_sla_minutes","0.000001");await setSetting("crm_escalation_minutes","0.000001");
+        const last=await Message.findOne({where:{ticketId:ticket.id},order:[["createdAt","DESC"]]});
+        const before=await Event.count({where:{ticketId:ticket.id,type:"sla"}});
+        const shift=(days)=>sequelize.query('UPDATE "Messages" SET "createdAt"="createdAt"+make_interval(days => :d) WHERE "ticketId"=:t',{replacements:{d:days,t:ticket.id}});
+        try{
+          const bye=await Message.create({id:"sla-closing",ticketId:ticket.id,fromMe:false,body:"Obrigado!",mediaType:"chat",createdAt:new Date(+last.createdAt+1000)});await ticket.update({lastMessageFromMe:false});
+          await new Promise(r=>setTimeout(r,1200));await runLeadSlaAlertOnce();
+          assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before,"a thank-you raised an SLA alert");
+          await bye.destroy();
+          await shift(-5);
+          const late=await Message.create({id:"sla-old-wait",ticketId:ticket.id,fromMe:false,body:"Tenho uma dúvida",mediaType:"chat",createdAt:new Date(Date.now()-3*86400000)});
+          await runLeadSlaAlertOnce();
+          assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before,"a wait of 3 days raised an alert");
+          if(owner)assert.equal(await Notification.count({where:{userId:owner,kind:"sla_forgotten"}}),1,"the forgotten conversation was not told in the bell");
+          await runLeadSlaAlertOnce();
+          if(owner)assert.equal(await Notification.count({where:{userId:owner,kind:"sla_forgotten"}}),1,"the forgotten line came twice in the same day");
+          await late.destroy();
+        }finally{await Message.destroy({where:{id:["sla-closing","sla-old-wait"]}});await shift(5);await ticket.update({lastMessageFromMe:wasFromMe});await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
+    });
     await test("private attachments reject unsigned links and support revocation", async () => {
       const fileHttp = axios.create({ baseURL: API, validateStatus: () => true, httpAgent: new (require("http").Agent)({ keepAlive: false }) });
       const id=sql(`SELECT id FROM Messages WHERE ticketId=${cticket} AND mediaUrl IS NOT NULL LIMIT 1`);

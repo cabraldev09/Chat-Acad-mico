@@ -10,7 +10,7 @@ const TYPES = {
   info: { title: "Aviso", color: "#0693e3", icon: <path d="M12 11v5M12 7.5h.01" /> },
 };
 
-const Body = ({ type, content }) => {
+const Body = ({ type, content, title, action }) => {
   const t = TYPES[type];
   return (
     <div className="mtoast">
@@ -20,8 +20,11 @@ const Body = ({ type, content }) => {
         </svg>
       </span>
       <div className="mtoast-text">
-        <div className="mtoast-head"><span className="mtoast-title">{t.title}</span><span className="mtoast-time">agora</span></div>
-        <div className="mtoast-msg">{content}</div>
+        <div className="mtoast-head"><span className="mtoast-title">{title || t.title}</span><span className="mtoast-time">agora</span></div>
+        {content ? <div className="mtoast-msg">{content}</div> : null}
+        {action ? (
+          <button type="button" className="mtoast-action" style={{ background: t.color }} onClick={(e) => { e.stopPropagation(); action.onClick(); }}>{action.label}</button>
+        ) : null}
       </div>
     </div>
   );
@@ -40,6 +43,8 @@ export const installModernToast = () => {
   ].forEach(([fn, type]) => {
     const original = toast[fn];
     toast[fn] = (content, options) => {
+      // a card already drawn (noticeToast) goes as it is
+      if (React.isValidElement(content) && content.type === Body) return original(content, options);
       if (!(typeof content === "string" || typeof content === "number" || React.isValidElement(content))) return original(content, options);
       // the same message again (a wrong password typed three times) does not stack: the one on the screen just starts its time over
       const id = (options && options.toastId) || (typeof content === "string" || typeof content === "number" ? `${type}:${content}` : undefined);
@@ -50,4 +55,13 @@ export const installModernToast = () => {
       return original(<Body type={type} content={content} />, id ? { ...options, toastId: id } : options);
     };
   });
+};
+
+// A notice of the system (the bell's "Avisos") as a toast: its own title, one sentence and the button that takes to where it is solved
+const LEVEL_TYPE = { urgent: "error", warning: "warn", info: "info", success: "success" };
+export const noticeToast = ({ title, body, level, actionLabel, onAction, id }) => {
+  const type = LEVEL_TYPE[level] || "info";
+  const fn = type === "error" ? "error" : type === "warn" ? "warning" : type === "success" ? "success" : "info";
+  const content = <Body type={type} title={title} content={body || ""} action={onAction ? { label: actionLabel || "Abrir", onClick: onAction } : null} />;
+  return toast[fn](content, { toastId: id, autoClose: level === "urgent" ? 15000 : 8000, closeOnClick: false });
 };
