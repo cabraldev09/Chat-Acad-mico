@@ -30,8 +30,20 @@ Rotas em `/api/v1` (`backend/src/routes/apiV1Routes.ts`), autenticadas por token
 | `POST /contacts` | `contacts:write` | cria contato novo; só altera contato que é lead dos polos do token (os outros não são alterados, e a administração é avisada); **a resposta é sempre `202 {"aceito": true}`** |
 | `GET /tickets` | `tickets:read` | só conversas das filas desses polos; sem o texto das mensagens |
 | `GET /connections` | `connections:read` | todas (sem dado pessoal) |
-| `POST /messages/send` | `messages:send` | só para número de lead desses polos (`403 ERR_API_TOKEN_POLO`) |
+| `POST /messages/send` | `messages:send` | só para número de lead desses polos (`403 ERR_API_TOKEN_POLO`); a rota antiga `/api/messages/send` segue a mesma regra e ainda exige conexão de um desses polos (veja abaixo) |
 | `GET /indicadores?de=&ate=&polo=` | `indicators:read` | só esses polos; `polo` fora deles: `403 ERR_API_TOKEN_POLO` |
+
+### Rota antiga `POST /api/messages/send` (legado)
+
+Continua existindo para as integrações antigas (corpo: `number`, `body`, `whatsappId` opcional, `medias` opcional), mas agora passa
+pelo mesmo portão de `POST /api/v1/messages/send`, **antes** de salvar arquivo, criar contato ou abrir conversa:
+
+- limite por token, o mesmo balde da v1 (120 por minuto; acima disso `429` com `Retry-After`);
+- escopo `messages:send` (sem ele, `403 ERR_API_TOKEN_SCOPE` e nada é criado nem enviado);
+- token com polos: o número precisa ser de um lead desses polos e a conexão (`whatsappId`, ou a padrão se omitido) precisa atender uma
+  fila de um desses polos; senão `403 ERR_API_TOKEN_POLO` (conexão que não existe: `404 ERR_NO_WAPP_FOUND`).
+
+Tokens de todos os polos e o token antigo de Configurações (acesso total) enviam como antes. A rota nova é a v1: prefira-a.
 
 As respostas trazem só os campos que a integração usa: lead sem CPF, endereço, notas nem histórico; conversa sem texto.
 Tokens de todos os polos (sem polo escolhido) continuam com as respostas de antes em `POST /leads` (`201/200` com `id`) e
@@ -109,6 +121,7 @@ que atendem filas desses polos.
 ## Testes
 
 - Unidade: `backend/tests/channels/api-tokens.test.ts` (hash, escopos, validação do token novo).
+- Ponta a ponta (`channels-e2e.js`, "old route /api/messages/send…"): sem `messages:send` 403 sem criar nada; token do polo A envia ao lead do polo A pela conexão do polo A; lead de outro polo, conexão sem polo e conexão do outro polo: 403 sem criar contato; conexão inexistente 404; token de todos os polos envia; 429 acima do limite.
 - Ponta a ponta (`channels-e2e.js`, "API tokens: scopes, polos, validity…"): token só de leitura recebe 403 em `/messages/send`;
   token do polo A não vê lead do polo B; a mesma resposta `202` para pessoa nova, do polo e de outro polo (telefone e CPF), com a de
   outro polo intacta e o aviso à administração; lead novo nasce no polo do token mesmo com cidade de outro polo; uso por rota

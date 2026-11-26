@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import * as Yup from "yup";
 import AppError from "../errors/AppError";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
+import { assertTokenCanSend } from "../helpers/ApiPoloSend";
+import { apiCaller } from "../middleware/apiScope";
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
 import Message from "../models/Message";
 import Whatsapp from "../models/Whatsapp";
@@ -90,6 +92,9 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   } catch (err: any) {
     throw new AppError(err.message);
   }
+
+  // a token of some polos: only people and connections of its polos (nothing is created before this answer)
+  await assertTokenCanSend(apiCaller(req), newContact.number, whatsappId);
 
   const contactAndTicket = await createContact(whatsappId, newContact.number);
 
