@@ -18,6 +18,10 @@ import { hookHumanReply } from "../CrmServices/LeadCore";
 const MAX_ATTEMPTS = 3;
 // a send that was taken and never finished: it may or may not have reached the phone, so it is reported, never repeated
 const STUCK_MS = 2 * 60 * 1000;
+// a send just stored belongs to the request that stored it (it calls processOutbound right after the commit and answers 200 or 202). The
+// sweep leaves it alone for this long, so the two do not race for it: when the sweep took it first, the request answered "queued" (202) for
+// a message that was being sent at that very moment. A request that died before sending is picked up by the sweep after this time.
+export const FRESH_MS = 15 * 1000;
 
 export interface OutboundMedia {
   path: string;
@@ -139,8 +143,17 @@ export const sweepOutbound = async (): Promise<void> => {
     // eslint-disable-next-line no-await-in-loop
     await fail(row, "Não foi possível confirmar o envio. Confira a conversa antes de enviar de novo.");
   }
+  const now = new Date();
   const due = await OutboundMessage.findAll({
-    where: { status: "pending", [Op.or]: [{ nextAttemptAt: null }, { nextAttemptAt: { [Op.lte]: new Date() } }] } as any,
+    where: {
+      status: "pending",
+      [Op.or]: [
+        // first attempt: only when the request that stored it did not take it (see FRESH_MS)
+        { nextAttemptAt: null, createdAt: { [Op.lt]: new Date(now.getTime() - FRESH_MS) } },
+        // a retry scheduled after a failed call
+        { nextAttemptAt: { [Op.lte]: now } }
+      ]
+    } as any,
     order: [["id", "ASC"]],
     limit: 20,
     attributes: ["id"]

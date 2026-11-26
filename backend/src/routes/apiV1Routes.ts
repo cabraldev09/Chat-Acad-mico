@@ -9,7 +9,7 @@ const tokenKey = (req: express.Request): string => {
   const caller = (req as any).apiToken;
   return caller && caller.id ? `token:${caller.id}` : "legacy";
 };
-const perToken = rateLimit({ windowMs: 60000, max: Number(process.env.API_V1_RATE_MAX || 120), key: req => `api-v1:${tokenKey(req)}` });
+export const perToken = rateLimit({ windowMs: 60000, max: Number(process.env.API_V1_RATE_MAX || 120), key: req => `api-v1:${tokenKey(req)}` });
 // the consolidated indicators cost more: a lower limit of their own
 const perTokenIndicators = rateLimit({ windowMs: 60000, max: Number(process.env.API_V1_INDICATORS_RATE_MAX || 20), key: req => `api-v1-ind:${tokenKey(req)}` });
 
