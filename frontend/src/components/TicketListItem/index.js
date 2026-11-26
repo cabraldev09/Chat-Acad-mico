@@ -287,13 +287,13 @@ const TicketListItem = ({ ticket }) => {
           <span className={classes.name} style={{ fontWeight: unread ? 600 : 400 }}>
             {(ticket.contact && ticket.contact.name) || "Sem nome"}
           </span>
-          {ticket.lastMessage && (
+          {(ticket.lastMessage || ticket.lastMessageAt || previewText) && (
             <span className={clsx(classes.time, unread && classes.timeUnread)}>{stamp(ticket.lastMessageAt || ticket.updatedAt)}</span>
           )}
         </div>
         <div className={classes.line}>
           <span className={classes.preview} style={unread ? { color: undefined, fontWeight: 500 } : undefined}>
-            {ticket.lastMessageFromMe && ticket.lastMessage && (
+            {ticket.lastMessageFromMe && (ticket.lastMessage || previewText) && (
               <span className={classes.tick} title={ticket.lastMessageAck < 0 ? "Falha no envio" : ["Enviando", "Enviada", "Entregue", "Lida", "Ouvida"][ticket.lastMessageAck] || ""} style={{ color: ticket.lastMessageAck >= 3 ? "#53bdeb" : ticket.lastMessageAck < 0 ? "#ea0038" : undefined }}>
                 {ticket.lastMessageAck < 0 ? <AlertCircle size={15} /> : (ticket.lastMessageAck === 0 && Date.now() - new Date(ticket.lastMessageAt || ticket.updatedAt).getTime() < 120000) ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
               </span>
