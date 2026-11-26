@@ -5540,7 +5540,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/\*[^*]*Empreendedorismo[^*]*\* tem duração de \*4 semestres\*, ou seja, aproximadamente \*2 anos\*/.test(ea4), `EA duration: ${ea4}`);
       assert(/formato \*EAD\*, sem aulas práticas presenciais/.test(ea4) && /pela plataforma, pelo celular ou computador/.test(ea4) && /professores mestres e doutores/.test(ea4) && /tutoria desde a matrícula/.test(ea4), `EA format: ${ea4}`);
       assert(!emoji.test(ea4) && !/maio de 2027|% de carga|laboratório|ainda não foi definida/.test(ea4), `EA must not talk about practical classes or the MEC deadline: ${ea4}`);
-      out = await say(EA, "wamid.ea-5", "Tem aula presencial?", t => t.some(x => /sem aulas práticas presenciais/.test(x)), "EA presential question");
+      // the short answer comes in two bubbles (the explanation, then the question): wait for both, not just the first
+      out = await say(EA, "wamid.ea-5", "Tem aula presencial?", t => t.some(x => /sem aulas práticas presenciais/.test(x)) && t.some(x => /Ficou claro como funciona\?/.test(x)), "EA presential question");
       // (asked right after the explanation: the answer is short, from the same rule, without the model and without the whole text again)
       assert(!/% de carga|laboratório/.test(out.join(" ")) && !/professores mestres e doutores/.test(out.join(" ")) && /Ficou claro como funciona\?/.test(out.join(" ")), `EA presential answer: ${out}`);
       // the print of the course: the management attaches it, the AI reads it, the management confirms, and the agent says the approved text from then on
