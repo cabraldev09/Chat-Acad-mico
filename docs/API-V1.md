@@ -30,8 +30,21 @@ Rotas em `/api/v1` (`backend/src/routes/apiV1Routes.ts`), autenticadas por token
 | `POST /contacts` | `contacts:write` | cria contato novo; só altera contato que é lead dos polos do token (os outros não são alterados, e a administração é avisada); **a resposta é sempre `202 {"aceito": true}`** |
 | `GET /tickets` | `tickets:read` | só conversas das filas desses polos; sem o texto das mensagens |
 | `GET /connections` | `connections:read` | todas (sem dado pessoal) |
-| `POST /messages/send` | `messages:send` | só para número de lead desses polos (`403 ERR_API_TOKEN_POLO`) |
+| `POST /messages/send` | `messages:send` | só para número de lead desses polos (`403 ERR_API_TOKEN_POLO`); a rota antiga `/api/messages/send` segue a mesma regra e ainda exige conexão de um desses polos (veja abaixo) |
 | `GET /indicadores?de=&ate=&polo=` | `indicators:read` | só esses polos; `polo` fora deles: `403 ERR_API_TOKEN_POLO` |
+| `GET /leituras?limite=` e `POST /leituras/:id` | `readings:work` | só leituras de leads desses polos (as sem polo ficam para tokens de todos os polos) |
+
+### Rota antiga `POST /api/messages/send` (legado)
+
+Continua existindo para as integrações antigas (corpo: `number`, `body`, `whatsappId` opcional, `medias` opcional), mas agora passa
+pelo mesmo portão de `POST /api/v1/messages/send`, **antes** de salvar arquivo, criar contato ou abrir conversa:
+
+- limite por token, o mesmo balde da v1 (120 por minuto; acima disso `429` com `Retry-After`);
+- escopo `messages:send` (sem ele, `403 ERR_API_TOKEN_SCOPE` e nada é criado nem enviado);
+- token com polos: o número precisa ser de um lead desses polos e a conexão (`whatsappId`, ou a padrão se omitido) precisa atender uma
+  fila de um desses polos; senão `403 ERR_API_TOKEN_POLO` (conexão que não existe: `404 ERR_NO_WAPP_FOUND`).
+
+Tokens de todos os polos e o token antigo de Configurações (acesso total) enviam como antes. A rota nova é a v1: prefira-a.
 
 As respostas trazem só os campos que a integração usa: lead sem CPF, endereço, notas nem histórico; conversa sem texto.
 Tokens de todos os polos (sem polo escolhido) continuam com as respostas de antes em `POST /leads` (`201/200` com `id`) e
@@ -106,9 +119,42 @@ alguém digite como origem ou etapa.
 aviso da conexão) e validade do token da Meta (data e dias). Nunca o nome da conexão nem o token. Com polos no token, só as conexões
 que atendem filas desses polos.
 
+## Fila de leituras (`GET /leituras`, `POST /leituras/:id`): o OpenBot faz o trabalho que gastaria tokens
+Em Integrações, "Leituras das conversas", a administração escolhe quem lê as conversas: a IA do sistema (o modelo mais barato) ou o
+OpenBot pela API. Com o OpenBot, a IA do sistema lê só o que ficar esperando mais do que as horas escolhidas (padrão 6).
+
+As leituras são de três tipos:
+- `importacao`: uma conversa copiada do celular de um consultor (WhatsApp por QR Code). Diz se é lead, se já se matriculou, se parou ou desistiu e por quê.
+- `resultado`: a conversa de um lead que se matriculou ou se perdeu. Diz o motivo, as objeções, o que ajudou e o que faltou.
+- `revisao`: a revisão diária da conversa de um consultor. Diz as objeções e as etapas com dificuldade ou puladas.
+
+**Pegar:** `GET /api/v1/leituras?limite=10` (até 50) devolve `{"leituras": [{"id", "tipo", "instrucoes", "conversa", "reservadaAte"}]}`.
+- Cada leitura fica reservada para o token por 30 minutos.
+- `conversa` vem pseudonimizada: nomes viram `[NOME]`; CPF, telefone, e-mail e qualquer número longo viram marcadores.
+- Com as leituras desligadas (Integrações), a lista vem vazia.
+- O texto não é guardado no sistema.
+
+**Responder:** `POST /api/v1/leituras/:id` com `{"resposta": {...}, "modelo": "nome do modelo"}`, onde a resposta é o JSON que `instrucoes` pede.
+- A resposta passa pela mesma validação e faz o mesmo que a resposta da IA do sistema: lead no funil com o resumo, matrícula com o RGM, "Matrícula a confirmar", Recuperação.
+- Respostas de erro:
+  - `422 ERR_READING_BAD_ANSWER`: a resposta está fora do formato; a leitura volta para a fila e, depois de 3 tentativas, é descartada;
+  - `409 ERR_READING_NOT_CLAIMED`: a reserva venceu ou é de outro token;
+  - `409 ERR_READING_DONE`: a leitura já foi respondida.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$API/api/v1/leituras?limite=5"
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"resposta":{"e_lead":true,"situacao":"em_andamento","curso":"Pedagogia","etapa":"proposal","objecao":"nenhuma","motivo":"","resumo":"Quer Pedagogia e pediu a proposta.","proximo_passo":"Enviar a proposta"}}' \
+  "$API/api/v1/leituras/123"
+```
+
+A tela de Integrações mostra quantas leituras cada um fez e quantos tokens o OpenBot economizou: a média de tokens das leituras da IA do
+sistema vezes as leituras feitas pelo OpenBot. Mandar as conversas pseudonimizadas ao OpenBot é decisão do dono registrada pela coordenação em 26/11 (issue #201 e PR #205; ver `AGENTS.md`).
+
 ## Testes
 
 - Unidade: `backend/tests/channels/api-tokens.test.ts` (hash, escopos, validação do token novo).
+- Ponta a ponta (`channels-e2e.js`, "old route /api/messages/send…"): sem `messages:send` 403 sem criar nada; token do polo A envia ao lead do polo A pela conexão do polo A; lead de outro polo, conexão sem polo e conexão do outro polo: 403 sem criar contato; conexão inexistente 404; token de todos os polos envia; 429 acima do limite.
 - Ponta a ponta (`channels-e2e.js`, "API tokens: scopes, polos, validity…"): token só de leitura recebe 403 em `/messages/send`;
   token do polo A não vê lead do polo B; a mesma resposta `202` para pessoa nova, do polo e de outro polo (telefone e CPF), com a de
   outro polo intacta e o aviso à administração; lead novo nasce no polo do token mesmo com cidade de outro polo; uso por rota

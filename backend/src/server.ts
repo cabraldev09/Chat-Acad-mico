@@ -12,6 +12,7 @@ import { startScheduler } from "./workers/Scheduler";
 import { startMetaWebhookQueue } from "./services/ChannelServices/MetaWebhookQueue";
 import { startConsultantReview } from "./workers/ConsultantReview";
 import { startTutoringAudit } from "./workers/TutoringAudit";
+import { startConversationReading } from "./workers/ConversationReading";
 import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
 import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
@@ -75,6 +76,7 @@ whenLeader(() => {
   startPendingDigest();
   startConsultantReview();
   startTutoringAudit();
+  startConversationReading();
   startDataRetention();
   startHumanTranscription();
   startFollowUpAlert();

@@ -4,7 +4,6 @@ import AiAgent from "../../models/AiAgent";
 import ConsultantReview from "../../models/ConsultantReview";
 import { getSetting } from "../../helpers/AppSettings";
 import { dayBounds } from "../../helpers/AppTime";
-import { redactPersonalData } from "../../analysis/services/pdf/redaction";
 import { OBJECTION_TYPES } from "../CommercialServices/Rules";
 import { logger } from "../../utils/logger";
 import { consultantWhere, rows, VALID_TICKET } from "./AnalyticsService";
@@ -19,22 +18,11 @@ export const OBJECTION_LABEL: Record<string, string> = {
   distancia: "distância do polo", duvida_ead: "dúvidas sobre EAD", outra: "outras"
 };
 
-const MAX_MESSAGES = 40;
-const MIN_MESSAGES = 4;
+export const MAX_MESSAGES = 40;
+export const MIN_MESSAGES = 4;
 
-// the text that may leave the server: personal data and the names of the people in the conversation become tags
-export const scrub = (text: string, names: string[] = []): string => {
-  let out = redactPersonalData(String(text || ""));
-  // phones with country code, protocols, card numbers: any run of 8 digits or more
-  out = out.replace(/\+?\d[\d\s.-]{7,}\d/g, m => (m.replace(/\D/g, "").length >= 8 ? "[NUM]" : m));
-  for (const full of names) {
-    for (const part of String(full || "").split(/\s+/).filter(p => p.length >= 3)) {
-      const safe = part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      out = out.replace(new RegExp(`\\b${safe}\\b`, "gi"), "[NOME]");
-    }
-  }
-  return out;
-};
+export { scrub } from "./Scrub";
+import { scrub } from "./Scrub";
 
 export interface ReviewAnswer { objections: Array<{ type: string; handled: boolean }>; difficulties: string[]; skipped: string[]; note: string }
 
@@ -56,7 +44,7 @@ export const parseReviewAnswer = (text: string, stepKeys: string[]): ReviewAnswe
   return { objections, difficulties: keys(parsed.difficulties), skipped: keys(parsed.skipped), note };
 };
 
-const SYSTEM = (steps: Array<{ key: string; label: string }>) => [
+export const reviewSystem = (steps: Array<{ key: string; label: string }>) => [
   "Você ajuda a gestão comercial de uma faculdade a entender onde cada consultor precisa de treinamento.",
   "Leia a conversa entre um consultor e um interessado em estudar. Dados pessoais foram trocados por marcadores como [NOME] e [TEL].",
   "Mensagens de voz aparecem como [áudio] seguido do texto transcrito; [áudio sem transcrição] é um áudio que não pôde ser lido: não deduza o que foi dito nele.",
@@ -86,7 +74,7 @@ export const reviewTranscript = (msgs: any[], names: string[]): string =>
   }).join("\n");
 
 // the conversations of the consultants with a human message on that day, not reviewed yet (most messages first)
-const candidates = async (day: string, limit: number) => {
+export const reviewCandidates = async (day: string, limit: number) => {
   const { start, end } = dayBounds(day);
   return rows(`SELECT o.ticketId, MAX(o.userId) AS userId, COUNT(*) AS n FROM OutboundMessages o JOIN Tickets t ON t.id = o.ticketId JOIN Users u ON u.id = o.userId
     WHERE o.status = 'sent' AND o.sentAt BETWEEN :start AND :end AND ${VALID_TICKET} AND ${consultantWhere}
@@ -106,9 +94,9 @@ export const reviewDay = async (day: string, steps: Array<{ key: string; label: 
   if (!apiKey) return { ...run, reason: "no_api_key" };
   const limit = Math.min(500, Math.max(1, opts.limit ?? (Number(await getSetting("consultant_review_max_tickets", "60")) || 60)));
   const stepKeys = steps.map(s => s.key);
-  const system = SYSTEM(steps);
+  const system = reviewSystem(steps);
   const { end } = dayBounds(day);
-  for (const c of await candidates(day, limit)) {
+  for (const c of await reviewCandidates(day, limit)) {
     const ticketId = Number(c.ticketId);
     // eslint-disable-next-line no-await-in-loop
     // the text messages and the voice notes (with their transcript, when there is one)

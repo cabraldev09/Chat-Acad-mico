@@ -85,6 +85,9 @@ rótulo, o merge deixa o código na `main` sem publicar (o item 5 vale só com o
 - **Nunca** peça nem escreva senhas, tokens ou chaves no chat, no código, em logs ou em commits. Use o formulário seguro da
   ferramenta ou as configurações do sistema.
 - Dados de alunos e leads (nome, CPF, telefone) só no que a tarefa exige. Nada disso vai para serviços externos, issues ou logs.
+  Única exceção, decisão do dono registrada pela coordenação em 26/11 (issue #201 e PR #205): a fila de leituras da API
+  (`GET /api/v1/leituras`) entrega ao OpenBot o texto das conversas **pseudonimizado** (nome, CPF, telefone, e-mail e números trocados por
+  marcadores). Qualquer campo novo nessa saída passa pela mesma pseudonimização e tem teste. A leitura **nunca matricula** ninguém.
 - Workflows imprimem apenas identificadores públicos.
 - Antes de qualquer ação que mexe em contas reais (enviar modelos para a Meta, mandar mensagem a leads, mexer no servidor,
   apagar dados), diga o que vai acontecer e espere o aval do usuário.
