@@ -49,6 +49,12 @@ export interface ChannelAdapter {
     messageId: string,
     emoji: string
   ): Promise<void>;
+  // a contact card (the official API: message type "contacts")
+  sendContacts?(
+    whatsapp: Whatsapp,
+    contact: Contact,
+    person: { name: string; number: string }
+  ): Promise<{ id: string }>;
   // shows "digitando…" to the contact while the agent writes (channels that support it)
   sendTyping?(whatsapp: Whatsapp, contact: Contact): Promise<void>;
   sendTemplate?(
