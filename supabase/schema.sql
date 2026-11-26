@@ -756,7 +756,8 @@ CREATE TABLE public."ApiTokens" (
     "poloIds" text,
     "expiresAt" timestamp with time zone,
     legacy boolean DEFAULT false NOT NULL,
-    "createdById" integer
+    "createdById" integer,
+    usage text
 );
 
 
@@ -8287,6 +8288,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-proposal-template-act
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000104-api-token-usage.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tried.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;

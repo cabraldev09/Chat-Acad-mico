@@ -5,6 +5,7 @@ import Lead from "../../models/Lead";
 import User from "../../models/User";
 import { logger } from "../../utils/logger";
 import { frontBase, notify } from "../MailServices/Notify";
+import { managerIdsOfPolos } from "../NotificationServices/Notify";
 import { affiliateReferralMail } from "../MailServices/Templates";
 
 // +55 (69) 99999-0000
@@ -16,14 +17,18 @@ const prettyPhone = (raw: string | null | undefined): string => {
   return d ? `+${d}` : "";
 };
 
-// Who is told when an affiliate refers someone: the consultant of that affiliate and the administration (administrators and
-// the coordination). It goes out in the background: the referral is already saved and an e-mail problem never undoes it.
+// Who is told when an affiliate refers someone: the consultant of that affiliate, the administration and only the coordination of
+// the lead's polo (the e-mail carries the name, the number and the course: a lead of another polo, or with no polo, never reaches
+// the coordination of a polo; see managerIdsOfPolos). It goes out in the background: the referral is already saved and an e-mail
+// problem never undoes it.
 export const notifyReferral = (affiliate: Affiliate, lead: Lead, created: boolean): void => {
   (async () => {
-    const admins = await User.findAll({
-      where: { email: { [Op.ne]: null }, [Op.or]: [{ profile: "admin" }, { role: { [Op.in]: ["admin", "coordenacao"] } }] } as any,
-      attributes: ["id", "name", "email"]
-    });
+    // the polo as it is now in the database (it is decided when the lead is saved)
+    const fresh = await Lead.findByPk(lead.id, { attributes: ["id", "poloId"] });
+    const ids = await managerIdsOfPolos([fresh ? fresh.poloId : lead.poloId]);
+    const managers = ids.length
+      ? await User.findAll({ where: { id: { [Op.in]: ids }, email: { [Op.ne]: null } } as any, attributes: ["id", "name", "email"] })
+      : [];
     const owner = affiliate.ownerId ? await User.findByPk(affiliate.ownerId, { attributes: ["id", "name", "email"] }) : null;
     const facts = {
       affiliate: affiliate.name,
@@ -42,6 +47,6 @@ export const notifyReferral = (affiliate: Affiliate, lead: Lead, created: boolea
       notify(email, affiliateReferralMail(u.name, facts, link, forConsultant), "affiliate referral");
     };
     to(owner, true);
-    admins.forEach(a => to(a, false));
+    managers.forEach(a => to(a, false));
   })().catch(err => logger.warn(`Referral notice failed: ${(err as Error).message}`));
 };

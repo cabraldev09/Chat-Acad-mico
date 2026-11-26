@@ -992,26 +992,81 @@ const postMeta = (id, payload, secret, badSig) => {
       // a token of polo A writes only in polo A: a new lead stays in A (never in B), a lead of B is not touched, stage and owner of its scope
       const writerA = await mk({ name: "escrita A", scopes: ["leads:write", "contacts:write"], poloIds: [Number(poloA)] });
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", poloId: Number(poloB) })).status === 403, "token of polo A created a lead in polo B");
-      const fresh = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade de outro polo" });
-      assert(fresh.status === 201 && Number(fresh.data.lead.poloId) === Number(poloA) && Number(sql(`SELECT poloId FROM Leads WHERE id = ${fresh.data.lead.id}`)) === Number(poloA), `new lead of the token of polo A: ${fresh.status} ${JSON.stringify(fresh.data)}`);
+      // a token of some polos gets the same answer for a new person, one of its polos and one of another polo (it never learns who exists)
+      const ACCEPTED = JSON.stringify({ aceito: true });
+      // the city of the new person is served by polo B
+      assert((await http.put(`/polos/${poloB}/coverage`, { cities: ["Cidade Do Polo B - RO"] }, auth())).status === 200, "coverage of polo B");
+      const fresh = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade Do Polo B", state: "RO" });
+      assert(fresh.status === 202 && JSON.stringify(fresh.data) === ACCEPTED, `new lead of the token of polo A: ${fresh.status} ${JSON.stringify(fresh.data)}`);
+      const freshId = sql(`SELECT id FROM Leads WHERE phone = '5569911110010'`);
+      // born in polo A (the city of polo B does not move it), before any notice; nobody of another polo gets it
+      assert(sql(`SELECT CONCAT(poloId, '|', poloSource, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE id = ${freshId}`) === `${poloA}|flow|none`, `new lead: ${sql(`SELECT CONCAT(poloId, '|', poloSource, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE id = ${freshId}`)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId = ${freshId} AND body LIKE 'Polo definido%'`)) === 0, "the polo was decided by the city before the token's");
+      const again = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade Do Polo B", state: "RO" });
+      assert(again.status === 202 && JSON.stringify(again.data) === ACCEPTED && sql(`SELECT poloId FROM Leads WHERE id = ${freshId}`) === String(poloA), "a lead of the token's polo answered differently or moved");
       const leadB = sql(`SELECT id FROM Leads WHERE name = 'APIPOLO B'`);
       const stateB = () => sql(`SELECT CONCAT(name, '|', COALESCE(notes, ''), '|', (SELECT COUNT(*) FROM LeadActivities a WHERE a.leadId = ${leadB})) FROM Leads WHERE id = ${leadB}`);
       const beforeB = stateB();
       const twin = await api(writerA.token, "post", "/api/v1/leads", { name: "Outro nome", phone: "5569911110002", notes: "nota da API" });
-      assert(twin.status === 403 && !JSON.stringify(twin.data).includes(leadB), `token of polo A reached a lead of polo B: ${twin.status} ${JSON.stringify(twin.data)}`);
+      assert(twin.status === 202 && JSON.stringify(twin.data) === ACCEPTED, `a person of polo B answered differently: ${twin.status} ${JSON.stringify(twin.data)}`);
       assert(stateB() === beforeB, "the lead of polo B was changed");
+      // nor by CPF: a person of polo A asked by CPF answers the same
+      assert(JSON.stringify((await api(writerA.token, "post", "/api/v1/leads", { name: "Pelo CPF", email: "cpf@x.com", cpf: "864.213.579-46" })).data) === ACCEPTED, "CPF answered differently");
+      // the administration is told about the possible duplicate (the caller never is)
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind = 'api_duplicate'`)) >= 1, "the administration was not told about the duplicate");
       const wonStage = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Direto matriculado", phone: "5569911110011", stageId: Number(wonStage) })).status === 422, "a polo token created a lead straight into an enrolled stage");
       const outsider = Number(sql(`SELECT id FROM Users WHERE id NOT IN (SELECT userId FROM PoloMembers WHERE poloId = ${poloA}) ORDER BY id LIMIT 1`));
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Dono de fora", phone: "5569911110012", ownerId: outsider })).status === 422, "a polo token gave a lead to someone outside its polos");
+      // with consultants in polo A, the new lead goes to one of them (ownerPool): never to a consultant of polo B, to someone outside the
+      // polos or to a member of polo A who is not a consultant (the coordination)
+      {
+        const mkU = async (name, email, role, extra = {}) => {
+          const r = await http.post("/users", { name, email, password: "senha123", role, ...extra }, auth());
+          assert(r.status === 200 && r.data.id, `user ${email} ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+          return r.data;
+        };
+        const consA = await mkU("Consultor Rodízio A", "cons-rodizio-a@x.com", "consultor");
+        const consB = await mkU("Consultor Rodízio B", "cons-rodizio-b@x.com", "consultor");
+        const coordA = await mkU("Coordenação Rodízio A", "coord-rodizio-a@x.com", "coordenacao", { coordArea: "comercial" });
+        sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${poloA}, ${consA.id}, 'comercial', NOW(), NOW()), (${poloA}, ${coordA.id}, 'coordenacao', NOW(), NOW()), (${poloB}, ${consB.id}, 'comercial', NOW(), NOW())`);
+        // (the round as it is by default: automatic, among every consultant; the settings come back as they were)
+        const setting = k => sql(`SELECT value FROM Settings WHERE key = '${k}'`);
+        const saved = { auto: setting("crm_autoassign"), ids: setting("crm_owner_ids") };
+        const put = (k, v) => (v === "" ? sql(`DELETE FROM Settings WHERE key = '${k}'`) : sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('${k}', '${v}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`));
+        put("crm_autoassign", "roundrobin");
+        put("crm_owner_ids", "[]");
+        try {
+          const owners = [];
+          for (const [i, phone] of [["1", "5569911110013"], ["2", "5569911110014"]]) {
+            const r = await api(writerA.token, "post", "/api/v1/leads", { name: `Rodízio API A ${i}`, phone });
+            assert(r.status === 202 && JSON.stringify(r.data) === ACCEPTED, `lead of the round ${i}: ${r.status} ${JSON.stringify(r.data)}`);
+            owners.push(sql(`SELECT CONCAT(poloId, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE phone = '${phone}'`));
+          }
+          assert(owners.every(o => o === `${poloA}|${consA.id}`), `the new leads of polo A did not go to the consultant of polo A (${consA.id}): ${owners.join(", ")}`);
+        } finally {
+          put("crm_autoassign", saved.auto);
+          put("crm_owner_ids", saved.ids);
+          sql(`UPDATE Leads SET ownerId = NULL WHERE phone IN ('5569911110013', '5569911110014')`);
+          sql(`DELETE FROM PoloMembers WHERE userId IN (${consA.id}, ${consB.id}, ${coordA.id})`);
+          // (the users of this check only: the list of users stays as the other tests expect it)
+          for (const u of [consA, consB, coordA]) await http.delete(`/users/${u.id}`, auth());
+        }
+      }
       // contacts: the contact of a lead of polo B, or one that is not a lead of polo A, is not changed; a new contact is
       const contactB = sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato do B', '5569911110002', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`UPDATE Leads SET contactId = ${contactB} WHERE id = ${leadB}`);
-      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110002" })).status === 403, "token of polo A changed the contact of a lead of polo B");
+      const contactOfB = await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110002" });
+      assert(contactOfB.status === 202 && JSON.stringify(contactOfB.data) === ACCEPTED, `the contact of polo B answered differently: ${contactOfB.status}`);
       sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato solto', '5569911110020', '', false, NOW(), NOW())`);
-      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110020" })).status === 403, "token of polo A changed a contact that is not of its polos");
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110020" })).status === 202, "a contact that is not of its polos answered differently");
       assert(sql(`SELECT string_agg(name, ',' ORDER BY id) FROM Contacts WHERE number IN ('5569911110002', '5569911110020')`) === "Contato do B,Contato solto", "a contact was renamed");
-      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Contato novo", number: "5569911110021" })).status === 201, "token of polo A cannot create a new contact");
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Contato novo", number: "5569911110021" })).status === 202, "token of polo A cannot create a new contact");
+      assert(sql(`SELECT name FROM Contacts WHERE number = '5569911110021'`) === "Contato novo", "the new contact was not created");
+      // what each token is used for (only method and route): the integration that depends on it
+      const usage = JSON.parse(sql(`SELECT usage FROM ApiTokens WHERE id = ${writerA.id}`) || "{}");
+      assert(usage.routes && usage.routes["POST /api/v1/leads"] && usage.routes["POST /api/v1/leads"].count >= 1, `usage of the token: ${JSON.stringify(usage)}`);
+      assert(!JSON.stringify(usage).includes("5569911110"), "the usage kept a phone number");
 
       // a token that expired is refused
       const old = await mk({ name: "vencido", scopes: ["leads:read"], expiresInDays: 1 });
@@ -1045,6 +1100,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await api(settingsToken, "get", "/api/v1/connections")).status === 401, "the old token works while off");
       assert((await http.put("/api-tokens/legacy", { enabled: true }, auth())).data.enabled === true, "the old token was not turned on again");
       assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token does not come back");
+      const legacyUse = (await http.get("/api-tokens/legacy", auth())).data.usage;
+      assert(legacyUse && legacyUse.routes && legacyUse.routes["GET /api/v1/connections"], `the routes of the old token are not shown: ${JSON.stringify(legacyUse)}`);
     });
 
     // GET /api/v1/indicadores (docs/API-V1.md): totals and codes only, never a name, phone, e-mail, CPF or text; the scope and the polos of
@@ -1094,7 +1151,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const a = r.data.polos.find(p => p.poloId === Number(poloA));
       assert(a && a.codigo === "IDA" && a.leads.total === 2 && a.leads.porOrigem.some(o => o.origem === "Instagram" && o.total === 1) && a.leads.porOrigem.some(o => o.origem === "Google" && o.matriculados === 1), `polo A leads ${JSON.stringify(a && a.leads)}`);
       assert(a.followUps.vencidos === 1 && a.followUps.tarefasVencidas === 1 && a.matriculasRealizadas.total === 1 && a.primeiraResposta.leadsRespondidos === 1, `polo A ${JSON.stringify(a)}`);
-      const rv = a.revisaoConsultores.find(c => c.consultor === consultant);
+      // the consultant is an opaque code of this token, never the user id
+      assert(a.revisaoConsultores.length === 1 && /^c_[0-9a-f]{10}$/.test(a.revisaoConsultores[0].consultor) && a.revisaoConsultores[0].consultor !== consultant && !a.revisaoConsultores.some(c => c.consultor === Number(consultant) || String(c.consultor) === String(consultant)), `consultant code ${JSON.stringify(a.revisaoConsultores.map(c => c.consultor))}`);
+      const rv = a.revisaoConsultores[0];
       assert(rv && rv.conversasLidas === 1 && rv.objecoes.some(o => o.tipo === "preco" && o.levantadas === 1 && o.tratadas === 1) && rv.objecoes.some(o => o.tipo === "tempo" && o.tratadas === 0) && rv.etapasComDificuldade[0].etapa === "entry" && rv.etapasPuladas[0].etapa === "grade", `review ${JSON.stringify(a.revisaoConsultores)}`);
       assert(r.data.conexoes.every(c => Number.isInteger(c.id) && typeof c.conectado === "boolean" && c.funcao), `connections ${JSON.stringify(r.data.conexoes).slice(0, 300)}`);
 
@@ -1121,6 +1180,20 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).status === 403, "token of polo A read polo B");
       const askedB = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).data;
       assert(askedB.polos.length === 1 && askedB.polos[0].leads.total === 1 && askedB.polos[0].matriculasRealizadas.total === 0, `polo B asked: ${JSON.stringify(askedB.polos)}`);
+      // the code of the same consultant is the same for this token and another for another token (two integrations cannot join by it)
+      const codeOf = d => (d.polos.find(p => p.poloId === Number(poloA)) || { revisaoConsultores: [] }).revisaoConsultores.map(c => c.consultor)[0];
+      const allAgain = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).data;
+      assert(codeOf(allAgain) === codeOf(r.data) && codeOf(onlyA) && codeOf(onlyA) !== codeOf(r.data), `codes: ${codeOf(r.data)} ${codeOf(allAgain)} ${codeOf(onlyA)}`);
+      // the same question of the same token within a minute is answered from the cache (the same instant of generation)
+      assert(allAgain.geradoEm === r.data.geradoEm, "the second identical call was computed again");
+      // a token of polo A never receives the answer cached for a token of every polo
+      assert(onlyA.polos.length === 1 && onlyA.geradoEm !== undefined, "token of polo A got another token's answer");
+      // per token limit: 20 indicator calls a minute, then 429 with Retry-After (another token is not affected)
+      const busy = await mkTok({ name: "indicadores limite", scopes: ["indicators:read"] });
+      let last;
+      for (let i = 0; i < 21; i += 1) last = await api(busy.token, `/api/v1/indicadores?de=${today}&ate=${today}`);
+      assert(last.status === 429 && last.headers["retry-after"], `the 21st call in a minute: ${last.status}`);
+      assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).status === 200, "the limit of one token blocked another");
       void lw;
     });
 
@@ -2444,7 +2517,9 @@ const postMeta = (id, payload, secret, badSig) => {
       try {
         const decode = raw => raw.replace(/=\r?\n/g, "").replace(/=3D/g, "=").replace(/=C3=A7/g, "ç").replace(/=C3=A3/g, "ã");
         // the administrators that exist (creating another one would change what other tests assume about the last administrator)
-        const admins = sql(`SELECT email FROM Users WHERE (profile='admin' OR role IN ('admin','coordenacao')) AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
+        // (this referral has no polo: only the administration hears of it, never the coordination; see the test of the notices by polo)
+        const admins = sql(`SELECT email FROM Users WHERE (profile='admin' OR role='admin') AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
+        const coordEmails = sql(`SELECT email FROM Users WHERE role='coordenacao' AND COALESCE(profile, '') <> 'admin' AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
         assert(admins.length >= 1, "no administrator with an e-mail");
         await http.post("/users", { name: "Cons Indicações", email: "cons-ind@x.com", password: "senha123", role: "consultor" }, auth());
         await new Promise(r => setTimeout(r, 800));
@@ -2471,6 +2546,7 @@ const postMeta = (id, payload, secret, badSig) => {
         const mailA = decode(got(admins[0])[0].raw);
         assert(mailA.includes("administra o sistema") && !mailA.includes("esperando o seu primeiro"), "the administration got the consultant's text");
         assert(new Set(inbox.map(m => m.to)).size === inbox.length, "someone got the same notice twice");
+        assert(!inbox.some(m => coordEmails.includes(m.to)), "the coordination got the e-mail of a referral with no polo");
 
         // the same person again: the CRM keeps one, and the consultant is told it was already there
         const before = inbox.length;
@@ -2783,13 +2859,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const mgrDue = (await http.get("/analysis/curricular?due=1", auth())).data;
       assert(mgrDue.some(x => x.id === a.id && x.requesterName === "Outro Consultor"), `manager filter ${JSON.stringify(mgrDue).slice(0, 200)}`);
 
-      // still unanswered after two business days: the coordination is told, once (the polo's coordinators, or every coordinator when the polo has none)
+      // still unanswered after two business days: the management of the polo is told, once (the administration and only the coordination of
+      // the analysis' polo; a coordinator of no polo is not told: see the test of the notices by polo below)
       const coordUser = (await http.post("/users", { name: "Coordenadora do Polo", email: "coord-an@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth())).data;
       assert(coordUser && coordUser.id, "the coordinator of the escalation was not created");
       sql(`UPDATE CurricularAnalyses SET createdAt = now() - interval '9 days', followUpDueAt = now() - interval '6 days' WHERE id = ${a.id}`);
       const runDb = code => execFileSync(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ ${code} })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 25000 }).toString();
       const esc1 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:00:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
-      assert(esc1.analyses >= 1 && esc1.coordinators >= 1, `escalation: ${JSON.stringify(esc1)}`);
+      assert(esc1.analyses >= 1 && esc1.managers >= 1, `escalation: ${JSON.stringify(esc1)}`);
       assert(sql(`SELECT CASE WHEN followUpEscalatedAt IS NULL THEN 0 ELSE 1 END FROM CurricularAnalyses WHERE id = ${a.id}`) === "1", "the escalation was not recorded");
       const esc2 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:05:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
       assert(esc2.analyses === 0, `the coordination was told twice: ${JSON.stringify(esc2)}`);
@@ -2832,6 +2909,140 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: tgContact }, asUser(owner))).status === 403, "another consultant sent someone else's proposal");
       // the polos of the later scenarios start as before
       assert((await http.delete(`/polos/${sql("SELECT id FROM Polos WHERE code='ANL1'")}`, auth())).status < 300, "the analysis polo was not removed");
+    });
+
+    await test("notices with a lead's data reach only the management of the lead's polo: affiliate referral (e-mail), late onboarding (bell) and the escalated curricular return (e-mail); a lead with no polo, only the administration", async () => {
+      const net = require("net");
+      const { execFile } = require("child_process");
+      const mk = async (name, email, role, extra = {}) => {
+        const r = await http.post("/users", { name, email, password: "senha123", role, ...extra }, auth());
+        assert(r.status === 200 && r.data.id, `user ${email} ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+        return r.data;
+      };
+      const poloA = (await http.post("/polos", { name: "Polo Avisos A", code: "AVSA", state: "RO" }, auth())).data;
+      const poloB = (await http.post("/polos", { name: "Polo Avisos B", code: "AVSB", state: "RO" }, auth())).data;
+      assert(poloA.id && poloB.id, "the polos of the notices were not created");
+      const coordA = await mk("Coordenação Avisos A", "coord-avisos-a@x.com", "coordenacao", { coordArea: "comercial" });
+      const coordB = await mk("Coordenação Avisos B", "coord-avisos-b@x.com", "coordenacao", { coordArea: "comercial" });
+      const consB = await mk("Consultor Avisos B", "cons-avisos-b@x.com", "consultor");
+      const consN = await mk("Consultor Avisos Sem Polo", "cons-avisos-n@x.com", "consultor");
+      assert((await http.put(`/polos/${poloA.id}/members`, { members: [{ userId: coordA.id, role: "coordenacao" }] }, auth())).status === 200, "members of polo A");
+      assert((await http.put(`/polos/${poloB.id}/members`, { members: [{ userId: coordB.id, role: "coordenacao" }, { userId: consB.id, role: "comercial" }] }, auth())).status === 200, "members of polo B");
+      const adminIds = sql(`SELECT id FROM Users WHERE profile='admin' OR role='admin'`).split("\n").map(Number).filter(Boolean).sort((x, y) => x - y);
+      const adminEmails = sql(`SELECT email FROM Users WHERE (profile='admin' OR role='admin') AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim().toLowerCase()).filter(Boolean);
+      assert(adminIds.length >= 1 && adminEmails.length >= 1, "no administrator with an e-mail");
+      const leads = [];
+      const affs = [];
+
+      // a tiny SMTP server that keeps who each e-mail went to
+      const inbox = [];
+      const smtp = net.createServer(sock => {
+        let mode = "cmd", buf = "", rec = { to: [], raw: "" };
+        sock.write("220 mock ESMTP\r\n");
+        sock.on("data", chunk => {
+          buf += chunk.toString();
+          if (mode === "data") {
+            if (buf.endsWith("\r\n.\r\n")) { rec.raw = buf.replace(/=\r?\n/g, ""); inbox.push(rec); rec = { to: [], raw: "" }; buf = ""; mode = "cmd"; sock.write("250 queued\r\n"); }
+            return;
+          }
+          const lines = buf.split("\r\n"); buf = lines.pop();
+          for (const line of lines) {
+            if (/^EHLO|^HELO/i.test(line)) sock.write("250-mock\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n");
+            else if (/^AUTH PLAIN/i.test(line)) sock.write("235 ok\r\n");
+            else if (/^RCPT TO/i.test(line)) { rec.to.push(((line.match(/<([^>]+)>/) || [])[1] || "").toLowerCase()); sock.write("250 ok\r\n"); }
+            else if (/^DATA/i.test(line)) { mode = "data"; sock.write("354 go\r\n"); }
+            else if (/^QUIT/i.test(line)) { sock.write("221 bye\r\n"); sock.end(); }
+            else sock.write("250 ok\r\n");
+          }
+        });
+        sock.on("error", () => {});
+      });
+      // (the welcome e-mails of the new accounts are not part of this check)
+      await sleep(800);
+      await new Promise(r => smtp.listen(SMTP_PORT, "127.0.0.1", r));
+      const got = (email, text) => inbox.filter(m => m.to.includes(email) && (!text || m.raw.includes(text)));
+      try {
+        // 1. affiliate referral: the e-mail with the name, the number and the course
+        const mkAff = async (owner, name, phone) => {
+          const a = (await http.post("/affiliates", { name, phone, ownerId: owner.id }, auth())).data;
+          assert(a && a.id && a.portalToken, `affiliate ${JSON.stringify(a).slice(0, 160)}`);
+          affs.push(a.id);
+          return a;
+        };
+        const affB = await mkAff(consB, "Afiliada Avisos B", "(69) 97000-7101");
+        const affN = await mkAff(consN, "Afiliada Avisos Sem Polo", "(69) 97000-7102");
+        inbox.length = 0;
+        const refB = await http.post(`/affiliate-portal/${affB.portalToken}/referrals`, { name: "Indicada Avisos B", phone: "(69) 98111-7201", consent: true });
+        assert(refB.status === 201, `referral B ${refB.status}`);
+        const leadB = Number(sql(`SELECT id FROM Leads WHERE name='Indicada Avisos B'`));
+        leads.push(leadB);
+        assert(sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id=${leadB}`) === String(poloB.id), "the referral of the consultant of polo B is not in polo B");
+        await waitFor(() => got("cons-avisos-b@x.com", "Indicada Avisos B").length === 1 && got("coord-avisos-b@x.com", "Indicada Avisos B").length === 1 && adminEmails.every(e => got(e, "Indicada Avisos B").length === 1), 10000, "the referral e-mails of polo B");
+        const refN = await http.post(`/affiliate-portal/${affN.portalToken}/referrals`, { name: "Indicada Avisos Sem Polo", phone: "(69) 98111-7202", consent: true });
+        assert(refN.status === 201, `referral with no polo ${refN.status}`);
+        const leadN = Number(sql(`SELECT id FROM Leads WHERE name='Indicada Avisos Sem Polo'`));
+        leads.push(leadN);
+        assert(sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id=${leadN}`) === "", "the referral of a consultant with no polo got a polo");
+        await waitFor(() => got("cons-avisos-n@x.com", "Indicada Avisos Sem Polo").length === 1 && adminEmails.every(e => got(e, "Indicada Avisos Sem Polo").length === 1), 10000, "the referral e-mails with no polo");
+        await sleep(800);
+        assert(got("coord-avisos-a@x.com", "Indicada Avisos").length === 0, "the coordination of polo A got a referral of another polo or with no polo");
+        assert(got("coord-avisos-b@x.com", "Indicada Avisos Sem Polo").length === 0, "the coordination of polo B got a referral with no polo");
+
+        // 2. late onboarding: the notice in the bell with the student's name
+        const stage = sql(`SELECT id FROM LeadStages ORDER BY position LIMIT 1`).split("\n")[0];
+        const lateLead = (name, polo) => Number(sql(`INSERT INTO Leads (name, source, stageId, poloId, isHistorical, onboardingStatus, enrolledAt, createdAt, updatedAt) VALUES ('${name}', 'Teste', ${stage}, ${polo || "NULL"}, false, 'pending', NOW() - INTERVAL '3 days', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+        const lateB = lateLead("Aluno Atrasado Avisos B", poloB.id);
+        const lateN = lateLead("Aluno Atrasado Avisos Sem Polo", null);
+        leads.push(lateB, lateN);
+        const bell = id => sql(`SELECT string_agg(userId::text, ',' ORDER BY userId) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${id}'`).split(",").map(Number).filter(Boolean);
+        const expectB = [...adminIds, coordB.id].sort((x, y) => x - y);
+        await waitFor(() => bell(lateB).length === expectB.length && bell(lateN).length === adminIds.length, 20000, "the late onboarding notices");
+        await sleep(500);
+        assert(JSON.stringify(bell(lateB)) === JSON.stringify(expectB), `late onboarding of polo B went to ${bell(lateB)} (expected ${expectB})`);
+        assert(JSON.stringify(bell(lateN)) === JSON.stringify(adminIds), `late onboarding with no polo went to ${bell(lateN)} (expected only the administration ${adminIds})`);
+        const coordATok = (await http.post("/auth/login", { email: "coord-avisos-a@x.com", password: "senha123" })).data.token;
+        assert(coordATok, "login of the coordination of polo A");
+        assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${coordA.id} AND kind='onboarding_late'`)) === 0, "the coordination of polo A got the late onboarding of another polo or with no polo");
+
+        // 3. the curricular return escalated after two business days: the e-mail with the candidates' names
+        const sample = fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf"));
+        const analysis = async name => {
+          const f = new FormData();
+          f.append("file", sample, { filename: "analise.pdf", contentType: "application/pdf" });
+          // (with the entry period the analysis is ready at once: COMPLETED, with the 24-hour return)
+          f.append("entryPeriod", "2");
+          f.append("startTerm", "2026.2");
+          f.append("candidateName", name);
+          f.append("poloId", String(poloB.id));
+          const r = await http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${token}` } });
+          assert(r.status === 201, `analysis ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+          return r.data.id;
+        };
+        const anB = await analysis("Candidata Escala Avisos B");
+        const anN = await analysis("Candidata Escala Avisos Sem Polo");
+        await waitFor(() => sql(`SELECT COUNT(*) FROM CurricularAnalyses WHERE id IN (${anB}, ${anN}) AND status='COMPLETED'`) === "2", 15000, "the analyses completed");
+        sql(`UPDATE CurricularAnalyses SET poloId = NULL WHERE id = ${anN}`);
+        sql(`UPDATE CurricularAnalyses SET createdAt = now() - interval '9 days', followUpDueAt = now() - interval '6 days', followUpEscalatedAt = NULL WHERE id IN (${anB}, ${anN})`);
+        inbox.length = 0;
+        // (another process, without blocking this one: the e-mails go to the SMTP server above before the process ends)
+        const out = await new Promise((resolve, reject) => execFile(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:00:00Z")))); await new Promise(r=>setTimeout(r,4000)); })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 30000 }, (err, stdout, stderr) => (err ? reject(new Error(`${err.message} ${stderr}`)) : resolve(stdout))));
+        const esc = JSON.parse(String(out).split("\n").filter(l => l.startsWith("{")).pop());
+        assert(esc.analyses >= 2 && esc.managers >= 2, `escalation ${JSON.stringify(esc)}`);
+        assert(sql(`SELECT COUNT(*) FROM CurricularAnalyses WHERE id IN (${anB}, ${anN}) AND followUpEscalatedAt IS NOT NULL`) === "2", "the escalation was not recorded");
+        await waitFor(() => got("coord-avisos-b@x.com", "Candidata Escala Avisos B").length === 1 && adminEmails.every(e => got(e, "Candidata Escala Avisos B").length === 1 && got(e, "Candidata Escala Avisos Sem Polo").length === 1), 10000, "the escalation e-mails");
+        assert(got("coord-avisos-a@x.com", "Escala Avisos").length === 0, "the coordination of polo A got the escalation of another polo or with no polo");
+        assert(got("coord-avisos-b@x.com", "Candidata Escala Avisos Sem Polo").length === 0, "the coordination of polo B got the escalation of an analysis with no polo");
+        sql(`UPDATE CurricularAnalyses SET enrollmentStatus = 'ENROLLED', followUpDueAt = NULL WHERE id IN (${anB}, ${anN})`);
+      } finally {
+        smtp.close();
+        // the users, polos and leads of the later scenarios stay as before
+        for (const id of leads) await http.delete(`/leads/${id}`, auth()).catch(() => undefined);
+        for (const id of affs) await http.delete(`/affiliates/${id}`, auth()).catch(() => undefined);
+        sql(`UPDATE Leads SET poloId = NULL WHERE poloId IN (${poloA.id}, ${poloB.id})`);
+        sql(`UPDATE CurricularAnalyses SET poloId = NULL WHERE poloId IN (${poloA.id}, ${poloB.id})`);
+        for (const u of [coordA, coordB, consB, consN]) await http.delete(`/users/${u.id}`, auth()).catch(() => undefined);
+        for (const p of [poloA, poloB]) assert((await http.delete(`/polos/${p.id}`, auth())).status < 300, "a polo of the notices was not removed");
+      }
     });
 
     await test("no route answers 500 to a malformed or unknown id (each route with a :param, three bad values, as the administrator)", async () => {
@@ -3420,11 +3631,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const empty = await http.put("/affiliate-rules", { faq: [] }, auth());
       assert(empty.data.faq.length >= 3, "default FAQ not restored");
     });
-    await test("managers see every conversation of every attendant in one place, filter by attendant and connection; others do not", async () => {
+    await test("managers see every conversation of their polos in one place, filter by attendant and connection; others do not", async () => {
       const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const a1 = await mk("Atendente Um", "att1@x.com", "consultor"), a2 = await mk("Atendente Dois", "att2@x.com", "consultor");
-      await mk("Coord Central", "coord-central@x.com", "coordenacao");
-      const q = (await http.get("/queue", auth())).data[0];
+      const cc = await mk("Coord Central", "coord-central@x.com", "coordenacao");
+      // the coordination sees the conversations of its polos (helpers/TicketPoloScope): a queue of the polo, and the coordinator in it
+      const polo = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('CENT', 'Polo Central', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const q = { id: sql(`INSERT INTO Queues (name, color, poloId, createdAt, updatedAt) VALUES ('Comercial Central', '#0a0b0c', ${polo}, NOW(), NOW()) RETURNING id`).split("\n")[0] };
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${polo}, ${cc.id}, 'coordenacao', NOW(), NOW())`);
       const mkTicket = (name, number, user) => {
         const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
         return sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, queueId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${c}, ${tgId}, ${user}, ${q.id}, 2, false, 'sales', false, 'oi', 'cent-${number}', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
@@ -6301,9 +6515,10 @@ const postMeta = (id, payload, secret, badSig) => {
       // and none of them ever closed) and a notice in the bell of every manager, once
       sql(`UPDATE Leads SET onboardingStatus='pending', onboardingAlertAt=NULL, enrolledAt=NOW() - INTERVAL '2 days' WHERE id=${lead.id}`);
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the management");
-      const admins = Number(sql(`SELECT COUNT(*) FROM Users WHERE profile='admin' OR role IN ('admin','coordenacao')`));
+      // (the bell: the administration and only the coordination of the student's polo; see the test of the notices by polo)
+      const managersOfLead = Number(sql(`SELECT COUNT(*) FROM Users u WHERE u.profile='admin' OR u.role='admin' OR (u.role='coordenacao' AND u.id IN (SELECT pm.userId FROM PoloMembers pm JOIN Leads l ON l.poloId=pm.poloId WHERE l.id=${lead.id}))`));
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%' AND userId IS NULL AND kind='onboarding_late' AND priority='high'`)) === 1, "one task without a person expected");
-      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${lead.id}'`)) === admins, 8000, "a notice for every manager");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${lead.id}'`)) === managersOfLead, 8000, "a notice for the management of the student's polo");
     });
     await test("grades: reading them again rewrites the WhatsApp text of every matrix and lists only real internships", async () => {
       const r = await http.post("/grades/refresh", {}, auth());
@@ -7007,12 +7222,17 @@ const postMeta = (id, payload, secret, badSig) => {
       const consId = sql(`SELECT id FROM Users WHERE email = 'do-coord@x.com'`);
       const tgContactId = (await http.get(`/tickets/${tgTicket}`, auth())).data.contactId;
       sql(`UPDATE Whatsapps SET ownerId = ${consId} WHERE id = ${tgId}`);
+      // (the coordination writes only to people of its polos: this contact is a lead of the coordinator's polo here)
+      const coordPoloId = sql(`SELECT poloId FROM PoloMembers WHERE userId = (SELECT id FROM Users WHERE email = 'coord-c@x.com') ORDER BY id LIMIT 1`);
+      const openStage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const scopedLead = sql(`INSERT INTO Leads (name, source, stageId, poloId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Lead do polo da coordenação', 'Teste', ${openStage}, ${coordPoloId}, ${tgContactId}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const when = new Date(Date.now() + 3600000).toISOString();
       const own = await http.post("/schedules", { body: "lembrete", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, as);
       assert(own.status === 200 || own.status === 201, `coordinator cannot use someone else's number ${own.status} ${JSON.stringify(own.data).slice(0, 120)}`);
       const other = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
       assert((await http.post("/schedules", { body: "x", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, asUser(other))).status === 403, "a consultant used another person's number");
       sql(`UPDATE Whatsapps SET ownerId = NULL WHERE id = ${tgId}`);
+      sql(`DELETE FROM Leads WHERE id = ${scopedLead}`);
 
       // a scheduled message can be a short sequence: the worker sends one, waits, then the next, and marks it sent at the end
       const seqBefore = tg.sent.length;
@@ -7499,6 +7719,14 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(team.status === 200, `team user ${team.status} ${JSON.stringify(team.data).slice(0, 160)}`);
       assert(sql(`SELECT COUNT(*) FROM UserQueues uq JOIN Queues q ON q.id=uq.queueId WHERE uq.userId=${team.data.id} AND q.role='relacionamento'`) === "1", "the new member is not in the queue");
       const anaTok = (await http.post("/auth/login", { email: "ana@rel.test", password: "senha123" })).data.token;
+      // the relationship team follows the students of its polos (helpers/TicketPoloScope): with no polo, none; in Rita's polo, hers
+      assert((await http.get(`/tickets/${ritaTicket}`, asUser(anaTok))).status === 403, "the relationship team with no polo opened a student's conversation");
+      let ritaPolo = sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id=${rita.leadId}`);
+      if (!ritaPolo) {
+        ritaPolo = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('RELR', 'Polo da Rita', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+        sql(`UPDATE Leads SET poloId=${ritaPolo} WHERE id=${rita.leadId}`);
+      }
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${ritaPolo}, ${team.data.id}, 'relacionamento', NOW(), NOW())`);
       assert((await http.get(`/tickets/${ritaTicket}`, asUser(anaTok))).status === 200, "the team cannot open its own conversation");
       assert((await http.get(`/tickets/${ticketOf(rita.from) === String(ritaTicket) ? 1 : ticketOf(rita.from)}`, asUser(anaTok))).status === 403, "the team opened a conversation of another department");
       assert((await http.get("/retention/summary", asUser(anaTok))).status === 403, "the relationship team opened the retention area (it only attends the conversations)");

@@ -12,6 +12,8 @@ import User from "../models/User";
 import Lead from "../models/Lead";
 import LeadEnrollment from "../models/LeadEnrollment";
 import { dayBounds, getAppTz } from "../helpers/AppTime";
+import PoloMember from "../models/PoloMember";
+import { crmPolosOf } from "../middleware/scope";
 
 // Team enrollment goals (administration and coordination). Each line counts, by itself, the enrollments (Leads.wonAt) of
 // its CRM users inside the period, plus a manual adjustment for people without a login or shared lines.
@@ -136,6 +138,27 @@ const writeMembers = async (goalId: number, list: any[]): Promise<void> => {
   if (rows.length) await GoalMember.bulkCreate(rows as any);
 };
 
+// WHO CHANGES WHICH GOAL. Everybody reads every goal (decisão do dono registrada em 2026-11-25: the whole team follows all the polos and consultants).
+// The administration changes any goal. The coordination changes only what belongs to its polos:
+//   - the line of a polo (target, manual, canceled): only its polos;
+//   - a team goal: only when every person in it works in one of its polos;
+//   - a polo goal cycle as a whole (create, dates, remove, repeat, postpone, working days): it covers every polo, so only the administration.
+const editablePolosOf = (req: Request): Promise<number[] | null> => crmPolosOf(req);
+export const assertGoalEditable = async (req: Request, goal: { kind?: string; members?: GoalMember[] } | null, newMembers?: any[]): Promise<void> => {
+  const polos = await editablePolosOf(req);
+  if (!polos) return;
+  if (goal?.kind === "polo") throw new AppError("ERR_NO_PERMISSION", 403);
+  const people = new Set<number>([
+    ...((goal?.members || []).reduce((all: number[], m) => all.concat(ids(m.userIds)), [])),
+    ...((newMembers || []).reduce((all: number[], m: any) => all.concat(ids(m.userIds)), []))
+  ]);
+  if (!people.size) return;
+  const inMine = new Set(
+    (await PoloMember.findAll({ where: { userId: { [Op.in]: [...people] }, poloId: { [Op.in]: polos.length ? polos : [0] } } as any, attributes: ["userId"] })).map(m => m.userId)
+  );
+  if ([...people].some(id => !inMine.has(id))) throw new AppError("ERR_NO_PERMISSION", 403);
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const status = req.query.status === "archived" ? "archived" : "active";
   const goals = await Goal.findAll({ where: { status, kind: "team" }, include: [GoalMember], order: [["endsOn", "DESC"], ["id", "DESC"]], limit: 24 });
@@ -149,6 +172,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const title = b.title ? String(b.title).slice(0, 80) : null;
   // a polo goal counts the enrollments of its entry term: the one chosen, else the one in its name ("2º semestre de 2026" -> "2026/2")
   const entryTerm = kind === "polo" ? normTerm(b.entryTerm) || termOfTitle(title) : null;
+  await assertGoalEditable(req, { kind, members: [] }, b.members || []);
   const goal = await Goal.create({ title, startsOn: b.startsOn, endsOn: b.endsOn, kind, entryTerm, createdBy: Number(req.user.id) } as any);
   await writeMembers(goal.id, b.members || []);
   return res.status(201).json(await present(await load(goal.id)));
@@ -157,6 +181,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 export const update = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
   const b = req.body || {};
+  await assertGoalEditable(req, goal, Array.isArray(b.members) ? b.members : []);
   const data: any = {};
   if (b.title !== undefined) data.title = b.title ? String(b.title).slice(0, 80) : null;
   if (b.startsOn !== undefined) data.startsOn = b.startsOn;
@@ -175,6 +200,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 
 export const remove = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
+  await assertGoalEditable(req, goal);
   await GoalMember.destroy({ where: { goalId: goal.id } });
   await goal.destroy();
   return res.json({ ok: true });
@@ -183,6 +209,7 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
 // "repeat the previous period": same people and targets, dates moved to the next period of the same length
 export const repeat = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
+  await assertGoalEditable(req, goal);
   const addDays = (d: string, n: number) => {
     const t = new Date(`${d}T12:00:00Z`);
     t.setUTCDate(t.getUTCDate() + n);
@@ -508,6 +535,9 @@ export const calendar = async (req: Request, res: Response): Promise<Response> =
 export const updatePolos = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
   const b = req.body || {};
+  // the coordination: only the lines of its polos; the working days are the whole cycle's (administration)
+  const mine = await editablePolosOf(req);
+  if (mine && (b.workDays !== undefined || b.extraHolidays !== undefined)) throw new AppError("ERR_NO_PERMISSION", 403);
   if (b.workDays !== undefined) {
     const wd = Number(b.workDays);
     await goal.update({ workDays: wd === 6 || wd === 7 ? wd : 5 });
@@ -520,11 +550,14 @@ export const updatePolos = async (req: Request, res: Response): Promise<Response
     const months = monthsOf(goal.startsOn, goal.endsOn);
     const valid = new Set((await Polo.findAll({ attributes: ["id"] })).map(p => p.id));
     // each line keeps what was typed; only the lines that changed are written (with who did it), the ones taken out are removed
-    const rows = b.rows.map((r: any) => poloLine(goal.id, months, r)).filter((r: any) => valid.has(r.poloId));
-    const previous = await GoalPolo.findAll({ where: { goalId: goal.id } });
+    const allowed = (poloId: number) => valid.has(poloId) && (!mine || mine.includes(poloId));
+    if (mine && b.rows.some((r: any) => !allowed(Number(r.poloId)))) throw new AppError("ERR_NO_PERMISSION", 403);
+    const rows = b.rows.map((r: any) => poloLine(goal.id, months, r)).filter((r: any) => allowed(r.poloId));
+    const previous = await GoalPolo.findAll({ where: { goalId: goal.id, ...(mine ? { poloId: { [Op.in]: mine.length ? mine : [0] } } : {}) } as any });
     const byPolo = new Map(previous.map(g => [g.poloId, g]));
     const keep = new Set(rows.map((r: any) => r.poloId));
-    await GoalPolo.destroy({ where: { goalId: goal.id, poloId: { [Op.notIn]: keep.size ? [...keep] : [0] } } as any });
+    // a line taken out is removed; the coordination removes only lines of its polos
+    await GoalPolo.destroy({ where: { goalId: goal.id, poloId: { [Op.notIn]: keep.size ? [...keep] : [0], ...(mine ? { [Op.in]: mine.length ? mine : [0] } : {}) } } as any });
     for (const row of rows) {
       const old = byPolo.get(row.poloId);
       const same = old && ["target", "manualCount", "canceled", "monthly", "manualMonthly"].every(k => String((old as any)[k] ?? "") === String((row as any)[k] ?? ""));
@@ -543,6 +576,8 @@ export const updatePolo = async (req: Request, res: Response): Promise<Response>
   const goal = await load(req.params.id);
   const poloId = Number(req.params.poloId);
   if (!(await Polo.findByPk(poloId))) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  const mine = await editablePolosOf(req);
+  if (mine && !mine.includes(poloId)) throw new AppError("ERR_NO_PERMISSION", 403);
   const months = monthsOf(goal.startsOn, goal.endsOn);
   const previous = await GoalPolo.findOne({ where: { goalId: goal.id, poloId } });
   // a field that is not sent keeps what was saved
@@ -568,7 +603,7 @@ const norm = (s: string): string =>
 // body: { items: [{ code, name, target, done, canceled }] } — a table pasted from the spreadsheet. A polo is found by its
 // code or name and created when it does not exist yet. "done" is the TOTAL the polo has in the period: what the CRM already
 // counted is discounted, so the same enrollment is never counted twice.
-export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean) => {
+export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean, allowedPolos: number[] | null = null) => {
   const months = monthsOf(goal.startsOn, goal.endsOn);
   const polos = await Polo.findAll();
   const startAt = dayBounds(goal.startsOn).start;
@@ -580,6 +615,8 @@ export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean)
     const target = int(it.target);
     if (!name || target === null) { out.push({ line: i + 1, status: "error", name }); continue; }
     let polo = polos.find(p => code && p.code === code) || polos.find(p => norm(p.name) === norm(name));
+    // the coordination imports only the lines of its polos and never creates a polo
+    if (allowedPolos && (!polo || !allowedPolos.includes(polo.id))) { out.push({ line: i + 1, status: "error", name, error: "Polo fora dos seus polos" }); continue; }
     const status = polo ? "update" : "new";
     if (!dryRun) {
       if (!polo) {
@@ -605,5 +642,5 @@ export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean)
 export const importPoloGoals = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
   const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 300) : [];
-  return res.json(await applyPoloImport(goal, items, Boolean(req.body.dryRun)));
+  return res.json(await applyPoloImport(goal, items, Boolean(req.body.dryRun), await editablePolosOf(req)));
 };

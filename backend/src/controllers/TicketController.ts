@@ -1,4 +1,5 @@
 import { hasContactAccessOrFree } from "../middleware/canAccessContact";
+import { ticketPoloSql, ticketPolosOf } from "../helpers/TicketPoloScope";
 import { chatIdOf } from "../helpers/ChatId";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
@@ -38,7 +39,7 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 import { getAdapter } from "../channels";
 import { whatsappProvider } from "../providers/WhatsApp";
 import Contact from "../models/Contact";
-import { Op } from "sequelize";
+import { Op, literal } from "sequelize";
 
 type IndexQuery = {
   searchParam: string;
@@ -322,6 +323,9 @@ export const readAll = async (req: Request, res: Response): Promise<Response> =>
   const where: any = { unreadMessages: { [Op.gt]: 0 } };
   if (!manager) where.userId = Number(req.user.id);
   else {
+    // the coordination marks as read only the conversations it sees (its polos)
+    const polos = await ticketPolosOf(roleOf(req.user), Number(req.user.id));
+    if (polos) where[Op.and as any] = [{ [Op.or]: [{ userId: Number(req.user.id) }, literal(ticketPoloSql(polos, false))] }];
     if (Number(req.body?.attendantId)) where.userId = Number(req.body.attendantId);
     if (Number(req.body?.connectionId)) where.whatsappId = Number(req.body.connectionId);
   }

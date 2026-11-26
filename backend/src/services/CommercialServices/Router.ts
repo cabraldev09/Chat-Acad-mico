@@ -338,8 +338,9 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   // the person who takes it hears about it now (not only when the lead writes again) and gets a task
   try {
     // kept in the bell of who takes it (or of the management, when nobody of the team could take it)
-    const { notify, managerIds } = await import("../NotificationServices/Notify");
-    void notify(user ? [user.id] : await managerIds(), { kind: "ai_handoff", level: "warning", title: `Lead encaminhado pela IA: ${lead?.name || ticket.contact?.name || "contato"}`, body: WHY_TEXT[opts.why], link: `/tickets/${ticket.id}`, dedupeKey: `ai-handoff:${ticket.id}:${new Date().toISOString().slice(0, 13)}` });
+    const { notify, managerIdsOfPolos } = await import("../NotificationServices/Notify");
+    // nobody of the team could take it: the administration and the coordination of THIS polo (never another polo's)
+    void notify(user ? [user.id] : await managerIdsOfPolos([polo ? polo.id : lead?.poloId]), { kind: "ai_handoff", level: "warning", title: `Lead encaminhado pela IA: ${lead?.name || ticket.contact?.name || "contato"}`, body: WHY_TEXT[opts.why], link: `/tickets/${ticket.id}`, dedupeKey: `ai-handoff:${ticket.id}:${new Date().toISOString().slice(0, 13)}` });
     getIO().emit("aiHandoff", {
       ticketId: ticket.id,
       leadId: lead ? lead.id : null,

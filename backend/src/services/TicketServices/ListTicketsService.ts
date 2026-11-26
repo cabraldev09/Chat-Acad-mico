@@ -14,6 +14,7 @@ import { portable } from "../../helpers/sqlDialect";
 import { Role, SEGMENTS_OF, isManagerRole } from "../../helpers/Roles";
 import { connectionScopeOf, ticketScopeWhere } from "../../helpers/ConnectionScope";
 import { remember } from "../../helpers/TtlCache";
+import { ticketPoloSql, ticketPolosOf } from "../../helpers/TicketPoloScope";
 
 // who sees which numbers and sectors changes rarely: the lists of one person read it from memory for a few seconds
 // (each new message makes every open screen count its chips again)
@@ -228,6 +229,13 @@ const ListTicketsService = async ({
       });
     }
     whereCondition = { [Op.and]: [whereCondition, ...scope] } as any;
+  }
+
+  // the coordination and the relationship team: the conversations given to them and the ones of their polos, never another polo's nor
+  // the ones with no polo (helpers/TicketPoloScope); the same rule covers the search and the counts
+  const polos = role ? await remember(`scope:ticket-polos:${userId}:${role}`, SCOPE_TTL, () => ticketPolosOf(role, Number(userId))) : null;
+  if (polos) {
+    whereCondition = { [Op.and]: [whereCondition, { [Op.or]: [{ userId: Number(userId) }, literal(ticketPoloSql(polos, role === "relacionamento"))] }] } as any;
   }
 
   // groups, communities and private chats follow the connection: nobody reads another number's groups or personal chats

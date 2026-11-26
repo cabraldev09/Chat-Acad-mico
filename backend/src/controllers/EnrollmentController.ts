@@ -10,6 +10,8 @@ import EnrollmentProof from "../models/EnrollmentProof";
 import Goal from "../models/Goal";
 import GoalChange from "../models/GoalChange";
 import GoalPolo from "../models/GoalPolo";
+import GoalMember from "../models/GoalMember";
+import { assertGoalEditable } from "./GoalController";
 import Lead from "../models/Lead";
 import LeadEnrollment from "../models/LeadEnrollment";
 import Polo from "../models/Polo";
@@ -109,8 +111,10 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 // postpones (or brings forward) the end of a goal, keeping who did it, from when to when and why
 export const postponeGoal = async (req: Request, res: Response): Promise<Response> => {
-  const goal = await Goal.findByPk(req.params.id);
+  const goal = await Goal.findByPk(req.params.id, { include: [GoalMember] });
   if (!goal) throw new AppError("ERR_NOT_FOUND", 404);
+  // postponing changes the whole goal: the coordination only for a goal of its own people (GoalController.assertGoalEditable)
+  await assertGoalEditable(req, goal);
   const endsOn = String(req.body?.endsOn || "");
   const reason = String(req.body?.reason || "").trim().slice(0, 500);
   if (!DAY.test(endsOn) || endsOn < String(goal.startsOn).slice(0, 10)) throw new AppError("ERR_INVALID_PERIOD", 400);
