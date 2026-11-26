@@ -3881,7 +3881,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const ids = async (params) => (await http.get("/tickets", { params: { showAll: "true", queueIds, ...params }, ...auth() })).data.tickets.map(t => String(t.id));
       assert((await ids({ groups: "only", historical: "all" })).includes(String(gt)), "group missing from the Grupos tab");
       assert(!(await ids({ groups: "exclude", historical: "all" })).includes(String(gt)), "group leaked into the private chats");
-      assert((await ids({ historical: "all" })).includes(String(gt)), "group missing from Todas");
+      // "Todas" (no groups filter) keeps the group; searched by its name so the check does not depend on the first page of 40 (the group is
+      // 3 days old and the tests before it create newer conversations)
+      assert((await ids({ historical: "all", searchParam: "Grupo da turma" })).includes(String(gt)), "group missing from Todas");
       const before = Number((await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data.totals.total);
       sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${gid}, ${tgId}, 0, true, 'sales', NOW(), NOW())`);
       assert(Number((await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data.totals.total) === before, "a group conversation was counted as a service ticket");
