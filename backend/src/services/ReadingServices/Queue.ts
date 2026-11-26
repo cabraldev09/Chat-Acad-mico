@@ -21,13 +21,16 @@ const rows = async (sql: string, replacements: Record<string, any>): Promise<any
 const CLAIM_MINUTES = 30;
 const MAX_ATTEMPTS = 3;
 
-export interface ReadingSettings { provider: "sistema" | "openbot"; waitHours: number; maxPerDay: number }
+// "enabled": the administrator's switch (on by default, decided by the owner on 26/11); off, nothing is put in the queue nor read
+export interface ReadingSettings { enabled: boolean; provider: "sistema" | "openbot"; waitHours: number; maxPerDay: number }
 export const readingSettings = async (): Promise<ReadingSettings> => ({
+  enabled: (await getSetting("readings_enabled", "true")) !== "false",
   provider: (await getSetting("readings_provider", "sistema")) === "openbot" ? "openbot" : "sistema",
   waitHours: Math.min(72, Math.max(1, Number(await getSetting("readings_openbot_wait_hours", "6")) || 6)),
   maxPerDay: Math.min(2000, Math.max(0, Number(await getSetting("readings_max_per_day", "300")) || 0))
 });
 export const saveReadingSettings = async (input: Partial<ReadingSettings>): Promise<ReadingSettings> => {
+  if (input.enabled !== undefined) await setSetting("readings_enabled", input.enabled ? "true" : "false");
   if (input.provider !== undefined) await setSetting("readings_provider", input.provider === "openbot" ? "openbot" : "sistema");
   if (input.waitHours !== undefined) await setSetting("readings_openbot_wait_hours", String(Math.min(72, Math.max(1, Math.round(Number(input.waitHours) || 6)))));
   if (input.maxPerDay !== undefined) await setSetting("readings_max_per_day", String(Math.min(2000, Math.max(0, Math.round(Number(input.maxPerDay) || 0)))));
@@ -72,14 +75,13 @@ const tellOwner = async (userId: number | null): Promise<void> => {
   await setSetting(`readings_notice_${userId}`, String(Date.now()));
   const count = (a: string) => done.filter(r => { try { return JSON.parse(r.result || "{}").action === a; } catch { return false; } }).length;
   const leads = done.length - count("nao_lead");
-  const enrolled = count("matriculado");
   const confirm = count("confirmar");
   const recover = count("recuperar");
   const { notify, managerIdsOfUser } = await import("../NotificationServices/Notify");
   await notify([userId, ...(await managerIdsOfUser(userId))], {
     kind: "reading",
     level: recover ? "warning" : "info",
-    title: `Leitura do WhatsApp: ${leads} ${leads === 1 ? "lead" : "leads"}, ${enrolled + confirm} matriculados${confirm ? ` (${confirm} a confirmar)` : ""}, ${recover} para recuperar`,
+    title: `Leitura do WhatsApp: ${leads} ${leads === 1 ? "lead" : "leads"}, ${confirm} ${confirm === 1 ? "matrícula" : "matrículas"} a confirmar, ${recover} para recuperar`,
     body: recover ? "Os que pararam ou desistiram estão em CRM, Recuperação, com o motivo de cada um." : "Os leads estão no funil, cada um com o resumo da conversa.",
     link: recover ? "/crm/recuperacao" : "/crm",
     dedupeKey: `reading:${userId}:${Date.now()}`
@@ -126,6 +128,7 @@ export const completeReading = async (id: number, answerText: string, by: { who:
 
 // what an outside worker takes: pending readings (or ones whose reservation expired), only of its polos when the token is of some polos
 export const claimReadings = async (claimKey: string, limit: number, polos: number[] | null): Promise<Array<{ id: number; tipo: ReadingKind; instrucoes: string; conversa: string; reservadaAte: Date }>> => {
+  if (!(await readingSettings()).enabled) return [];
   const now = new Date();
   const until = new Date(now.getTime() + CLAIM_MINUTES * 60000);
   const where: any = {
@@ -158,6 +161,7 @@ export interface LocalRun { read: number; skipped: number; failed: number; stopp
 export const runLocalReadings = async (opts: { limit?: number; only?: ReadingKind } = {}): Promise<LocalRun> => {
   const run: LocalRun = { read: 0, skipped: 0, failed: 0, stoppedByBudget: false };
   const cfg = await readingSettings();
+  if (!cfg.enabled) return { ...run, reason: "disabled" };
   const today = todayInAppTz();
   const used = (await getSetting("readings_day", "")) === today ? Number(await getSetting("readings_count", "0")) || 0 : 0;
   const left = Math.max(0, Math.min(opts.limit ?? cfg.maxPerDay, cfg.maxPerDay - used));

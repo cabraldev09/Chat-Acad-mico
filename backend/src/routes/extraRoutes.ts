@@ -364,10 +364,11 @@ r.get("/crm/triage", isAuth, Lead.triageList);
 // "Recuperação": the leads that stopped or gave up, with the reason (each one sees the ones it may see; see RecoveryController)
 r.get("/crm/recovery", isAuth, Recovery.index);
 r.post("/leads/:id/recovery", isAuth, canAccessLead, Recovery.act);
-// the readings of conversations (who reads them, the counts): only the administration
+// the readings of conversations (who reads them, the counts): the administration sees; only the administrator (not the coordination)
+// turns them on or off, chooses who reads and runs a round now
 r.get("/readings/settings", isAuth, isAdmin, Readings.settings);
-r.put("/readings/settings", isAuth, isAdmin, Readings.saveSettings);
-r.post("/readings/run", isAuth, isAdmin, Readings.runNow);
+r.put("/readings/settings", isAuth, isSystemAdmin, Readings.saveSettings);
+r.post("/readings/run", isAuth, isSystemAdmin, Readings.runNow);
 r.get("/analytics/outcomes", isAuth, isManager, Readings.outcomes);
 r.get("/crm/report", isAuth, crmReport);
 r.get("/me/preferences", isAuth, Preferences.show);

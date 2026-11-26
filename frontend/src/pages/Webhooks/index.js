@@ -21,6 +21,7 @@ import {
   Chip,
   FormControlLabel,
   MenuItem,
+  Switch,
 } from "@material-ui/core";
 import { DeleteOutline } from "@material-ui/icons";
 import PlayArrow from "@material-ui/icons/PlayArrow";
@@ -248,8 +249,13 @@ const ReadingsCard = () => {
       <Typography variant="h6">Leituras das conversas</Typography>
       <Typography variant="body2" color="textSecondary" style={{ margin: "4px 0 12px" }}>
         A leitura das conversas copiadas do WhatsApp, do resultado de cada venda e a revisão diária dos consultores. Com o OpenBot, ele pega as
-        conversas pela API (escopo "Fazer as leituras de conversas"), com nome, telefone, CPF e e-mail escondidos, e a IA do sistema lê só o que ficar esperando.
+        conversas pela API (escopo "Fazer as leituras de conversas"), com o texto pseudonimizado (nome, telefone, CPF, e-mail e números trocados por marcadores), e a IA do sistema lê só o que ficar esperando. A leitura nunca matricula ninguém: a matrícula encontrada vai para "Matrícula a confirmar", para uma pessoa confirmar.
       </Typography>
+      <FormControlLabel
+        control={<Switch color="primary" checked={cfg.enabled !== false} disabled={saving} onChange={(e) => { const on = e.target.checked; save({ enabled: on }); }} />}
+        label={cfg.enabled !== false ? "Leituras ligadas" : "Leituras desligadas: nenhuma conversa é lida"}
+        style={{ marginBottom: 8 }}
+      />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start" }}>
         <TextField select size="small" variant="outlined" label="Quem faz as leituras" value={cfg.provider} disabled={saving} onChange={(e) => save({ provider: e.target.value })} style={{ minWidth: 260 }}>
           <MenuItem value="sistema">IA do sistema (modelo mais barato)</MenuItem>

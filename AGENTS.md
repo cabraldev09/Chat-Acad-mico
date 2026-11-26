@@ -1,5 +1,7 @@
 # Como trabalhar neste repositório (equipe de agentes)
 
+Antes de começar um assunto novo, leia e comente a issue de coordenação #201 (OpenBot ↔ Claude Code): divisão do trabalho e regras de publicação.
+
 Este arquivo vale para todo agente que abrir o projeto. Leia até o fim antes da primeira mudança.
 
 ## O produto
@@ -66,7 +68,9 @@ Para um erro: reproduza antes de corrigir e mostre o mesmo teste passando depois
    `git merge -s ours FETCH_HEAD` antes do push.
 3. O CI precisa ficar verde: `verificar`, `telas` e os três `api-ponta-a-ponta`. Nunca pule, desligue ou apague um teste para
    passar. Um teste que falha de vez em quando tem uma causa: ache-a.
-4. Mescle por **squash**, passando o `expectedHeadSha` completo (`git rev-parse HEAD`).
+4. **Quem mescla:** só a coordenação (Maestro), depois do CI verde e da conferência do Auditor, um PR por vez; o agente que
+   escreve o código não mescla nem publica (issue #201). O merge é por **squash**, passando o `expectedHeadSha` completo
+   (`git rev-parse HEAD`).
 5. Depois do merge, o workflow "Atualizar a VPS" roda sozinho. Se o commit do `main` é o squash de um PR verde com exatamente
    o mesmo código (branch em dia com o `main`), ele publica logo após o merge; senão, quando as Verificações do `main` passam
    (`deploy/vps/check-ci.js`). Confira que terminou com sucesso e avise o usuário.
@@ -77,8 +81,9 @@ Para um erro: reproduza antes de corrigir e mostre o mesmo teste passando depois
 - **Nunca** peça nem escreva senhas, tokens ou chaves no chat, no código, em logs ou em commits. Use o formulário seguro da
   ferramenta ou as configurações do sistema.
 - Dados de alunos e leads (nome, CPF, telefone) só no que a tarefa exige. Nada disso vai para serviços externos, issues ou logs.
-  Única exceção, autorizada pelo dono em 26/11: a fila de leituras da API (`GET /api/v1/leituras`) entrega ao OpenBot o texto das
-  conversas **mascarado** (sem nome, CPF, telefone, e-mail ou números). Qualquer campo novo nessa saída passa pela mesma máscara e tem teste.
+  Única exceção, decisão do dono registrada pela coordenação em 26/11 (issue #201 e PR #205): a fila de leituras da API
+  (`GET /api/v1/leituras`) entrega ao OpenBot o texto das conversas **pseudonimizado** (nome, CPF, telefone, e-mail e números trocados por
+  marcadores). Qualquer campo novo nessa saída passa pela mesma pseudonimização e tem teste. A leitura **nunca matricula** ninguém.
 - Workflows imprimem apenas identificadores públicos.
 - Antes de qualquer ação que mexe em contas reais (enviar modelos para a Meta, mandar mensagem a leads, mexer no servidor,
   apagar dados), diga o que vai acontecer e espere o aval do usuário.
@@ -89,6 +94,23 @@ Para um erro: reproduza antes de corrigir e mostre o mesmo teste passando depois
 - Ao terminar, diga: o que mudou, o que foi testado (e com que resultado), e o que o usuário ainda precisa fazer.
 - Se algo falhou ou foi pulado, diga isso com clareza. Não afirme que funciona sem ter verificado.
 - Na dúvida entre duas opções, recomende uma e explique o motivo em uma frase.
+
+## Skills
+
+Em `.claude/skills/` (origem e licenças em `.claude/skills/ORIGEM.md`). Em conflito, vale este arquivo: as skills
+falam em "merge" e "PR" de forma genérica, mas aqui o PR só abre a pedido do usuário e o merge segue "Como entregar".
+
+| Skill | Use quando |
+|---|---|
+| `systematic-debugging` | Houver erro, teste falhando ou comportamento estranho: ache a causa antes de corrigir. |
+| `test-driven-development` | For implementar função ou corrigir erro: escreva o teste que falha primeiro. |
+| `verification-before-completion` | For dizer que está pronto, corrigido ou passando: rode os comandos e confira a saída antes. |
+| `requesting-code-review` | Terminar uma tarefa ou funcionalidade, antes de entregar: peça revisão do que mudou. O revisor é o Auditor ou o Maestro, não um subagente seu. |
+| `receiving-code-review` | Receber comentários de revisão: verifique cada um e responda com fundamento, sem concordar às cegas. |
+| `webapp-testing` | Precisar abrir a tela no navegador (Playwright) para testar, ver erros do console ou tirar captura. |
+| `frontend-design` | Criar ou refazer uma tela: escolha visual com intenção, respeitando as regras de "Telas" acima. |
+| `web-design-guidelines` | Revisar interface quanto a boas práticas e acessibilidade. |
+| `karpathy-guidelines` | Qualquer código: mudança pequena, simples e só no que foi pedido. |
 
 ## Papéis da equipe
 

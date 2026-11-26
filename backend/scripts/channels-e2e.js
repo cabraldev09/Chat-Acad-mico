@@ -8752,10 +8752,15 @@ const postMeta = (id, payload, secret, badSig) => {
       const a = leadOf(A.c);
       assert(a[0] === leadA && a[2] === "open" && a[7] === String(u.id), `Ana ${a}`);
       assert(!(await http.get("/crm/triage", asUser(uTok))).data.items.some(i => String(i.id) === leadA), "a lead read from the copy is still in Novos para conferir");
-      assert(Number(sql(`SELECT EXTRACT(EPOCH FROM (NOW() - createdAt)) FROM Leads WHERE id=${leadA}`)) > 5 * 86400, "the lead of an old conversation was counted as new this month");
+      // the reading never rewrites the dates the lead already has (the audit of #205): Ana keeps the day she was created
+      assert(Number(sql(`SELECT EXTRACT(EPOCH FROM (NOW() - createdAt)) FROM Leads WHERE id=${leadA}`)) < 86400, "the reading rewrote the createdAt of a lead");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadA} AND body LIKE 'Leitura do WhatsApp:%'`)) === 1, "the consultant has no summary");
+      // the reading NEVER enrolls: Bia wrote "meu RGM é 7654321" (anyone can write that) and goes to "Matrícula a confirmar", with the RGM only
+      // as a suggestion in the task; no RGM saved, no wonAt or enrolledAt, nothing in Matrículas
       const b = leadOf(B.c);
-      assert(b[2] === "won" && b[3] === "7654321" && b[4] === "1", `Bia ${b}`);
+      assert(b[1] === "Matrícula a confirmar" && b[2] === "open" && b[3] === "" && b[4] === "0", `Bia ${b}`);
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE id=${b[0]} AND (wonAt IS NOT NULL OR enrolledAt IS NOT NULL OR rgm IS NOT NULL)`) === "0", "the reading enrolled Bia");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${b[0]} AND automationKey='confirm-enroll-${b[0]}' AND title LIKE '%7654321%'`)) === 1, "the suggested RGM is not in the task");
       const c = leadOf(C.c);
       assert(c[1] === "Matrícula a confirmar" && c[4] === "0", `Caio ${c}`);
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${c[0]} AND automationKey='confirm-enroll-${c[0]}' AND userId=${u.id}`)) === 1, "no task to confirm the enrollment");
@@ -8784,6 +8789,20 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(leadOf(D.c)[2] === "open" && !(await http.get("/crm/recovery", asUser(uTok))).data.items.some(i => String(i.id) === d[0]), "the lead stayed in Recuperação");
       // OpenBot: with it reading, the system's AI leaves the new reading waiting; the token takes it masked and answers
       assert((await http.put("/readings/settings", { provider: "openbot", waitHours: 6 }, asUser(uTok))).status === 403, "a consultant changed who reads");
+      // only the administrator, not the coordination, turns the readings on or off and runs a round (the audit of #205)
+      await http.post("/users", { name: "Coordenação Leitura", email: "leitura.coord@x.com", password: "senha123", role: "coordenacao" }, auth());
+      const coordTok = (await http.post("/auth/login", { email: "leitura.coord@x.com", password: "senha123" })).data.token;
+      assert((await http.get("/readings/settings", asUser(coordTok))).status === 200, "the coordination should see the readings");
+      assert((await http.put("/readings/settings", { enabled: false }, asUser(coordTok))).status === 403, "the coordination turned the readings off");
+      assert((await http.post("/readings/run", {}, asUser(coordTok))).status === 403, "the coordination ran a round");
+      assert((await http.get("/readings/settings", auth())).data.enabled === true, "the readings should come on by default");
+      // off: nothing is read nor handed out, and "Ler agora" says why
+      assert((await http.put("/readings/settings", { enabled: false }, auth())).data.enabled === false, "the switch did not turn off");
+      const offBefore = anthropic.readings;
+      const offRun = await http.post("/readings/run", {}, auth());
+      assert(offRun.status === 409 && offRun.data.error === "ERR_READINGS_DISABLED", `run with the readings off ${offRun.status}`);
+      assert(anthropic.readings === offBefore, "something was read with the readings off");
+      assert((await http.put("/readings/settings", { enabled: true }, auth())).data.enabled === true, "the switch did not turn on");
       assert((await http.put("/readings/settings", { provider: "openbot", waitHours: 6 }, auth())).data.provider === "openbot", "provider not saved");
       const G = copied("Gabi Openbot Leitura", "5569955550007", [[false, "Oi, quero Pedagogia"], [true, "Te mando a grade"], [false, "Me manda a proposta"]]);
       const before = anthropic.readings;

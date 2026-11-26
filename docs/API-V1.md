@@ -118,7 +118,8 @@ As leituras são de três tipos:
 
 **Pegar:** `GET /api/v1/leituras?limite=10` (até 50) devolve `{"leituras": [{"id", "tipo", "instrucoes", "conversa", "reservadaAte"}]}`.
 - Cada leitura fica reservada para o token por 30 minutos.
-- `conversa` vem mascarada: nomes viram `[NOME]`; CPF, telefone, e-mail e qualquer número longo viram marcadores.
+- `conversa` vem pseudonimizada: nomes viram `[NOME]`; CPF, telefone, e-mail e qualquer número longo viram marcadores.
+- Com as leituras desligadas (Integrações), a lista vem vazia.
 - O texto não é guardado no sistema.
 
 **Responder:** `POST /api/v1/leituras/:id` com `{"resposta": {...}, "modelo": "nome do modelo"}`, onde a resposta é o JSON que `instrucoes` pede.
@@ -136,7 +137,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 ```
 
 A tela de Integrações mostra quantas leituras cada um fez e quantos tokens o OpenBot economizou: a média de tokens das leituras da IA do
-sistema vezes as leituras feitas pelo OpenBot. Mandar as conversas mascaradas ao OpenBot foi autorizado pelo dono em 26/11 (ver `AGENTS.md`).
+sistema vezes as leituras feitas pelo OpenBot. Mandar as conversas pseudonimizadas ao OpenBot é decisão do dono registrada pela coordenação em 26/11 (issue #201 e PR #205; ver `AGENTS.md`).
 
 ## Testes
 
