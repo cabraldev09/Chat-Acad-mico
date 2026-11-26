@@ -88,13 +88,21 @@ export interface WhatsappProvider {
   getGroupInfo?(
     sessionId: number,
     chatId: string
-  ): Promise<{ name: string; description: string; createdAt?: number; participants: { id: string; isAdmin: boolean }[] } | null>;
+  ): Promise<{ name: string; description: string; createdAt?: number; participants: { id: string; key?: string; isLid?: boolean; phone?: string; name?: string; isAdmin: boolean; isSuperAdmin?: boolean }[] } | null>;
+  // who received, read and listened to a message sent from this number (QR Code only)
+  getMessageInfo?(
+    sessionId: number,
+    chatId: string,
+    messageId: string
+  ): Promise<{ delivery: PersonSeen[]; read: PersonSeen[]; played: PersonSeen[]; deliveryRemaining: number; readRemaining: number; playedRemaining: number } | null>;
   fetchChatMessages(
     sessionId: number,
     chatId: string,
     limit: number
   ): Promise<ProviderMessage[]>;
 }
+
+export interface PersonSeen { id: string; key: string; isLid: boolean; phone: string; name: string; t: number }
 
 const provider = process.env.WHATSAPP_PROVIDER || "wwebjs";
 

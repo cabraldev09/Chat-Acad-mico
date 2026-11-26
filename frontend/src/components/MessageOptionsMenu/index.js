@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import { toast } from "react-toastify";
 import { reactNow } from "../../utils/optimisticReaction";
 import { makeStyles } from "@material-ui/core/styles";
@@ -9,6 +9,7 @@ import MenuItem from "@material-ui/core/MenuItem";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Typography } from "@material-ui/core";
 
 import api from "../../services/api";
+import { phoneText } from "../GroupInfo";
 import ForwardDialog from "../chat/ForwardDialog";
 import { ReplyMessageContext } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import toastError from "../../errors/toastError";
@@ -58,6 +59,49 @@ const useStyles = makeStyles((theme) => {
     icon: { minWidth: 34, color: c.textSecondary },
   };
 });
+
+// Who received, read and listened to a message sent from a number by QR Code, each with the time, as on the phone ("Dados da mensagem")
+const when = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
+const who = (p) => p.name || phoneText(p.number) || "Participante";
+export const SeenBy = ({ messageId }) => {
+  const [state, setState] = useState({ loading: true });
+  useEffect(() => {
+    let alive = true;
+    setState({ loading: true });
+    api.get(`/messages/${messageId}/info`)
+      .then((r) => alive && setState({ data: r.data }))
+      .catch(() => alive && setState({ error: true }));
+    return () => { alive = false; };
+  }, [messageId]);
+  if (state.loading) return <Typography variant="body2" style={{ marginTop: 12, opacity: 0.75 }}>Consultando o celular…</Typography>;
+  if (state.error) return <Typography variant="body2" style={{ marginTop: 12 }}>Não foi possível consultar o celular agora.</Typography>;
+  const d = state.data;
+  if (!d.available) {
+    return d.reason === "channel"
+      ? <Typography variant="body2" style={{ marginTop: 12, opacity: 0.75 }}>Quem leu cada mensagem só aparece em números conectados por QR Code.</Typography>
+      : d.reason === "phone" ? <Typography variant="body2" style={{ marginTop: 12, opacity: 0.75 }}>O celular não informou quem recebeu esta mensagem (ela pode ser antiga demais ou o número estar desconectado).</Typography> : null;
+  }
+  const section = (title, list, remaining, empty) => (
+    <div style={{ marginTop: 14 }}>
+      <Typography variant="subtitle2">{title}{list.length ? ` (${list.length})` : ""}</Typography>
+      {list.length === 0 && <Typography variant="body2" style={{ opacity: 0.7 }}>{empty}</Typography>}
+      {list.map((p) => (
+        <div key={`${title}-${p.id}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "4px 0", fontSize: 14 }}>
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{who(p)}</span>
+          <span style={{ flex: "none", opacity: 0.7, fontSize: 12.5 }}>{when(p.at)}</span>
+        </div>
+      ))}
+      {remaining > 0 && <Typography variant="body2" style={{ opacity: 0.7 }}>Faltam {remaining}</Typography>}
+    </div>
+  );
+  return (
+    <div>
+      {section("Lida por", d.read, d.readRemaining, "Ninguém leu ainda.")}
+      {d.played.length > 0 && section("Ouvida por", d.played, d.playedRemaining, "")}
+      {section("Entregue a", d.delivery, d.deliveryRemaining, d.read.length ? "Todos que receberam já leram." : "Ainda não foi entregue.")}
+    </div>
+  );
+};
 
 const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId, channel = "whatsapp", onSelect }) => {
   // WhatsApp (QR Code and the official API) accepts any emoji: the six most used and "+" for all of them
@@ -154,6 +198,7 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
           <Typography variant="body2">{message.fromMe ? "Enviada" : "Recebida"} em {new Date(message.createdAt).toLocaleString("pt-BR")}</Typography>
           {message.fromMe && <Typography variant="body2" style={{ marginTop: 12 }}>{Number(message.ack) >= 3 ? "Lida" : Number(message.ack) >= 2 ? "Entregue" : Number(message.ack) >= 1 ? "Enviada" : "Aguardando confirmação"}</Typography>}
           {message.isEdited && <Typography variant="body2" style={{ marginTop: 12 }}>Mensagem editada</Typography>}
+          {infoOpen && message.fromMe && <SeenBy messageId={message.id} />}
         </DialogContent>
         <DialogActions><Button onClick={() => setInfoOpen(false)}>Fechar</Button></DialogActions>
       </Dialog>

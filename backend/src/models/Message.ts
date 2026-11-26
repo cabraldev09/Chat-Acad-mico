@@ -75,6 +75,11 @@ class Message extends Model<Message> {
   @Column
   isGif: boolean;
 
+  // forwarded on WhatsApp ("Encaminhada", as on the phone)
+  @Default(false)
+  @Column
+  isForwarded: boolean;
+
   @Default(false)
   @Column
   starred: boolean;

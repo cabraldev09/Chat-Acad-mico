@@ -256,6 +256,7 @@ Até lá, não crie usuários de coordenação nem de relacionamento para franqu
 - POST /messages/:messageId/media → canWriteMessage
 - POST /messages/:messageId/react → canWriteMessage
 - POST /messages/:messageId/forward → canWriteMessage
+- GET /messages/:messageId/info → canReadMessage (quem recebeu, leu e ouviu uma mensagem enviada por número QR)
 - POST /tickets/:ticketId/phone → canSendTicket, phoneLimiter
 - PUT /tickets/:ticketId/copilot/progress → canWriteTicket
 - POST /tickets/:ticketId/suggest-reply → canSendTicket
