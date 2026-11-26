@@ -8693,6 +8693,24 @@ const postMeta = (id, payload, secret, badSig) => {
       const caps = await http.post("/auth/login", { email: "ADMIN@Whaticket.com", password: "admin" });
       assert(caps.status === 200, `login with capitals ${caps.status}`);
     });
+    // The renewal also has a limit on REFUSED calls (no cookie or a bad one), apart from the general one: 30 in 15 minutes for each address; the
+    // renewals that work are not what fills it (ESP-008 audit, #218). Its own network address (X-Forwarded-For is trusted in this suite), so the
+    // other tests that renew from this machine are not blocked by it, in whatever order they run.
+    await test("refresh_token: refused calls are limited early (429) and the renewals that work are not counted", async () => {
+      const origin = "http://localhost:3000";
+      const own = { Origin: origin, "X-Forwarded-For": "198.51.100.201" };
+      const login = await http.post("/auth/login", { email: "admin@whaticket.com", password: "admin" });
+      const cookie = (login.headers["set-cookie"] || []).map(c => c.split(";")[0]).join("; ");
+      assert(/jrt=/.test(cookie), "no refresh cookie at the login");
+      for (let i = 0; i < 40; i += 1) assert((await http.post("/auth/refresh_token", {}, { headers: { ...own, Cookie: cookie } })).status === 200, `renewal ${i} with the cookie was refused: the working ones must not be counted`);
+      let refused = 0, limited = null;
+      for (let i = 0; i < 40 && !limited; i += 1) {
+        const r = await http.post("/auth/refresh_token", {}, { headers: own });
+        if (r.status === 429) limited = r; else if (r.status === 401) refused += 1;
+      }
+      assert(limited && refused >= 25 && refused <= 31, `refused calls before the 429: ${refused}`);
+      assert(limited.headers["retry-after"] && limited.headers["access-control-allow-origin"] === origin && limited.data.error === "ERR_TOO_MANY_REQUESTS", `the 429: ${JSON.stringify(limited.headers)} ${JSON.stringify(limited.data)}`);
+    });
     await test("refresh rate limit keeps CORS headers on 429", async () => {
       const origin = "http://localhost:3000";
       let limited;
