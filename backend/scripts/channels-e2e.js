@@ -2057,6 +2057,39 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT viewedAt IS NOT NULL FROM Proposals WHERE id=${made.data.id}`) === "1", "the view was not noted");
     });
 
+    await test("avulsa: CPF and phone are optional, it is found again by name, CPF or phone, and its author deletes it (even after the link went out)", async () => {
+      const tok = (await http.post("/auth/login", { email: "avulsa@polo.test", password: "senha123" })).data.token;
+      const otherTok = (await http.post("/auth/login", { email: "avulsa2@polo.test", password: "senha123" })).data.token;
+      const d = (await http.get("/proposals/defaults", { params: { recipientName: "Bia Contato", courseId: propCourse.id }, ...asUser(tok) })).data;
+      const due = new Date(Date.now() + 15 * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      const params = { ...d.params, admissionType: "ENEM", firstDueDate: due };
+      // a wrong CPF or a phone without DDD is refused; nothing is saved
+      assert((await http.post("/proposals", { recipientName: "Bia Contato", recipientCpf: "123.456.789-00", courseId: propCourse.id, params }, asUser(tok))).data.error === "ERR_CPF_INVALID", "a wrong CPF was accepted");
+      assert((await http.post("/proposals", { recipientName: "Bia Contato", recipientPhone: "9999-1234", courseId: propCourse.id, params }, asUser(tok))).data.error === "ERR_PROPOSAL_RECIPIENT_PHONE", "a phone without DDD was accepted");
+      const made = await http.post("/proposals", { recipientName: "Bia Contato", recipientCpf: "529.982.247-25", recipientPhone: "(69) 99911-2233", courseId: propCourse.id, params }, asUser(tok));
+      assert(made.status === 201 && made.data.recipientCpf === "52998224725" && made.data.recipientPhone === "69999112233", `contact not kept ${JSON.stringify([made.data.recipientCpf, made.data.recipientPhone])}`);
+      // without contact, as before
+      const plain = await http.post("/proposals", { recipientName: "Sem Contato Ninguem", courseId: propCourse.id, params }, asUser(tok));
+      assert(plain.status === 201 && !plain.data.recipientCpf && !plain.data.recipientPhone, "a proposal without contact got one");
+      // found again by a piece of the name, by the CPF (any piece, with or without dots) and by the phone; the list never shows the whole CPF
+      const find = async (q, t = tok) => (await http.get("/proposals", { params: { standalone: 1, q }, ...asUser(t) })).data;
+      const byName = await find("bia cont");
+      assert(byName.some(p => p.id === made.data.id) && !byName.some(p => p.id === plain.data.id), "search by name");
+      const byCpf = await find("529.982");
+      assert(byCpf.length && byCpf.every(p => p.id !== plain.data.id) && byCpf.some(p => p.id === made.data.id), "search by CPF");
+      const row = byCpf.find(p => p.id === made.data.id);
+      assert(row.recipientCpf === undefined && row.recipientCpfMasked === "***.***.247-25", `the list shows the CPF: ${JSON.stringify([row.recipientCpf, row.recipientCpfMasked])}`);
+      assert((await find("99911")).some(p => p.id === made.data.id), "search by phone");
+      assert(!(await find("bia cont", otherTok)).some(p => p.id === made.data.id), "another consultant found it");
+      // the link went out: the author still deletes it (an avulsa has no lead history); another consultant cannot
+      const shared = (await http.post(`/proposals/${made.data.id}/send`, { share: true }, asUser(tok))).data;
+      assert((await http.delete(`/proposals/${made.data.id}`, asUser(otherTok))).status === 403, "another consultant deleted the avulsa");
+      assert((await http.delete(`/proposals/${made.data.id}`, asUser(tok))).status === 200, "the author could not delete the avulsa");
+      assert(sql(`SELECT COUNT(*) FROM Proposals WHERE id=${made.data.id}`) === "0", "the avulsa is still there");
+      assert((await http.get(`/p/${shared.link.split("/p/")[1]}`)).status === 404, "the link of a deleted avulsa still opens");
+      await http.delete(`/proposals/${plain.data.id}`, asUser(tok));
+    });
+
     // ------------------------------------------- admission, CPF and payments
     console.log("\nadmission & enrollment payments");
     const VALID_CPF = "529.982.247-25";

@@ -1,6 +1,8 @@
 # Servidor da API na Hostinger (no lugar da Contabo)
 
 O site continua na Vercel e o banco no Supabase. A VPS só roda a API: webhooks da Meta e do Resend, tempo real e rotinas.
+
+A Vercel publica só o `main` (`frontend/vercel.json`, `git.deploymentEnabled`). Branches de PR não geram prévia, porque o plano gratuito aceita 100 publicações por dia e as prévias esgotavam o limite, travando a publicação do `main`. A tela de cada PR é conferida pelo teste `telas` do CI.
 Trocar de servidor não apaga conversas nem leads, porque eles ficam no banco. Ficam para trás os arquivos enviados nas
 conversas (fotos e documentos guardados na VPS antiga) e as sessões de WhatsApp por QR.
 

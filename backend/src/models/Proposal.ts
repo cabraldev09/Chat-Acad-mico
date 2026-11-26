@@ -69,6 +69,13 @@ class Proposal extends Model<Proposal> {
   @Column
   recipientName: string;
 
+  // optional, only for an "avulsa": the CPF (digits) and the phone (digits) of the person, to find it again and to know who to contact
+  @Column
+  recipientCpf: string;
+
+  @Column
+  recipientPhone: string;
+
   @BelongsTo(() => Lead)
   lead: Lead;
 
