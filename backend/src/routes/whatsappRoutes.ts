@@ -1,5 +1,6 @@
 import express from "express";
 import isAuth from "../middleware/isAuth";
+import isAdmin from "../middleware/isAdmin";
 import canManageWhatsapp from "../middleware/canManageWhatsapp";
 import isManager from "../middleware/isManager";
 import canConnectOwnQr from "../middleware/canConnectOwnQr";
@@ -33,5 +34,7 @@ whatsappRoutes.delete(
 
 // copies the conversations that already exist on the phone, as history
 whatsappRoutes.post("/whatsapp/:whatsappId/import-history", isAuth, canManageWhatsapp, ImportController.history);
+// erasing what was copied from a phone: only the administration
+whatsappRoutes.delete("/whatsapp/:whatsappId/copied-history", isAuth, isAdmin, ImportController.eraseCopied);
 
 export default whatsappRoutes;

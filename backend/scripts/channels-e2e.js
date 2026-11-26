@@ -3972,6 +3972,73 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/whatsapp", { name: "x" }, asUser(tc))).status === 403, "a consultant used the management's route");
       for (const id of [mine.data.id, tutors.data.id]) await http.delete(`/whatsapp/${id}`, auth());
     });
+    await test("the copy of a phone is silent: no 'Novo contato' trigger runs on a copied contact or conversation (a real trigger, a real fire), the switch stops the copy, and the administrator erases what was copied", async () => {
+      const owner = (await http.post("/users", { name: "Dona Silenciosa", email: "silenciosa@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const oTok = (await http.post("/auth/login", { email: "silenciosa@x.com", password: "senha123" })).data.token;
+      const qr = (await http.post("/whatsapp", { name: "WhatsApp Silencioso", channel: "whatsapp", ownerId: owner.id }, auth())).data;
+      // a published flow on "Novo contato": the danger is it talking to an old contact of the phone
+      const flow = (await http.post("/flows", { name: "Boas-vindas ao contato novo", entry: { type: "manual" }, graph: { nodes: [
+        { id: "s", type: "start", data: {} }, { id: "m", type: "message", data: { text: "Bem-vindo, {{primeiro_nome}}!" } }, { id: "e", type: "end", data: {} }],
+        edges: [{ id: "1", source: "s", target: "m" }, { id: "2", source: "m", target: "e" }] } }, auth())).data;
+      assert((await http.post(`/flows/${flow.id}/publish`, {}, auth())).status === 200, "publish");
+      const trig = (await http.post("/automation-triggers", { name: "Novo contato", event: "contact.created", flowId: flow.id }, auth())).data;
+      const runs = () => Number(sql(`SELECT runCount FROM AutomationTriggers WHERE id=${trig.id}`));
+      const script = `
+        const http = require("http");
+        require("./dist/database");
+        const { initIO } = require("./dist/libs/socket");
+        initIO(http.createServer());
+        const { whatsappProvider } = require("./dist/providers/WhatsApp");
+        const { importHistory } = require("./dist/services/WbotServices/ImportHistoryService");
+        const { fire } = require("./dist/helpers/Fire");
+        const Whatsapp = require("./dist/models/Whatsapp").default;
+        const Contact = require("./dist/models/Contact").default;
+        const Ticket = require("./dist/models/Ticket").default;
+        const now = Math.floor(Date.now() / 1000);
+        // the phone: a person who talked yesterday (recent: the conversation comes open) and a group with an author never seen
+        whatsappProvider.importChats = async (_id, _opts, onChat) => {
+          await onChat({ isGroup: false, chatId: "5511933330101@c.us", timestamp: now - 86400, unreadCount: 1, pinned: false, archived: false, name: "Amiga Antiga",
+            contact: { name: "Amiga Antiga", number: "5511933330101", isGroup: false },
+            messages: [{ id: "silent-1", body: "oi, tudo bem?", fromMe: false, timestamp: now - 86400, ack: 0 }] });
+          await onChat({ isGroup: true, chatId: "120363000000000777@g.us", timestamp: now - 3600, unreadCount: 0, pinned: false, archived: false, name: "Grupo da Família",
+            contact: { name: "Grupo da Família", number: "120363000000000777", isGroup: true },
+            messages: [{ id: "silent-2", body: "bom dia", fromMe: false, timestamp: now - 3600, ack: 0, author: { name: "Primo Novo", number: "5511933330102" } }] });
+        };
+        (async () => {
+          const conn = await Whatsapp.findByPk(${qr.id});
+          const report = await importHistory(conn, {});
+          // the guard of the triggers too: even a "Novo contato" fired for the copied person does not run on the copied conversation
+          const copied = await Contact.findOne({ where: { number: "5511933330101" } });
+          fire("contact.created", { contactId: copied.id });
+          // the control: a person who wrote now (a live conversation) does get the flow
+          const live = await Contact.create({ name: "Pessoa Nova Agora", number: "5511933330103", isGroup: false });
+          await Ticket.create({ contactId: live.id, whatsappId: ${cid}, status: "pending", isGroup: false, isHistorical: false, unreadMessages: 1 });
+          fire("contact.created", { contactId: live.id });
+          await new Promise(r => setTimeout(r, 4000));
+          console.log(JSON.stringify({ chats: report.chats, copied: copied.id, live: live.id }));
+          process.exit(0);
+        })().catch(e => { console.error(e); process.exit(1); });`;
+      const out = JSON.parse(execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim().split("\n").pop());
+      assert(out.chats === 2, `copy ${JSON.stringify(out)}`);
+      assert(runs() === 1, `the trigger ran ${runs()} times (expected only the live person)`);
+      const copiedTicket = sql(`SELECT CONCAT(status,'|',CASE WHEN isHistorical THEN 1 ELSE 0 END) FROM Tickets WHERE contactId=${out.copied}`);
+      assert(copiedTicket === "open|1", `the copied conversation ${copiedTicket}`);
+      assert(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId IN (SELECT id FROM Tickets WHERE contactId=${out.copied}) AND fromMe=true`) === "0", "a message went to a contact of the phone");
+      // the switch: off, no copy (the button answers that it is off)
+      sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${qr.id}`);
+      assert((await http.put("/settings/whatsapp_copy_enabled", { value: "false" }, auth())).status === 200, "switch off");
+      const off = await http.post(`/whatsapp/${qr.id}/import-history`, {}, asUser(oTok));
+      assert(off.status === 409 && off.data.error === "ERR_HISTORY_COPY_OFF", `copy with the switch off ${off.status} ${JSON.stringify(off.data)}`);
+      await http.put("/settings/whatsapp_copy_enabled", { value: "true" }, auth());
+      // erasing what was copied: only the administrator; the copied conversations and their messages leave, the number is not copied again by itself
+      assert((await http.delete(`/whatsapp/${qr.id}/copied-history`, asUser(oTok))).status === 403, "the owner erased the copy");
+      const erased = await http.delete(`/whatsapp/${qr.id}/copied-history`, auth());
+      assert(erased.status === 200 && erased.data.conversations === 2, `erase ${erased.status} ${JSON.stringify(erased.data)}`);
+      assert(sql(`SELECT COUNT(*) FROM Tickets WHERE whatsappId=${qr.id} AND isHistorical=true`) === "0", "copied conversations stayed");
+      assert(sql(`SELECT CASE WHEN historyImportedAt IS NULL THEN 0 ELSE 1 END FROM Whatsapps WHERE id=${qr.id}`) === "1", "the number would be copied again by itself");
+      await http.put(`/automation-triggers/${trig.id}`, { active: false }, auth());
+      sql(`UPDATE Whatsapps SET status='DISCONNECTED' WHERE id=${qr.id}`);
+    });
     await test("chats copied from the phone of a person's own QR number: the recent ones in Atendendo with the owner, in nobody else's list", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
       const u1 = await mk("Copia Uma", "copia1@x.com"), u2 = await mk("Copia Dois", "copia2@x.com");
