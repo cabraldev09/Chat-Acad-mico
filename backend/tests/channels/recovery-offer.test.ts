@@ -42,5 +42,7 @@ describe("campanha de recuperação: a oferta do gestor", () => {
     const text = offerIntro(v);
     expect(text).toMatch(/^Que bom falar com você de novo!.*R\$ 250,00.*isenta.*15\/12\/2026/);
     expect(unsafeAnswer(text, "", offerTokens(v)).unsafe).toBe(false);
+    // "isento" fora da frase da oferta continua bloqueado
+    expect(unsafeAnswer("O curso é isento de mensalidade.", "", offerTokens(v)).unsafe).toBe(true);
   });
 });
