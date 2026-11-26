@@ -277,6 +277,9 @@ const TicketListItem = ({ ticket }) => {
   return (
     <div
       role="button"
+      // the row is 72 px by its own style: the touch rule of ui.css (every role="button" at least 40 px, and it wins on specificity) used to
+      // squeeze it to the height of the picture on phones, and the pictures ran into each other
+      data-compact
       tabIndex={0}
       data-ticket-id={ticket.id}
       className={clsx(classes.row, selected && classes.selected, ticket.status === "closed" && classes.closed)}

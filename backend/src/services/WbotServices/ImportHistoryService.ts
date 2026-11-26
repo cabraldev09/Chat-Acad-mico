@@ -14,7 +14,24 @@ export interface HistoryReport {
   chats: number;
   newConversations: number;
   messages: number;
+  // what the phone had, so the screen can say whether everything came: every chat of the phone (status and channels included), the ones
+  // the copy looks at, the chats of people with no message (left out on purpose) and the ones that failed
+  phoneTotal?: number;
+  considered?: number;
+  empty?: number;
+  failed?: number;
+  finishedAt?: string;
 }
+
+// "Trazidas 312 de 312 conversas do celular" / "300 de 312: 10 sem mensagem, 2 com erro"
+export const reportText = (r: HistoryReport): string => {
+  if (r.considered === undefined) return `${r.chats} conversas copiadas`;
+  const parts = [r.empty ? `${r.empty} sem mensagem` : "", r.failed ? `${r.failed} com erro` : ""].filter(Boolean);
+  const all = r.chats >= r.considered;
+  return all
+    ? `Trazidas ${r.chats} de ${r.considered} conversas do celular`
+    : `Trazidas ${r.chats} de ${r.considered} conversas do celular: ${parts.join(", ") || "as outras não vieram"}`;
+};
 
 const running = new Set<number>();
 const MEDIA_KIND: Record<string, string> = {
@@ -72,7 +89,7 @@ export const importHistory = async (
     : (await User.findAll({ where: { profile: "admin" }, attributes: ["id"] })).map(u => u.id);
   const people = new Map<string, number>();
   try {
-    await whatsappProvider.importChats(
+    const summary = await whatsappProvider.importChats(
       connection.id,
       {
         // one chat asked by name may go further back (scrolling to its start); the copy of the whole number stays light
@@ -197,8 +214,10 @@ export const importHistory = async (
       },
       onProgress
     );
-    // a copy of some chats only (a contact opened by hand) does not mark the number as copied
-    if (!options.onlyChatIds) await connection.update({ historyImportedAt: new Date() });
+    if (summary) Object.assign(report, { phoneTotal: summary.phoneTotal, considered: summary.considered, empty: summary.empty, failed: summary.failed });
+    report.finishedAt = new Date().toISOString();
+    // a copy of some chats only (a contact opened by hand) does not mark the number as copied, nor replaces the report of the whole copy
+    if (!options.onlyChatIds) await connection.update({ historyImportedAt: new Date(), historyReport: JSON.stringify(report) } as any);
     return report;
   } catch (err) {
     logger.error({ info: "History import failed", err: String(err) });
@@ -219,7 +238,7 @@ export const startHistoryImport = (
   io.emit("historyImport", { ...base, finished: false, done: 0, total: 0 });
   return importHistory(connection, options, (done, total) => io.emit("historyImport", { ...base, finished: false, done, total }))
     .then(report => {
-      io.emit("historyImport", { ...base, finished: true, ok: true, ...report });
+      io.emit("historyImport", { ...base, finished: true, ok: true, ...report, text: reportText(report) });
       // the conversations copied are read next (who is a lead, who enrolled, who stopped and why), silently
       if (report.chats > 0) import("../../workers/ConversationReading").then(m => m.readAfterCopy(connection.id)).catch(() => undefined);
       return report;

@@ -649,6 +649,8 @@ const messages = {
         ERR_PROPOSAL_FIRST_PAYMENT: "A 1ª mensalidade não pode ser negativa nem passar da mensalidade bruta. Para não cobrar, marque Isenta.",
         ERR_PROPOSAL_TEMPLATE_DEFAULT_ACTIVE: "O modelo padrão não pode ser desativado. Escolha outro modelo como padrão antes.",
         ERR_PROPOSAL_ALREADY_SENT: "Esta proposta já foi enviada. Duplique-a para fazer alterações.",
+        ERR_PROPOSAL_RECIPIENT: "Informe o nome de quem vai receber a proposta.",
+        ERR_PROPOSAL_NEEDS_CONVERSATION: "Esta proposta avulsa não tem lead: abra-a numa conversa para enviar, ou use Gerar link.",
         ERR_PROPOSAL_SEND_FAILED: "Não foi possível enviar a proposta. Confira se a conexão do atendimento está ativa.",
         ERR_PROPOSAL_NEEDS_ADMISSION: "Escolha a forma de ingresso antes de gerar a proposta.",
         ERR_PROPOSAL_NEEDS_COURSE: "Escolha o curso antes de gerar a proposta.",

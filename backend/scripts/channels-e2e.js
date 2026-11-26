@@ -2024,6 +2024,38 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put("/crm/settings", { entryCalendar: [] }, auth());
     });
 
+    await test("a proposal without a lead (avulsa): only the name, nothing in the CRM, of who made it, closed as a link or sent in a conversation", async () => {
+      const due = new Date(Date.now() + 15 * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      assert((await http.get("/proposals/defaults", { params: { courseId: propCourse.id }, ...auth() })).data.error === "ERR_PROPOSAL_RECIPIENT", "a proposal without a lead and without a name");
+      const d = (await http.get("/proposals/defaults", { params: { recipientName: "  Amiga   da Equipe ", courseId: propCourse.id }, ...auth() })).data;
+      const params = { ...d.params, admissionType: "ENEM", firstDueDate: due };
+      const pv = (await http.post("/proposals/preview", { recipientName: "Amiga da Equipe", courseId: propCourse.id, params }, auth())).data;
+      assert(pv.html.includes("Amiga da Equipe") && pv.missing === null, `preview ${pv.missing}`);
+      const leadsBefore = sql(`SELECT COUNT(*) FROM Leads`);
+      const cons = (await http.post("/users", { name: "Consultora Avulsa", email: "avulsa@polo.test", password: "senha123", role: "consultor" }, auth())).data;
+      const tok = (await http.post("/auth/login", { email: "avulsa@polo.test", password: "senha123" })).data.token;
+      const made = await http.post("/proposals", { recipientName: "Amiga da Equipe", courseId: propCourse.id, params }, asUser(tok));
+      assert(made.status === 201 && made.data.leadId === null && made.data.recipientName === "Amiga da Equipe", `avulsa ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      assert(sql(`SELECT COUNT(*) FROM Leads`) === leadsBefore, "an avulsa made a lead");
+      // of who made it (and of the management): another consultant neither sees nor opens it
+      const other = (await http.post("/users", { name: "Outro Consultor Avulsa", email: "avulsa2@polo.test", password: "senha123", role: "consultor" }, auth())).data;
+      const otherTok = (await http.post("/auth/login", { email: "avulsa2@polo.test", password: "senha123" })).data.token;
+      assert(!(await http.get("/proposals", { params: { standalone: 1 }, ...asUser(otherTok) })).data.some(p => p.id === made.data.id), "another consultant lists the avulsa");
+      assert((await http.get(`/proposals/${made.data.id}`, asUser(otherTok))).status === 403, "another consultant opened the avulsa");
+      assert((await http.get("/proposals", { params: { standalone: 1 }, ...asUser(tok) })).data.some(p => p.id === made.data.id), "the author does not see the avulsa");
+      assert((await http.get("/proposals", { params: { standalone: 1 }, ...auth() })).data.some(p => p.id === made.data.id), "the management does not see the avulsa");
+      // without a conversation it cannot be "sent": it is closed as a link for whoever will send it
+      const noChat = await http.post(`/proposals/${made.data.id}/send`, {}, asUser(tok));
+      assert(noChat.status === 400 && noChat.data.error === "ERR_PROPOSAL_NEEDS_CONVERSATION", `sent with no conversation ${noChat.status}`);
+      const shared = await http.post(`/proposals/${made.data.id}/send`, { share: true }, asUser(tok));
+      assert(shared.status === 200 && shared.data.status === "sent" && /\/p\/[0-9a-f]+$/.test(shared.data.link), `share ${shared.status} ${JSON.stringify(shared.data).slice(0, 160)}`);
+      const page = await http.get(`/p/${shared.data.link.split("/p/")[1]}`);
+      assert(page.status === 200 && String(page.data).includes("Amiga da Equipe"), `public page ${page.status}`);
+      const file = await http.get(`/proposals/${made.data.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" });
+      assert(file.status === 200 && /Proposta%20-%20Amiga%20da%20Equipe\.pdf/.test(String(file.headers["content-disposition"])), `pdf ${file.status} ${file.headers["content-disposition"]}`);
+      assert(sql(`SELECT viewedAt IS NOT NULL FROM Proposals WHERE id=${made.data.id}`) === "1", "the view was not noted");
+    });
+
     // ------------------------------------------- admission, CPF and payments
     console.log("\nadmission & enrollment payments");
     const VALID_CPF = "529.982.247-25";
@@ -3977,11 +4009,28 @@ const postMeta = (id, payload, secret, badSig) => {
       const t = sql(`SELECT t.id FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number='tg_5551' AND t.isHistorical=false ORDER BY t.id DESC LIMIT 1`);
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, mediaUrl, ack, starred, createdAt, updatedAt) VALUES
         ('dr-img-1', ${t}, 'foto da prova', false, true, 'image', 'dr-img-1.jpg', 0, false, NOW(), NOW()),
+        ('dr-stk-1', ${t}, '', false, true, 'image', 'sticker-1700000000.webp', 0, false, NOW(), NOW()),
         ('dr-doc-1', ${t}, 'edital.pdf', false, true, 'document', 'dr-doc-1.pdf', 0, false, NOW(), NOW()),
         ('dr-link-1', ${t}, 'veja https://cruzeirodosulvirtual.com.br/cursos, e depois me chame', true, true, 'chat', NULL, 1, false, NOW(), NOW()),
         ('dr-star-1', ${t}, 'lembrar xyzzycode', true, true, 'chat', NULL, 1, true, NOW(), NOW())`);
       const kind = async k => (await http.get(`/messages/${t}/list`, { params: { kind: k }, ...auth() })).data;
-      assert((await kind("media")).some(m => m.id === "dr-img-1"), "media tab");
+      const media = await kind("media");
+      assert(media.some(m => m.id === "dr-img-1"), "media tab");
+      // a sticker (kept as a .webp image) is not media of the conversation, as in WhatsApp
+      assert(!media.some(m => m.id === "dr-stk-1"), "a sticker is in the media tab");
+      // the stickers of the number: the ones received or sent, the same sticker only once (two files with the same bytes)
+      {
+        const { PUBLIC_DIR } = require("../dist/config/paths");
+        fs.writeFileSync(path.join(PUBLIC_DIR, "sticker-1700000000.webp"), "RIFF-sticker-a");
+        fs.writeFileSync(path.join(PUBLIC_DIR, "sticker-1700000001.webp"), "RIFF-sticker-a");
+        fs.writeFileSync(path.join(PUBLIC_DIR, "sticker-1700000002.webp"), "RIFF-sticker-b");
+        sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, mediaUrl, ack, starred, createdAt, updatedAt) VALUES
+          ('dr-stk-2', ${t}, '', true, true, 'image', 'sticker-1700000001.webp', 1, false, NOW(), NOW()),
+          ('dr-stk-3', ${t}, '', false, true, 'image', 'sticker-1700000002.webp', 0, false, NOW(), NOW())`);
+        const stickers = (await http.get(`/messages/${t}/stickers`, auth())).data;
+        assert(stickers.length === 2 && stickers.every(x => /\/public\/sticker-17000000\d{2}\.webp\?access=/.test(x.url)), `stickers of the number ${JSON.stringify(stickers)}`);
+        assert((await http.post(`/messages/${t}/sticker`, { messageId: "dr-img-1" }, auth())).status === 404, "a photo was sent as a sticker");
+      }
       assert((await kind("docs")).some(m => m.id === "dr-doc-1"), "docs tab");
       const links = await kind("links");
       assert(links.length === 1 && links[0].url === "https://cruzeirodosulvirtual.com.br/cursos", `links tab ${JSON.stringify(links)}`);

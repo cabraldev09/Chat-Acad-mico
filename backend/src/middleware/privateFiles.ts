@@ -7,7 +7,7 @@ import Message from "../models/Message";
 export default async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const filename = decodeURIComponent(req.path.replace(/^\//, ""));
-    publicFile(filename);
+    publicFile(filename, true, { allowAvatar: true });
     const claims = verifyFileToken(String(req.query.access || ""), filename);
     if (await getSetting(`file_revoked_${filename}`, "false") === "true") throw new Error("Revoked file");
     if (claims.messageId) {

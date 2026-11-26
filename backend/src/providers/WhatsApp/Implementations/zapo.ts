@@ -944,10 +944,11 @@ const sendMedia = async (
   const isVoice = mediaType === "audio" && !!options?.sendAudioAsVoice;
 
   const content = {
-    type: mediaType,
+    type: options?.sendMediaAsSticker && media.mimetype.startsWith("image/") ? "sticker" : mediaType,
+    ...(options?.sendVideoAsGif && mediaType === "video" ? { gifPlayback: true } : {}),
     media: mediaBuffer,
     mimetype: media.mimetype,
-    ...(options?.caption ? { caption: options.caption } : {}),
+    ...(options?.caption && !options?.sendMediaAsSticker ? { caption: options.caption } : {}),
     ...(mediaType === "document" ? { fileName: media.displayName || media.filename } : {}),
     ...(isVoice ? { ptt: true } : {})
   } as WaSendMediaMessage;

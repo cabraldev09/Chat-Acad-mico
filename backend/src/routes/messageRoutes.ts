@@ -20,6 +20,9 @@ messageRoutes.get("/messages/:ticketId", isAuth, canReadTicket, MessageControlle
 messageRoutes.post("/messages/:ticketId/contact", isAuth, canSendTicket, MessageController.sendContact);
 messageRoutes.post("/messages/:ticketId/poll", isAuth, canSendTicket, MessageController.sendPoll);
 messageRoutes.get("/messages/:ticketId/list", isAuth, canReadTicket, MessageController.listByKind);
+// the stickers of the number of the conversation (already received or sent), and sending one of them as a sticker
+messageRoutes.get("/messages/:ticketId/stickers", isAuth, canReadTicket, MessageController.stickers);
+messageRoutes.post("/messages/:ticketId/sticker", isAuth, canSendTicket, MessageController.sendSticker);
 
 messageRoutes.post(
   "/messages/:ticketId",

@@ -1,6 +1,6 @@
-# Rotas da API (615)
+# Rotas da API (617)
 
-Públicas: 40 · logado (qualquer perfil): 333 · gestão: 184 · admin: 47
+Públicas: 40 · logado (qualquer perfil): 335 · gestão: 184 · admin: 47
 
 ## Quem vê quais leads no CRM (middleware/scope.ts)
 
@@ -249,6 +249,7 @@ Até lá, não crie usuários de coordenação nem de relacionamento para franqu
 - POST /payments/:id/send → canAccessPayment
 - POST /messages/:ticketId/contact → canSendTicket
 - POST /messages/:ticketId/poll → canSendTicket
+- POST /messages/:ticketId/sticker → canSendTicket
 - POST /messages/:ticketId → canSendTicket
 - DELETE /messages/:messageId → canWriteMessage
 - PUT /messages/:messageId → canWriteMessage
