@@ -560,6 +560,34 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       await new Promise(res => setTimeout(res, 800));
       assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${t2.ticketId} AND fromMe=true`)) === before2, "the client was told without being asked");
     });
+    await test("a transfer that moves a conversation of the official number to the tutor's QR Code is shown first, and continues in the student's conversation already there (even closed), never a second one", async () => {
+      const tutoringTeams = sql(`SELECT COALESCE(string_agg(id::text, ','), '') FROM Whatsapps WHERE team='tutoria'`);
+      if (tutoringTeams) sql(`UPDATE Whatsapps SET team=NULL WHERE id IN (${tutoringTeams})`);
+      const cloud = Number(sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('Oficial Prévia', 'CONNECTED', 'whatsapp_cloud', false, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const qr = Number(sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, ownerId, createdAt, updatedAt) VALUES ('WhatsApp da Tânia', 'CONNECTED', 'whatsapp', false, ${ids.tania}, NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      const tq2 = (await http.post("/queue", { name: `Tutoria Prévia ${seq}`, color: "#118866" }, as(admin))).data.id;
+      sql(`UPDATE Queues SET role='tutoria' WHERE id=${tq2}`);
+      sql(`INSERT INTO UserQueues (userId, queueId, createdAt, updatedAt) VALUES (${ids.tania}, ${tq2}, NOW(), NOW()) ON CONFLICT DO NOTHING`);
+      const contact = Number(sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Aluno Do Oficial', '5569988880${seq}1', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      try {
+        const official = Number(sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${contact}, ${cloud}, ${ids.joao}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+        const old = Number(sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, closedAt, createdAt, updatedAt) VALUES ('closed', ${contact}, ${qr}, ${ids.tania}, 0, false, 'onboarding', false, NOW() - INTERVAL '3 days', NOW() - INTERVAL '5 days', NOW() - INTERVAL '3 days') RETURNING id`).split("\n")[0]);
+        const preview = await http.get(`/tickets/${official}/transfer-preview`, { params: { queueId: tq2 }, ...as(joao) });
+        assert(preview.status === 200 && preview.data.kind === "move" && preview.data.connectionName === "WhatsApp da Tânia", `preview ${preview.status} ${JSON.stringify(preview.data)}`);
+        const plain = await http.get(`/tickets/${official}/transfer-preview`, { params: { queueId: 0 }, ...as(joao) });
+        assert(plain.data.kind === "none", `a transfer with no tutoring was announced: ${JSON.stringify(plain.data)}`);
+        const r = await http.put(`/tickets/${official}`, { queueId: tq2 }, as(joao));
+        assert(r.status === 200 && Number(r.data.id) === old, `the transfer did not continue in the student's conversation there: ${r.status} ${JSON.stringify({ id: r.data.id, w: r.data.whatsappId })}`);
+        assert(sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${old}`) === `open|${ids.tania}`, "the old conversation was not reopened with the tutor");
+        assert(sql(`SELECT status FROM Tickets WHERE id=${official}`) === "closed", "the conversation of the official number stayed open");
+        assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${contact} AND whatsappId=${qr}`) === "1", "a second conversation on the tutor's number");
+      } finally {
+        sql(`DELETE FROM TicketEvents WHERE ticketId IN (SELECT id FROM Tickets WHERE contactId=${contact})`);
+        sql(`DELETE FROM Tickets WHERE contactId=${contact}`);
+        sql(`DELETE FROM Whatsapps WHERE id IN (${cloud}, ${qr})`);
+        if (tutoringTeams) sql(`UPDATE Whatsapps SET team='tutoria' WHERE id IN (${tutoringTeams})`);
+      }
+    });
     await test("each profile answers on its own side: a tutor cannot receive or answer a consultant's conversation; the management can", async () => {
       const t = student();
       const refused = await http.put(`/tickets/${t.ticketId}`, { userId: ids.tania }, as(joao));

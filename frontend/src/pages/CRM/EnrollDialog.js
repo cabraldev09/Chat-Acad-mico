@@ -68,7 +68,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
     // the board card is a summary: the CPF and polo come from the full record
     api.get(`/leads/${lead.id}`).then(({ data }) => {
       setDetail(data);
-      setV((cur) => ({ ...cur, poloId: cur.poloId || data.poloId || "", courseId: cur.courseId || (!additional && data.courseId) || "", rgm: cur.rgm || (!additional && data.rgm) || "", entryTerm: cur.entryTerm || data.entryTerm || "" }));
+      setV((cur) => ({ ...cur, poloId: cur.poloId || data.poloId || "", courseId: cur.courseId || (!additional && data.courseId) || "", rgm: cur.rgm || (!additional && (data.rgm || data.rgmSuggested)) || "", entryTerm: cur.entryTerm || data.entryTerm || "" }));
     }).catch(() => setDetail(null));
   }, [open, lead, additional]);
 
@@ -164,6 +164,11 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
             helperText="O semestre da meta em que esta matrícula conta, mesmo feita depois do fim do período.">
             {[...new Set([...terms.list, ...(v.entryTerm ? [v.entryTerm] : []), ...(terms.fallback ? [terms.fallback] : [])])].sort().map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
           </TextField>
+        )}
+        {!additional && detail && (detail.rgmSuggested || detail.enrolledAtSuggested) && (
+          <div role="note" style={{ fontSize: 13, color: "var(--text-2)", margin: "4px 0" }}>
+            Sugerido pela leitura da conversa{detail.rgmSuggested ? `: RGM ${detail.rgmSuggested}` : ""}{detail.enrolledAtSuggested ? `, matrícula citada em ${new Date(detail.enrolledAtSuggested).toLocaleDateString("pt-BR")}` : ""}. Confira antes de salvar.
+          </div>
         )}
         <TextField fullWidth variant="outlined" margin="dense" label="RGM do aluno" required value={v.rgm} onChange={(e) => setV({ ...v, rgm: e.target.value })}
           error={!!v.rgm && !rgmOk} inputProps={{ maxLength: 40 }}

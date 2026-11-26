@@ -148,7 +148,8 @@ const readingAnswer = (system, text) => {
   const t = String(text);
   if (/churrasco/i.test(t)) return { e_lead: false, situacao: "em_andamento" };
   if (/fiz a matr[ií]cula|j[aá] me matriculei/i.test(t)) return { e_lead: true, situacao: "matriculado", curso: "Pedagogia", etapa: "", objecao: "nenhuma", motivo: "", resumo: "Já fez a matrícula em Pedagogia.", proximo_passo: "Confirmar o RGM" };
-  if (/muito caro/i.test(t)) return { e_lead: true, situacao: "desistiu", curso: "Pedagogia", etapa: "", objecao: "preco", motivo: "Achou a mensalidade alta", resumo: "Queria Pedagogia, desistiu pelo valor.", proximo_passo: "Oferecer uma bolsa" };
+  if (/muito caro/i.test(t)) return { e_lead: true, situacao: "desistiu", curso: "Pedagogia", etapa: "", objecao: "preco", motivo: "Achou a mensalidade alta", resumo: "Queria Pedagogia, desistiu pelo valor.", proximo_passo: "Oferecer uma bolsa", parou_em: "Depois de saber o valor", pendente: "Mostrar a bolsa", melhorar: "Apresentar a bolsa antes do valor cheio" };
+  if (/vou ver com meu marido/i.test(t)) return { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Ia conversar em casa.", proximo_passo: "Perguntar se decidiu", parou_em: "Proposta enviada", pendente: "Saber se decidiu", melhorar: "Marcar um dia para o retorno" };
   return { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Quer Pedagogia e pediu a proposta.", proximo_passo: "Enviar a proposta" };
 };
 const isReading = (system) => /Você lê, para a equipe comercial|por que as vendas acontecem/.test(String(system || ""));
@@ -2564,7 +2565,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const other = ticketOf("tg_5552");
       const before = tg.sent.length;
       const t0 = Date.now();
-      const f = await http.post("/messages/forward-batch", { messageIds: mine, ticketIds: [Number(other)] }, auth());
+      // a conversation waiting for an attendant is taken by the forward: the person confirms it (the screen asks first)
+      const f = await http.post("/messages/forward-batch", { messageIds: mine, ticketIds: [Number(other)], confirmAssume: true }, auth());
       assert(f.status === 202 && f.data.total === mine.length && f.data.batchId, `batch ${f.status} ${JSON.stringify(f.data)}`);
       assert(Date.now() - t0 < 2500, "the batch waited for the sending");
       await waitFor(() => tg.sent.slice(before).filter(x => /^send(Message|Photo|Document|Video|Audio|Voice)$/.test(x.method) && String(x.body.chat_id) === "5552").length >= mine.length, 15000, "batch delivered").catch(e => { throw new Error(`${e.message}: ${JSON.stringify(tg.sent.slice(before).map(x => [x.method, x.body.chat_id]))} mine=${mine}`); });
@@ -4028,6 +4030,45 @@ const postMeta = (id, payload, secret, badSig) => {
       const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
       const all = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.map(x => String(x.id));
       assert(all.includes(String(t)), "the all view misses a live conversation");
+    });
+    await test("forward: the destinations are searched on the server (conversations with the waiting and 24 h marks, contacts with no conversation), a waiting one is confirmed first, a contact gets a conversation, and Tentar de novo sends only the pairs that failed", async () => {
+      const mine = sql(`SELECT id FROM Messages WHERE ticketId=${tgTicket} AND fromMe=1 AND body <> '' ORDER BY createdAt LIMIT 1`).split("\n").filter(Boolean);
+      const other = Number(ticketOf("tg_5552"));
+      const prior = sql(`SELECT CONCAT(COALESCE(userId::text,''),'|',status) FROM Tickets WHERE id=${other}`);
+      sql(`UPDATE Tickets SET userId=NULL, status='pending' WHERE id=${other}`);
+      const adminId = Number(sql(`SELECT id FROM Users WHERE email='admin@whaticket.com'`));
+      const priorNumber = sql(`SELECT COALESCE(whatsappId::text,'') FROM Users WHERE id=${adminId}`);
+      const fresh = Number(sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Fwd Sem Conversa', 'tg_5559', '', false, 'person', 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+      try {
+        // the list comes from the server, with the marks; searching finds the contact with no conversation
+        const beto = sql(`SELECT c.name FROM Contacts c JOIN Tickets t ON t.contactId=c.id WHERE t.id=${other}`);
+        const all = (await http.get("/forward/targets", { params: { q: beto, page: 1 }, ...auth() })).data;
+        const row = all.tickets.find(t => t.id === other);
+        assert(row && row.waiting === true && row.windowClosed === false, `the waiting conversation: ${JSON.stringify(row)} in ${JSON.stringify(all.tickets.map(t => [t.id, t.name]))}`);
+        const found = (await http.get("/forward/targets", { params: { q: "Fwd Sem" }, ...auth() })).data;
+        assert(found.contacts.some(c => c.id === fresh), `the contact with no conversation is not offered: ${JSON.stringify(found.contacts)}`);
+        assert(!(await http.get("/forward/targets", { params: { q: "Ana Souza" }, ...auth() })).data.contacts.some(c => c.number === "tg_5551"), "a contact with a live conversation was offered as a new one");
+        // taking a waiting conversation needs the confirmation
+        const ask = await http.post("/messages/forward-batch", { messageIds: mine, ticketIds: [other] }, auth());
+        assert(ask.status === 409 && ask.data.error === "ERR_FORWARD_CONFIRM_ASSUME" && ask.data.data && ask.data.data.count === 1, `no confirmation asked: ${ask.status} ${JSON.stringify(ask.data)}`);
+        // a contact with no conversation: it is opened on the person's number and the message goes
+        sql(`UPDATE Users SET whatsappId=${tgId} WHERE id=${adminId}`);
+        const before = tg.sent.length;
+        const toContact = await http.post("/messages/forward-batch", { messageIds: mine, contactIds: [fresh] }, auth());
+        assert(toContact.status === 202 && toContact.data.opened.length === 1, `forward to a contact: ${toContact.status} ${JSON.stringify(toContact.data)}`);
+        assert(sql(`SELECT CONCAT(whatsappId,'|',status,'|',userId) FROM Tickets WHERE id=${toContact.data.opened[0]}`) === `${tgId}|open|${adminId}`, "the new conversation is not on the person's number, with the person");
+        await waitFor(() => tg.sent.slice(before).some(x => /^send/.test(x.method) && String(x.body.chat_id) === "5559"), 10000, "the forward to the new conversation");
+        // Tentar de novo: only the pairs given go
+        const before2 = tg.sent.length;
+        const retry = await http.post("/messages/forward-batch", { pairs: [{ messageId: mine[0], ticketId: toContact.data.opened[0] }, { messageId: mine[0], ticketId: toContact.data.opened[0] }] }, auth());
+        assert(retry.status === 202 && retry.data.total === 1, `retry: ${retry.status} ${JSON.stringify(retry.data)}`);
+        await waitFor(() => tg.sent.slice(before2).filter(x => /^send/.test(x.method) && String(x.body.chat_id) === "5559").length === 1, 10000, "the retry");
+      } finally {
+        const [u, st] = prior.split("|");
+        sql(`UPDATE Tickets SET userId=${u || "NULL"}, status='${st}' WHERE id=${other}`);
+        sql(`UPDATE Users SET whatsappId=${priorNumber || "NULL"} WHERE id=${adminId}`);
+        sql(`UPDATE Tickets SET status='closed' WHERE contactId=${fresh}`);
+      }
     });
     await test("list ticks: the backfill fills old conversations and acks only move forward", async () => {
       const t = ticketOf("tg_5551");
@@ -5533,7 +5574,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/\*[^*]*Empreendedorismo[^*]*\* tem duração de \*4 semestres\*, ou seja, aproximadamente \*2 anos\*/.test(ea4), `EA duration: ${ea4}`);
       assert(/formato \*EAD\*, sem aulas práticas presenciais/.test(ea4) && /pela plataforma, pelo celular ou computador/.test(ea4) && /professores mestres e doutores/.test(ea4) && /tutoria desde a matrícula/.test(ea4), `EA format: ${ea4}`);
       assert(!emoji.test(ea4) && !/maio de 2027|% de carga|laboratório|ainda não foi definida/.test(ea4), `EA must not talk about practical classes or the MEC deadline: ${ea4}`);
-      out = await say(EA, "wamid.ea-5", "Tem aula presencial?", t => t.some(x => /sem aulas práticas presenciais/.test(x)), "EA presential question");
+      // the short answer comes in two bubbles (the explanation, then the question): wait for both, not just the first
+      out = await say(EA, "wamid.ea-5", "Tem aula presencial?", t => t.some(x => /sem aulas práticas presenciais/.test(x)) && t.some(x => /Ficou claro como funciona\?/.test(x)), "EA presential question");
       // (asked right after the explanation: the answer is short, from the same rule, without the model and without the whole text again)
       assert(!/% de carga|laboratório/.test(out.join(" ")) && !/professores mestres e doutores/.test(out.join(" ")) && /Ficou claro como funciona\?/.test(out.join(" ")), `EA presential answer: ${out}`);
       // the print of the course: the management attaches it, the AI reads it, the management confirms, and the agent says the approved text from then on
@@ -9206,13 +9248,19 @@ const postMeta = (id, payload, secret, badSig) => {
       const C = copied("Caio Confirmar Leitura", "5569955550003", [[false, "Oi"], [true, "Como posso ajudar?"], [false, "Fiz a matrícula ontem pelo site"]]);
       const D = copied("Dani Desistiu Leitura", "5569955550004", [[false, "Quero Pedagogia"], [true, "A mensalidade com bolsa fica ótima"], [false, "Achei muito caro, não vou fazer"], [true, "Entendo, qualquer coisa me chama"]]);
       const E = copied("Edu Amigo Leitura", "5569955550005", [[false, "oi amigo, churrasco sábado?"], [true, "Bora!"]]);
+      // Fabi: still deciding, the last word was the consultant's 8 days ago and no answer: "Parados" in Recuperação
+      const F = copied("Fabi Parada Leitura", "5569955550006", [[false, "Quero Pedagogia"], [true, "Te mandei a proposta"], [false, "Vou ver com meu marido"], [true, "Combinado, fico no aguardo"]]);
+      sql(`UPDATE Messages SET createdAt = NOW() - INTERVAL '8 days' WHERE ticketId=${F.t}`);
+      // a conversation older than 90 days is not read
+      const Old = copied("Gabi Antiga Leitura", "5569955550017", [[false, "Quero Pedagogia"], [true, "Claro"]]);
+      sql(`UPDATE Tickets SET lastMessageAt = NOW() - INTERVAL '120 days' WHERE id=${Old.t}`);
       // the catch-up of the first sync already made a lead for Ana, waiting in "Novos para conferir"
       const stage1 = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
       const leadA = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Ana Andamento Leitura', '5569955550001', ${stage1}, ${A.c}, ${u.id}, 'WhatsApp', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       assert((await http.get("/crm/triage", asUser(uTok))).data.items.some(i => String(i.id) === leadA), "the lead of the catch-up should be waiting before the reading");
       sql(`DELETE FROM Settings WHERE key IN ('readings_day', 'readings_count')`);
       const run = (await http.post("/readings/run", {}, auth())).data;
-      assert(run.read >= 5, `readings ${JSON.stringify(run)}`);
+      assert(run.read >= 6, `readings ${JSON.stringify(run)}`);
       // what went to the model is masked: no name, no RGM, no phone
       const sent = (anthropic.readingTexts || []).join(" ");
       assert(!/7654321|Bia Matriculada|Dani Desistiu|5569955550/.test(sent), "personal data went to the model");
@@ -9235,12 +9283,26 @@ const postMeta = (id, payload, secret, badSig) => {
       const d = leadOf(D.c);
       assert(d[2] === "lost" && d[5] === "aberta" && d[6] === "Preço / mensalidade", `Dani ${d}`);
       assert(sql(`SELECT COUNT(*) FROM Leads WHERE contactId=${E.c} AND isHistorical=false`) === "0", "a friend became a lead");
+      assert(sql(`SELECT COUNT(*) FROM ConversationReadings WHERE ticketId=${Old.t}`) === "0", "a conversation of 120 days was read");
+      // Bia: the RGM, the day it was said and nothing written as enrolled (only the suggestion)
+      assert(sql(`SELECT CONCAT(COALESCE(rgmSuggested,''),'|',CASE WHEN enrolledAtSuggested IS NULL THEN 0 ELSE 1 END) FROM Leads WHERE id=${b[0]}`) === "7654321|1", "no RGM or date suggested for Bia");
       // one notice for the owner of the number, pointing to Recuperação
       assert(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${u.id} AND kind='reading'`) === "1", "the owner should get one notice");
       // Recuperação: the consultant sees Dani with the reason and the objection; another consultant does not
       const rec = (await http.get("/crm/recovery", asUser(uTok))).data;
       const item = rec.items.find(i => String(i.id) === d[0]);
       assert(item && item.reason === "Achou a mensalidade alta" && item.objection === "preco" && rec.reasons.length >= 1, `recovery ${JSON.stringify(rec).slice(0, 400)}`);
+      assert(item.tab === "desistiram" && item.serviceTip === "Apresentar a bolsa antes do valor cheio" && item.recoveryStage === "Depois de saber o valor" && /Mostrar a bolsa/.test(item.recoveryPending), `the fields of the reading ${JSON.stringify(item)}`);
+      const fabi = rec.items.find(i => i.name === "Fabi Parada Leitura");
+      assert(fabi && fabi.tab === "parados" && fabi.reason === "Parou de responder" && fabi.recoveryPending, `Fabi is not in Parados ${JSON.stringify(fabi)}`);
+      const bia = rec.items.find(i => String(i.id) === b[0]);
+      assert(bia && bia.tab === "confirmar" && bia.rgmSuggested === "7654321" && rec.tabs.confirmar >= 2, `Bia is not to confirm ${JSON.stringify(bia)}`);
+      assert(rec.reading === null, "a consultant saw the status of the reading");
+      const st = (await http.get("/crm/recovery", auth())).data.reading;
+      assert(st && st.done >= 6 && st.stopped === null, `reading status ${JSON.stringify(st)}`);
+      // "Não é matrícula": Caio back to the funnel, the suggestion cleared
+      assert((await http.post(`/leads/${c[0]}/recovery`, { action: "nao_matricula" }, asUser(uTok))).status === 200, "not an enrollment");
+      assert(leadOf(C.c)[1] !== "Matrícula a confirmar" && !(await http.get("/crm/recovery", asUser(uTok))).data.items.some(i => String(i.id) === c[0]), "Caio is still to confirm");
       await http.post("/users", { name: "Outro Consultor Leitura", email: "leitura2@x.com", password: "senha123", role: "consultor" }, auth());
       const otherTok = (await http.post("/auth/login", { email: "leitura2@x.com", password: "senha123" })).data.token;
       assert(!(await http.get("/crm/recovery", asUser(otherTok))).data.items.some(i => String(i.id) === d[0]), "another consultant sees the recovery of someone else");

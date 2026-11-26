@@ -11,6 +11,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { toast } from "react-toastify";
 import { useCrmOptions, ago } from "./shared";
+import EnrollDialog from "./EnrollDialog";
 import "../../styles/dash.css";
 import { BoardHead, EmptyNote, GlowPanel, Person } from "../../components/peak";
 
@@ -28,6 +29,10 @@ const useStyles = makeStyles((theme) => ({
   summary: { display: "block", marginTop: 4, fontSize: 13, color: "var(--text-2)", whiteSpace: "normal" },
   actions: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" },
   error: { display: "flex", alignItems: "center", gap: 12, padding: 16, margin: theme.spacing(1) },
+  status: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, margin: theme.spacing(1, 1, 0), padding: "8px 12px", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", fontSize: 13, color: "var(--text-1)" },
+  statusWarn: { borderColor: "#d97706", background: "rgba(217,119,6,.08)" },
+  tabs: { display: "flex", flexWrap: "wrap", gap: 6, margin: theme.spacing(1, 1, 0) },
+  detail: { display: "block", marginTop: 2, fontSize: 13, color: "var(--text-2)", whiteSpace: "normal", overflowWrap: "anywhere" },
 }));
 
 const Recovery = () => {
@@ -43,6 +48,8 @@ const Recovery = () => {
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(0);
+  const [tab, setTab] = useState("parados");
+  const [enrolling, setEnrolling] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,7 +69,7 @@ const Recovery = () => {
     setBusy(id);
     try {
       await api.post(`/leads/${id}/recovery`, { action });
-      setData((d) => (d ? { ...d, items: d.items.filter((i) => i.id !== id), total: d.total - 1 } : d));
+      setData((d) => (d ? { ...d, items: d.items.filter((i) => i.id !== id), tabs: { ...d.tabs, [tab]: Math.max(0, ((d.tabs || {})[tab] || 1) - 1) } } : d));
     } catch (err) {
       toastError(err);
     } finally {
@@ -85,10 +92,20 @@ const Recovery = () => {
       setListing(false);
     }
   };
-  const items = (data && data.items) || [];
+  const all = (data && data.items) || [];
+  const items = all.filter((l) => (l.tab || "desistiram") === tab);
+  const counts = (data && data.tabs) || {};
+  const TABS = [
+    { key: "parados", label: "Parados (7+ dias)" },
+    { key: "desistiram", label: "Desistiram" },
+    { key: "confirmar", label: "Matrículas a confirmar" },
+  ];
+  const reading = data && data.reading;
+  const STOP = { no_api_key: "parada: falta a chave da IA em um agente", disabled: "desligada pelo administrador" };
+  const day = (v) => (v ? new Date(v).toLocaleDateString("pt-BR") : null);
   return (
     <MainContainer>
-      <BoardHead title="Recuperação" sub="Leads que pararam de responder ou desistiram, com o motivo. Retome a conversa ou devolva ao funil.">
+      <BoardHead title="Recuperação" sub="Leads parados há 7 dias ou mais, os que desistiram e as matrículas que a leitura achou, com o que ficou pendente.">
         {manager && <Button variant="contained" disableElevation disabled={listing || !items.length} onClick={toCampaign} style={{ background: "#fff", color: "#0b4279" }}>{listing ? "Criando a lista…" : "Criar campanha de recuperação"}</Button>}
       </BoardHead>
       <div className={classes.filters}>
@@ -102,7 +119,7 @@ const Recovery = () => {
           {((data && data.objections) || []).map((o) => (<MenuItem key={o.key} value={o.key}>{`${o.label} (${o.n})`}</MenuItem>))}
         </TextField>
       </div>
-      {data && data.reasons.length > 0 && (
+      {data && tab !== "confirmar" && data.reasons.length > 0 && (
         <div className={classes.reasons} role="group" aria-label="Motivo">
           <button type="button" className={`${classes.reason} ${!reason ? classes.reasonOn : ""}`} aria-pressed={!reason} onClick={() => setReason("")}>Todos {data.total}</button>
           {data.reasons.map((r) => (
@@ -110,6 +127,23 @@ const Recovery = () => {
           ))}
         </div>
       )}
+      {reading && (
+        <div className={`${classes.status} ${reading.stopped ? classes.statusWarn : ""}`} role="status">
+          <span>
+            Leitura das conversas copiadas: {reading.done} lidas, {reading.queued} na fila{reading.failed ? `, ${reading.failed} com falha` : ""}
+            {reading.stopped ? ` · ${STOP[reading.stopped] || "parada"}` : ""}
+            {reading.numbersWithoutOwner ? ` · ${reading.numbersWithoutOwner} ${reading.numbersWithoutOwner === 1 ? "número sem dono não é lido" : "números sem dono não são lidos"} (defina o dono em Conexões)` : ""}
+          </span>
+          {reading.stopped === "no_api_key" && <Button size="small" variant="outlined" onClick={() => history.push("/ai-agents")}>Configurar a IA</Button>}
+        </div>
+      )}
+      <div className={classes.tabs} role="tablist" aria-label="Lista">
+        {TABS.map((t) => (
+          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`${classes.reason} ${tab === t.key ? classes.reasonOn : ""}`} onClick={() => setTab(t.key)}>
+            {t.label} {counts[t.key] || 0}
+          </button>
+        ))}
+      </div>
       <TopLoader active={loading} />
       {failed && (
         <div className={classes.error} role="alert">
@@ -119,9 +153,9 @@ const Recovery = () => {
       )}
       {!failed && (
         <div className={`${classes.scroll} dash-scope gv-plain`}>
-          <GlowPanel id="recovery" title={`Para recuperar${data ? ` (${items.length})` : ""}`} sub="O resumo vem da leitura da conversa. Abra o lead para ver o histórico.">
+          <GlowPanel id="recovery" title={`${(TABS.find((t) => t.key === tab) || TABS[0]).label}${data ? ` (${items.length})` : ""}`} sub={tab === "confirmar" ? "A leitura achou sinais de matrícula. Confira o RGM, a data e o polo e confirme: nada é matriculado sozinho." : "Em ordem, da conversa mais antiga para a mais nova. O resumo vem da leitura da conversa."}>
             {!data && <div className="pk pk-skel" style={{ height: 120 }} aria-hidden="true" />}
-            {data && items.length === 0 && <EmptyNote>Nenhum lead para recuperar{reason || objection ? " com esse filtro" : ""}.</EmptyNote>}
+            {data && items.length === 0 && <EmptyNote>{tab === "confirmar" ? "Nenhuma matrícula a confirmar." : `Nenhum lead nesta lista${reason || objection ? " com esse filtro" : ""}.`}</EmptyNote>}
             <div className="gv-rowlist">
               {items.map((l) => (
                 <div key={l.id} className="gv-item">
@@ -129,25 +163,44 @@ const Recovery = () => {
                   <div className="gv-item-main">
                     <b>
                       {l.name}
-                      <span className="gv-tag" data-tone={l.stageType === "lost" ? "bad" : "warn"}>{l.reason || "Sem motivo"}</span>
-                      {l.objectionLabel && <span className="gv-tag">Objeção: {l.objectionLabel}</span>}
+                      {l.tab !== "confirmar" && <span className="gv-tag" data-tone={l.stageType === "lost" ? "bad" : "warn"}>{l.reason || "Sem motivo"}</span>}
+                      {l.tab !== "confirmar" && l.objectionLabel && <span className="gv-tag">Objeção: {l.objectionLabel}</span>}
                     </b>
                     <small>
                       {[l.courseName, manager ? l.ownerName : null, l.lastContactAt ? `último contato ${ago(l.lastContactAt)}` : null].filter(Boolean).join(" · ")}
                       {l.summary && <span className={classes.summary}>{l.summary}</span>}
-                      {l.nextAction && <span className={classes.summary}>Próximo passo: {l.nextAction}</span>}
+                      {l.tab === "confirmar" && (
+                        <span className={classes.detail}>
+                          {[`RGM: ${l.rgmSuggested || "não encontrado"}`, `Data: ${day(l.enrolledAtSuggested) || "não encontrada"}`, `Polo: ${l.poloName || "não encontrado"}`].join(" · ")}
+                        </span>
+                      )}
+                      {l.tab !== "confirmar" && l.recoveryStage && <span className={classes.detail}>Parou em: {l.recoveryStage}</span>}
+                      {l.tab !== "confirmar" && l.recoveryPending && <span className={classes.detail}>Pendente: {l.recoveryPending}</span>}
+                      {l.serviceTip && <span className={classes.detail}>Melhorar no atendimento: {l.serviceTip}</span>}
                     </small>
                   </div>
                   <div className={classes.actions}>
                     <Button size="small" variant="outlined" onClick={() => history.push(`/crm?lead=${l.id}`)}>Abrir</Button>
-                    <Button size="small" variant="contained" color="primary" disableElevation disabled={busy === l.id} onClick={() => act(l.id, "voltar")}>Voltar ao funil</Button>
-                    <Button size="small" disabled={busy === l.id} onClick={() => act(l.id, "descartar")}>Não recuperar</Button>
+                    {l.tab === "confirmar" ? (
+                      <>
+                        <Button size="small" variant="contained" color="primary" disableElevation disabled={busy === l.id} onClick={() => setEnrolling(l)}>Confirmar matrícula</Button>
+                        <Button size="small" disabled={busy === l.id} onClick={() => act(l.id, "nao_matricula")}>Não é matrícula</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button size="small" variant="contained" color="primary" disableElevation disabled={busy === l.id} onClick={() => act(l.id, "voltar")}>{tab === "parados" ? "Retomar" : "Voltar ao funil"}</Button>
+                        <Button size="small" disabled={busy === l.id} onClick={() => act(l.id, "descartar")}>Não recuperar</Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           </GlowPanel>
         </div>
+      )}
+      {enrolling && (
+        <EnrollDialog open={!!enrolling} lead={enrolling} onClose={() => setEnrolling(null)} onDone={() => setData((d) => (d ? { ...d, items: d.items.filter((i) => i.id !== enrolling.id), tabs: { ...d.tabs, confirmar: Math.max(0, ((d.tabs || {}).confirmar || 1) - 1) } } : d))} />
       )}
     </MainContainer>
   );
