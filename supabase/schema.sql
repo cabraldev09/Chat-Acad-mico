@@ -4003,7 +4003,8 @@ CREATE TABLE public."Whatsapps" (
     "pairingPhone" character varying(20),
     "statusNote" text,
     team character varying(20),
-    "institutionId" integer
+    "institutionId" integer,
+    "historyReport" text
 );
 
 
@@ -8404,6 +8405,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js'
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000001-conversation-readings.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000001-whatsapp-history-report.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
