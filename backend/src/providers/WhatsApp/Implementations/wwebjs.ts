@@ -60,6 +60,10 @@ import {
 } from "../../../handlers/handleWhatsappEvents";
 import { killLeftoverBrowsers } from "./browserProcesses";
 import { safeLogout } from "../SafeLogout";
+import { applyPuppeteerCompat } from "../PuppeteerCompat";
+
+// before any browser opens: whatsapp-web.js needs browser.isConnected(), which puppeteer 25 no longer has (see PuppeteerCompat)
+applyPuppeteerCompat();
 import { chatBehind, eachLimited, isTransientState, settledChats, stateToWrite } from "./chatSync";
 
 interface Session extends Client {

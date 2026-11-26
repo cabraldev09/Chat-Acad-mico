@@ -14,6 +14,13 @@ export const readingRound = async (): Promise<void> => {
     const { enqueueImported } = await import("../services/ReadingServices/ImportedLeads");
     const { enqueueOutcomes } = await import("../services/ReadingServices/Outcome");
     const { readingSettings, runLocalReadings } = await import("../services/ReadingServices/Queue");
+    // once a day, without AI: the leads unanswered for 7 days go to "Parados" in Recuperação (and leave when they answer)
+    const day = todayInAppTz();
+    if ((await getSetting("recovery_stalled_day", "")) !== day) {
+      await setSetting("recovery_stalled_day", day);
+      const { markStalled } = await import("../services/ReadingServices/Stalled");
+      await markStalled().catch(err => logger.warn(`Recuperação: parados não conferidos: ${(err as Error).message}`));
+    }
     // the administrator's switch: off, nothing is put in the queue nor read
     if (!(await readingSettings()).enabled) return;
     const added = await enqueueImported();

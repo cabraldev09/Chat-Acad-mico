@@ -39,5 +39,8 @@ export const runNow = async (_req: Request, res: Response): Promise<Response> =>
   const imported = await enqueueImported();
   const outcomes = await enqueueOutcomes();
   const run = await runLocalReadings();
-  return res.json({ queued: { imported, outcomes }, ...run, summary: await readingsSummary() });
+  // the same daily check of the worker: who is unanswered for 7 days goes to "Parados"
+  const { markStalled } = await import("../services/ReadingServices/Stalled");
+  const stalled = await markStalled();
+  return res.json({ queued: { imported, outcomes }, ...run, stalled, summary: await readingsSummary() });
 };

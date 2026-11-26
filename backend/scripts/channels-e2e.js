@@ -9350,6 +9350,17 @@ const postMeta = (id, payload, secret, badSig) => {
       const readsBefore = anthropic.readings;
       await http.post("/readings/run", {}, auth());
       assert(anthropic.readings - readsBefore === 1, `only the outcome of Dani should be read now (${anthropic.readings - readsBefore})`);
+      // "Parados" without a new reading: the team's last message 10 days ago, no answer -> Recuperação; the person answers -> out of it
+      const stalledC = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Gil Parado Diario', '5569955550021', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const stalledT = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageFromMe, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${stalledC}, ${qr.id}, ${u.id}, 0, false, 'sales', false, 'Te mandei a proposta', true, NOW() - INTERVAL '10 days', NOW() - INTERVAL '12 days', NOW()) RETURNING id`).split("\n")[0];
+      const stalledL = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Gil Parado Diario', '5569955550021', ${stage1}, ${stalledC}, ${u.id}, 'WhatsApp', false, NOW() - INTERVAL '12 days', NOW()) RETURNING id`).split("\n")[0];
+      const firstRun = (await http.post("/readings/run", {}, auth())).data;
+      assert(firstRun.stalled && firstRun.stalled.marked >= 1, `the daily check did not run ${JSON.stringify(firstRun.stalled)}`);
+      const gil = (await http.get("/crm/recovery", asUser(uTok))).data.items.find(i => String(i.id) === stalledL);
+      assert(gil && gil.tab === "parados" && gil.reason === "Parou de responder", `Gil is not in Parados ${JSON.stringify(gil)}`);
+      sql(`UPDATE Tickets SET lastMessageFromMe = false, lastMessageAt = NOW() WHERE id = ${stalledT}`);
+      await http.post("/readings/run", {}, auth());
+      assert(sql(`SELECT recoveryState FROM Leads WHERE id = ${stalledL}`) === "voltou", "who answered is still in Parados");
       const why = (await http.get("/analytics/outcomes", { params: { range: "custom", from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
       assert(why.lost >= 1 && why.reasons.some(r => r.reason === "Preço / mensalidade"), `outcomes ${JSON.stringify(why).slice(0, 300)}`);
       // back to the funnel: out of Recuperação, in an open column
