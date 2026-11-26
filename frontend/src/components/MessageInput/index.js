@@ -13,6 +13,7 @@ import Popover from "@material-ui/core/Popover";
 import Switch from "@material-ui/core/Switch";
 import Add from "@material-ui/icons/Add";
 import Mood from "@material-ui/icons/Mood";
+import { Sticker } from "lucide-react";
 import Send from "@material-ui/icons/Send";
 import Mic from "@material-ui/icons/Mic";
 import Close from "@material-ui/icons/Close";
@@ -24,6 +25,7 @@ import Edit from "@material-ui/icons/Edit";
 
 import api from "../../services/api";
 import MediaPreview from "../MediaPreview";
+import StickerPicker from "./StickerPicker";
 import { shrinkImage, isImageFile } from "../../utils/imageTools";
 import { fillQuickVars } from "../../utils/quickVars";
 import RecordingTimer from "./RecordingTimer";
@@ -217,6 +219,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
     return () => { window.removeEventListener("fillMessageInput", fill); if (typingTimer.current) clearInterval(typingTimer.current); };
   }, [ticketId]);
   const [showEmoji, setShowEmoji] = useState(false);
+  const [showStickers, setShowStickers] = useState(false);
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [quickAnswers, setQuickAnswer] = useState([]);
@@ -381,8 +384,9 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
       formData.append("fromMe", true);
       medias.forEach((media, i) => {
         formData.append("medias", media);
-        // the caption travels with each file (documents keep their own name)
+        // the caption travels with each file (documents keep their own name); a video marked "Enviar como GIF" goes as a GIF
         formData.append("body", captions[i] || "");
+        formData.append("kind", media.sendAsGif ? "gif" : "");
       });
       formData.append("clientKey", newKey());
       await api.post(`/messages/${ticketId}`, formData);
@@ -602,6 +606,21 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
                 <ClickAwayListener onClickAway={() => setShowEmoji(false)}>
                   <div>
                     <EmojiPicker dark={emojiDark} onSelect={(emoji) => setInputMessage((s) => s + emoji)} />
+                  </div>
+                </ClickAwayListener>
+              </div>
+            )}
+            {/* the stickers of the WhatsApp number (QR Code): the ones already received or sent, sent as real stickers */}
+            {(!channel || channel === "whatsapp") && (
+              <IconButton aria-label="Figurinhas" title="Figurinhas" className={classes.icon} onClick={() => setShowStickers((v) => !v)} disabled={loading}>
+                <Sticker size={22} />
+              </IconButton>
+            )}
+            {showStickers && (
+              <div className={classes.emojiBox}>
+                <ClickAwayListener onClickAway={() => setShowStickers(false)}>
+                  <div>
+                    <StickerPicker ticketId={ticketId} onSent={() => setShowStickers(false)} />
                   </div>
                 </ClickAwayListener>
               </div>

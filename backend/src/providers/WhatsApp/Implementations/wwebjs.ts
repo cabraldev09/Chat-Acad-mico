@@ -1009,7 +1009,13 @@ const sendMedia = async (
     quotedMessageId: options?.quotedMessageId
   };
 
-  if (
+  if (options?.sendMediaAsSticker) {
+    // a sticker has no caption; WhatsApp Web turns the image into the sticker format by itself
+    (mediaOptions as any).sendMediaAsSticker = true;
+    delete mediaOptions.caption;
+  } else if (options?.sendVideoAsGif && messageMedia.mimetype.startsWith("video/")) {
+    (mediaOptions as any).sendVideoAsGif = true;
+  } else if (
     messageMedia.mimetype.startsWith("image/") &&
     !/^.*\.(jpe?g|png|gif)?$/i.exec(media.filename)
   ) {

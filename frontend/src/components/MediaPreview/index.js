@@ -191,6 +191,16 @@ const MediaPreview = ({ medias, setMedias, captions, setCaptions, current, setCu
         <input ref={addInput} type="file" multiple hidden onChange={(e) => { onAdd(e.target.files); e.target.value = ""; }} />
       </div>
 
+      {/* a short video can go as a GIF (no sound, playing in a loop), as WhatsApp sends GIFs */}
+      {file.type && file.type.startsWith("video/") && (
+        <div style={{ display: "flex", justifyContent: "center", padding: "6px 12px 0" }}>
+          <button type="button" aria-pressed={!!file.sendAsGif}
+            onClick={() => { file.sendAsGif = !file.sendAsGif; setMedias((list) => [...list]); }}
+            style={{ border: "1px solid var(--line, #cbd5e1)", borderRadius: 999, padding: "4px 14px", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", background: file.sendAsGif ? "var(--accent, #0b6bcb)" : "transparent", color: file.sendAsGif ? "#fff" : "inherit" }}>
+            {file.sendAsGif ? "Vai como GIF" : "Enviar como GIF"}
+          </button>
+        </div>
+      )}
       <div className={classes.bar}>
         <div className={classes.field}>
           <InputBase

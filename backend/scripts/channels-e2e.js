@@ -3980,6 +3980,19 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(media.some(m => m.id === "dr-img-1"), "media tab");
       // a sticker (kept as a .webp image) is not media of the conversation, as in WhatsApp
       assert(!media.some(m => m.id === "dr-stk-1"), "a sticker is in the media tab");
+      // the stickers of the number: the ones received or sent, the same sticker only once (two files with the same bytes)
+      {
+        const { PUBLIC_DIR } = require("../dist/config/paths");
+        fs.writeFileSync(path.join(PUBLIC_DIR, "sticker-1700000000.webp"), "RIFF-sticker-a");
+        fs.writeFileSync(path.join(PUBLIC_DIR, "sticker-1700000001.webp"), "RIFF-sticker-a");
+        fs.writeFileSync(path.join(PUBLIC_DIR, "sticker-1700000002.webp"), "RIFF-sticker-b");
+        sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, mediaUrl, ack, starred, createdAt, updatedAt) VALUES
+          ('dr-stk-2', ${t}, '', true, true, 'image', 'sticker-1700000001.webp', 1, false, NOW(), NOW()),
+          ('dr-stk-3', ${t}, '', false, true, 'image', 'sticker-1700000002.webp', 0, false, NOW(), NOW())`);
+        const stickers = (await http.get(`/messages/${t}/stickers`, auth())).data;
+        assert(stickers.length === 2 && stickers.every(x => /\/public\/sticker-17000000\d{2}\.webp\?access=/.test(x.url)), `stickers of the number ${JSON.stringify(stickers)}`);
+        assert((await http.post(`/messages/${t}/sticker`, { messageId: "dr-img-1" }, auth())).status === 404, "a photo was sent as a sticker");
+      }
       assert((await kind("docs")).some(m => m.id === "dr-doc-1"), "docs tab");
       const links = await kind("links");
       assert(links.length === 1 && links[0].url === "https://cruzeirodosulvirtual.com.br/cursos", `links tab ${JSON.stringify(links)}`);
