@@ -8612,6 +8612,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const params = sent.body.template.components[0].parameters.map(p => p.text);
       assert(params[0] === "Rafa" && params[1] === "R$ 300,00" && params[2] === until.split("-").reverse().join("/"), `template values ${JSON.stringify(params)}`);
       // Rafa answers: the proposal of the offer is made in the consultant's name and sent, with its last day; the consultant gets a task
+      // the shipping is marked as sent right after the call to the Meta returns: the reply comes after that, as in real life
+      await waitFor(() => sql(`SELECT COUNT(*) FROM CampaignShippings WHERE campaignId=${c.data.id} AND sentAt IS NOT NULL AND number LIKE '%944440101'`) === "1", 10000, "the shipping marked as sent");
       const out = graph.sent.length;
       await postMeta(cid, cloudEvent([{ from: "5511944440101", id: "wamid.recovery.1", type: "text", text: { body: "Tenho interesse sim" } }]), cloudCfg.appSecret);
       await waitFor(() => sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${rafa} AND status='sent'`) === "1", 25000, "the proposal of the offer was sent");
@@ -8636,6 +8638,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/campaigns/${u.id}/start`, {}, auth())).status === 200, "start the Utility campaign");
       const uSent = await waitFor(() => graph.sent.slice(uBefore).find(x => x.body && x.body.type === "template" && x.body.to === "5511944440102"), 20000, "the Utility template");
       assert(!JSON.stringify(uSent.body).includes("300,00"), "a value went in the Utility template");
+      await waitFor(() => sql(`SELECT COUNT(*) FROM CampaignShippings WHERE campaignId=${u.id} AND sentAt IS NOT NULL`) === "1", 10000, "the Utility shipping marked as sent");
       const sOut = graph.sent.length;
       await postMeta(cid, cloudEvent([{ from: "5511944440102", id: "wamid.recovery.sara", type: "text", text: { body: "Oi, ainda tenho interesse" } }]), cloudCfg.appSecret);
       // the offer goes in the window her reply opened, then the consultant follows (a task)

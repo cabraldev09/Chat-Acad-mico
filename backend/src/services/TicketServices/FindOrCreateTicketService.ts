@@ -218,8 +218,11 @@ const FindOrCreateTicketService = async (
     }
   }
 
-  // the answer to a recovery campaign follows the approach the management chose (the AI with the offer, the proposal, the consultant)
-  if (returning && !groupContact) {
+  // the answer to a recovery campaign follows the approach the management chose (the AI with the offer, the proposal, the consultant).
+  // Only a message the person sent counts (unread > 0): a message the system sends to them (another campaign, a notice) opens the
+  // conversation here too and is not an answer. The conversation may already be open (the campaign itself opened it), so this does
+  // not wait for a "returning" one; once per campaign and person (RecoveryReply keeps that).
+  if (unreadMessages > 0 && !groupContact) {
     const { onRecoveryReply } = await import("../CampaignServices/RecoveryReply");
     const approach = await onRecoveryReply(ticket, contact).catch(() => null);
     if (approach === "ia") returning = false;
