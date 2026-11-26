@@ -68,7 +68,7 @@ export const SHORT = {
   peopleContacted: "Pessoas diferentes que receberam mensagem humana no período. Quem tem duas conversas conta uma vez.",
   reactivated: "Conversas retomadas por uma pessoa depois de 7 dias ou mais sem nenhuma mensagem.",
   leadsWorked: "Leads em que alguém registrou anotação, mudou a etapa, fez contato ou enviou mensagem.",
-  pendingReply: "Conversas abertas em que o cliente falou por último e ainda espera resposta.",
+  pendingReply: "Conversas em que o cliente escreveu por último nos últimos 7 dias e espera resposta. Não contam lead matriculado, ganho ou perdido, nem ok, obrigado ou figurinha.",
   inProgress: "Conversas com status Atendendo que estão com a pessoa.",
   tasksOpen: "Tarefas combinadas com leads que ainda não foram concluídas.",
   tasksOverdue: "Tarefas abertas cujo prazo já passou. Clique em Alertas para ver quais são.",

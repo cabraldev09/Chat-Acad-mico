@@ -113,3 +113,16 @@ Serviço `AnalyticsServices/SalesInsights.ts`. A gestão vê os consultores que 
 
 ## Estatísticas da tutoria (`GET /analytics/tutoria`)
 A gestão vê todos os tutores e o painel por tutor (`tutorPanel`); o tutor e o acadêmico veem só os próprios alunos. Inclui: alunos sem mensagem do tutor há 7 dias, em risco (15 dias sem conversa, e com taxa em aberto), rematrículas, NPS no período e onde a ambientação para (primeira etapa do checklist não marcada).
+
+## Esperando resposta (Conversas pendentes): regra desde 26/11/2026
+Até 26/11/2026, "Conversas pendentes" contava toda conversa aberta em que o cliente escreveu por último. Desde essa data o número cai,
+porque conta só o que precisa de resposta (`AWAITING_REPLY` em `services/AnalyticsServices/AnalyticsService.ts`):
+- o cliente escreveu por último nos últimos 7 dias. O que passou disso é **esquecida** (`forgottenReply`, até 60 dias), num aviso separado;
+- o contato tem lead em negociação, ou não tem lead;
+  - lead ganho, matriculado ou perdido só tira a conversa quando não há outro lead em negociação;
+  - o lead perdido que escreveu depois da perda (voltou, respondeu a uma recuperação) continua contando;
+- não é conversa de aluno (`segment` onboarding);
+- a última mensagem não encerra o assunto (`helpers/ClosingMessage.ts`): ok, obrigada, valeu, emoji, figurinha e reação;
+  - com "?" é pergunta e conta ("Ok?", "Tá bom?").
+
+O alerta mostra há quanto tempo o mais antigo espera e fica alto a partir de 1 hora ou de 5 conversas.
