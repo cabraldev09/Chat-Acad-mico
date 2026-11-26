@@ -121,7 +121,7 @@ const ListTicketsService = async ({
     }
   ];
 
-  const queueMode = await remember("scope:queue-mode", 2000, () => isQueueMode());
+  const queueMode = await isQueueMode();
   // (off, or a profile that does not take from it: an empty queue, never the ordinary list)
   if (fila === "true" && !(queueMode && (role === "consultor" || role === "admin"))) return { tickets: [], count: 0, hasMore: false };
   if (fila === "true") {
