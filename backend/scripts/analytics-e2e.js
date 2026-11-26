@@ -408,15 +408,29 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const reacted = mkTicket({ owner: ids.joao }); lastFrom(reacted, "", "3 hours", "reaction");
       // "ok, e o valor?" still waits (a question after the ok)
       const okq = mkTicket({ owner: ids.joao }); lastFrom(okq, "ok, e o valor?", "30 minutes");
+      // a lost lead who writes again after the loss (came back, answered a recovery) waits; a lost lead who wrote before the loss does not
+      const lost = sql(`SELECT id FROM LeadStages WHERE type='lost' ORDER BY position LIMIT 1`).split("\n")[0];
+      const back = mkTicket({ owner: ids.joao }); lastFrom(back, "Mudei de ideia, ainda dá tempo?", "20 minutes");
+      sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, lostAt, createdAt, updatedAt) VALUES ('Lead ER volta', '55698${back.ticketId}', 'WhatsApp', ${lost}, ${ids.joao}, ${back.contactId}, false, NOW() - INTERVAL '2 days', NOW(), NOW())`);
+      const gone = mkTicket({ owner: ids.joao }); lastFrom(gone, "Não tenho interesse", "3 days");
+      sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, lostAt, createdAt, updatedAt) VALUES ('Lead ER perdido', '55697${gone.ticketId}', 'WhatsApp', ${lost}, ${ids.joao}, ${gone.contactId}, false, NOW() - INTERVAL '1 day', NOW(), NOW())`);
+      // an old lost lead and a new lead in negotiation for the same contact: waits
+      const again = mkTicket({ owner: ids.joao }); lastFrom(again, "Quero tentar de novo", "40 minutes");
+      sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, lostAt, createdAt, updatedAt) VALUES ('Lead ER antigo', '55696${again.ticketId}', 'WhatsApp', ${lost}, ${ids.joao}, ${again.contactId}, true, NOW() - INTERVAL '90 days', NOW() - INTERVAL '120 days', NOW())`);
+      lead(again, open);
+      // "Ok?" is a question, not a closing
+      const okAsk = mkTicket({ owner: ids.joao }); lastFrom(okAsk, "Ok?", "15 minutes");
       // ten days without an answer: not "esperando", but "esquecida"
       const old = mkTicket({ owner: ids.joao }); lead(old, open); lastFrom(old, "Ainda tem vaga?", "10 days");
       const after = (await A(joao, "/analytics/me?range=today")).data;
-      assert(after.metrics.pendingReply - before.pendingReply === 2, `esperando: ${before.pendingReply} -> ${after.metrics.pendingReply} (only the question and the ok with a question)`);
+      const named = { asks, sold, thanks, thumbs, reacted, okq, back, gone, again, okAsk, old };
+      const which = (after.focus.conversations || []).map(c => Object.keys(named).find(k => named[k].ticketId === c.ticketId) || c.ticketId);
+      assert(after.metrics.pendingReply - before.pendingReply === 5, `esperando: ${before.pendingReply} -> ${after.metrics.pendingReply} (the question, the ok with a question, the lost lead who came back, the new lead of a lost contact and the "Ok?"): ${JSON.stringify(which)}`);
       assert(after.metrics.forgottenReply - (before.forgottenReply || 0) === 1, `esquecidas: ${before.forgottenReply} -> ${after.metrics.forgottenReply}`);
       // Responder agora lists the same conversations
       const listed = (after.focus.conversations || []).map(c => c.ticketId);
-      assert(listed.includes(asks.ticketId) && listed.includes(okq.ticketId), `Responder agora is missing what waits: ${JSON.stringify(listed)}`);
-      assert(![sold, thanks, thumbs, reacted, old].some(t => listed.includes(t.ticketId)), `Responder agora lists what does not wait: ${JSON.stringify(listed)}`);
+      assert([asks, okq, back, again, okAsk].every(t => listed.includes(t.ticketId)), `Responder agora is missing what waits: ${JSON.stringify(listed)}`);
+      assert(![sold, thanks, thumbs, reacted, old, gone].some(t => listed.includes(t.ticketId)), `Responder agora lists what does not wait: ${JSON.stringify(listed)}`);
       // the alert says how long the oldest waits, and the forgotten ones are a separate, lighter notice (João gets a connected number for
       // this check: someone without a number gets only the "no WhatsApp" alert)
       const own = sql(`INSERT INTO Whatsapps (name, status, channel, ownerId, isDefault, createdAt, updatedAt) VALUES ('Número do João ER', 'CONNECTED', 'whatsapp', ${ids.joao}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];

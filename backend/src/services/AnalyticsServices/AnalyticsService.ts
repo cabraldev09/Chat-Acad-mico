@@ -2,7 +2,7 @@ import { QueryTypes } from "sequelize";
 
 import { isOnline } from "./LivePresence";
 import sequelize from "../../database";
-import { CLOSING_PATTERN } from "../../helpers/ClosingMessage";
+import { closingSql } from "../../helpers/ClosingMessage";
 import { dayBounds, getAppTz, shiftDays, todayInAppTz } from "../../helpers/AppTime";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import { portable } from "../../helpers/sqlDialect";
@@ -83,9 +83,15 @@ export const REPLY_PENDING = "(t.replyDismissedMessageId IS NULL OR t.replyDismi
 //  - not marked "Já resolvido" by the person.
 export const REPLY_WINDOW_DAYS = 7;
 // what the client's last message must be to need an answer (also used by Atendimento, DashboardController)
+//  - the sale is decided (a won, enrolled or lost lead) only when the contact has no lead in negotiation, and a lost lead who wrote after
+//    the loss (came back, answered a recovery) still waits for an answer
 export const REPLY_NEEDED = `COALESCE(t.segment, '') <> 'onboarding' AND COALESCE(t.lastMessageType, 'chat') NOT IN ('reaction', 'sticker')
-  AND NOT (COALESCE(t.lastMessage, '') <> '' AND t.lastMessage ~* '${CLOSING_PATTERN}')
-  AND NOT EXISTS (SELECT 1 FROM Leads rl JOIN LeadStages rs ON rs.id = rl.stageId WHERE rl.contactId = t.contactId AND (rs.type <> 'open' OR rl.enrolledAt IS NOT NULL))`;
+  AND NOT ${closingSql("t.lastMessage")}
+  AND NOT (
+    EXISTS (SELECT 1 FROM Leads rl JOIN LeadStages rs ON rs.id = rl.stageId WHERE rl.contactId = t.contactId AND (rs.type <> 'open' OR rl.enrolledAt IS NOT NULL)
+      AND NOT (rs.type = 'lost' AND rl.enrolledAt IS NULL AND rl.lostAt IS NOT NULL AND (COALESCE(t.lastMessageAt, t.updatedAt) > rl.lostAt OR COALESCE(rl.lastInboundAt, rl.lostAt) > rl.lostAt)))
+    AND NOT EXISTS (SELECT 1 FROM Leads ol JOIN LeadStages os ON os.id = ol.stageId WHERE ol.contactId = t.contactId AND os.type = 'open' AND ol.enrolledAt IS NULL)
+  )`;
 const NEEDS_ANSWER = `t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND ${REPLY_PENDING} AND ${VALID_TICKET} AND ${REPLY_NEEDED}`;
 export const AWAITING_REPLY = `(${NEEDS_ANSWER} AND COALESCE(t.lastMessageAt, t.updatedAt) >= NOW() - INTERVAL '${REPLY_WINDOW_DAYS} days')`;
 // "45 min", "3 h", "2 dias"
