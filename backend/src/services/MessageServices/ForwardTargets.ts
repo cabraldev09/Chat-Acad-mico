@@ -39,7 +39,12 @@ export const forwardTargets = async (req: Request, q: string, page = 1) => {
   const queueIds = isManagerRole(role) ? [] : (await UserQueue.findAll({ where: { userId } })).map(x => x.queueId);
   const search = String(q || "").trim().slice(0, 80);
   const lists = await Promise.all(
-    ["open", "pending"].map(status => ListTicketsService({ searchParam: search || undefined, pageNumber: String(page), status, showAll: "false", userId: String(userId), queueIds, role, ...(isManagerRole(role) ? { allQueues: "true" } : {}) } as any))
+    // open: the person's own (a colleague's refuses the send); waiting: the person's sectors, and every sector for the management
+    ["open", "pending"].map(status => ListTicketsService({
+      searchParam: search || undefined, pageNumber: String(page), status, userId: String(userId), queueIds, role,
+      showAll: status === "pending" && isManagerRole(role) ? "true" : "false",
+      ...(isManagerRole(role) ? { allQueues: "true" } : {})
+    } as any))
   );
   const tickets = [...lists[0].tickets, ...lists[1].tickets];
   const flags = await forwardFlags(tickets, userId);
