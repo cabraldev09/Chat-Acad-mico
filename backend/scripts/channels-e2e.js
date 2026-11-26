@@ -2936,6 +2936,9 @@ const postMeta = (id, payload, secret, badSig) => {
         const analysis = async name => {
           const f = new FormData();
           f.append("file", sample, { filename: "analise.pdf", contentType: "application/pdf" });
+          // (with the entry period the analysis is ready at once: COMPLETED, with the 24-hour return)
+          f.append("entryPeriod", "2");
+          f.append("startTerm", "2026.2");
           f.append("candidateName", name);
           f.append("poloId", String(poloB.id));
           const r = await http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${token}` } });
