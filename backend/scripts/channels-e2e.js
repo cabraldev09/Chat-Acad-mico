@@ -9033,6 +9033,48 @@ const postMeta = (id, payload, secret, badSig) => {
         sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
       }
     });
+    await test("a student answers a campaign of the tutoring: the conversation goes to THEIR tutor at once (no robot), the tutor hears it, and it continues on the tutor's own WhatsApp; without one it stays on the official number with the tutor", async () => {
+      const team = sql(`SELECT team FROM Whatsapps WHERE id=${cid}`);
+      sql(`UPDATE Whatsapps SET team='tutoria' WHERE id=${cid}`);
+      const tutorId = Number(sql(`SELECT id FROM Users WHERE email='tutora-oficial@polo.test'`));
+      const own = sql(`SELECT id FROM Whatsapps WHERE ownerId=${tutorId} AND channel='whatsapp' ORDER BY id LIMIT 1`);
+      const campaignId = sql(`SELECT id FROM Campaigns WHERE whatsappId=${cid} ORDER BY id DESC LIMIT 1`);
+      const reply = (from, id, body) => ({ object: "whatsapp_business_account", entry: [{ id: "WABA", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: { phone_number_id: "PN1" }, contacts: [{ wa_id: from, profile: { name: "Aluna Aviso Mensal" } }], messages: [{ from, id, type: "text", text: { body } }] } }] }] });
+      try {
+        assert(own && campaignId, `setup: tutor QR ${own}, campaign ${campaignId}`);
+        sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${own}`);
+        // the student of the notice of the scenario before (no contact in the CRM, only the phone) answers on the official number
+        const student = "5569981112233";
+        const before = graph.sent.length;
+        assert((await postMeta(cid, reply(student, `wamid.tutreply.${Date.now()}`, "Professora, tenho uma dúvida da atividade"), cloudCfg.appSecret)).status === 200, "inbound");
+        await waitFor(() => { const t = ticketOf(student); return t && sql(`SELECT whatsappId FROM Tickets WHERE id=${t}`) === String(own); }, 15000, "the conversation to move to the tutor's own WhatsApp");
+        const t = ticketOf(student);
+        const row = sql(`SELECT COALESCE(userId::text,'-') || '|' || status FROM Tickets WHERE id=${t}`);
+        assert(row === `${tutorId}|open`, `the conversation is not the tutor's: ${row}`);
+        assert(sql(`SELECT onboardingTutorId FROM Leads WHERE phone='${student}' AND contactId IS NOT NULL LIMIT 1`) === String(tutorId), "the student was not found by the phone");
+        assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${tutorId} AND kind='tutoria' AND title='Aluno respondeu à campanha da tutoria'`)) >= 1, "the tutor was not told");
+        assert(graph.sent.slice(before).some(x => x.body && x.body.to === student && x.body.type === "text" && /continua o seu atendimento pelo WhatsApp da tutoria/.test(x.body.text.body)), "the student was not told about the other number");
+        assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${t} AND note LIKE '%WhatsApp de Tutora Oficial%'`)) >= 1, "the move was not written down");
+        // no robot or AI of the official number answered in between
+        assert(!graph.sent.slice(before).some(x => x.body && x.body.to === student && x.body.type === "text" && !/continua o seu atendimento/.test(x.body.text.body)), "a robot answered the student");
+        // another student of the same tutor, the tutor without a WhatsApp of their own now: it stays on the official number, with the tutor
+        const other = "5569981114455";
+        sql(`INSERT INTO Leads (name, phone, stageId, enrolledAt, consentAt, onboardingTutorId, createdAt, updatedAt) VALUES ('Aluno Sem QR', '${other}', (SELECT id FROM LeadStages ORDER BY id LIMIT 1), NOW(), NOW(), ${tutorId}, NOW(), NOW())`);
+        sql(`INSERT INTO CampaignShippings (name, number, message, status, sentAt, campaignId, createdAt, updatedAt) VALUES ('Aluno Sem QR', '${other}', '', 'sent', NOW(), ${campaignId}, NOW(), NOW())`);
+        sql(`UPDATE Whatsapps SET ownerId=NULL WHERE id=${own}`);
+        try {
+          assert((await postMeta(cid, reply(other, `wamid.tutreply2.${Date.now()}`, "Oi, recebi o aviso"), cloudCfg.appSecret)).status === 200, "inbound 2");
+          const t2 = await waitFor(() => ticketOf(other), 8000, "ticket of the second student");
+          await waitFor(() => sql(`SELECT COALESCE(userId::text,'-') FROM Tickets WHERE id=${t2}`) === String(tutorId), 8000, "the second conversation to be the tutor's");
+          await new Promise(r => setTimeout(r, 3500));
+          assert(sql(`SELECT whatsappId || '|' || status FROM Tickets WHERE id=${t2}`) === `${cid}|open`, "without a WhatsApp of the tutor the conversation should stay on the official number");
+        } finally {
+          sql(`UPDATE Whatsapps SET ownerId=${tutorId} WHERE id=${own}`);
+        }
+      } finally {
+        sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
+      }
+    });
     await test("one tutoring conversation per student: the empty one opened by the enrollment on another number is folded into the one where the student writes, and the agent of every number stays out of the tutoring", async () => {
       inDb(`const Ticket=require("./dist/models/Ticket").default,Contact=require("./dist/models/Contact").default,Whatsapp=require("./dist/models/Whatsapp").default,TicketEvent=require("./dist/models/TicketEvent").default,TicketTag=require("./dist/models/TicketTag").default,Tag=require("./dist/models/Tag").default,Message=require("./dist/models/Message").default,AiAgent=require("./dist/models/AiAgent").default;
         const FindOrCreate=require("./dist/services/TicketServices/FindOrCreateTicketService").default,{findAgentForTicket}=require("./dist/services/AiServices/RunAiAgent"),{connectionsOf}=require("./dist/helpers/AgentConnections");

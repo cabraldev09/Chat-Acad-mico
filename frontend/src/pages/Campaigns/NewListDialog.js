@@ -133,7 +133,15 @@ const NewListDialog = ({ open, onClose, onCreated, initialMode = 0, targetList =
               {select("poloId", "Polo", opts.polos, (p) => p.name)}
               {select("tagId", "Etiqueta", opts.tags, (t) => t.name)}
               {manager && audience !== "students" && select("ownerId", "Consultor", opts.users.filter((u) => u.role === "consultor" || !u.role), (u) => u.name)}
-              {manager && audience === "students" && select("tutorId", "Tutor", opts.users.filter((u) => ["tutor", "academico"].includes(u.role)), (u) => u.name)}
+              {manager && audience === "students" && (
+                <TextField select fullWidth variant="outlined" margin="dense" label="Tutor" value={f.tutorId} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }}
+                  helperText={f.tutorId ? "Quem responder vai direto para o próprio tutor (no WhatsApp dele, quando conectado)." : undefined}
+                  onChange={(e) => setF({ ...f, tutorId: e.target.value })}>
+                  <MenuItem value="">Todos os alunos</MenuItem>
+                  <MenuItem value="all">Todos os tutores (cada aluno vai para o seu)</MenuItem>
+                  {opts.users.filter((u) => ["tutor", "academico"].includes(u.role)).map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
+                </TextField>
+              )}
               {select("source", "Origem", opts.sources, (s) => s, "Todas")}
               <TextField select fullWidth variant="outlined" margin="dense" label="Sem contato há" value={f.noReplyDays} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }} onChange={(e) => setF({ ...f, noReplyDays: e.target.value })}>
                 <MenuItem value="">Qualquer prazo</MenuItem>

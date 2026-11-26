@@ -232,6 +232,23 @@ const FindOrCreateTicketService = async (
     if (approach === "ia") returning = false;
   }
 
+  // a student answering a campaign of the tutoring goes to THEIR tutor at once (no robot in between); right after the message is stored, the
+  // tutor hears it and the conversation continues on the tutor's own WhatsApp. Only a message the student sent (unread > 0) counts.
+  let tutorReply: { tutorId: number; shippingId: number } | null = null;
+  if (unreadMessages > 0 && !groupContact && TUTORIA_SEGMENTS.includes(String(ticket.segment || ""))) {
+    const { claimTutoringReply } = await import("../CampaignServices/TutorReply");
+    tutorReply = await claimTutoringReply(ticket.id).catch(() => null);
+    if (tutorReply) {
+      changed = true;
+      returning = false;
+      const repliedId = ticket.id;
+      const { tutorId, shippingId } = tutorReply;
+      setTimeout(() => {
+        import("../CampaignServices/TutorReply").then(m => m.continueWithTutor(repliedId, tutorId, shippingId)).catch(() => undefined);
+      }, 2500).unref?.();
+    }
+  }
+
   // a shared number (the official API of the polos): the client who already has a consultant goes back to them, robots and rotation stay out
   if (returning && !groupContact) {
     const owner = await returnToOwner(ticket, previousUserId);
