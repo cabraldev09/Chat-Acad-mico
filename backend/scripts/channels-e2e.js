@@ -535,6 +535,8 @@ const postMeta = (id, payload, secret, badSig) => {
   try {
     psql("postgres", `CREATE DATABASE ${DB}`);
     const env = {
+      // the suite creates many QR Code numbers (one per scenario); the production cap of QR numbers (WHATSAPP_MAX_QR, 8) is not what it tests
+      WHATSAPP_MAX_QR: "200",
       ...process.env, DATABASE_URL: "", DATABASE_URL_POOL: "", DB_SSL: "false", NODE_ENV: "test", DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "150",
