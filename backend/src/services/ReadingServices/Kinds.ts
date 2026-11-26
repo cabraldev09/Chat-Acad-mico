@@ -168,7 +168,9 @@ export const maskLongNumbers = (text: string): string => String(text || "").repl
 // ------------------------------------------------------------------------------------------------ colleagues and third people
 // a contact saved with a job of the team ("Douglas Coordenador", "Jane Consultora", "Pedro Tutor Vilhena"): a strong sign of a colleague. A
 // teacher ("Prof Leila") is NOT here: teachers are often leads (a second degree, the pedagogical training).
-export const TEAM_NAME = /\b(coordenador(a)?|coord\.?|consultor(a)?|tutor(a)?|secretaria|secret[aá]ri[oa]|equipe|ambienta[cç][aã]o)\b/i;
+// The coordination ("Coordenação Polo Vilhena") and a polo saved by its name ("Polo Cruzeiro do Sul Buritis Ro") are the team too; "polo" in
+// the middle of a person's name ("Ana Polo Vilhena") is not.
+export const TEAM_NAME = /\b(coordenador(a)?|coord\.?|coordena[cç][aã]o|consultor(a)?|tutor(a)?|secretaria|secret[aá]ri[oa]|equipe|ambienta[cç][aã]o)(?![\p{L}])|^\s*polo\b/iu;
 export const teamByName = (name: string | null | undefined): boolean => TEAM_NAME.test(String(name || ""));
 
 // the data of an enrollment sent in the conversation as a record ("Nome: ...", "CPF: ...", "Inscrição: ..."): what colleagues pass to each

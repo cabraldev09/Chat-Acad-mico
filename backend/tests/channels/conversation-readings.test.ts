@@ -75,6 +75,11 @@ describe("leitura das conversas copiadas: colegas e dados de outra pessoa", asyn
     expect(teamByName("Prof Leila")).toBe(false);
     expect(teamByName("Gabriela Jonjob")).toBe(false);
     expect(teamByName("Ana Polo Vilhena")).toBe(false);
+    // the names seen in the reading of 26/11: the coordination of a polo and the polo itself saved as a contact
+    expect(teamByName("Coordenação Polo Vilhena")).toBe(true);
+    expect(teamByName("Coordenacao Ariquemes")).toBe(true);
+    expect(teamByName("Polo Cruzeiro do Sul Buritis Ro")).toBe(true);
+    expect(teamByName("polo jaru")).toBe(true);
   });
   it("dados de cadastro de alguém (Nome:, CPF:, Inscrição:) e o nome depois do rótulo nunca vai ao modelo", () => {
     const rec = "Nome: Izabela Marcia Carolina Pereira\nCpf: 066.051.672-10\nInscrição: 266188360\nCurso: Letras";
