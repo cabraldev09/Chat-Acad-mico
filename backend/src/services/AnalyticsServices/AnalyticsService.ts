@@ -2,6 +2,7 @@ import { QueryTypes } from "sequelize";
 
 import { isOnline } from "./LivePresence";
 import sequelize from "../../database";
+import { CLOSING_PATTERN } from "../../helpers/ClosingMessage";
 import { dayBounds, getAppTz, shiftDays, todayInAppTz } from "../../helpers/AppTime";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import { portable } from "../../helpers/sqlDialect";
@@ -72,6 +73,25 @@ export const rows = async (sql: string, replacements: Record<string, any>): Prom
 export const VALID_TICKET = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person')) AND ${instOf("t")}`;
 // the client wrote last and nobody marked that message "Já resolvido" (an "ok" that needs no answer)
 export const REPLY_PENDING = "(t.replyDismissedMessageId IS NULL OR t.replyDismissedMessageId <> t.lastMessageId)";
+
+// "ESPERANDO RESPOSTA": one rule for every screen (Estatísticas, Alertas, Responder agora, Insights), so the numbers match. A conversation
+// waits for an answer when the client wrote last and that message needs one:
+//  - written in the last REPLY_WINDOW_DAYS days (older ones are "esquecidas": FORGOTTEN_REPLY, a separate notice);
+//  - of a lead still in negotiation: a contact with a lead in a won or lost stage, or enrolled, does not count (a sale already made);
+//  - not a student's conversation (segment onboarding: the tutoring has its own panel);
+//  - not a message that closes the subject ("ok", "obrigada", a reaction, a sticker; helpers/ClosingMessage);
+//  - not marked "Já resolvido" by the person.
+export const REPLY_WINDOW_DAYS = 7;
+// what the client's last message must be to need an answer (also used by Atendimento, DashboardController)
+export const REPLY_NEEDED = `COALESCE(t.segment, '') <> 'onboarding' AND COALESCE(t.lastMessageType, 'chat') NOT IN ('reaction', 'sticker')
+  AND NOT (COALESCE(t.lastMessage, '') <> '' AND t.lastMessage ~* '${CLOSING_PATTERN}')
+  AND NOT EXISTS (SELECT 1 FROM Leads rl JOIN LeadStages rs ON rs.id = rl.stageId WHERE rl.contactId = t.contactId AND (rs.type <> 'open' OR rl.enrolledAt IS NOT NULL))`;
+const NEEDS_ANSWER = `t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND ${REPLY_PENDING} AND ${VALID_TICKET} AND ${REPLY_NEEDED}`;
+export const AWAITING_REPLY = `(${NEEDS_ANSWER} AND COALESCE(t.lastMessageAt, t.updatedAt) >= NOW() - INTERVAL '${REPLY_WINDOW_DAYS} days')`;
+// "45 min", "3 h", "2 dias"
+export const waitText = (min: number): string => (min < 60 ? `${min} min` : min < 48 * 60 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} dias`);
+// waiting for longer than the window (up to 60 days; older ones are history): "conversas esquecidas"
+export const FORGOTTEN_REPLY = `(${NEEDS_ANSWER} AND COALESCE(t.lastMessageAt, t.updatedAt) < NOW() - INTERVAL '${REPLY_WINDOW_DAYS} days' AND COALESCE(t.lastMessageAt, t.updatedAt) >= NOW() - INTERVAL '60 days')`;
 
 // ---------------------------------------------------------------- configuration (schedules, targets, rules)
 export interface AnalyticsConfig {
@@ -197,6 +217,10 @@ export interface Metrics {
   reactivated: number;
   leadsWorked: number;
   pendingReply: number;
+  // when the oldest of the conversations waiting for an answer was written (null when none)
+  pendingReplySince?: string | null;
+  // waiting for longer than REPLY_WINDOW_DAYS ("esquecidas")
+  forgottenReply: number;
   inProgress: number;
   tasksOpen: number;
   tasksOverdue: number;
@@ -212,7 +236,7 @@ export interface Metrics {
 }
 
 const blank = (userId: number): Metrics => ({
-  userId, messagesSent: 0, attendances: 0, peopleContacted: 0, reactivated: 0, leadsWorked: 0, pendingReply: 0, inProgress: 0, tasksOpen: 0, tasksOverdue: 0,
+  userId, messagesSent: 0, attendances: 0, peopleContacted: 0, reactivated: 0, leadsWorked: 0, pendingReply: 0, pendingReplySince: null, forgottenReply: 0, inProgress: 0, tasksOpen: 0, tasksOverdue: 0,
   tasksDone: 0, followUpsDue: 0, proposalsSent: 0, proposalsViewed: 0, enrollments: 0, conversion: null, firstContactMinutes: null, firstContactSamples: 0
 });
 
@@ -243,7 +267,12 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
 
   // the situation right now
   (await rows(`SELECT t.userId, COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND ${VALID_TICKET} GROUP BY t.userId`, rep)).forEach(r => set(r, "inProgress"));
-  (await rows(`SELECT t.userId, COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND ${REPLY_PENDING} AND ${VALID_TICKET} GROUP BY t.userId`, rep)).forEach(r => set(r, "pendingReply"));
+  (await rows(`SELECT t.userId, COUNT(*) AS n, MIN(COALESCE(t.lastMessageAt, t.updatedAt)) AS oldest FROM Tickets t WHERE t.userId IN (:ids) AND ${AWAITING_REPLY} GROUP BY t.userId`, rep)).forEach(r => {
+    set(r, "pendingReply");
+    const m = out.get(Number(r.userId));
+    if (m && r.oldest) m.pendingReplySince = new Date(r.oldest).toISOString();
+  });
+  (await rows(`SELECT t.userId, COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND ${FORGOTTEN_REPLY} GROUP BY t.userId`, rep)).forEach(r => set(r, "forgottenReply"));
 
   // tasks and follow-ups
   (await rows(`SELECT userId, COUNT(*) AS n FROM LeadTasks WHERE userId IN (:ids) AND doneAt IS NULL GROUP BY userId`, rep)).forEach(r => set(r, "tasksOpen"));
@@ -445,7 +474,15 @@ export const alertsOf = (bundles: ConsultantBundle[], config: AnalyticsConfig): 
     }
     if (p.whatsapp.state === "offline") alerts.push({ level: "high", userId: user.id, name: user.name, code: "whatsapp_offline", text: `WhatsApp desconectado${p.whatsapp.since ? ` desde ${new Date(p.whatsapp.since).toLocaleString("pt-BR", { timeZone: getAppTz(), day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}: as mensagens não chegam`, link: "/connections" });
     if (m.tasksOverdue > 0) alerts.push({ level: m.tasksOverdue >= 5 ? "high" : "medium", userId: user.id, name: user.name, code: "tasks_overdue", text: `${m.tasksOverdue} tarefa(s) atrasada(s)`, link: `/crm/tarefas?scope=all` });
-    if (m.pendingReply >= 5) alerts.push({ level: "high", userId: user.id, name: user.name, code: "pending_reply", text: `${m.pendingReply} conversas esperando resposta`, link: `/tickets` });
+    if (m.pendingReply > 0) {
+      // how long the oldest waits: an hour or more, or five or more conversations, is a problem; less is a heads-up
+      const waitedMin = m.pendingReplySince ? Math.max(0, Math.round((Date.now() - new Date(m.pendingReplySince).getTime()) / 60000)) : 0;
+      if (m.pendingReply >= 5 || waitedMin >= 60) {
+        const one = m.pendingReply === 1;
+        alerts.push({ level: "high", userId: user.id, name: user.name, code: "pending_reply", text: `${m.pendingReply} ${one ? "cliente esperando" : "clientes esperando"} resposta${waitedMin ? `, ${one ? "há" : "o mais antigo há"} ${waitText(waitedMin)}` : ""}`, link: `/tickets` });
+      }
+    }
+    if (m.forgottenReply > 0) alerts.push({ level: "medium", userId: user.id, name: user.name, code: "forgotten_reply", text: `${m.forgottenReply} ${m.forgottenReply === 1 ? "conversa parada" : "conversas paradas"} há mais de ${REPLY_WINDOW_DAYS} dias com o cliente por último`, link: `/tickets` });
     if (!noNumber && p.onSchedule && p.state === "idle") alerts.push({ level: "medium", userId: user.id, name: user.name, code: "idle_on_schedule", text: `No horário de trabalho, sem atividade há mais de ${config.activeWindowMinutes} min`, link: `/estatisticas` });
     if (!noNumber && config.dailyAttendancesTarget > 0 && m.attendances < config.dailyAttendancesTarget && p.onSchedule) alerts.push({ level: "low", userId: user.id, name: user.name, code: "below_attendances_target", text: `${m.attendances} de ${config.dailyAttendancesTarget} conversas da meta diária`, link: `/estatisticas` });
     if (!noNumber && config.dailyMessagesTarget > 0 && m.messagesSent < config.dailyMessagesTarget && p.onSchedule) alerts.push({ level: "low", userId: user.id, name: user.name, code: "below_messages_target", text: `${m.messagesSent} de ${config.dailyMessagesTarget} mensagens da meta diária`, link: `/estatisticas` });

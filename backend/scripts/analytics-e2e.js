@@ -392,6 +392,41 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert((await A(joao, "/analytics/team?range=today")).status === 403, "a consultant read the team");
     });
 
+    await test("esperando resposta: only what needs an answer (lead in negotiation, last 7 days, not ok or obrigado, not a reaction); older ones are esquecidas; the alert says how long the oldest waits; the same number in Responder agora", async () => {
+      const before = (await A(joao, "/analytics/me?range=today")).data.metrics;
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const won = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
+      const lastFrom = (t, text, ago, type = "chat") => sql(`UPDATE Tickets SET status='open', lastMessageFromMe=false, lastMessageId='lm-${t.ticketId}', lastMessage='${text}', lastMessageType='${type}', lastMessageAt=NOW() - INTERVAL '${ago}' WHERE id=${t.ticketId}`);
+      const lead = (t, stage, enrolled = false) => sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, enrolledAt, createdAt, updatedAt) VALUES ('Lead ER ${t.ticketId}', '55699${t.ticketId}', 'WhatsApp', ${stage}, ${ids.joao}, ${t.contactId}, false, ${enrolled ? "NOW()" : "NULL"}, NOW(), NOW())`);
+      // a question of a lead in negotiation, two hours ago: waits
+      const asks = mkTicket({ owner: ids.joao }); lead(asks, open); lastFrom(asks, "Qual o valor da mensalidade?", "2 hours");
+      // the sale was made: an enrolled lead (won stage) who wrote last does not wait
+      const sold = mkTicket({ owner: ids.joao }); lead(sold, won, true); lastFrom(sold, "Recebi o boleto", "1 hour");
+      // "Obrigada!" and a thumbs up close the subject; a reaction too
+      const thanks = mkTicket({ owner: ids.joao }); lead(thanks, open); lastFrom(thanks, "Obrigada!", "3 hours");
+      const thumbs = mkTicket({ owner: ids.joao }); lastFrom(thumbs, "👍", "3 hours");
+      const reacted = mkTicket({ owner: ids.joao }); lastFrom(reacted, "", "3 hours", "reaction");
+      // "ok, e o valor?" still waits (a question after the ok)
+      const okq = mkTicket({ owner: ids.joao }); lastFrom(okq, "ok, e o valor?", "30 minutes");
+      // ten days without an answer: not "esperando", but "esquecida"
+      const old = mkTicket({ owner: ids.joao }); lead(old, open); lastFrom(old, "Ainda tem vaga?", "10 days");
+      const after = (await A(joao, "/analytics/me?range=today")).data;
+      assert(after.metrics.pendingReply - before.pendingReply === 2, `esperando: ${before.pendingReply} -> ${after.metrics.pendingReply} (only the question and the ok with a question)`);
+      assert(after.metrics.forgottenReply - (before.forgottenReply || 0) === 1, `esquecidas: ${before.forgottenReply} -> ${after.metrics.forgottenReply}`);
+      // Responder agora lists the same conversations
+      const listed = (after.focus.conversations || []).map(c => c.ticketId);
+      assert(listed.includes(asks.ticketId) && listed.includes(okq.ticketId), `Responder agora is missing what waits: ${JSON.stringify(listed)}`);
+      assert(![sold, thanks, thumbs, reacted, old].some(t => listed.includes(t.ticketId)), `Responder agora lists what does not wait: ${JSON.stringify(listed)}`);
+      // the alert says how long the oldest waits, and the forgotten ones are a separate, lighter notice (João gets a connected number for
+      // this check: someone without a number gets only the "no WhatsApp" alert)
+      const own = sql(`INSERT INTO Whatsapps (name, status, channel, ownerId, isDefault, createdAt, updatedAt) VALUES ('Número do João ER', 'CONNECTED', 'whatsapp', ${ids.joao}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const alerts = (await A(admin, "/analytics/team?range=today")).data.alerts.filter(a => a.userId === ids.joao);
+      sql(`DELETE FROM Whatsapps WHERE id=${own}`);
+      const waiting = alerts.find(a => a.code === "pending_reply");
+      assert(waiting && /esperando resposta, o mais antigo há \d+ (h|min|dias)/.test(waiting.text), `alert of the waiting ones: ${JSON.stringify(alerts.map(a => a.text))}`);
+      assert(alerts.some(a => a.code === "forgotten_reply" && a.level === "medium" && /parada|paradas/.test(a.text)), `alert of the forgotten ones: ${JSON.stringify(alerts.map(a => a.text))}`);
+    });
+
     // ------------------------------------------------------------ new leads to check: the responsible is who answers the conversation
     console.log("\nNovos para conferir");
     await test("a new lead goes to who ANSWERS the conversation (open ticket), not only to the owner of the lead; the management sees everybody", async () => {

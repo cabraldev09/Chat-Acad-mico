@@ -4,6 +4,7 @@ import sequelize from "../../database";
 import { dayBounds, todayInAppTz } from "../../helpers/AppTime";
 import { portable } from "../../helpers/sqlDialect";
 import { AnalyticsInstitutionScope } from "./InstitutionScope";
+import { AWAITING_REPLY } from "./AnalyticsService";
 
 // What the consultant should do next (always about one person): the lists behind the shortcuts of the personal screen.
 const rows = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
@@ -28,8 +29,9 @@ export const focusFor = async (userId: number, institution: AnalyticsInstitution
     ),
     rows(
       `SELECT t.id, c.name AS contactName, t.lastMessage, t.lastMessageAt FROM Tickets t JOIN Contacts c ON c.id = t.contactId
-       WHERE t.userId = :userId AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND (t.replyDismissedMessageId IS NULL OR t.replyDismissedMessageId <> t.lastMessageId) AND t.isGroup = false AND t.isHistorical = false AND ${scopedTicket} ORDER BY t.lastMessageAt ASC LIMIT 8`,
-      { userId, ...scopeParams }
+       WHERE t.userId = :userId AND ${AWAITING_REPLY} AND ${scopedTicket} ORDER BY t.lastMessageAt ASC LIMIT 8`,
+      // the same rule of "esperando resposta" of Estatísticas (AWAITING_REPLY reads the university as :inst_id / :inst_legacy)
+      { userId, ...scopeParams, inst_id: scopeParams.institutionId, inst_legacy: scopeParams.includeLegacy }
     )
   ]);
   return {

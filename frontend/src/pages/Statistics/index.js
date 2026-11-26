@@ -65,7 +65,7 @@ const Results = ({ params, period }) => {
       <div className="pk-grid">
         <GlowStat id="conversion" label="Conversão" icon={TrendingUp} tone="violet" loading={wait} value={fmt(t.conversion, "percent")} hint="Matrículas divididas pelos leads trabalhados" />
         <GlowStat id="firstContact" label="Primeiro contato" icon={Clock} tone={first > 15 ? "warn" : "good"} loading={wait} value={first === null || first === undefined ? "—" : minutesText(first)} hint="Média em horário comercial. Ideal: até 15 min" />
-        <GlowStat id="pendingReply" label="Aguardando resposta" icon={Inbox} tone={t.pendingReply ? "warn" : undefined} loading={wait} value={num(t.pendingReply)} hint="Conversas em que o cliente falou por último" />
+        <GlowStat id="pendingReply" label="Aguardando resposta" icon={Inbox} tone={t.pendingReply ? "warn" : undefined} loading={wait} value={num(t.pendingReply)} hint="Lead em negociação que escreveu por último, nos últimos 7 dias" />
         <GlowStat id="tasksOverdue" label="Tarefas atrasadas" icon={ListTodo} tone={t.tasksOverdue ? "bad" : "good"} loading={wait} value={num(t.tasksOverdue)} hint={`${num(t.tasksOpen)} abertas no total`} />
         <GlowStat id="proposals" label="Propostas enviadas" icon={FileText} loading={wait} value={num(t.proposalsSent)} hint={`${num(t.proposalsViewed)} abertas pelo candidato`} />
         <GlowStat id="leadsWorked" label="Leads trabalhados" icon={Users} loading={wait} value={num(t.leadsWorked)} hint={`${num(t.reactivated)} conversas retomadas`} />
