@@ -27,10 +27,9 @@ import { disconnectNote, isLogoutReason, qrIsStale, setAsideLoginIn } from "../S
 import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
-import SaveImportedContacts from "../../../helpers/SaveImportedContacts";
+import type { PhoneName } from "../../../helpers/PhoneNames";
 import CreateOrUpdateContactService from "../../../services/ContactServices/CreateOrUpdateContactService";
 import { isPhoneNumber } from "../../../helpers/ChatId";
-import User from "../../../models/User";
 import Contact from "../../../models/Contact";
 import Message from "../../../models/Message";
 import Ticket from "../../../models/Ticket";
@@ -1315,27 +1314,40 @@ const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
   return Object.assign(result, { stats });
 };
 
-// When a number connects: the first time, its address book becomes the company's contacts (only for the company's own numbers and
-// administrators; the address book of a regular user is personal and uses "Importar contatos"). And while its conversations were never
-// copied, they are: everything the phone has (people, groups, communities), silently, as history for whoever owns the number
-// (ImportHistoryService.autoImportHistory waits for WhatsApp Web to finish receiving the chats and tries again when nothing came).
-const afterConnection = async (whatsapp: Whatsapp, firstConnection: boolean) => {
+// Every person this number knows, saved or not, with the names WhatsApp has for them (the address book's and the profile's). Used to
+// put a name on the contacts of the system that are still only a number (CompletePhoneNames); nobody is created from this list.
+const getPhoneNames = async (sessionId: number): Promise<PhoneName[]> => {
+  const wbot = getWbot(sessionId);
+  const contacts = await wbot.getContacts();
+  return contacts
+    .filter(contact => !contact.isGroup && !contact.isMe && contact.id.server !== "status" && contact.id.server !== "broadcast")
+    .map(contact => {
+      const isLid = contact.id.server === "lid";
+      return {
+        number: isLid ? undefined : onlyDigits(contact.id.user),
+        lid: isLid ? contact.id.user : undefined,
+        name: contact.name || undefined,
+        pushname: contact.pushname || undefined,
+        verifiedName: (contact as any).verifiedName || undefined
+      };
+    })
+    .filter(p => p.name || p.pushname || p.verifiedName);
+};
+
+// When a number connects: its address book and the names of the people it talks to come to the system (CompletePhoneNames: the company's
+// numbers and the administrators' bring the whole address book; the own number of a consultant or tutor only names who already talks to
+// it, because its address book is personal). And while its conversations were never copied, they are: everything the phone has
+// (people, groups, communities), silently, as history for whoever owns the number (ImportHistoryService.autoImportHistory waits for
+// WhatsApp Web to finish receiving the chats and tries again when nothing came).
+const afterConnection = async (whatsapp: Whatsapp, copyHistory: boolean) => {
   try {
     // WhatsApp Web needs a moment to load after "ready" (the copy itself waits until the list of chats stops growing)
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    if (firstConnection) {
-      let shareContacts = true;
-      if (whatsapp.ownerId) {
-        const owner = await User.findByPk(whatsapp.ownerId, { attributes: ["profile"] });
-        shareContacts = owner?.profile === "admin";
-      }
-      if (shareContacts) {
-        const saved = await SaveImportedContacts(await getContacts(whatsapp.id));
-        logger.info(`Session ${whatsapp.name}: ${saved.created} contacts imported from the phone, ${saved.updated} completed`);
-      }
-    }
+    const { syncPhoneContacts } = await import("../../../services/WbotServices/CompletePhoneNames");
+    await syncPhoneContacts(whatsapp).catch(err => logger.warn(`Session ${whatsapp.name}: contacts of the phone not read: ${err}`));
 
+    if (!copyHistory) return;
     const { autoImportHistory } = await import("../../../services/WbotServices/ImportHistoryService");
     const report = await autoImportHistory(whatsapp);
     if (report) logger.info(`Session ${whatsapp.name}: ${report.chats} conversas copiadas do celular (${report.messages} mensagens)`);
@@ -1752,7 +1764,8 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
           syncUnreadMessages(wbot, whatsapp.id, { periodic: true }).catch(() => undefined);
         }, 5 * 60 * 1000);
         // the conversations of the phone, copied silently while they never were (the first QR Code, or a copy that did not finish)
-        if (firstConnection || !whatsapp.historyImportedAt) afterConnection(whatsapp, firstConnection);
+        // and the names of the phone, on every connection (a contact saved on the phone since the last one gets its name)
+        afterConnection(whatsapp, firstConnection || !whatsapp.historyImportedAt);
         // the communities of this number, a little after WhatsApp Web finished loading and then every 15 minutes
         scheduleCommunitySync(wbot, whatsapp.id, 30000);
         // the pins and pictures as the phone has them: a little after loading, then every 3 minutes
@@ -1989,6 +2002,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   getChatPicUrl,
   getAbout,
   getContacts,
+  getPhoneNames,
   sendSeen,
   sendTyping,
   sendRecording,

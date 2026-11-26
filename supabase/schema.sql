@@ -922,7 +922,9 @@ CREATE TABLE public."Campaigns" (
     "templateBody" text,
     "createdById" integer,
     "institutionId" integer,
-    objective text
+    objective text,
+    offer text,
+    approach character varying(20)
 );
 
 
@@ -3204,7 +3206,8 @@ CREATE TABLE public."Proposals" (
     "createdBy" integer,
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
-    "affiliateId" integer
+    "affiliateId" integer,
+    "validUntil" date
 );
 
 
@@ -5903,6 +5906,13 @@ CREATE INDEX campaign_shippings_campaign_status ON public."CampaignShippings" US
 
 
 --
+-- Name: campaign_shippings_number_sent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX campaign_shippings_number_sent ON public."CampaignShippings" USING btree (number, "sentAt");
+
+
+--
 -- Name: campaigns_institution_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8405,6 +8415,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js'
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000001-conversation-readings.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000002-recovery-offer.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000003-recovery-reply-index.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270105000001-whatsapp-history-report.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).

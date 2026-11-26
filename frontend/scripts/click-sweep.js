@@ -18,8 +18,8 @@ const ROUTES = process.env.ROUTES ? process.env.ROUTES.split(",") : [
   "/crm", "/crm/painel", "/crm/tarefas", "/crm/comissoes", "/crm/metas-polos", "/crm/retencao",
   "/afiliados", "/cursos", "/campaigns", "/chatbot", "/ai-agents", "/users", "/polos", "/Queues", "/tags", "/grades",
   "/analise-curricular", "/analise-academica", "/alunos",
-  "/configuracoes?secao=prontidao", "/configuracoes?secao=cadastros", "/configuracoes?secao=geral", "/configuracoes?secao=atendimento",
-  "/configuracoes?secao=tutoria", "/configuracoes?secao=copiloto", "/configuracoes?secao=modelos", "/configuracoes?secao=meta",
+  "/configuracoes?secao=prontidao", "/configuracoes?secao=cadastros", "/configuracoes?secao=geral", "/configuracoes?secao=horario", "/configuracoes?secao=atendimento", "/configuracoes?secao=calendario",
+  "/configuracoes?secao=tutoria", "/configuracoes?secao=copiloto", "/configuracoes?secao=modelos", "/configuracoes?secao=limites",
   "/configuracoes?secao=captacao", "/configuracoes?secao=pagamentos", "/configuracoes?secao=regras", "/configuracoes?secao=email",
   "/configuracoes?secao=entregas", "/configuracoes?secao=erros",
 ];

@@ -185,7 +185,6 @@ export default function MetaTemplates({ values, save }) {
   const packNames = new Set((data.pack || []).map((p) => p.name));
   const byDept = DEPT_ORDER.map((d) => [d, (data.templates || []).filter((t) => t.department === d)]);
   const others = (data.templates || []).filter((t) => !t.department);
-  const all = data.templates || [];
 
   return (
     <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
@@ -195,20 +194,6 @@ export default function MetaTemplates({ values, save }) {
           <Button size="small" variant="outlined" onClick={() => load()}>Tentar de novo</Button>
         </div>
       )}
-      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-        {[
-          ["Aprovados", all.filter((t) => t.status === "APPROVED").length, "#15803d"],
-          ["Em análise", all.filter((t) => t.status === "PENDING" || t.status === "IN_APPEAL").length, "#b45309"],
-          ["Recusados", all.filter((t) => ["REJECTED", "PAUSED", "DISABLED"].includes(t.status)).length, "#b91c1c"],
-          ["Em Utilidade", all.filter((t) => t.category === "UTILITY").length, "#0369a1"],
-          ["Em Marketing", all.filter((t) => t.category === "MARKETING").length, "#b45309"],
-        ].map(([label, value, color]) => (
-          <div key={label} style={{ ...card, padding: "12px 14px" }}>
-            <div style={{ fontSize: 12.5, color: "var(--text-2)", fontWeight: 600 }}>{label}</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: value ? color : "inherit", fontVariantNumeric: "tabular-nums" }}>{value}</div>
-          </div>
-        ))}
-      </div>
       <div style={card}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
           <div style={{ fontWeight: 700, flex: "1 1 220px" }}>Pacote recomendado</div>
@@ -333,7 +318,7 @@ export default function MetaTemplates({ values, save }) {
           )}
           {!(data.templates || []).length && <div style={hint}>Nenhum modelo na conta ainda.</div>}
         </div>
-        <div style={{ ...hint, marginTop: 8 }}>Para os modelos saírem nas campanhas e na abertura de conversas, o envio também precisa estar autorizado em Operação.</div>
+        <div style={{ ...hint, marginTop: 8 }}>Para os modelos saírem nas campanhas e na abertura de conversas, o envio precisa estar autorizado no topo desta seção.</div>
       </div>
     </div>
   );

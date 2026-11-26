@@ -1,153 +1,237 @@
 import React, { useEffect, useState } from "react";
-import { Button, FormControlLabel, Switch, TextField, Typography, MenuItem, Paper } from "@material-ui/core";
+import { Button, FormControlLabel, Switch, TextField, Typography } from "@material-ui/core";
 import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { confirmDialog } from "../../components/ConfirmDialog";
+import { SetCard, SaveBar, Fields, Fold } from "./ui";
+import MetaCosts from "./MetaCosts";
 
-// the rules of the operation live in one endpoint but each part is shown in the group where it belongs (no group "Operação" mixing
-// deadlines, money and deliveries): "atendimento" in Horário e atendimento, "limites" in Custos, "modelos" in Modelos da Meta,
-// "entregas" in Entregas e arquivos
+// The rules of the operation live in one endpoint; each part is shown in the group where it belongs:
+// "prazos" in Horário e prazos, "acompanhamento" and "equipe" in Distribuição e lembretes, "limites" in Limites e orçamento,
+// "modelos" in Modelos da Meta, "entregas" in Entregas e arquivos.
 const FOLLOW_FIELDS = [
-  ["crm_escalation_minutes", "Escalar para a gestão após minutos"],
-  ["crm_proposal_unopened_minutes", "Retornar proposta não aberta após minutos (0 desliga)"],
-  ["crm_proposal_viewed_minutes", "Retornar proposta aberta após minutos (0 desliga)"],
-  ["crm_payment_followup_minutes", "Acompanhar cobrança após minutos (0 desliga)"],
+  ["crm_proposal_unopened_minutes", "Proposta não aberta: retornar após (min)"],
+  ["crm_proposal_viewed_minutes", "Proposta aberta: retornar após (min)"],
+  ["crm_payment_followup_minutes", "Cobrança: acompanhar após (min)"],
 ];
-const LIMIT_FIELDS = [
-  ["ai_daily_token_cap", "Tokens por dia de toda a IA, incluindo testes (0 sem limite)"],
-  ["ai_daily_usd_cap", "Orçamento diário estimado da IA em US$ (0 sem limite)"],
-  ["outbound_daily_messages", "Máximo de envios por dia (0 sem limite)"],
-  ["outbound_daily_usd", "Orçamento diário estimado da Meta em US$ (0 sem limite)"],
+const DAY_FIELDS = [
+  ["ai_daily_usd_cap", "IA: US$ por dia"],
+  ["ai_daily_token_cap", "IA: tokens por dia"],
+  ["outbound_daily_usd", "WhatsApp oficial: US$ por dia"],
+  ["outbound_daily_messages", "WhatsApp oficial: envios por dia"],
 ];
-// the cap of the month of the official WhatsApp and the prices that replace the reference table (blank uses the table)
 const MONTH_FIELDS = [
-  ["outbound_monthly_usd", "Teto do mês do WhatsApp oficial em US$ (0 sem teto)"],
-  ["outbound_usd_brl", "Cotação do dólar para mostrar em reais"],
-  ["outbound_meta_template_usd", "Preço em US$ do modelo de Utilidade (vazio usa a tabela)"],
-  ["outbound_meta_service_usd", "Preço em US$ da resposta acima das 1.000 grátis (vazio usa o da Utilidade)"]
+  ["outbound_monthly_usd", "WhatsApp oficial: teto do mês (US$)"],
+  ["ai_monthly_budget_usd", "IA: orçamento do mês (US$)"],
+  ["outbound_usd_brl", "Cotação do dólar (R$)"],
 ];
-export default function Operations({ part = "atendimento" }) {
+const PRICE_FIELDS = [
+  ["outbound_meta_template_usd", "Preço do modelo de Utilidade (US$)"],
+  ["outbound_meta_service_usd", "Preço da resposta acima das 1.000 grátis (US$)"],
+];
+
+const has = (o, k) => o && Object.prototype.hasOwnProperty.call(o, k);
+
+export default function Operations({ part = "acompanhamento" }) {
+  const [saved, setSaved] = useState(null);
   const [settings, setSettings] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState("");
-  const load = () => Promise.all([api.get("/operations/config"), api.get("/operations/summary")]).then(([config, data]) => { setSettings(config.data); setSummary(data.data); }).catch(toastError);
-  useEffect(() => { load(); }, []);
-  const save = async () => { setBusy(true); try { const { data } = await api.put("/operations/config", settings); setSettings(data); toast.success("Regras de operação salvas."); } catch (err) { toastError(err); } finally { setBusy(false); } };
+  const needsSummary = part === "entregas" || part === "equipe" || part === "limites";
+  const load = () => {
+    setFailed(false);
+    return Promise.all([api.get("/operations/config"), needsSummary ? api.get("/operations/summary") : Promise.resolve({ data: null })])
+      .then(([config, data]) => { setSaved(config.data); setSettings(config.data); setSummary(data.data); })
+      .catch((err) => { setFailed(true); toastError(err); });
+  };
+  useEffect(() => { load(); }, [part]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (failed) return <SetCard title="Não foi possível carregar"><Button variant="outlined" onClick={load} style={{ justifySelf: "start" }}>Tentar de novo</Button></SetCard>;
+  if (!settings || (needsSummary && !summary)) return <Typography variant="body2" color="textSecondary">Carregando...</Typography>;
+
+  const keysOf = (fields) => fields.map(([k]) => k).filter((k) => has(settings, k));
+  const dirtyOf = (keys) => keys.some((k) => String(settings[k]) !== String(saved[k]));
+  const saveKeys = async (keys) => {
+    setBusy(true);
+    try {
+      const { data } = await api.put("/operations/config", Object.fromEntries(keys.map((k) => [k, settings[k]])));
+      setSaved(data);
+      // the edits of the other cards on screen stay as they are
+      setSettings((cur) => ({ ...data, ...Object.fromEntries(Object.entries(cur).filter(([k]) => !keys.includes(k))) }));
+      toast.success("Salvo.");
+    } catch (err) { toastError(err); } finally { setBusy(false); }
+  };
+  const numbers = (fields) => (
+    <Fields>
+      {fields.filter(([key]) => has(settings, key)).map(([key, label]) => (
+        <TextField key={key} variant="outlined" size="small" type="number" inputProps={{ min: 0, step: key.includes("usd") ? "any" : 1 }} InputLabelProps={{ shrink: true }}
+          label={label} value={settings[key]} onChange={(e) => { const value = e.target.value; setSettings((cur) => ({ ...cur, [key]: value })); }} />
+      ))}
+    </Fields>
+  );
+  const bar = (keys) => <SaveBar dirty={dirtyOf(keys)} busy={busy} onSave={() => saveKeys(keys)} onDiscard={() => setSettings((cur) => ({ ...cur, ...Object.fromEntries(keys.map((k) => [k, saved[k]])) }))} />;
+
+  if (part === "prazos") {
+    const keys = ["crm_escalation_minutes"];
+    return (
+      <SetCard title="Escalar para a gestão" sub="Se o lead novo continuar sem resposta depois do alerta, a coordenação recebe outro aviso após este tempo.">
+        {numbers([["crm_escalation_minutes", "Escalar após (min)"]])}
+        {bar(keys)}
+      </SetCard>
+    );
+  }
+
+  if (part === "acompanhamento") {
+    const keys = ["crm_followup_enabled", ...keysOf(FOLLOW_FIELDS)];
+    const on = settings.crm_followup_enabled === "true";
+    return (
+      <SetCard title="Retorno de propostas e cobranças" sub="O responsável recebe uma tarefa para retomar. Uma resposta do lead ou o encerramento interrompe o acompanhamento. 0 desliga.">
+        <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={on} onChange={(e) => { const v = String(e.target.checked); setSettings((cur) => ({ ...cur, crm_followup_enabled: v })); }} />} label={on ? "Criar tarefas de retorno" : "Sem tarefas de retorno"} />
+        {on && numbers(FOLLOW_FIELDS)}
+        {bar(keys)}
+      </SetCard>
+    );
+  }
+
+  if (part === "equipe") {
+    const change = (i, patch) => setSummary((cur) => ({ ...cur, users: cur.users.map((u, j) => (j === i ? { ...u, ...patch } : u)) }));
+    return (
+      <>
+      {(summary.unassigned || []).length > 0 && (
+        <SetCard title="Atendimentos sem responsável" sub="Conversas abertas que ninguém assumiu. Abra para distribuir.">
+          <div style={{ display: "grid", gap: 4 }}>
+            {summary.unassigned.map((t) => <Button key={t.id} component={Link} to={`/tickets/${t.id}`} style={{ justifyContent: "flex-start", textTransform: "none" }}>{t.contact?.name || `Atendimento ${t.id}`}</Button>)}
+          </div>
+        </SetCard>
+      )}
+      <SetCard title="Disponibilidade da equipe" sub="Quem recebe conversas novas e quantas pode ter abertas ao mesmo tempo (0 = sem limite).">
+        <div style={{ display: "grid", gap: 8 }}>
+          {summary.users.map((user, i) => (
+            <div key={user.id} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <FormControlLabel style={{ flex: "1 1 220px", minWidth: 0, margin: 0 }} control={<Switch color="primary" checked={user.acceptsNewTickets !== false} onChange={(e) => change(i, { acceptsNewTickets: e.target.checked })} />} label={`${user.name} · ${user.openTickets} abertos`} />
+              <TextField size="small" variant="outlined" type="number" label="Capacidade" style={{ width: 120 }} value={user.maxOpenTickets} inputProps={{ min: 0, max: 1000 }} onChange={(e) => change(i, { maxOpenTickets: Number(e.target.value) })} />
+              <Button variant="outlined" style={{ height: 40 }} onClick={async () => { try { await api.put(`/operations/users/${user.id}/capacity`, { acceptsNewTickets: user.acceptsNewTickets, maxOpenTickets: user.maxOpenTickets }); toast.success("Capacidade salva."); } catch (err) { toastError(err); } }}>Salvar</Button>
+            </div>
+          ))}
+        </div>
+      </SetCard>
+      </>
+    );
+  }
+
+  if (part === "modelos") {
+    if (!has(settings, "outbound_allow_templates")) return null;
+    const on = settings.outbound_allow_templates === "true";
+    return (
+      <SetCard title="Envio com modelos aprovados" sub="Sem esta autorização nada sai fora das 24 horas: abertura dos departamentos, boas-vindas da matrícula e campanhas com modelo.">
+        <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={on} disabled={busy} onChange={async (e) => {
+          const v = String(e.target.checked);
+          setSettings((cur) => ({ ...cur, outbound_allow_templates: v })); setBusy(true);
+          try { const { data } = await api.put("/operations/config", { outbound_allow_templates: v }); setSaved(data); setSettings(data); toast.success(v === "true" ? "Envio com modelos autorizado." : "Envio com modelos desligado."); } catch (err) { toastError(err); load(); } finally { setBusy(false); }
+        }} />} label={on ? "Autorizado" : "Desligado"} />
+      </SetCard>
+    );
+  }
+
+  if (part === "limites") {
+    const admin = has(settings, "ai_daily_token_cap");
+    const quota = ["send_quota_monthly"].filter((k) => has(settings, k));
+    const day = keysOf(DAY_FIELDS);
+    const month = [...keysOf(MONTH_FIELDS), ...keysOf(PRICE_FIELDS), ...(has(settings, "outbound_allow_marketing") ? ["outbound_allow_marketing"] : [])];
+    const brl = Number(settings.outbound_monthly_usd) > 0 && Number(settings.outbound_usd_brl) > 0
+      ? (Number(settings.outbound_monthly_usd) * Number(settings.outbound_usd_brl)).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }) : null;
+    return (
+      <>
+        {quota.length > 0 && (
+          <SetCard title="Cota de disparos por pessoa" sub="Mensagens que as campanhas e os avisos de cada pessoa podem enviar no mês. Quem passa pede liberação à gestão (Estatísticas → Disparos). 0 deixa sem limite.">
+            {numbers([["send_quota_monthly", "Mensagens por pessoa no mês"]])}
+            {bar(quota)}
+          </SetCard>
+        )}
+        {admin && day.length > 0 && (
+          <SetCard title="Limites por dia" sub="Ao chegar no limite, o sistema para de gastar até o dia seguinte. 0 deixa sem limite.">
+            {numbers(DAY_FIELDS)}
+            {bar(day)}
+          </SetCard>
+        )}
+        {admin && month.length > 0 && (
+          <SetCard title="Teto do mês" sub={`Campanha que passaria do teto não começa, e os envios pagos param até o mês seguinte. A gestão é avisada aos 80%.${brl ? ` O teto do WhatsApp equivale a cerca de ${brl}.` : ""}`}>
+            {numbers(MONTH_FIELDS)}
+            <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={settings.outbound_allow_marketing === "true"} onChange={(e) => { const v = String(e.target.checked); setSettings((cur) => ({ ...cur, outbound_allow_marketing: v })); }} />}
+              label="Permitir modelos de Marketing em campanhas (cerca de 9 vezes o preço de Utilidade)" />
+            <details>
+              <summary style={{ cursor: "pointer", fontSize: 13.5, fontWeight: 600 }}>Preços da Meta (vazio usa a tabela)</summary>
+              <div style={{ marginTop: 12 }}>{numbers(PRICE_FIELDS)}</div>
+            </details>
+            {bar(month)}
+          </SetCard>
+        )}
+        {admin && summary && summary.spend && (
+          <SetCard title="Consumo de hoje" sub="Estimado pelo sistema com os preços acima (não é a fatura).">
+            <Typography variant="body2">IA: US$ {summary.spend.aiEstimatedUsd.toFixed(4)} · {summary.spend.aiUnpricedCalls} chamadas sem preço cadastrado · {summary.spend.aiReservedTokens} tokens reservados.</Typography>
+            <Typography variant="body2">WhatsApp oficial: {summary.spend.messages} envios · US$ {summary.spend.metaEstimatedUsd.toFixed(4)} · {summary.spend.metaUnpricedMessages} mensagens sem preço.</Typography>
+            <Typography variant="body2">Custo estimado por matrícula hoje: {summary.spend.enrollments ? `US$ ${((summary.spend.aiEstimatedUsd + summary.spend.metaEstimatedUsd) / summary.spend.enrollments).toFixed(4)}` : "sem matrícula hoje"}.</Typography>
+          </SetCard>
+        )}
+        {/* the real bill of the Meta: the management sees it (GET /meta/costs is of the management) */}
+        <SetCard>
+          <Fold label="Gasto real do WhatsApp oficial (cobrado pela Meta)">
+            <MetaCosts />
+          </Fold>
+        </SetCard>
+        <Typography variant="body2" color="textSecondary">O gasto da IA por uso e por modelo fica em <Link to="/ai-agents">Agentes de IA</Link>.</Typography>
+      </>
+    );
+  }
+
+  // entregas
   const reconcile = async (kind, id, status) => {
     if (!(await confirmDialog({ title: status === "sent" ? "Marcar como entregue?" : "Marcar como não entregue?", message: `Confira na conversa se a mensagem ${status === "sent" ? "chegou" : "não chegou"}. Esta ação não reenvia mensagens.`, confirmText: "Confirmar" }))) return;
     try { await api.post(`/operations/reconcile/${kind}/${id}`, { status }); load(); } catch (err) { toastError(err); }
   };
-  if (!settings || !summary) return null;
-  const admin = Object.prototype.hasOwnProperty.call(settings, "ai_daily_token_cap");
-  const spend = summary.spend;
-  const saveBtn = <div><Button variant="contained" color="primary" disabled={busy} onClick={save}>{busy ? "Salvando..." : "Salvar"}</Button></div>;
-  const numbers = (fields) => (
-    <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", alignItems: "start" }}>
-      {fields.filter(([key]) => settings[key] !== undefined).map(([key, label]) => <TextField key={key} variant="outlined" size="small" type="number" inputProps={{ min: 0, step: key.includes("usd") ? "any" : 1 }} InputLabelProps={{ shrink: true }} label={label} value={settings[key]} onChange={e => setSettings({ ...settings, [key]: e.target.value })} />)}
-    </div>
+  const admin = has(settings, "ai_daily_token_cap");
+  const pending = [...summary.schedules.map((s) => ({ ...s, kind: "schedule", label: "Agendamento" })), ...summary.shippings.map((s) => ({ ...s, kind: "campaign", label: "Campanha" }))];
+  return (
+    <>
+      <SetCard title="Conferir entregas" sub="Mensagens interrompidas não são reenviadas sozinhas. Confira a conversa e registre o resultado.">
+        {(summary.metaWebhooks || []).length > 0 && (
+          <div role="alert" style={{ padding: 12, borderRadius: 10, border: "1px solid #c62828" }}>
+            <Typography variant="subtitle2">Eventos da Meta com falha definitiva</Typography>
+            <Typography variant="body2">O sistema não conseguiu processar estes eventos depois de cinco tentativas. Confira a conexão antes de qualquer ação.</Typography>
+            {(summary.metaWebhooks || []).map((event) => (
+              <Typography key={event.id} variant="caption" display="block">Evento #{event.id} · {event.whatsappId ? `conexão #${event.whatsappId}` : "aplicativo Meta"} · {event.attempts} tentativas · {new Date(event.updatedAt).toLocaleString("pt-BR")}</Typography>
+            ))}
+            <Button component={Link} to="/connections">Abrir conexões</Button>
+          </div>
+        )}
+        {summary.uncertain.map((d) => (
+          <div key={d.id}>
+            {d.ticketId ? <Button component={Link} to={`/tickets/${d.ticketId}`}>Abrir conversa #{d.ticketId}</Button> : <Typography variant="body2">Conversa removida; registro de consumo preservado.</Typography>}
+            <Typography variant="caption">{d.status === "sending" ? "Envio em andamento" : d.error}</Typography>
+            {d.status === "uncertain" && (!d.ticketId || !/^(schedule|campaign):/.test(d.key)) && <><Button onClick={() => reconcile("delivery", d.id, "sent")}>Confirmei a entrega</Button><Button onClick={() => reconcile("delivery", d.id, "failed")}>Confirmei que não chegou</Button></>}
+          </div>
+        ))}
+        {pending.map((s) => (
+          <div key={`${s.kind}:${s.id}`}>
+            <Typography variant="body2">{s.label} #{s.id}: {s.error}</Typography>
+            <Button onClick={() => reconcile(s.kind, s.id, "sent")}>Confirmei a entrega</Button><Button onClick={() => reconcile(s.kind, s.id, "failed")}>Confirmei que não chegou</Button>
+          </div>
+        ))}
+        {!summary.uncertain.length && !pending.length && <Typography variant="body2" color="textSecondary">Nenhuma entrega para conferir.</Typography>}
+        <Button variant="outlined" onClick={load} style={{ justifySelf: "start" }}>Atualizar</Button>
+      </SetCard>
+      {admin && (
+        <SetCard title="Revogar acesso a um arquivo" sub="Os links de arquivos expiram em uma hora. A revogação bloqueia na hora todos os links daquele arquivo.">
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <TextField size="small" variant="outlined" value={file} onChange={(e) => setFile(e.target.value)} label="Nome do arquivo" style={{ flex: "1 1 240px" }} />
+            <Button variant="outlined" style={{ height: 40 }} disabled={!file.trim()} onClick={async () => { try { await api.post("/operations/files/revoke", { filename: file.trim() }); setFile(""); toast.success("Acesso revogado."); } catch (err) { toastError(err); } }}>Revogar acesso</Button>
+          </div>
+        </SetCard>
+      )}
+    </>
   );
-
-  if (part === "modelos") {
-    if (!admin) return null;
-    return <Paper variant="outlined" style={{ padding: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-      <div style={{ flex: "1 1 260px", minWidth: 0 }}>
-        <Typography style={{ fontWeight: 700 }}>Envio com modelos aprovados</Typography>
-        <Typography variant="body2" color="textSecondary">Sem esta autorização nada sai fora das 24 horas: abertura dos departamentos, boas-vindas da matrícula e campanhas com modelo.</Typography>
-      </div>
-      <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={settings.outbound_allow_templates === "true"} onChange={async e => {
-        const on = e.target.checked;
-        const next = { ...settings, outbound_allow_templates: String(on) };
-        setSettings(next); setBusy(true);
-        try { const { data } = await api.put("/operations/config", next); setSettings(data); toast.success(on ? "Envio com modelos autorizado." : "Envio com modelos desligado."); } catch (err) { toastError(err); load(); } finally { setBusy(false); }
-      }} disabled={busy} />} label={settings.outbound_allow_templates === "true" ? "Autorizado" : "Desligado"} />
-    </Paper>;
-  }
-
-  if (part === "limites") return <div style={{ display: "grid", gap: 16 }}>
-    {settings.send_quota_monthly !== undefined && <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 14 }}>
-      <Typography variant="h6">Cota de disparos por pessoa</Typography>
-      <Typography variant="body2" color="textSecondary">Quantas mensagens as campanhas e os avisos de cada pessoa podem enviar no mês. Quem passa da cota pede liberação, e a gestão aprova em Estatísticas, aba Disparos. A gestão não tem cota. 0 deixa sem limite.</Typography>
-      {numbers([["send_quota_monthly", "Mensagens por pessoa no mês (0 sem limite)"]])}
-      {saveBtn}
-    </Paper>}
-    <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 14 }}>
-      <Typography variant="h6">Limites de gasto por dia</Typography>
-      <Typography variant="body2" color="textSecondary">Ao chegar no limite, o sistema para de gastar até o dia seguinte. 0 deixa sem limite.</Typography>
-      {numbers(LIMIT_FIELDS)}
-      <Typography variant="caption" color="textSecondary">Os valores em dólares são estimativas configuradas, não a fatura. Limites de IA reservam margem antes de cada chamada; testes também consomem o orçamento.</Typography>
-      {saveBtn}
-    </Paper>
-    {settings.outbound_monthly_usd !== undefined && <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 14 }}>
-      <Typography variant="h6">Teto do mês do WhatsApp oficial</Typography>
-      <Typography variant="body2" color="textSecondary">
-        Soma o custo estimado de cada mensagem do mês pela categoria do modelo. Campanha que passaria do teto não começa, e ao chegar nele os envios pagos param até o mês seguinte. Em 80% a gestão recebe um aviso.
-        {Number(settings.outbound_monthly_usd) > 0 && Number(settings.outbound_usd_brl) > 0 ? ` Hoje o teto equivale a cerca de ${(Number(settings.outbound_monthly_usd) * Number(settings.outbound_usd_brl)).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}.` : ""}
-      </Typography>
-      {numbers(MONTH_FIELDS)}
-      <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={settings.outbound_allow_marketing === "true"} onChange={e => setSettings({ ...settings, outbound_allow_marketing: String(e.target.checked) })} />}
-        label="Permitir modelos de Marketing em campanhas (cerca de 9 vezes o preço de Utilidade)" />
-      {saveBtn}
-    </Paper>}
-    {spend && <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 4 }}>
-      <Typography variant="h6">Consumo de hoje</Typography>
-      <Typography variant="body2">IA estimada: US$ {spend.aiEstimatedUsd.toFixed(4)} · {spend.aiUnpricedCalls} chamadas sem preço cadastrado · {spend.aiReservedTokens} tokens reservados.</Typography>
-      <Typography variant="body2">Envios: {spend.messages} · Meta estimada: US$ {spend.metaEstimatedUsd.toFixed(4)} · {spend.metaUnpricedMessages} mensagens sem preço.</Typography>
-      <Typography variant="body2">Custo estimado por matrícula hoje: {spend.enrollments ? `US$ ${((spend.aiEstimatedUsd + spend.metaEstimatedUsd) / spend.enrollments).toFixed(4)}` : "sem matrícula hoje"}.</Typography>
-    </Paper>}
-  </div>;
-
-  if (part === "entregas") return <div style={{ display: "grid", gap: 16 }}>
-    <Paper variant="outlined" style={{ padding: 20 }}>
-      <Typography variant="h6">Conferir entregas</Typography>
-      <Typography variant="body2">Mensagens interrompidas não são reenviadas automaticamente. Confira a conversa e registre o resultado; se precisar reenviar, crie um novo envio.</Typography>
-      {(summary.metaWebhooks || []).length > 0 && <Paper role="alert" variant="outlined" style={{ padding: 12, borderColor: "#c62828" }}>
-        <Typography variant="subtitle2">Eventos da Meta com falha definitiva</Typography>
-        <Typography variant="body2">A Meta já recebeu estes eventos, mas o sistema não conseguiu processá-los após cinco tentativas. Confira a conexão e os registros de erro antes de qualquer ação; a tela não reenvia nem reprocessa eventos.</Typography>
-        {(summary.metaWebhooks || []).map(event => <Typography key={event.id} variant="caption" display="block">
-          Evento #{event.id} · {event.whatsappId ? `conexão #${event.whatsappId}` : "aplicativo Meta"} · {event.attempts} tentativas · {new Date(event.updatedAt).toLocaleString("pt-BR")}
-        </Typography>)}
-        <Button component={Link} to="/connections">Abrir conexões</Button>
-      </Paper>}
-      {summary.uncertain.map(d => <div key={d.id}>{d.ticketId ? <Button component={Link} to={`/tickets/${d.ticketId}`}>Abrir conversa #{d.ticketId}</Button> : <Typography variant="body2">Conversa removida; registro de consumo preservado.</Typography>}<Typography variant="caption">{d.status === "sending" ? "Envio em andamento" : d.error}</Typography>{d.status === "uncertain" && (!d.ticketId || !/^(schedule|campaign):/.test(d.key)) && <><Button onClick={() => reconcile("delivery", d.id, "sent")}>Confirmei a entrega</Button><Button onClick={() => reconcile("delivery", d.id, "failed")}>Confirmei que não chegou</Button></>}</div>)}
-      {[...summary.schedules.map(s => ({ ...s, kind: "schedule", label: "Agendamento" })), ...summary.shippings.map(s => ({ ...s, kind: "campaign", label: "Campanha" }))].map(s => <div key={`${s.kind}:${s.id}`} style={{ marginTop: 8 }}>
-        <Typography variant="body2">{s.label} #{s.id}: {s.error}</Typography><Button onClick={() => reconcile(s.kind, s.id, "sent")}>Confirmei a entrega</Button><Button onClick={() => reconcile(s.kind, s.id, "failed")}>Confirmei que não chegou</Button>
-      </div>)}
-      {!summary.uncertain.length && !summary.schedules.length && !summary.shippings.length && <Typography variant="body2" color="textSecondary" style={{ marginTop: 8 }}>Nenhuma entrega para conferir. Tudo foi entregue ou já foi conferido.</Typography>}
-      <Button onClick={load}>Atualizar</Button>
-    </Paper>
-    {admin && <Paper variant="outlined" style={{ padding: 20 }}>
-      <Typography variant="h6">Revogar acesso a um arquivo</Typography>
-      <Typography variant="body2">Links de arquivos expiram em uma hora. A revogação bloqueia imediatamente novos acessos a todos os links daquele arquivo.</Typography>
-      <TextField value={file} onChange={e => setFile(e.target.value)} label="Nome do arquivo" />
-      <Button disabled={!file.trim()} onClick={async () => { try { await api.post("/operations/files/revoke", { filename: file.trim() }); setFile(""); toast.success("Acesso revogado."); } catch (err) { toastError(err); } }}>Revogar acesso</Button>
-    </Paper>}
-  </div>;
-  return <div style={{ display: "grid", gap: 16 }}>
-    <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 14 }}>
-      <Typography variant="h6">Continuidade do atendimento</Typography>
-      <Typography variant="body2" color="textSecondary">Cada nova conversa sem resposta é acompanhada. Propostas e cobranças geram tarefas para o responsável; uma resposta ou encerramento interrompe o acompanhamento automático.</Typography>
-      <TextField select variant="outlined" size="small" label="Fila comercial para encaminhamentos sem polo" value={settings.crm_fallback_queue_id || "0"} onChange={e => setSettings({ ...settings, crm_fallback_queue_id: e.target.value })}>
-        <MenuItem value="0">Usar a fila já definida no atendimento</MenuItem>{summary.queues.map(q => <MenuItem key={q.id} value={String(q.id)}>{q.name}</MenuItem>)}
-      </TextField>
-      <FormControlLabel control={<Switch color="primary" checked={settings.crm_followup_enabled === "true"} onChange={e => setSettings({ ...settings, crm_followup_enabled: String(e.target.checked) })} />} label="Criar tarefas para acompanhar propostas e cobranças" />
-      {numbers(FOLLOW_FIELDS)}
-      {saveBtn}
-    </Paper>
-    {summary.unassigned.length > 0 && <Paper variant="outlined" style={{ padding: 20 }}>
-      <Typography variant="h6">Atendimentos sem responsável</Typography>
-      {summary.unassigned.map(t => <Button key={t.id} component={Link} to={`/tickets/${t.id}`} style={{ display: "block" }}>Distribuir: {t.contact?.name || `Atendimento ${t.id}`}</Button>)}
-    </Paper>}
-    <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 10 }}>
-      <Typography variant="h6">Disponibilidade da equipe</Typography>
-      <Typography variant="body2" color="textSecondary">Quem recebe conversas novas e quantas pode ter abertas ao mesmo tempo (0 = sem limite).</Typography>
-      {summary.users.map((user, i) => <div key={user.id} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <FormControlLabel style={{ flex: "1 1 220px", minWidth: 0 }} control={<Switch color="primary" checked={user.acceptsNewTickets !== false} onChange={e => setSummary({ ...summary, users: summary.users.map((u, j) => j === i ? { ...u, acceptsNewTickets: e.target.checked } : u) })} />} label={`${user.name} · ${user.openTickets} abertos`} />
-        <TextField size="small" variant="outlined" type="number" label="Capacidade" style={{ width: 120 }} value={user.maxOpenTickets} inputProps={{ min: 0, max: 1000 }} onChange={e => setSummary({ ...summary, users: summary.users.map((u, j) => j === i ? { ...u, maxOpenTickets: Number(e.target.value) } : u) })} />
-        <Button variant="outlined" onClick={async () => { try { await api.put(`/operations/users/${user.id}/capacity`, { acceptsNewTickets: user.acceptsNewTickets, maxOpenTickets: user.maxOpenTickets }); toast.success("Capacidade salva."); } catch (err) { toastError(err); } }}>Salvar</Button>
-      </div>)}
-    </Paper>
-  </div>;
 }

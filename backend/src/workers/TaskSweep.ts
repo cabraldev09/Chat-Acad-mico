@@ -12,6 +12,15 @@ export const runTaskSweep = async (): Promise<{ redistributed: number; aligned: 
   return { redistributed, aligned, moved, released };
 };
 
+// what the notice says, in plain words: who is waiting, for how long, and where to solve it (the queue first: a client waiting matters more)
+export const unassignedNotice = (tickets: number, tasks: number): { title: string; body: string; link: string } => {
+  const people = tickets === 1 ? "1 cliente esperando atendente" : `${tickets} clientes esperando atendente`;
+  const jobs = tasks === 1 ? "1 tarefa sem dono" : `${tasks} tarefas sem dono`;
+  if (tickets && tasks) return { title: `${people} e ${jobs}`, body: "Há mais de 30 minutos ninguém pegou. Abra a fila em Conversas e distribua as tarefas em Tarefas.", link: "/tickets?filtro=pending" };
+  if (tickets) return { title: people, body: "Há mais de 30 minutos na fila, sem ninguém e sem o agente de IA. Abra a fila em Conversas e passe para alguém da equipe.", link: "/tickets?filtro=pending" };
+  return { title: jobs, body: "Criadas há mais de 30 minutos e ainda sem responsável. Abra Tarefas e escolha quem vai fazer.", link: "/crm/tarefas?scope=all&status=open&userId=0" };
+};
+
 // work nobody has for more than 30 minutes (tasks without a person, conversations waiting with no attendant and no AI): the management
 // is told in the bell, at most once an hour
 export const warnUnassigned = async (): Promise<number> => {
@@ -25,8 +34,7 @@ export const warnUnassigned = async (): Promise<number> => {
   const tickets = Number(row?.tickets || 0);
   if (!tasks && !tickets) return 0;
   const { notifyManagers } = await import("../services/NotificationServices/Notify");
-  const parts = [tickets ? `${tickets} conversa(s) esperando sem atendente` : "", tasks ? `${tasks} tarefa(s) sem responsável` : ""].filter(Boolean);
-  return notifyManagers({ kind: "unassigned", level: "warning", title: "Trabalho sem responsável há mais de 30 minutos", body: `${parts.join(" e ")}. Distribua para alguém da equipe.`, link: tickets ? "/tickets" : "/crm/tarefas?scope=all", dedupeKey: `unassigned:${new Date().toISOString().slice(0, 13)}` });
+  return notifyManagers({ kind: "unassigned", level: "warning", ...unassignedNotice(tickets, tasks), dedupeKey: `unassigned:${new Date().toISOString().slice(0, 13)}` });
 };
 
 export const startTaskSweep = (): void => {

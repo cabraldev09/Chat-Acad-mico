@@ -35,7 +35,7 @@ export const tickBudgetAlerts = async (): Promise<void> => {
       if (!level || notified.has(id)) continue;
       notified.add(id);
       const text = `${label}: ${level === 100 ? "limite diário atingido" : "80% do limite diário utilizado ou reservado"}. Confira Operação.`;
-      if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=operacao", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key, level, text });
+      if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=limites", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key, level, text });
     }
     // the budget of the month typed for the AI (Custos): 80% and 100%, once per month and level
     const { monthBudget } = await import("../services/AiServices/RealCosts");
@@ -47,7 +47,7 @@ export const tickBudgetAlerts = async (): Promise<void> => {
         notified.add(id);
         const text = `Orçamento da IA no mês: ${level === 100 ? "atingido" : `${Math.round(budget.pct)}% usado`}. Confira Configurações, Custos.`;
         // the notice of the month is kept per month and level: a new day or a restart does not repeat it (it repeated every day)
-        if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=custos", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key: "ai_monthly_budget_usd", level, text });
+        if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=limites", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key: "ai_monthly_budget_usd", level, text });
       }
     }
     // the cap of the month of the Meta (WhatsApp oficial): 80% and 100%, once per month and level
@@ -59,7 +59,7 @@ export const tickBudgetAlerts = async (): Promise<void> => {
       if (level && !notified.has(id)) {
         notified.add(id);
         const text = `WhatsApp oficial no mês: ${level === 100 ? "teto atingido, os envios pagos estão parados" : `${Math.round(meta.pct)}% do teto usado`}. Confira Configurações, Custos.`;
-        if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=meta", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key: "outbound_monthly_usd", level, text });
+        if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=limites", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key: "outbound_monthly_usd", level, text });
       }
     }
   } catch (err) { logger.warn(`Budget alerts: ${err}`); }

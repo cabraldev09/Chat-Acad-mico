@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Button, CircularProgress, FormControlLabel, Switch, TextField, MenuItem, Paper, makeStyles, IconButton } from "@material-ui/core";
-import { ArrowUp, ArrowDown, Plus, Trash2, Save, Workflow, ShieldCheck, BarChart3 } from "lucide-react";
+import { ArrowUp, ArrowDown, Plus, Trash2, Save, Workflow, ShieldCheck } from "lucide-react";
 import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -16,44 +16,6 @@ const useStyles = makeStyles(theme => ({
   number: { width: 28, height: 28, borderRadius: 9, background: theme.palette.action.selected, display: "grid", placeItems: "center", fontWeight: 700, color: theme.palette.primary.main },
   footer: { display: "flex", gap: 12, justifyContent: "flex-end", position: "sticky", bottom: 0, background: theme.palette.background.paper, padding: "12px 0", zIndex: 1 }
 }));
-
-const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "—");
-
-// How the team uses the copilot: per consultant, suggestions and summaries asked, how many suggestions went out as they were or edited,
-// and the thumbs up / down. Read only; the cost is in Agentes de IA → Uso (calls of kind "copilot").
-function CopilotUsage({ classes: c }) {
-  const [days, setDays] = useState(30);
-  const [data, setData] = useState(null);
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    setData(null);
-    setFailed(false);
-    api.get(`/copilot/usage?days=${days}`).then(({ data: result }) => { if (alive) setData(result); }).catch((err) => { if (alive) { setFailed(true); toastError(err); } });
-    return () => { alive = false; };
-  }, [days, attempt]);
-  const row = (label, v, key) => <tr key={key}>
-    <td style={{ padding: "6px 8px" }}>{label}</td>
-    <td align="right">{v.suggestions}</td><td align="right">{v.briefs}</td>
-    <td align="right" title="Das sugestões levadas para a caixa de mensagem">{pct(v.used, v.used + v.edited + v.discarded)}</td>
-    <td align="right">{pct(v.edited, v.used + v.edited + v.discarded)}</td>
-    <td align="right">{v.useful} / {v.notUseful}</td>
-  </tr>;
-  return <Paper variant="outlined" className={c.card}>
-    <div className={c.title}><BarChart3 size={20} /> Uso pela equipe
-      <TextField select size="small" variant="outlined" value={days} onChange={e => setDays(Number(e.target.value))} style={{ marginLeft: "auto", minWidth: 140 }}>
-        {[7, 30, 90].map(d => <MenuItem key={d} value={d}>Últimos {d} dias</MenuItem>)}
-      </TextField>
-    </div>
-    <div className={c.hint}>“Enviada como veio” e “editada” contam as sugestões que o consultor colocou na caixa de mensagem e depois enviou. 👍 / 👎 é a opinião do consultor.</div>
-    {!data ? failed ? <div role="alert" className={c.hint}>Não foi possível carregar o uso do copiloto. <Button size="small" onClick={() => setAttempt((n) => n + 1)}>Tentar novamente</Button></div> : <CircularProgress size={20} aria-label="Carregando uso do copiloto" /> : !data.users.length ? <div className={c.hint}>Ninguém usou o copiloto neste período.</div> :
-      <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-        <thead><tr style={{ textAlign: "right" }}><th style={{ textAlign: "left", padding: "6px 8px" }}>Consultor</th><th>Sugestões</th><th>Resumos</th><th>Enviada como veio</th><th>Editada</th><th>👍 / 👎</th></tr></thead>
-        <tbody>{data.users.map(u => row(u.name, u, u.userId))}{row(<b>Equipe</b>, data.total, "total")}</tbody>
-      </table></div>}
-  </Paper>;
-}
 
 export default function CopilotSettings({ processOnly = false, onSaved }) {
   const c = useStyles();
@@ -119,7 +81,6 @@ export default function CopilotSettings({ processOnly = false, onSaved }) {
         <div className={c.grid}>{limit("dailyLimit", "Sugestões por dia — equipe")}{limit("userDailyLimit", "Por consultor / dia")}{limit("connectionDailyLimit", "Por conexão / dia")}</div>
         <div className={c.hint}>Os limites são compartilhados entre abas e reinícios e seguem o fuso do sistema. Tentativas com falha também contam, pois o provedor pode ter processado a chamada. Pedir novamente para a mesma mensagem reutiliza a sugestão. Os limites de tokens do agente e do sistema também se aplicam.</div>
       </Paper>
-      <CopilotUsage classes={c} />
       <Paper variant="outlined" className={c.card}>
         <div className={c.title}>Conexões</div>
         {connections.map(conn => {

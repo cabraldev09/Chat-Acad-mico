@@ -1,4 +1,4 @@
-import { rows, VALID_TICKET, REPLY_PENDING, visibleConsultantIds, LEAD_IN_INSTITUTION } from "./AnalyticsService";
+import { rows, VALID_TICKET, AWAITING_REPLY, visibleConsultantIds, LEAD_IN_INSTITUTION } from "./AnalyticsService";
 import { isManagerRole, roleOf } from "../../helpers/Roles";
 import { logger } from "../../utils/logger";
 import { getAppTz } from "../../helpers/AppTime";
@@ -52,7 +52,7 @@ const insightsAll = async (user: any, now: Date = new Date(), opts: { selfOnly?:
   });
 
   await safe("pendingReply", async () => {
-    const [r] = await rows(`SELECT COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND t.status = 'open' AND t.lastMessageFromMe = false AND t.lastMessageId IS NOT NULL AND t.updatedAt < :hourAgo AND ${REPLY_PENDING} AND ${VALID_TICKET}`, rep);
+    const [r] = await rows(`SELECT COUNT(*) AS n FROM Tickets t WHERE t.userId IN (:ids) AND COALESCE(t.lastMessageAt, t.updatedAt) < :hourAgo AND ${AWAITING_REPLY}`, rep);
     const n = Number(r?.n || 0);
     if (n) out.push({ key: "pending_reply", tone: n >= 5 ? "danger" : "warn", title: `${plural(n, "conversa espera", "conversas esperam")} resposta há mais de 1 hora`, detail: "A última mensagem é do cliente. Responda antes que ele esfrie.", link: "/tickets" });
   });

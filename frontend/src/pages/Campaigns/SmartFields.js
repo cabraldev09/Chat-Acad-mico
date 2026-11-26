@@ -55,7 +55,11 @@ export const PacePicker = ({ value, setValue }) => {
 };
 
 // ---------------------------------------------------------------- approved template of the official API
-const VAR_LABEL = { primeiro_nome: "Primeiro nome", nome: "Nome completo", curso: "Curso de interesse", polo: "Polo", consultor: "Consultor", numero: "Número" };
+const VAR_LABEL = {
+  primeiro_nome: "Primeiro nome", nome: "Nome completo", curso: "Curso de interesse", polo: "Polo", consultor: "Consultor", numero: "Número",
+  // the offer of a recovery campaign, for each person
+  oferta_mensalidade: "Mensalidade da oferta", oferta_taxa: "Taxa de matrícula da oferta", oferta_inicio: "Início da oferta", oferta_prazo: "Prazo da oferta",
+};
 const DEFAULT_PARAMS = ["primeiro_nome", "consultor", "curso", "polo"];
 
 // value: { name, language, body, params: [variable for {{1}}, {{2}}…] }

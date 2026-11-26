@@ -159,6 +159,9 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 :root[data-theme="dark"] .mtoast-time { color: rgba(243, 244, 246, .5); }
 .mtoast-msg { margin-top: 1px; font-size: 13px; line-height: 1.38; color: rgba(17, 24, 39, .78); overflow-wrap: anywhere; }
 :root[data-theme="dark"] .mtoast-msg { color: rgba(243, 244, 246, .78); }
+.mtoast-action { margin-top: 8px; border: 0; border-radius: 9px; padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; color: #fff; background: #0693e3; }
+.mtoast-action:hover { filter: brightness(1.08); }
+.mtoast-action:focus-visible { outline: 2px solid #0693e3; outline-offset: 2px; }
 .Toastify__toast--success { --toast-color: #16a34a; }
 .Toastify__toast--error { --toast-color: #dc2626; }
 .Toastify__toast--warning { --toast-color: #d97706; }

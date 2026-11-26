@@ -202,6 +202,8 @@ import {
   WifiSlash as PhWifiSlash,
   X as PhX,
   XCircle as PhXCircle,
+  MagnifyingGlassPlus as PhMagnifyingGlassPlus,
+  MagnifyingGlassMinus as PhMagnifyingGlassMinus,
 } from "@phosphor-icons/react";
 
 // Big icons (40 px and up) use the clean line ("regular"): at that size the 20% fill of the duotone becomes a heavy flat patch.
@@ -283,6 +285,8 @@ export const CreditCard = /*#__PURE__*/ make(PhCreditCard, "CreditCard", "duoton
 export const Database = /*#__PURE__*/ make(PhDatabase, "Database", "duotone");
 export const DatabaseBackup = /*#__PURE__*/ make(PhDatabase, "DatabaseBackup", "duotone");
 export const Download = /*#__PURE__*/ make(PhDownloadSimple, "Download", "duotone");
+export const ZoomIn = /*#__PURE__*/ make(PhMagnifyingGlassPlus, "ZoomIn", "duotone");
+export const ZoomOut = /*#__PURE__*/ make(PhMagnifyingGlassMinus, "ZoomOut", "duotone");
 export const ExternalLink = /*#__PURE__*/ make(PhArrowSquareOut, "ExternalLink", "duotone");
 export const Eye = /*#__PURE__*/ make(PhEye, "Eye", "duotone");
 export const EyeOff = /*#__PURE__*/ make(PhEyeSlash, "EyeOff", "duotone");
