@@ -16,6 +16,13 @@ describe("leitura das conversas: o que a resposta do modelo pode dizer", () => {
     expect(parseImportAnswer(JSON.stringify({ e_lead: true, situacao: "desistiu", etapa: "proposal" })).stage).toBe(null);
     expect(parseImportAnswer(JSON.stringify({ e_lead: false })).isLead).toBe(false);
   });
+  it("guarda onde parou, o que ficou pendente, o que melhorar e o polo citado, curtos e sem dados pessoais", () => {
+    const a = parseImportAnswer(JSON.stringify({ e_lead: true, situacao: "sem_resposta", parou_em: "Depois da proposta", pendente: "Mandar a grade do curso. Tel 69 99999-1234", melhorar: "Responder no mesmo dia", polo: "Buritis" }));
+    expect(a).toMatchObject({ stalledAt: "Depois da proposta", improve: "Responder no mesmo dia", polo: "Buritis" });
+    expect(a.pending).not.toMatch(/99999/);
+    expect(parseImportAnswer(JSON.stringify({ e_lead: true, melhorar: "x".repeat(500) })).improve!.length).toBeLessThanOrEqual(140);
+    expect(parseImportAnswer(JSON.stringify({ e_lead: true })).stalledAt).toBeFalsy();
+  });
   it("resposta quebrada é erro (nada é aplicado)", () => {
     expect(() => parseImportAnswer("não sei")).toThrow("ERR_AI_BAD_ANSWER");
     expect(() => parseOutcomeAnswer("[1,2]")).toThrow("ERR_AI_BAD_ANSWER");

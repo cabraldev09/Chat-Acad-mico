@@ -11,11 +11,22 @@ vi.mock("../../src/libs/socket", () => ({ getIO: () => ({ emit: () => undefined 
 vi.mock("../../src/helpers/Fire", () => ({ fire: () => undefined }));
 
 import { chatBehind, eachLimited, isTransientState, settledChats, stateToWrite } from "../../src/providers/WhatsApp/Implementations/chatSync";
-import { placeOf, RECENT_DAYS, reportText } from "../../src/services/WbotServices/ImportHistoryService";
+import { insideWindow, placeOf, RECENT_DAYS, reportText } from "../../src/services/WbotServices/ImportHistoryService";
 import { betterNameOf } from "../../src/services/ContactServices/CreateOrUpdateContactService";
 import { chatIdOfContact } from "../../src/services/WbotServices/ChatHistoryFromPhone";
 
 describe("cópia das conversas do WhatsApp por QR Code", () => {
+  it("copia só as mensagens dos últimos 90 dias e deixa de fora a conversa sem nenhuma nesse prazo", () => {
+    const now = Date.UTC(2026, 10, 26);
+    const at = (days: number) => Math.floor((now - days * 864e5) / 1000);
+    const chat = { timestamp: at(1), messages: [{ timestamp: at(120) }, { timestamp: at(80) }, { timestamp: at(1) }] };
+    const w = insideWindow(chat, 90, now);
+    expect(w.keep).toBe(true);
+    expect(w.messages.length).toBe(2);
+    expect(insideWindow({ timestamp: at(100), messages: [{ timestamp: at(100) }] }, 90, now).keep).toBe(false);
+    // 0 = tudo (a cópia pedida conversa a conversa)
+    expect(insideWindow(chat, 0, now).messages.length).toBe(3);
+  });
   it("espera o celular terminar de mandar as conversas antes de copiar", async () => {
     const sizes = [3, 40, 120, 120, 120, 120];
     let call = 0;
