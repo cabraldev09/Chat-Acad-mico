@@ -1,5 +1,7 @@
 # Como trabalhar neste repositório (equipe de agentes)
 
+Antes de começar um assunto novo, leia e comente a issue de coordenação #201 (OpenBot ↔ Claude Code): divisão do trabalho e regras de publicação.
+
 Este arquivo vale para todo agente que abrir o projeto. Leia até o fim antes da primeira mudança.
 
 ## O produto
