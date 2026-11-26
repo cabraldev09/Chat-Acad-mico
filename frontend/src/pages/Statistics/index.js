@@ -105,6 +105,37 @@ const SkippedDetail = ({ step, params, onClose }) => {
   );
 };
 
+// "Por que vendemos e por que perdemos": the codes of the cheap reading of the conversations that ended (enrolled or lost) in the period
+const WhySales = ({ params }) => {
+  const { data, loading, error, reload } = useAnalytics("/analytics/outcomes", params);
+  if (error && !data) return <Failed onRetry={reload} />;
+  const d = data || { read: 0, enrolled: 0, lost: 0, reasons: [], worked: [], missed: [], ideas: [] };
+  const wait = loading && !data;
+  return (
+    <div className="pk-grid-wide">
+      <GlowPanel id="why-lost" tone={d.lost ? "bad" : undefined} title="Por que perdemos" sub={`Lido nas conversas de ${num(d.lost)} leads perdidos ou que pararam de responder`} loading={wait} empty={!d.reasons.length} emptyText="Nenhuma perda lida no período.">
+        <GlowRank rows={d.reasons.slice(0, 8).map((r) => ({ key: r.reason, name: r.reason, value: num(r.n), bar: d.lost ? (r.n / d.lost) * 100 : 0 }))} />
+        {d.missed.length > 0 && <div className="pk-hint" style={{ marginTop: 10 }}>O que mais faltou nas perdas: {d.missed.slice(0, 3).map((m) => `${m.label} (${num(m.n)})`).join(", ")}.</div>}
+      </GlowPanel>
+      <GlowPanel id="why-won" tone={d.enrolled ? "good" : undefined} title="O que vendeu" sub={`Nas ${num(d.enrolled)} matrículas e nas ${num(d.lost)} perdas lidas: em quantas conversas cada coisa aconteceu`} loading={wait} empty={!d.worked.length} emptyText="Nenhuma conversa lida no período.">
+        <table className="pk-table pk-stack">
+          <thead><tr><th>O que o consultor fez</th><th className="r">Matrículas</th><th className="r">Perdas</th></tr></thead>
+          <tbody>
+            {d.worked.slice(0, 8).map((w) => (
+              <tr key={w.key}><td data-main="1">{w.label}</td><td className="r" data-label="Matrículas">{w.won}%</td><td className="r" data-label="Perdas">{w.lost}%</td></tr>
+            ))}
+          </tbody>
+        </table>
+        {d.ideas.length > 0 && (
+          <ul style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 13, color: "var(--text-1)", display: "grid", gap: 6 }}>
+            {d.ideas.map((t) => <li key={t}>{t}</li>)}
+          </ul>
+        )}
+      </GlowPanel>
+    </div>
+  );
+};
+
 const Commercial = ({ params }) => {
   const [skipped, setSkipped] = useState(null);
   const { data, loading, error, reload } = useAnalytics("/analytics/commercial", params);
@@ -180,6 +211,7 @@ const Commercial = ({ params }) => {
           </div>
         </GlowPanel>
       </div>
+      <WhySales params={params} />
       {skipped && <SkippedDetail step={skipped} params={params} onClose={() => setSkipped(null)} />}
       <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Origem dos leads, cursos mais procurados e motivos de perda estão na aba Captação.</div>
     </div>

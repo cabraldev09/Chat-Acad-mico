@@ -111,7 +111,7 @@ export const candidates = async (limit: number): Promise<any[]> =>
     ORDER BY t.lastMessageAt ASC LIMIT :limit`,
   { segments: TUTORIA_SEGMENTS, quiet: new Date(Date.now() - QUIET_MINUTES * 60000), since: new Date(Date.now() - LOOKBACK_DAYS * 864e5), limit });
 
-const auditorAccess = async (): Promise<{ agent: any; apiKey: string } | null> => {
+export const auditorAccess = async (): Promise<{ agent: any; apiKey: string } | null> => {
   const agents = await AiAgent.findAll({ order: [["active", "DESC"], ["id", "ASC"]] });
   const { resolveKey } = await import("../AiServices/RunAiAgent");
   for (const agent of agents) {
