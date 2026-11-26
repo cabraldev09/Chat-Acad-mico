@@ -1437,6 +1437,53 @@ ALTER SEQUENCE public."Contacts_id_seq" OWNED BY public."Contacts".id;
 
 
 --
+-- Name: ConversationReadings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ConversationReadings" (
+    id integer NOT NULL,
+    kind character varying(20) NOT NULL,
+    ref character varying(60) NOT NULL,
+    "ticketId" integer,
+    "leadId" integer,
+    "userId" integer,
+    "poloId" integer,
+    status character varying(20) DEFAULT 'pendente'::character varying NOT NULL,
+    "claimedBy" character varying(40),
+    "claimedUntil" timestamp with time zone,
+    "doneBy" character varying(20),
+    "doneAt" timestamp with time zone,
+    attempts integer DEFAULT 0 NOT NULL,
+    result text,
+    error character varying(200),
+    model character varying(60),
+    tokens integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: ConversationReadings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."ConversationReadings_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ConversationReadings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."ConversationReadings_id_seq" OWNED BY public."ConversationReadings".id;
+
+
+--
 -- Name: CopilotProgress; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2521,7 +2568,11 @@ CREATE TABLE public."Leads" (
     "practicePoloId" integer,
     rgm character varying(40),
     "institutionId" integer,
-    "poloSource" character varying(20)
+    "poloSource" character varying(20),
+    "recoveryState" character varying(20),
+    "recoveryAt" timestamp with time zone,
+    "recoveryReason" character varying(160),
+    "recoveryObjection" character varying(20)
 );
 
 
@@ -4251,6 +4302,13 @@ ALTER TABLE ONLY public."Contacts" ALTER COLUMN id SET DEFAULT nextval('public."
 
 
 --
+-- Name: ConversationReadings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ConversationReadings" ALTER COLUMN id SET DEFAULT nextval('public."ConversationReadings_id_seq"'::regclass);
+
+
+--
 -- Name: CopilotRequests id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4976,6 +5034,14 @@ ALTER TABLE ONLY public."Contacts"
 
 ALTER TABLE ONLY public."Contacts"
     ADD CONSTRAINT "Contacts_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ConversationReadings ConversationReadings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ConversationReadings"
+    ADD CONSTRAINT "ConversationReadings_pkey" PRIMARY KEY (id);
 
 
 --
@@ -5984,6 +6050,27 @@ CREATE INDEX contacts_pic_checked_at ON public."Contacts" USING btree ("picCheck
 
 
 --
+-- Name: conversation_readings_lead; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_readings_lead ON public."ConversationReadings" USING btree ("leadId");
+
+
+--
+-- Name: conversation_readings_once; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX conversation_readings_once ON public."ConversationReadings" USING btree (kind, "ticketId", ref);
+
+
+--
+-- Name: conversation_readings_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_readings_status ON public."ConversationReadings" USING btree (status, kind);
+
+
+--
 -- Name: copilot_requests_connection_day; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6352,6 +6439,13 @@ CREATE INDEX leads_phone ON public."Leads" USING btree (phone);
 --
 
 CREATE INDEX leads_polo_id_idx ON public."Leads" USING btree ("poloId") WHERE ("poloId" IS NOT NULL);
+
+
+--
+-- Name: leads_recovery_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_recovery_state ON public."Leads" USING btree ("recoveryState");
 
 
 --
@@ -7084,6 +7178,22 @@ ALTER TABLE ONLY public."ContactTags"
 
 ALTER TABLE ONLY public."ContactTags"
     ADD CONSTRAINT "ContactTags_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES public."Tags"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ConversationReadings ConversationReadings_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ConversationReadings"
+    ADD CONSTRAINT "ConversationReadings_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: ConversationReadings ConversationReadings_ticketId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ConversationReadings"
+    ADD CONSTRAINT "ConversationReadings_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -8294,6 +8404,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tr
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000001-conversation-readings.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270104000001-proposal-standalone.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).

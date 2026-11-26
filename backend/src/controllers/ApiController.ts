@@ -1,9 +1,13 @@
+import fs from "fs";
 import { Request, Response } from "express";
 import * as Yup from "yup";
 import AppError from "../errors/AppError";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
+import { assertTokenCanSend } from "../helpers/ApiPoloSend";
+import { apiCaller } from "../middleware/apiScope";
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
 import Message from "../models/Message";
+import Ticket from "../models/Ticket";
 import Whatsapp from "../models/Whatsapp";
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
 import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTicketService";
@@ -71,27 +75,41 @@ const createContact = async (
   return ticket;
 };
 
+// the files multer already wrote to public/ when the call is refused before anything is sent (a refused call leaves no file behind)
+const discardUploads = async (files: Express.Multer.File[] | undefined): Promise<void> => {
+  await Promise.all((files || []).map(f => (f && f.path ? fs.promises.unlink(f.path).catch(() => undefined) : undefined)));
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const newContact: ContactData = req.body;
   const { whatsappId }: WhatsappData = req.body;
   const { body, quotedMsg }: MessageData = req.body;
   const medias = req.files as Express.Multer.File[];
 
-  newContact.number = newContact.number.replace("-", "").replace(" ", "");
-
-  const schema = Yup.object().shape({
-    number: Yup.string()
-      .required()
-      .matches(/^\d+$/, "Invalid number format. Only numbers is allowed.")
-  });
-
+  let contactAndTicket: Ticket;
   try {
-    await schema.validate(newContact);
-  } catch (err: any) {
-    throw new AppError(err.message);
-  }
+    newContact.number = newContact.number.replace("-", "").replace(" ", "");
 
-  const contactAndTicket = await createContact(whatsappId, newContact.number);
+    const schema = Yup.object().shape({
+      number: Yup.string()
+        .required()
+        .matches(/^\d+$/, "Invalid number format. Only numbers is allowed.")
+    });
+
+    try {
+      await schema.validate(newContact);
+    } catch (err: any) {
+      throw new AppError(err.message);
+    }
+
+    // a token of some polos: only people and connections of its polos (nothing is created before this answer)
+    await assertTokenCanSend(apiCaller(req), newContact.number, whatsappId);
+
+    contactAndTicket = await createContact(whatsappId, newContact.number);
+  } catch (err) {
+    await discardUploads(medias);
+    throw err;
+  }
 
   if (medias) {
     await Promise.all(
