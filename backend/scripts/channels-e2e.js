@@ -1018,6 +1018,41 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Direto matriculado", phone: "5569911110011", stageId: Number(wonStage) })).status === 422, "a polo token created a lead straight into an enrolled stage");
       const outsider = Number(sql(`SELECT id FROM Users WHERE id NOT IN (SELECT userId FROM PoloMembers WHERE poloId = ${poloA}) ORDER BY id LIMIT 1`));
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Dono de fora", phone: "5569911110012", ownerId: outsider })).status === 422, "a polo token gave a lead to someone outside its polos");
+      // with consultants in polo A, the new lead goes to one of them (ownerPool): never to a consultant of polo B, to someone outside the
+      // polos or to a member of polo A who is not a consultant (the coordination)
+      {
+        const mkU = async (name, email, role, extra = {}) => {
+          const r = await http.post("/users", { name, email, password: "senha123", role, ...extra }, auth());
+          assert(r.status === 200 && r.data.id, `user ${email} ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+          return r.data;
+        };
+        const consA = await mkU("Consultor Rodízio A", "cons-rodizio-a@x.com", "consultor");
+        const consB = await mkU("Consultor Rodízio B", "cons-rodizio-b@x.com", "consultor");
+        const coordA = await mkU("Coordenação Rodízio A", "coord-rodizio-a@x.com", "coordenacao", { coordArea: "comercial" });
+        sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${poloA}, ${consA.id}, 'comercial', NOW(), NOW()), (${poloA}, ${coordA.id}, 'coordenacao', NOW(), NOW()), (${poloB}, ${consB.id}, 'comercial', NOW(), NOW())`);
+        // (the round as it is by default: automatic, among every consultant; the settings come back as they were)
+        const setting = k => sql(`SELECT value FROM Settings WHERE key = '${k}'`);
+        const saved = { auto: setting("crm_autoassign"), ids: setting("crm_owner_ids") };
+        const put = (k, v) => (v === "" ? sql(`DELETE FROM Settings WHERE key = '${k}'`) : sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('${k}', '${v}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`));
+        put("crm_autoassign", "roundrobin");
+        put("crm_owner_ids", "[]");
+        try {
+          const owners = [];
+          for (const [i, phone] of [["1", "5569911110013"], ["2", "5569911110014"]]) {
+            const r = await api(writerA.token, "post", "/api/v1/leads", { name: `Rodízio API A ${i}`, phone });
+            assert(r.status === 202 && JSON.stringify(r.data) === ACCEPTED, `lead of the round ${i}: ${r.status} ${JSON.stringify(r.data)}`);
+            owners.push(sql(`SELECT CONCAT(poloId, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE phone = '${phone}'`));
+          }
+          assert(owners.every(o => o === `${poloA}|${consA.id}`), `the new leads of polo A did not go to the consultant of polo A (${consA.id}): ${owners.join(", ")}`);
+        } finally {
+          put("crm_autoassign", saved.auto);
+          put("crm_owner_ids", saved.ids);
+          sql(`UPDATE Leads SET ownerId = NULL WHERE phone IN ('5569911110013', '5569911110014')`);
+          sql(`DELETE FROM PoloMembers WHERE userId IN (${consA.id}, ${consB.id}, ${coordA.id})`);
+          // (the users of this check only: the list of users stays as the other tests expect it)
+          for (const u of [consA, consB, coordA]) await http.delete(`/users/${u.id}`, auth());
+        }
+      }
       // contacts: the contact of a lead of polo B, or one that is not a lead of polo A, is not changed; a new contact is
       const contactB = sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato do B', '5569911110002', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`UPDATE Leads SET contactId = ${contactB} WHERE id = ${leadB}`);

@@ -37,6 +37,21 @@ As respostas trazem só os campos que a integração usa: lead sem CPF, endereç
 Tokens de todos os polos (sem polo escolhido) continuam com as respostas de antes em `POST /leads` (`201/200` com `id`) e
 `POST /contacts` (`201/200` com `id` e `created`), por compatibilidade com as integrações em uso.
 
+### Mudança de contrato (tokens com polos)
+
+**A partir desta versão, um token com polos escolhidos não recebe mais o id do que foi criado** em `POST /leads` e `POST /contacts`:
+
+| Rota | Antes (token com polos) | Agora (token com polos) | Token de todos os polos, antigo ou de Configurações |
+|---|---|---|---|
+| `POST /leads` | `201` (novo) ou `200` (já existia) com `{ created, lead: { id, stageId, poloId } }` | sempre `202 {"aceito": true}`, sem id | sem mudança (`201/200` com o lead) |
+| `POST /contacts` | `201/200` com `{ id, created }` | sempre `202 {"aceito": true}`, sem id | sem mudança (`201/200` com `id` e `created`) |
+
+- **Por quê:** com o id (ou a diferença entre `201` e `200`) o token descobria se a pessoa já existia, inclusive em outro polo.
+- **O que a integração precisa fazer:** tratar `202` como sucesso e não depender do id na resposta. Para achar o lead depois, use
+  `GET /leads` (só os leads dos polos do token) com o telefone ou o e-mail enviados.
+- **Quem avisar:** o responsável por cada integração que usa um token com polos e lê o id da resposta. Os tokens de todos os polos,
+  os antigos e o de Configurações continuam com a resposta de antes (e, por isso, ainda permitem descobrir se a pessoa existe).
+
 ## Migração dos tokens antigos (sem parar integração)
 
 1. Em API e webhooks, veja os tokens marcados "antigo" e o "Usado em" de cada um; em Configurações → Integração, o do token de
@@ -58,6 +73,10 @@ Para o OpenBot: **só totais e códigos**, sem nome, telefone, e-mail, CPF, RGM,
 `polo` opcional. Sem limite de polo no token, vem também o grupo `poloId: null` (leads ainda sem polo).
 
 Datas inexistentes (por exemplo `2026-02-31`) recebem `400 ERR_INVALID_PERIOD`.
+
+**Segredo dos códigos dos consultores:** o HMAC usa `API_PSEUDONYM_SECRET` (recomendado: um segredo próprio, longo e aleatório)
+ou, na falta dele, o `JWT_SECRET`. **Sem nenhum dos dois, a rota falha fechada:** `503 ERR_API_PSEUDONYM_SECRET_MISSING`, antes de
+ler qualquer número (com chave vazia, os códigos poderiam ser refeitos testando os ids). Trocar o segredo troca todos os códigos.
 
 Por polo (`poloId`, `codigo`):
 
@@ -95,7 +114,8 @@ que atendem filas desses polos.
   outro polo intacta e o aviso à administração; lead novo nasce no polo do token mesmo com cidade de outro polo; uso por rota
   gravado sem dados de pessoas; token vencido recebe 401; nenhum token em texto no banco; migração dos antigos; token de
   Configurações ligado e desligado, com as rotas usadas.
-- Indicadores: `tests/channels/indicators-query.test.ts` (período, polo e código do consultor) e o ponta a ponta "API indicators":
+- Indicadores: `tests/channels/indicators-query.test.ts` (período, polo, código do consultor e a falha fechada sem segredo, na função e
+  na rota) e o ponta a ponta "API indicators":
   consultor só como código; o mesmo código no mesmo token e outro em outro token; a segunda chamada igual vem do cache; a 21ª chamada
   no minuto recebe 429 e outro token não é afetado; nenhum campo pessoal
   nem nome, telefone, e-mail, CPF ou RGM de pessoa da base na resposta; escopo e polos; os números batem com Captação, Painel do CRM

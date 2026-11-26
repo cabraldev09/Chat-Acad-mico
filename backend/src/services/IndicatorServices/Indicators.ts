@@ -19,7 +19,7 @@ import { getConfig } from "../../channels/types";
 //   consultant review           ConsultantReview (objections raised/handled, steps with difficulty or skipped), by an opaque code of the
 //                               consultant: stable for the same token, different for another token, never the user id (consultantCode)
 //   connections                 Whatsapps: id, function, status, quality and the validity of the Meta token (never the name or the token)
-export { MAX_PERIOD_DAYS, cleanIndicatorQuery, consultantCode } from "./IndicatorQuery";
+export { MAX_PERIOD_DAYS, cleanIndicatorQuery, consultantCode, assertPseudonymSecret } from "./IndicatorQuery";
 import { consultantCode } from "./IndicatorQuery";
 import type { IndicatorQuery } from "./IndicatorQuery";
 

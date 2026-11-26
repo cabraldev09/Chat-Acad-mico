@@ -30,7 +30,15 @@ export const cleanIndicatorQuery = (q: any, tokenPolos: number[] | null): Indica
   return { from, to, poloId, tokenPolos };
 };
 
+// The secret of the consultant codes: API_PSEUDONYM_SECRET, else JWT_SECRET. With neither one the codes would be an HMAC with an empty
+// key, which anyone can rebuild by trying the user ids: the indicators then fail closed (503) instead of answering.
+export const pseudonymSecret = (): string => String(process.env.API_PSEUDONYM_SECRET || process.env.JWT_SECRET || "").trim();
+export const assertPseudonymSecret = (secret: string = pseudonymSecret()): string => {
+  if (!secret) throw new AppError("ERR_API_PSEUDONYM_SECRET_MISSING", 503);
+  return secret;
+};
+
 // The consultant as the OpenBot sees it: a code that follows the same person over time for THIS token, and that nobody can turn back
 // into a person without the server's secret (another token gets other codes, so two integrations cannot join their data by it)
-export const consultantCode = (tokenKey: string, userId: number, secret = process.env.API_PSEUDONYM_SECRET || process.env.JWT_SECRET || ""): string =>
-  `c_${crypto.createHmac("sha256", `${secret}:indicadores`).update(`${tokenKey}:${userId}`).digest("hex").slice(0, 10)}`;
+export const consultantCode = (tokenKey: string, userId: number, secret: string = pseudonymSecret()): string =>
+  `c_${crypto.createHmac("sha256", `${assertPseudonymSecret(String(secret || "").trim())}:indicadores`).update(`${tokenKey}:${userId}`).digest("hex").slice(0, 10)}`;

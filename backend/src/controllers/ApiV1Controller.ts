@@ -204,8 +204,10 @@ export const connections = async (_req: Request, res: Response): Promise<Respons
 // so two tokens never share an answer (the consultant codes are per token, and the polos may differ)
 export const INDICATORS_CACHE_MS = Number(process.env.API_INDICATORS_CACHE_MS ?? 60000);
 export const indicators = async (req: Request, res: Response): Promise<Response> => {
-  const { buildIndicators, cleanIndicatorQuery } = await import("../services/IndicatorServices/Indicators");
+  const { buildIndicators, cleanIndicatorQuery, assertPseudonymSecret } = await import("../services/IndicatorServices/Indicators");
   const { remember } = await import("../helpers/TtlCache");
+  // no secret for the consultant codes: fail closed, before any number is read (see IndicatorQuery.pseudonymSecret)
+  assertPseudonymSecret();
   const caller = apiCaller(req);
   const query = cleanIndicatorQuery(req.query, polosOf(req));
   const tokenKey = caller?.id ? `token:${caller.id}` : "legacy";
