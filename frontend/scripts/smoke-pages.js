@@ -438,7 +438,9 @@ async function sweepRole(browser, name, def, detailRoutes = []) {
         const out = [];
         const seen = new Set();
         const label = (el) => `${el.tagName.toLowerCase()}.${String(el.className.baseVal ?? el.className).split(" ")[0].slice(0, 28)}`;
-        const visible = (el) => { const r = el.getBoundingClientRect(); const c = getComputedStyle(el); return r.width > 0 && r.height > 0 && c.visibility !== "hidden" && r.bottom > 0 && r.top < innerHeight * 3; };
+        // what is inside a closed <details> (but not its <summary>) is hidden: Chromium still gives it a size, but it cannot be touched or read
+        const folded = (el) => { const d = el.closest("details:not([open])"); return !!d && !(el.closest("summary") && el.closest("summary").parentElement === d); };
+        const visible = (el) => { const r = el.getBoundingClientRect(); const c = getComputedStyle(el); return r.width > 0 && r.height > 0 && c.visibility !== "hidden" && r.bottom > 0 && r.top < innerHeight * 3 && !folded(el); };
         const main = document.querySelector("main") || document.body;
         main.querySelectorAll("button, a[href], [role=button], [role=tab], input:not([type=hidden]), select, [role=checkbox], [role=switch]").forEach((el) => {
           if (!visible(el) || el.closest("[aria-hidden=true]") || el.disabled) return;
