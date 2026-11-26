@@ -167,13 +167,15 @@ export interface LocalRun { read: number; skipped: number; failed: number; stopp
 
 // The system's own reading: what is pending (with "openbot", only what waited longer than the setting), up to the daily limit, with the
 // cheapest model of the key it has; stops at the first spending-cap refusal (the rest waits for the next round)
-export const runLocalReadings = async (opts: { limit?: number; only?: ReadingKind } = {}): Promise<LocalRun> => {
+// ignoreDailyLimit: "Ler tudo agora" of the administrator (Recuperação): the whole queue now, past the daily limit (the spending caps
+// of the AI still stop it); the readings still count in the day
+export const runLocalReadings = async (opts: { limit?: number; only?: ReadingKind; ignoreDailyLimit?: boolean } = {}): Promise<LocalRun> => {
   const run: LocalRun = { read: 0, skipped: 0, failed: 0, stoppedByBudget: false };
   const cfg = await readingSettings();
   if (!cfg.enabled) return { ...run, reason: "disabled" };
   const today = todayInAppTz();
   const used = (await getSetting("readings_day", "")) === today ? Number(await getSetting("readings_count", "0")) || 0 : 0;
-  const left = Math.max(0, Math.min(opts.limit ?? cfg.maxPerDay, cfg.maxPerDay - used));
+  const left = opts.ignoreDailyLimit ? Math.max(0, Math.min(opts.limit ?? 2000, 2000)) : Math.max(0, Math.min(opts.limit ?? cfg.maxPerDay, cfg.maxPerDay - used));
   if (!left) {
     await setSetting("readings_last_stop", `daily_limit:${today}`);
     return { ...run, reason: "daily_limit" };

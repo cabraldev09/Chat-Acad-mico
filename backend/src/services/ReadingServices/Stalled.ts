@@ -16,6 +16,14 @@ export const markStalled = async (now = Date.now()): Promise<{ marked: number; r
   const stalledDays = Number(process.env.READING_STALLED_DAYS || 7);
   const last = `(SELECT t.lastMessageFromMe FROM Tickets t WHERE t.contactId = l.contactId AND t.isGroup = false AND t.lastMessageAt IS NOT NULL ORDER BY t.lastMessageAt DESC LIMIT 1)`;
   const lastAt = `(SELECT MAX(t.lastMessageAt) FROM Tickets t WHERE t.contactId = l.contactId AND t.isGroup = false)`;
+  // a conversation copied from the phone still waiting for the AI's reading: the reading decides (lead, friend, team, its stage), not this
+  const waitingReading = `SELECT 1 FROM ConversationReadings r JOIN Tickets rt ON rt.id = r.ticketId WHERE rt.contactId = l.contactId AND r.kind = 'importacao' AND r.status IN ('pendente', 'reservada')`;
+  // the ones marked before the reading had its say go back to the funnel until it is read (they come back here if the reading says so)
+  const early = ((await sequelize.query(
+    portable(`SELECT l.id FROM Leads l WHERE l.recoveryState = 'aberta' AND l.recoveryReason = :reason AND l.contactId IS NOT NULL AND EXISTS (${waitingReading}) LIMIT 5000`),
+    { replacements: { reason: STALLED_REASON }, type: QueryTypes.SELECT }
+  )) as any[]).map(r => r.id);
+  if (early.length) await Lead.update({ recoveryState: null, recoveryAt: null, recoveryReason: null } as any, { where: { id: early, recoveryState: "aberta" } as any });
   // only a real person in the funnel (never the team, a personal contact, a channel or a broadcast list: the same rule of LeadQueue),
   // filtered in the database before the limit, so every stalled lead is reached whatever the size of the funnel
   const rows = (await sequelize.query(
@@ -23,6 +31,7 @@ export const markStalled = async (now = Date.now()): Promise<{ marked: number; r
         SELECT l.id, ${last} AS lastFromMe, ${lastAt} AS lastAt FROM Leads l JOIN LeadStages s ON s.id = l.stageId JOIN Contacts ct ON ct.id = l.contactId
         WHERE l.isHistorical = false AND l.enrolledAt IS NULL AND l.recoveryState IS NULL AND s.type = 'open' AND s.name <> :confirm
           AND ct.isStaff = false AND ct.isPersonal = false AND COALESCE(ct.kind, 'person') = 'person' AND COALESCE(ct.noReply, false) = false
+          AND NOT EXISTS (${waitingReading})
       ) x WHERE x.lastFromMe = true AND x.lastAt <= :until AND x.lastAt >= :since LIMIT 5000`),
     { replacements: { confirm: CONFIRM_STAGE, until: new Date(now - days(stalledDays)), since: new Date(now - days(90)) }, type: QueryTypes.SELECT }
   )) as any[];
@@ -37,6 +46,6 @@ export const markStalled = async (now = Date.now()): Promise<{ marked: number; r
     { replacements: { reason: STALLED_REASON }, type: QueryTypes.SELECT }
   )) as any[]).map(r => r.id);
   if (back.length) await Lead.update({ recoveryState: "voltou" } as any, { where: { id: back, recoveryState: "aberta" } as any });
-  if (stalled.length || back.length) logger.info(`Recuperação: ${stalled.length} leads parados há ${stalledDays} dias ou mais; ${back.length} voltaram a responder`);
-  return { marked: stalled.length, released: back.length };
+  if (stalled.length || back.length || early.length) logger.info(`Recuperação: ${stalled.length} leads parados há ${stalledDays} dias ou mais; ${back.length} voltaram a responder; ${early.length} esperam a leitura`);
+  return { marked: stalled.length, released: back.length + early.length };
 };

@@ -9498,6 +9498,13 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get("/readings/settings", asUser(coordTok))).status === 200, "the coordination should see the readings");
       assert((await http.put("/readings/settings", { enabled: false }, asUser(coordTok))).status === 403, "the coordination turned the readings off");
       assert((await http.post("/readings/run", {}, asUser(coordTok))).status === 403, "the coordination ran a round");
+      // "Ler tudo agora" (past the daily limit) is the administrator's too
+      assert((await http.post("/crm/recovery/read-all", {}, asUser(coordTok))).status === 403, "the coordination read everything past the limit");
+      assert((await http.post("/crm/recovery/read-all", {}, asUser(uTok))).status === 403, "a consultant read everything past the limit");
+      // the audience chosen on the screen: only the ticked leads go to the list (Fabi, still in Parados; not the others of Recuperação)
+      const fabiId = sql(`SELECT id FROM Leads WHERE name = 'Fabi Parada Leitura' AND recoveryState = 'aberta'`);
+      const chosenList = (await http.post("/contact-lists/from-leads", { audience: "recovery", name: "Recuperação escolhida", leadIds: [Number(fabiId)] }, auth())).data;
+      assert(chosenList.imported === 1, `the chosen audience ${JSON.stringify(chosenList)}`);
       assert((await http.get("/readings/settings", auth())).data.enabled === true, "the readings should come on by default");
       // off: nothing is read nor handed out, and "Ler agora" says why
       assert((await http.put("/readings/settings", { enabled: false }, auth())).data.enabled === false, "the switch did not turn off");

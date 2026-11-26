@@ -372,6 +372,8 @@ r.get("/crm/recovery", isAuth, Recovery.index);
 // read again the conversations copied from a number (its owner, or the management)
 r.get("/crm/recovery/reread", isAuth, salesStaff, Recovery.rereadNumbers);
 r.post("/crm/recovery/reread", isAuth, salesStaff, Recovery.reread);
+// "Ler tudo agora": the whole queue of copied conversations, past the daily limit (only the administrator, like the other reading switches)
+r.post("/crm/recovery/read-all", isAuth, isSystemAdmin, Recovery.readAll);
 r.post("/leads/:id/recovery", isAuth, canAccessLead, Recovery.act);
 // the readings of conversations (who reads them, the counts): the administration sees; only the administrator (not the coordination)
 // turns them on or off, chooses who reads and runs a round now

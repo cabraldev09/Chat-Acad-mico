@@ -1,12 +1,12 @@
 import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
-import { Button, MenuItem, TextField, makeStyles } from "@material-ui/core";
+import { Button, Checkbox, MenuItem, TextField, makeStyles } from "@material-ui/core";
 import { RefreshCw } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import TopLoader from "../../components/TopLoader";
 import { AuthContext } from "../../context/Auth/AuthContext";
-import { isManager as isManagerUser } from "../../utils/access";
+import { isManager as isManagerUser, accessLevel } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { toast } from "react-toastify";
@@ -34,6 +34,8 @@ const useStyles = makeStyles((theme) => ({
   statusWarn: { borderColor: "#d97706", background: "rgba(217,119,6,.08)" },
   tabs: { display: "flex", flexWrap: "wrap", gap: 6, margin: theme.spacing(1, 1, 0) },
   detail: { display: "block", marginTop: 2, fontSize: 13, color: "var(--text-2)", whiteSpace: "normal", overflowWrap: "anywhere" },
+  pick: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, margin: theme.spacing(1, 1, 0), fontSize: 13, color: "var(--text-1)" },
+  check: { padding: 4, alignSelf: "center" },
 }));
 
 const Recovery = () => {
@@ -51,6 +53,31 @@ const Recovery = () => {
   const [busy, setBusy] = useState(0);
   const [tab, setTab] = useState("parados");
   const [enrolling, setEnrolling] = useState(null);
+  // the audience of the recovery campaign: the leads ticked here (none ticked = everyone on the list on screen)
+  const [picked, setPicked] = useState([]);
+  useEffect(() => { setPicked([]); }, [tab, reason, objection, ownerId]);
+  const togglePick = (id) => setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  // "Ler tudo agora": the administrator reads every copied conversation waiting, past the daily limit
+  const admin = accessLevel(user) === "admin";
+  const [readingAll, setReadingAll] = useState(false);
+  const readAll = async () => {
+    const ok = await confirmDialog({
+      title: "Ler todas as conversas agora?",
+      message: `As ${(data && data.reading && data.reading.queued) || 0} conversas na fila serão lidas pela IA agora, além do limite do dia. Cada leitura tem um custo pequeno de IA; os limites de gasto continuam valendo. A leitura classifica cada conversa (lead, amigo, equipe) e coloca o lead na etapa certa do CRM.`,
+      confirmText: "Ler tudo agora",
+    });
+    if (!ok) return;
+    setReadingAll(true);
+    try {
+      await api.post("/crm/recovery/read-all");
+      load();
+      toast.success("Leitura iniciada. A lista se atualiza conforme as conversas são lidas.", { autoClose: 6000 });
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setReadingAll(false);
+    }
+  };
   // "Ler de novo": the numbers by QR Code whose copied conversations can be read again (the person's own; every one for the management)
   const [numbers, setNumbers] = useState([]);
   const [rereadId, setRereadId] = useState("");
@@ -90,6 +117,14 @@ const Recovery = () => {
     }
   }, [ownerId, reason, objection]);
   useEffect(() => { load(); }, [load]);
+  // while "Ler tudo agora" reads, the lists and the counts refresh by themselves
+  const [polling, setPolling] = useState(false);
+  useEffect(() => { setPolling(!!(data && data.reading && data.reading.readingAll)); }, [data]);
+  useEffect(() => {
+    if (!polling && !readingAll) return undefined;
+    const t = setInterval(() => { load(); }, 20000);
+    return () => clearInterval(t);
+  }, [polling, readingAll, load]);
 
   const act = async (id, action) => {
     setBusy(id);
@@ -108,8 +143,11 @@ const Recovery = () => {
   const toCampaign = async () => {
     setListing(true);
     try {
-      const name = `Recuperação ${new Date().toLocaleDateString("pt-BR")}${reason ? ` · ${reason}` : ""}`.slice(0, 120);
-      const { data: list } = await api.post("/contact-lists/from-leads", { audience: "recovery", name, ...(reason ? { reason } : {}), ...(objection ? { objection } : {}), ...(ownerId ? { ownerId } : {}) });
+      const label = (TABS.find((t) => t.key === tab) || TABS[0]).label;
+      const name = `Recuperação ${new Date().toLocaleDateString("pt-BR")} · ${label}${reason ? ` · ${reason}` : ""}`.slice(0, 120);
+      // exactly the audience chosen: the ticked leads, or everyone on the list on screen (tab, reason, objection, consultant)
+      const leadIds = picked.length ? picked : items.map((l) => l.id);
+      const { data: list } = await api.post("/contact-lists/from-leads", { audience: "recovery", name, leadIds });
       toast.success(`Lista "${list.name}" criada com ${list.imported} ${list.imported === 1 ? "pessoa" : "pessoas"}. Em Campanhas, crie a campanha com essa lista e defina a oferta.`, { autoClose: 9000 });
       history.push("/campaigns");
     } catch (err) {
@@ -137,7 +175,7 @@ const Recovery = () => {
   return (
     <MainContainer>
       <BoardHead title="Recuperação" sub="Leads parados há 7 dias ou mais, os que desistiram e as matrículas que a leitura achou, com o que ficou pendente.">
-        {manager && <Button variant="contained" disableElevation disabled={listing || !items.length} onClick={toCampaign} style={{ background: "#fff", color: "#0b4279" }}>{listing ? "Criando a lista…" : "Criar campanha de recuperação"}</Button>}
+        {manager && tab !== "confirmar" && <Button variant="contained" disableElevation disabled={listing || !items.length} onClick={toCampaign} style={{ background: "#fff", color: "#0b4279" }}>{listing ? "Criando a lista…" : picked.length ? `Criar campanha com ${picked.length} ${picked.length === 1 ? "selecionado" : "selecionados"}` : `Criar campanha com esta lista (${items.length})`}</Button>}
       </BoardHead>
       <div className={classes.filters}>
         {manager && (
@@ -166,6 +204,11 @@ const Recovery = () => {
             {reading.numbersWithoutOwner ? ` · ${reading.numbersWithoutOwner} ${reading.numbersWithoutOwner === 1 ? "número sem dono não é lido" : "números sem dono não são lidos"} (defina o dono em Conexões)` : ""}
           </span>
           {reading.stopped === "no_api_key" && <Button size="small" variant="outlined" onClick={() => history.push("/ai-agents")}>Configurar a IA</Button>}
+          {admin && reading.queued > 0 && reading.stopped !== "no_api_key" && reading.stopped !== "disabled" && (
+            <Button size="small" variant="contained" color="primary" disableElevation disabled={readingAll || reading.readingAll} onClick={readAll}>
+              {reading.readingAll ? "Lendo as conversas…" : readingAll ? "Iniciando…" : "Ler tudo agora"}
+            </Button>
+          )}
         </div>
       )}
       {numbers.length > 0 && (
@@ -197,12 +240,24 @@ const Recovery = () => {
       )}
       {!failed && (
         <div className={`${classes.scroll} dash-scope gv-plain`}>
+          {manager && tab !== "confirmar" && items.length > 0 && (
+            <div className={classes.pick}>
+              <Checkbox className={classes.check} size="small" color="primary" inputProps={{ "aria-label": "Selecionar todos desta lista" }}
+                checked={picked.length > 0 && picked.length === items.length} indeterminate={picked.length > 0 && picked.length < items.length}
+                onChange={() => setPicked(picked.length === items.length ? [] : items.map((l) => l.id))} />
+              <span>{picked.length ? `${picked.length} de ${items.length} selecionados para a campanha` : "Marque quem vai receber a campanha (sem marcar, vai para a lista toda)"}</span>
+              {picked.length > 0 && <Button size="small" onClick={() => setPicked([])}>Limpar</Button>}
+            </div>
+          )}
           <GlowPanel id="recovery" title={`${(TABS.find((t) => t.key === tab) || TABS[0]).label}${data ? ` (${items.length})` : ""}`} sub={tab === "confirmar" ? "A leitura achou sinais de matrícula. Confira o RGM, a data e o polo e confirme: nada é matriculado sozinho." : "Em ordem, da conversa mais antiga para a mais nova. O resumo vem da leitura da conversa."}>
             {!data && <div className="pk pk-skel" style={{ height: 120 }} aria-hidden="true" />}
             {data && items.length === 0 && <EmptyNote>{tab === "confirmar" ? "Nenhuma matrícula a confirmar." : `Nenhum lead nesta lista${reason || objection ? " com esse filtro" : ""}.`}</EmptyNote>}
             <div className="gv-rowlist">
               {items.map((l) => (
                 <div key={l.id} className="gv-item">
+                  {manager && tab !== "confirmar" && (
+                    <Checkbox className={classes.check} size="small" color="primary" checked={picked.includes(l.id)} onChange={() => togglePick(l.id)} inputProps={{ "aria-label": `Selecionar ${l.name}` }} />
+                  )}
                   <Person name={l.name} />
                   <div className="gv-item-main">
                     <b>
