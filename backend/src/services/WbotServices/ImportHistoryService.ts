@@ -217,6 +217,8 @@ export const startHistoryImport = (
   return importHistory(connection, options, (done, total) => io.emit("historyImport", { ...base, finished: false, done, total }))
     .then(report => {
       io.emit("historyImport", { ...base, finished: true, ok: true, ...report });
+      // the conversations copied are read next (who is a lead, who enrolled, who stopped and why), silently
+      if (report.chats > 0) import("../../workers/ConversationReading").then(m => m.readAfterCopy(connection.id)).catch(() => undefined);
       return report;
     })
     .catch(err => {

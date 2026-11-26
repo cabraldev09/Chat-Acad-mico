@@ -453,7 +453,8 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
     });
     await test("a stored send whose conversation changed hands before delivery is not sent by the old attendant", async () => {
       const t = mkTicket({ owner: ids.gabrielli });
-      sql(`INSERT INTO OutboundMessages (ticketId, userId, clientKey, payload, status, attempts, createdAt, updatedAt) VALUES (${t.ticketId}, ${ids.joao}, 'old-owner', '{"body":"tarde demais","medias":[],"requireOwner":true}', 'pending', 0, NOW(), NOW())`);
+      // stored a minute ago (before a restart): the sweep picks it up (a send stored right now belongs to its own request, FRESH_MS)
+      sql(`INSERT INTO OutboundMessages (ticketId, userId, clientKey, payload, status, attempts, createdAt, updatedAt) VALUES (${t.ticketId}, ${ids.joao}, 'old-owner', '{"body":"tarde demais","medias":[],"requireOwner":true}', 'pending', 0, NOW() - INTERVAL '1 minute', NOW())`);
       await waitFor(() => outboundStatus(t.ticketId) === "failed", 15000, "stale send refused");
       assert(sql(`SELECT error FROM OutboundMessages WHERE ticketId=${t.ticketId}`) === "ownership_changed", "reason");
       assert(sentTo(t.chat) === 0, "it was sent");
