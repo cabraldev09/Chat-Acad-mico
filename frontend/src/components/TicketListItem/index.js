@@ -142,8 +142,9 @@ const useStyles = makeStyles((theme) => {
       opacity: 0,
       transition: "opacity .12s",
       "$row:hover &, &:focus-visible": { opacity: 1 },
-      // on a phone the options open with a long press on the conversation (as in WhatsApp): no arrow taking room on every row
-      "@media (hover: none)": { display: "none" },
+      // on a phone the options open with a long press on the conversation (as in WhatsApp): the arrow takes no room on the row, but
+      // stays for VoiceOver and TalkBack (visually hidden, still reachable)
+      "@media (hover: none)": { position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 },
       "&:hover": { backgroundColor: c.hover },
     },
   };
@@ -261,7 +262,11 @@ const TicketListItem = ({ ticket }) => {
   // a long press opens the options of the conversation (the arrow is hidden on touch screens)
   const pressTimer = useRef(null);
   const pressed = useRef(false);
+  // the menu of options is drawn outside the row (a portal), but React still passes its events up to the row: a tap, a key or a
+  // right click inside the menu must never open the conversation nor start another long press
+  const fromRow = (e) => e.currentTarget.contains(e.target);
   const pressStart = (e) => {
+    if (!fromRow(e)) return;
     pressed.current = false;
     const target = e.currentTarget;
     clearTimeout(pressTimer.current);
@@ -275,12 +280,17 @@ const TicketListItem = ({ ticket }) => {
       tabIndex={0}
       data-ticket-id={ticket.id}
       className={clsx(classes.row, selected && classes.selected, ticket.status === "closed" && classes.closed)}
-      onClick={() => { if (pressed.current) { pressed.current = false; return; } if (canOpen) history.push(`/tickets/${ticket.id}`); }}
+      aria-haspopup="menu"
+      aria-keyshortcuts="Shift+F10"
+      onClick={(e) => { if (!fromRow(e)) return; if (pressed.current) { pressed.current = false; return; } if (canOpen) history.push(`/tickets/${ticket.id}`); }}
       onTouchStart={pressStart}
       onTouchEnd={pressEnd}
       onTouchMove={pressEnd}
-      onContextMenu={(e) => { e.preventDefault(); setMenuEl(e.currentTarget); }}
+      onContextMenu={(e) => { if (!fromRow(e)) return; e.preventDefault(); setMenuEl(e.currentTarget); }}
       onKeyDown={(e) => {
+        if (!fromRow(e)) return;
+        // the options by keyboard: the Menu key or Shift+F10 (as in the rest of the system and in the browsers)
+        if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { e.preventDefault(); setMenuEl(e.currentTarget); return; }
         if (e.key === "Enter" && canOpen) history.push(`/tickets/${ticket.id}`);
         // arrow keys walk the list like WhatsApp Web (only rows that are on screen: other tabs stay mounted, hidden)
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
