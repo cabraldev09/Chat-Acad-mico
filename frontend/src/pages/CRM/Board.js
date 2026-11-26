@@ -69,13 +69,16 @@ const useStyles = makeStyles((theme) => ({
   },
   card: {
     background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 12, padding: theme.spacing(1.25),
+    // a card never shrinks to fit the column: a full column scrolls, and the chips of one card never slide under the next one
+    flexShrink: 0,
     cursor: "grab", display: "grid", gap: 8, animation: "pop-in .25s var(--ease-out) both",
     transition: "transform .18s var(--ease-out), box-shadow .2s, border-color .2s",
     "&:hover": { transform: "translateY(-2px)", borderColor: theme.palette.accent.main, boxShadow: "0 8px 20px -10px rgba(11,66,121,.4)" },
     "&:active": { cursor: "grabbing" },
+    [theme.breakpoints.down("xs")]: { padding: theme.spacing(1, 1.25), gap: 6 },
   },
   cardDragging: { opacity: 0.45, transform: "rotate(-1.5deg) scale(.98)" },
-  cardTop: { display: "flex", alignItems: "flex-start", gap: 8 },
+  cardTop: { display: "flex", alignItems: "center", gap: 8 },
   cardName: { fontWeight: 600, fontSize: 14, lineHeight: 1.25, flex: 1, minWidth: 0, overflowWrap: "anywhere" },
   cardCourse: { fontSize: 12.5, color: theme.palette.text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   // the chips wrap onto a second line instead of being cut ("Out…", "Quer r…"): every one stays readable
@@ -384,9 +387,10 @@ const Board = () => {
         <Title>Funil de captação</Title>
         {board && <Chip size="small" label={`${totalOpen} em andamento`} />}
         <MainHeaderButtonsWrapper>
-          <ButtonGroup size="small">
-            <Button onClick={() => setView("board")} variant={view === "board" ? "contained" : "outlined"} color={view === "board" ? "primary" : "default"} startIcon={<LayoutGrid size={15} />}>Funil</Button>
-            <Button onClick={() => setView("list")} variant={view === "list" ? "contained" : "outlined"} color={view === "list" ? "primary" : "default"} startIcon={<List size={15} />}>Lista</Button>
+          {/* on the phone only the icons: the buttons fit one line under the title */}
+          <ButtonGroup size="small" style={phone ? { height: 40 } : undefined}>
+            <Button onClick={() => setView("board")} variant={view === "board" ? "contained" : "outlined"} color={view === "board" ? "primary" : "default"} startIcon={phone ? undefined : <LayoutGrid size={15} />} aria-label="Ver como funil" aria-pressed={view === "board"}>{phone ? <LayoutGrid size={17} /> : "Funil"}</Button>
+            <Button onClick={() => setView("list")} variant={view === "list" ? "contained" : "outlined"} color={view === "list" ? "primary" : "default"} startIcon={phone ? undefined : <List size={15} />} aria-label="Ver como lista" aria-pressed={view === "list"}>{phone ? <List size={17} /> : "Lista"}</Button>
           </ButtonGroup>
           {phone ? (
             <>
