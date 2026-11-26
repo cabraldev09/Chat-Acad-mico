@@ -4030,11 +4030,18 @@ const postMeta = (id, payload, secret, badSig) => {
       const off = await http.post(`/whatsapp/${qr.id}/import-history`, {}, asUser(oTok));
       assert(off.status === 409 && off.data.error === "ERR_HISTORY_COPY_OFF", `copy with the switch off ${off.status} ${JSON.stringify(off.data)}`);
       await http.put("/settings/whatsapp_copy_enabled", { value: "true" }, auth());
-      // erasing what was copied: only the administrator; the copied conversations and their messages leave, the number is not copied again by itself
+      // erasing what was copied: only the administrator (not the owner, not the coordination); the copied conversations and their messages leave,
+      // a conversation already in use stays, and the number is not copied again by itself
       assert((await http.delete(`/whatsapp/${qr.id}/copied-history`, asUser(oTok))).status === 403, "the owner erased the copy");
+      await http.post("/users", { name: "Coordenação Cópia", email: "coord-copia@x.com", password: "senha123", role: "coordenacao" }, auth());
+      const coordTok = (await http.post("/auth/login", { email: "coord-copia@x.com", password: "senha123" })).data.token;
+      assert((await http.delete(`/whatsapp/${qr.id}/copied-history`, asUser(coordTok))).status === 403, "the coordination erased the copy");
+      const inUse = Number(sql(`SELECT id FROM Tickets WHERE whatsappId=${qr.id} AND isHistorical=true AND isGroup=true LIMIT 1`));
+      sql(`UPDATE Tickets SET isHistorical=false WHERE id=${inUse}`);
       const erased = await http.delete(`/whatsapp/${qr.id}/copied-history`, auth());
-      assert(erased.status === 200 && erased.data.conversations === 2, `erase ${erased.status} ${JSON.stringify(erased.data)}`);
+      assert(erased.status === 200 && erased.data.conversations === 1, `erase ${erased.status} ${JSON.stringify(erased.data)}`);
       assert(sql(`SELECT COUNT(*) FROM Tickets WHERE whatsappId=${qr.id} AND isHistorical=true`) === "0", "copied conversations stayed");
+      assert(sql(`SELECT COUNT(*) FROM Tickets WHERE id=${inUse}`) === "1", "a conversation in use was erased");
       assert(sql(`SELECT CASE WHEN historyImportedAt IS NULL THEN 0 ELSE 1 END FROM Whatsapps WHERE id=${qr.id}`) === "1", "the number would be copied again by itself");
       await http.put(`/automation-triggers/${trig.id}`, { active: false }, auth());
       sql(`UPDATE Whatsapps SET status='DISCONNECTED' WHERE id=${qr.id}`);
