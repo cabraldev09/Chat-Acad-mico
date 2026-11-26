@@ -4,7 +4,7 @@ import { isValidTz, setAppTz } from "../../helpers/AppTime";
 import { setInstitution } from "../../helpers/Institution";
 
 // settings that may be created on first save
-const CREATABLE = ["appTimezone", "appName", "onboarding_sla_hours", "chatbot_reminder_minutes", "max_connections_per_user", "onboarding_welcome_template", "response_sla_minutes", "tutoria_whatsapp_id", "ai_reactivation", "ai_reactivation_minutes", "tutoria_template_name", "tutoria_template_language", "atendimento_template_name", "atendimento_template_language", "tutoria_idle_days", "institution_name", "tutoria_numero", "boas_vindas_template_name", "boas_vindas_template_language", "relacionamento_template_name", "relacionamento_template_language", "rematricula_template_name", "rematricula_template_language"];
+const CREATABLE = ["appTimezone", "appName", "onboarding_sla_hours", "chatbot_reminder_minutes", "max_connections_per_user", "onboarding_welcome_template", "response_sla_minutes", "tutoria_whatsapp_id", "ai_reactivation", "ai_reactivation_minutes", "tutoria_template_name", "tutoria_template_language", "atendimento_template_name", "atendimento_template_language", "tutoria_idle_days", "institution_name", "tutoria_numero", "boas_vindas_template_name", "boas_vindas_template_language", "relacionamento_template_name", "relacionamento_template_language", "rematricula_template_name", "rematricula_template_language", "whatsapp_copy_enabled"];
 // per-model token prices, typed by the administrator
 const CREATABLE_PREFIX = ["ai_price_"];
 
@@ -23,6 +23,8 @@ const UpdateSettingService = async ({
   // the reminders of the AI agent: on/off, and the first one between 1 minute and 4 hours of silence
   if (key === "ai_reactivation" && !["0", "1"].includes(String(value))) throw new AppError("ERR_INVALID_SETTING", 400);
   if (key === "institution_name" && !String(value || "").trim()) throw new AppError("ERR_INVALID_SETTING", 400);
+  // the switch of the copy of the phones (Conexões)
+  if (key === "whatsapp_copy_enabled" && !["true", "false"].includes(String(value))) throw new AppError("ERR_INVALID_SETTING", 400);
   if (key === "ai_reactivation_minutes" && !(Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 240)) throw new AppError("ERR_INVALID_SETTING", 400);
 
   let setting = await Setting.findOne({
