@@ -5,6 +5,7 @@ import { AlertTriangle, BellRing, CheckCheck, Clock3, FileText, GraduationCap, I
 import api from "../../services/api";
 import openSocket from "../../services/socket-io";
 import { noticeToast } from "../../utils/modernToast";
+import { alreadyHere, batchToast } from "../../utils/toastBatch";
 
 // The bell's "Avisos": what the system told this person (a task given to them, a lead the AI handed over, a proposal opened, a fee paid, a
 // number down...). They stay until read, so nothing is lost while the person is away from the screen. The server sends only the person's own.
@@ -18,8 +19,9 @@ const KIND_ICON = {
   task_assigned: ListTodo, task_soon: Clock3, proposal_viewed: FileText, payment_paid: Wallet, budget: Wallet, safety_paused: WifiOff,
   whatsapp: WifiOff, sla_soon: Clock3, unassigned: Users, training: GraduationCap,
 };
-// the kinds that already have their own pop-up elsewhere (no second pop-up for the same thing)
-const HAS_TOAST = new Set(["task_assigned", "ai_handoff", "budget", "onboarding_late"]);
+// the kinds that already have their own pop-up elsewhere (no second pop-up for the same thing: the late lead had two cards, "Atenção"
+// and "Algo deu errado"), and the ones that only go to the bell (the daily line of forgotten conversations)
+const HAS_TOAST = new Set(["task_assigned", "ai_handoff", "budget", "onboarding_late", "sla_breached", "sla_escalated", "sla_forgotten"]);
 
 const when = (iso) => {
   const d = new Date(iso);
@@ -48,11 +50,25 @@ export const useNotices = () => {
       const n = data && data.notification;
       if (!n) return;
       setState((s) => ({ ...s, list: [n, ...(s.list || []).filter((x) => x.id !== n.id)].slice(0, 40), unread: s.unread + 1 }));
-      if (!HAS_TOAST.has(n.kind)) {
-        // the same card everywhere: its title, one sentence and the button to where it is solved; every pop-up closes by itself
-        // (the urgent one stays longer, 15 s); the notice stays in the bell until read
-        noticeToast({ id: `notice-${n.id}`, title: n.title, body: n.body, level: n.level, actionLabel: "Abrir", onAction: n.link ? () => { window.dispatchEvent(new CustomEvent("openNotice", { detail: n })); } : null });
-      }
+      if (HAS_TOAST.has(n.kind) || alreadyHere(n.link)) return;
+      // the same card everywhere: its title, one sentence and the button to where it is solved; every pop-up closes by itself
+      // (the urgent one stays longer, 15 s); the notice stays in the bell until read. Several of the same kind at once: one card
+      batchToast(`notice:${n.kind}`, n, (items) => {
+        if (items.length === 1) {
+          const [one] = items;
+          noticeToast({ id: `notice-${one.id}`, title: one.title, body: one.body, level: one.level, actionLabel: "Abrir", onAction: one.link ? () => { window.dispatchEvent(new CustomEvent("openNotice", { detail: one })); } : null });
+          return;
+        }
+        const urgent = items.some((i) => i.level === "urgent");
+        noticeToast({
+          id: `notice-batch-${items[0].id}`,
+          title: `${items.length} avisos novos`,
+          body: items.slice(0, 2).map((i) => i.title).join(" · ") + (items.length > 2 ? ` e mais ${items.length - 2}` : ""),
+          level: urgent ? "urgent" : items[0].level,
+          actionLabel: "Ver avisos",
+          onAction: () => window.dispatchEvent(new CustomEvent("openNoticeBell")),
+        });
+      });
     });
     const again = () => load();
     window.addEventListener("socketReconnected", again);

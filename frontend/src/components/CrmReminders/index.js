@@ -6,6 +6,8 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { burst } from "../../pages/CRM/shared";
 import alertSound from "../../assets/sound.mp3";
 import { getSoundMode } from "../../utils/soundPrefs";
+import { noticeToast } from "../../utils/modernToast";
+import { alreadyHere, batchToast, namesLine } from "../../utils/toastBatch";
 
 // "62215 min" says nothing: 45 min, 2 h 10 min, 3 days
 const howLong = (minutes) => {
@@ -27,15 +29,6 @@ const prettyName = (name) => {
   return `+${digits}`;
 };
 
-// a title and one short line, instead of one long sentence
-const AlertToast = ({ title, line, detail }) => (
-  <div>
-    <div style={{ fontWeight: 700 }}>{title}</div>
-    <div style={{ marginTop: 2 }}>{line}</div>
-    {detail ? <div style={{ marginTop: 2, fontSize: 12.5, opacity: 0.75 }}>{detail}</div> : null}
-  </div>
-);
-
 // Toast when one of my follow-up tasks becomes due
 const CrmReminders = () => {
   const { user } = useContext(AuthContext);
@@ -55,22 +48,46 @@ const CrmReminders = () => {
       if (user.profile !== "admin" && user.role !== "admin") return;
       toast.warn(a.text, { toastId: `budget:${a.key}:${a.level}`, autoClose: 30000, onClick: () => history.push("/configuracoes?secao=meta") });
     });
-    // a new lead nobody answered in time: the owner and the managers are warned
+    // a lead nobody answered in time: the owner and the managers are warned. Several in the same minute become one pop-up with the
+    // count (the server already leaves out "obrigado", stickers and waits that started days ago), and a conversation already open
+    // on the screen does not pop up
     socket.on("leadAlert", (a) => {
       const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
-      if (!(a.ownerId === user.id || manager)) return;
-      toast.warn(<AlertToast title={a.escalated ? "Prazo escalado" : "Lead sem resposta"} line={<><b>{prettyName(a.name)}</b> espera há {howLong(a.minutes)}</>} detail={a.ownerId === user.id ? "É seu: toque para abrir" : "Toque para abrir o lead"} />, {
-
-        autoClose: 20000,
-        onClick: () => history.push(`/crm?lead=${a.leadId}`),
-      });
-      if (a.ownerId === user.id || getSoundMode() === "all") {
-        try {
-          new Audio(alertSound).play().catch(() => {});
-        } catch (e) {
-          /* the browser may block sound before the first click */
+      const mine = a.ownerId === user.id;
+      if (!(mine || manager)) return;
+      const link = a.ticketId ? `/tickets/${a.ticketId}` : `/crm?lead=${a.leadId}`;
+      if (alreadyHere(link)) return;
+      batchToast("leadAlert", { ...a, mine, link }, (items) => {
+        const escalated = items.some((i) => i.escalated);
+        const anyMine = items.some((i) => i.mine);
+        if (items.length === 1) {
+          const [i] = items;
+          noticeToast({
+            id: `lead-alert:${i.ticketId || i.leadId}`,
+            level: i.escalated ? "urgent" : "warning",
+            title: i.escalated ? "Prazo escalado" : "Lead sem resposta",
+            body: `${prettyName(i.name)} espera resposta há ${howLong(i.minutes)}.${i.mine ? " É seu." : ""}`,
+            actionLabel: "Abrir conversa",
+            onAction: () => history.push(i.link),
+          });
+        } else {
+          noticeToast({
+            id: `lead-alert:batch:${Date.now()}`,
+            level: escalated ? "urgent" : "warning",
+            title: `${items.length} leads esperando resposta`,
+            body: `${namesLine(items.map((i) => prettyName(i.name)))}. ${anyMine ? "Alguns são seus." : "Distribua ou responda."}`,
+            actionLabel: "Ver conversas",
+            onAction: () => history.push("/tickets"),
+          });
         }
-      }
+        if (anyMine || getSoundMode() === "all") {
+          try {
+            new Audio(alertSound).play().catch(() => {});
+          } catch (e) {
+            /* the browser may block sound before the first click */
+          }
+        }
+      });
     });
     // the AI agent handed a conversation to the commercial team: the consultor who took it (or the queue, or the managers) hears it now
     socket.on("aiHandoff", (h) => {
@@ -80,7 +97,7 @@ const CrmReminders = () => {
       const needsManager = manager && (h.noQueue || h.noTeam || h.fallback || !h.userId);
       if (!(mine || myQueue || needsManager)) return;
       const lead = h.name || "Um lead";
-      toast.info(`🤝 ${lead} chegou do agente de IA${h.poloName ? ` (${h.poloName})` : ""}: ${h.reason}${h.noQueue ? ". Não há fila comercial: alguém da gestão precisa assumir." : h.noTeam ? ". O polo não tem consultor: a conversa ficou na fila do polo e alguém da gestão precisa colocar um consultor ou assumir." : h.fallback ? ". Veio pela fila central." : ""}${h.outside && h.when ? ` A equipe responde ${h.when}.` : ""}`, {
+      toast.info(`${lead} chegou do agente de IA${h.poloName ? ` (${h.poloName})` : ""}: ${h.reason}${h.noQueue ? ". Não há fila comercial: alguém da gestão precisa assumir." : h.noTeam ? ". O polo não tem consultor: a conversa ficou na fila do polo e alguém da gestão precisa colocar um consultor ou assumir." : h.fallback ? ". Veio pela fila central." : ""}${h.outside && h.when ? ` A equipe responde ${h.when}.` : ""}`, {
         autoClose: 20000,
         onClick: () => history.push(`/tickets/${h.ticketId}`),
       });
@@ -95,7 +112,7 @@ const CrmReminders = () => {
     // the tutor is reminded a few hours before the limit
     socket.on("onboardingReminder", (a) => {
       if (a.tutorId !== user.id) return;
-      toast.info(`⏳ ${a.leadName || "Um aluno"} está perto de ${a.hours} horas sem o primeiro contato. Faltam cerca de ${a.left} h`, {
+      toast.info(`${a.leadName || "Um aluno"} está perto de ${a.hours} horas sem o primeiro contato. Faltam cerca de ${a.left} h`, {
         autoClose: 30000,
         onClick: () => history.push("/ambientacao"),
       });
@@ -104,7 +121,7 @@ const CrmReminders = () => {
     socket.on("onboardingAlert", (a) => {
       const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
       if (!(manager || a.tutorId === user.id)) return;
-      toast.warn(`⏰ ${a.leadName || "Um aluno"} está há mais de ${a.hours} horas sem ser ambientado`, {
+      toast.warn(`${a.leadName || "Um aluno"} está há mais de ${a.hours} horas sem ser ambientado`, {
         autoClose: 30000,
         onClick: () => history.push("/ambientacao"),
       });
@@ -114,7 +131,7 @@ const CrmReminders = () => {
       const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
       if (!(a.userId === user.id || manager)) return;
       const who = a.name || "Um lead";
-      toast.warn(`⏳ ${who} segue sem atendimento humano. ${a.note}`, {
+      toast.warn(`${who} segue sem atendimento humano. ${a.note}`, {
         autoClose: 25000,
         onClick: () => history.push(`/tickets/${a.ticketId}`),
       });
@@ -138,7 +155,7 @@ const CrmReminders = () => {
     // enrollment fee confirmed by Efí
     socket.on("payment", (d) => {
       burst(window.innerWidth - 200, 90);
-      toast.success(`💰 ${d.leadName} pagou a taxa de matrícula (${Number(d.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`, {
+      toast.success(`${d.leadName} pagou a taxa de matrícula (${Number(d.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`, {
         autoClose: 15000,
         onClick: () => history.push(`/crm?lead=${d.leadId}`),
       });
@@ -150,9 +167,13 @@ const CrmReminders = () => {
     socket.on("taskAssigned", (t) => {
       if (t.userId !== user.id) return;
       window.dispatchEvent(new CustomEvent("tasks:changed", { detail: { remote: true } }));
-      toast.info(<AlertToast title="Nova tarefa para você" line={<>{t.title}{t.leadName ? <> — <b>{prettyName(t.leadName)}</b></> : null}</>} detail={t.by ? `Enviada por ${t.by}` : "Toque para abrir as tarefas"} />, {
-        autoClose: 15000,
-        onClick: () => history.push("/crm/tarefas?status=today"),
+      noticeToast({
+        id: `task:${t.id || t.title}`,
+        level: "info",
+        title: "Nova tarefa para você",
+        body: `${t.title}${t.leadName ? `: ${prettyName(t.leadName)}` : ""}.${t.by ? ` Enviada por ${t.by}.` : ""}`,
+        actionLabel: "Ver tarefas",
+        onAction: () => history.push("/crm/tarefas?status=today"),
       });
       ding();
     });
@@ -162,9 +183,13 @@ const CrmReminders = () => {
       window.dispatchEvent(new CustomEvent("tasks:changed", { detail: { remote: true } }));
       const mineAsTutor = a.tutorId === user.id;
       const title = a.kind === "done" ? "Ambientação concluída" : mineAsTutor ? "Aluno novo para ambientar" : "Seu aluno foi para a ambientação";
-      toast.info(<AlertToast title={title} line={<><b>{prettyName(a.leadName)}</b>{a.poloName ? ` · ${a.poloName}` : ""}</>} detail="Toque para abrir a ambientação" />, {
-        autoClose: 15000,
-        onClick: () => history.push("/ambientacao"),
+      noticeToast({
+        id: `onboarding:${a.leadId || a.leadName}:${a.kind || "new"}`,
+        level: "info",
+        title,
+        body: `${prettyName(a.leadName)}${a.poloName ? ` · ${a.poloName}` : ""}`,
+        actionLabel: "Abrir ambientação",
+        onAction: () => history.push("/ambientacao"),
       });
       if (mineAsTutor) ding();
     });
@@ -172,10 +197,14 @@ const CrmReminders = () => {
     socket.on("riskAlert", (a) => {
       const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
       if (!(manager || a.tutorId === user.id || a.ownerId === user.id)) return;
-      toast.warn(<AlertToast title="Aluno em risco de evasão" line={<><b>{prettyName(a.leadName)}</b> está há {a.days} dias sem notícias</>} detail="Toque para abrir a Retenção" />, {
-        autoClose: 20000,
-        onClick: () => history.push("/crm/retencao"),
-      });
+      batchToast("riskAlert", a, (items) => noticeToast({
+        id: `risk:${items.map((i) => i.leadId).join(",")}`,
+        level: "warning",
+        title: items.length === 1 ? "Aluno em risco de evasão" : `${items.length} alunos em risco de evasão`,
+        body: items.length === 1 ? `${prettyName(items[0].leadName)} está há ${items[0].days} dias sem notícias.` : `${namesLine(items.map((i) => prettyName(i.leadName)))} estão sem notícias.`,
+        actionLabel: "Abrir Retenção",
+        onAction: () => history.push("/crm/retencao"),
+      }));
     });
     return () => socket.disconnect();
   }, [user, history]);
