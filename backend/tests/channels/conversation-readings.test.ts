@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findRgm, lostReasonFor, outcomeIdeas, parseImportAnswer, parseOutcomeAnswer } from "../../src/services/ReadingServices/Kinds";
+import { findRgm, lostReasonFor, maskLongNumbers, outcomeIdeas, parseImportAnswer, parseOutcomeAnswer } from "../../src/services/ReadingServices/Kinds";
 
 describe("leitura das conversas: o que a resposta do modelo pode dizer", () => {
   it("conversa copiada: lead em andamento com etapa, curso, resumo e próximo passo, sem dados pessoais", () => {
@@ -43,5 +43,11 @@ describe("leitura das conversas: o que a resposta do modelo pode dizer", () => {
     expect(ideas.length).toBe(1);
     expect(ideas[0]).toMatch(/enviou a grade do curso.*100%.*17%/);
     expect(outcomeIdeas(won)).toEqual([]);
+  });
+
+  it("o texto que sai para a leitura não leva RGM nem protocolo; preço e data continuam legíveis", () => {
+    expect(maskLongNumbers("Interessado: meu RGM é 7654321")).toBe("Interessado: meu RGM é [NUM]");
+    expect(maskLongNumbers("protocolo 12.345-6 aberto")).toBe("protocolo [NUM] aberto");
+    expect(maskLongNumbers("fica R$ 199,90 com vencimento em 10/02/2027")).toBe("fica R$ 199,90 com vencimento em 10/02/2027");
   });
 });

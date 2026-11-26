@@ -8,7 +8,7 @@ import { portable } from "../../helpers/sqlDialect";
 import ConversationReading from "../../models/ConversationReading";
 import { logger } from "../../utils/logger";
 import { MAX_MESSAGES, reviewTranscript } from "../AnalyticsServices/ConsultantReview";
-import { IMPORT_SYSTEM, OUTCOME_SYSTEM, ReadingKind, parseImportAnswer, parseOutcomeAnswer } from "./Kinds";
+import { IMPORT_SYSTEM, OUTCOME_SYSTEM, ReadingKind, maskLongNumbers, parseImportAnswer, parseOutcomeAnswer } from "./Kinds";
 
 // THE QUEUE OF READINGS. Each conversation to be read waits here. Who reads it is a setting:
 //  - "sistema": the system's own AI, with the cheapest model of the key it has (300 tokens of answer), within the daily spending caps;
@@ -53,7 +53,8 @@ export const inputOf = async (reading: ConversationReading): Promise<ReadingInpu
   const [who] = await rows(`SELECT ct.name AS contact, u.name AS consultant, l.name AS lead FROM Tickets t JOIN Contacts ct ON ct.id = t.contactId
       LEFT JOIN Users u ON u.id = COALESCE(:userId, t.userId) LEFT JOIN Leads l ON l.contactId = t.contactId WHERE t.id = :ticketId LIMIT 1`, { ticketId: reading.ticketId, userId: reading.userId || null });
   const names = [who?.contact, who?.consultant, who?.lead].filter(Boolean);
-  const text = reviewTranscript(msgs, names);
+  // besides what the review masks (CPF, phones, e-mails, runs of 8 digits, the names), any number of 6 digits or more (an RGM, a protocol)
+  const text = maskLongNumbers(reviewTranscript(msgs, names));
   if (reading.kind === "importacao") return { system: IMPORT_SYSTEM, text };
   if (reading.kind === "resultado") return { system: OUTCOME_SYSTEM, text };
   const { reviewSystem } = await import("../AnalyticsServices/ConsultantReview");

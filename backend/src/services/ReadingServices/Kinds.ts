@@ -141,3 +141,5 @@ export const outcomeIdeas = (rows: Array<{ outcome: string; worked: string[]; mi
     .slice(0, 3)
     .map(x => `Nas matrículas, "${WORKED[x.k]}" aparece em ${Math.round(x.w * 100)}% das conversas; nas perdas, em ${Math.round(x.l * 100)}%. Vale tornar isso padrão.`);
 };
+// "meu RGM é 7654321", "protocolo 12.345-6": the digits never leave (a price "199,90" or a date "10/02/2027" stays readable)
+export const maskLongNumbers = (text: string): string => String(text || "").replace(/\d[\d.\-]{4,}\d/g, m => (m.replace(/\D/g, "").length >= 6 ? "[NUM]" : m));
