@@ -97,6 +97,7 @@ const sequelize = new Sequelize(dbConfig);
 import OutboundDelivery from "../models/OutboundDelivery";
 import MetaWebhookEvent from "../models/MetaWebhookEvent";
 import Notification from "../models/Notification";
+import OpenbotInsight from "../models/OpenbotInsight";
 import PoloInstitution from "../models/PoloInstitution";
 import InstitutionSetting from "../models/InstitutionSetting";
 import ConsultantReview from "../models/ConsultantReview";
@@ -109,7 +110,7 @@ import GoalChange from "../models/GoalChange";
 import DataPurgeRun from "../models/DataPurgeRun";
 
 const models = [
-  CopilotRequest, CopilotProgress, CopilotSnapshot, OutboundDelivery, MetaWebhookEvent, Notification, PoloInstitution, InstitutionSetting, ConsultantReview, AiBudgetReservation, EnrollmentProof, GoalChange, DataPurgeRun,
+  CopilotRequest, CopilotProgress, CopilotSnapshot, OutboundDelivery, MetaWebhookEvent, Notification, OpenbotInsight, PoloInstitution, InstitutionSetting, ConsultantReview, AiBudgetReservation, EnrollmentProof, GoalChange, DataPurgeRun,
   WebhookDelivery,
   User,
   Contact,

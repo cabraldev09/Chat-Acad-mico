@@ -36,6 +36,8 @@ export const RULES: Rule[] = [
   { table: "WebhookDeliveries", where: `status NOT IN ('pending', 'sending') AND "createdAt" < NOW() - INTERVAL '{days} days'`, days: 30 },
   // the notices of the bell: the read ones after a month, any after three
   { table: "Notifications", where: `("readAt" IS NOT NULL AND "readAt" < NOW() - INTERVAL '{days} days') OR "createdAt" < NOW() - INTERVAL '90 days'`, days: 30 },
+  // the recommendations of the OpenBot: dismissed or expired ones go after a month
+  { table: "OpenbotInsights", where: `("resolvedAt" IS NOT NULL AND "resolvedAt" < NOW() - INTERVAL '{days} days') OR "expiresAt" < NOW() - INTERVAL '{days} days'`, days: 30 },
   { table: "MetaWebhookEvents", where: `status IN ('done', 'failed') AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 7 }
 ];
 

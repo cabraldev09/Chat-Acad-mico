@@ -52,7 +52,7 @@ export const managerIds = async (): Promise<number[]> =>
 
 // The management that may see a person's data: the administration, and the coordination only of the polos involved (a lead, a conversation
 // or a consultant of another polo is not shown to another polo's coordination; with no polo, the administration only)
-const adminIds = async (): Promise<number[]> =>
+export const adminIds = async (): Promise<number[]> =>
   (await User.findAll({ where: { [Op.or]: [{ profile: "admin" }, { role: "admin" }] } as any, attributes: ["id"] })).map(u => u.id);
 export const managerIdsOfPolos = async (poloIds: Array<number | null | undefined>): Promise<number[]> => {
   const polos = [...new Set(poloIds.map(Number).filter(n => Number.isInteger(n) && n > 0))];

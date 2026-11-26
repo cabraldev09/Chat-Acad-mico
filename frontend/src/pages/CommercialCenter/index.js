@@ -500,4 +500,51 @@ const PoloBoard = ({ data, polos, history, feedbackPeriod }) => {
 };
 
 // "Equipe agora" became part of Estatísticas: the pieces below are used by its tabs (Visão geral, Consultores, Polos e metas)
-export { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod };
+
+// What the OpenBot recommends to the management, written through the API (scope insights:write): the administrators only (the server sends an
+// empty list to everybody else). Always plain text (React escapes it; no HTML or Markdown is read), with the origin "OpenBot" and the date
+// on every item, and only totals: the server refuses personal data. "Dispensar" hides the item; nothing runs because of what it says.
+const INSIGHT_TONE = { urgent: "bad", warning: "warn", info: "info" };
+const INSIGHT_COLOR = { urgent: "#dc2626", warning: "#d97706", info: "#0693E3" };
+const OpenbotInsights = ({ items, onDismiss, onOpen }) => {
+  const c = useKit();
+  if (!items || items.length === 0) return null;
+  const day = (iso) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Porto_Velho", day: "2-digit", month: "2-digit" });
+  return (
+    <div className={c.panel} data-testid="openbot-insights">
+      <div className="mx-head">
+        <span className="mx-ico" data-tone="info" aria-hidden="true"><AlertTriangle size={17} /></span>
+        <div style={{ minWidth: 0 }}>
+          <h3 className="mx-title">Recomendações do OpenBot</h3>
+          <div className="mx-sub">Sugestões geradas pelo OpenBot a partir dos indicadores consolidados, sem dados de pessoas. Só a administração vê.</div>
+        </div>
+      </div>
+      <div className="mx-list" style={{ marginTop: 8 }}>
+        {items.map((item) => (
+          <div key={item.id} className="mx-item" style={{ alignItems: "flex-start", borderLeft: `3px solid ${INSIGHT_COLOR[item.level] || INSIGHT_COLOR.info}` }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span className="mx-pill" data-tone={INSIGHT_TONE[item.level] || "info"} style={{ fontSize: 12, fontWeight: 650 }}>OpenBot</span>
+                <span className="mx-sub" style={{ margin: 0 }}>{day(item.createdAt)}</span>
+              </div>
+              <div style={{ fontSize: 13.5, fontWeight: 650, marginTop: 4, overflowWrap: "anywhere" }}>{item.title}</div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.45, overflowWrap: "anywhere" }}>{item.body}</div>
+              <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+                {item.link && (
+                  <button type="button" className="mx-go" style={{ border: 0, background: "none", cursor: "pointer", padding: "6px 0", font: "inherit", fontSize: 12.5, fontWeight: 650, color: "var(--c-brand)" }} onClick={() => onOpen(item.link)}>
+                    Ver detalhe <ChevronRight size={15} aria-hidden="true" />
+                  </button>
+                )}
+                <button type="button" style={{ border: 0, background: "none", cursor: "pointer", padding: "6px 0", font: "inherit", fontSize: 12.5, fontWeight: 650, color: "#64748b" }} onClick={() => onDismiss(item.id)}>
+                  Dispensar
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export { Team, Alerts, OpenbotInsights, Detail, ConfigPanel, PoloBoard, supervisorPeriod };

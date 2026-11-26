@@ -12,7 +12,7 @@ import Drawer from "@material-ui/core/Drawer";
 import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, rankRows, CountStat, BoardHead, MetricAreaCard, Person, EmptyNote, rangeText, rangeDates } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
-import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
+import { Team, Alerts, OpenbotInsights, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
 import { Leads, mins } from "../CommercialCenter/ProcessTab";
 import Sends from "./Sends";
 
@@ -296,6 +296,17 @@ const Now = ({ params }) => {
   const live = useMemo(() => ({ range: "today", ...(params.institutionId ? { institutionId: params.institutionId } : {}) }), [params.institutionId]);
   const { data, error, reload } = useAnalytics("/analytics/team", live);
   const [selected, setSelected] = useState(null);
+  // "Dispensar" a recommendation of the OpenBot: hidden at once, then asked of the server (it stays dismissed on the next reading)
+  const [dismissed, setDismissed] = useState([]);
+  const dismissInsight = async (id) => {
+    setDismissed((list) => [...list, id]);
+    try {
+      await api.put(`/openbot-insights/${id}/resolve`);
+    } catch (err) {
+      setDismissed((list) => list.filter((x) => x !== id));
+      toastError(err);
+    }
+  };
   if (error && !data) return <Failed onRetry={reload} />;
   if (!data) return <div className={c.cols}><div className={c.panel} style={{ minHeight: 160, opacity: 0.6 }} /><div className={c.panel} style={{ minHeight: 160, opacity: 0.6 }} /></div>;
   return (
@@ -318,6 +329,11 @@ const Now = ({ params }) => {
         />
         <Alerts alerts={data.alerts} onOpen={setSelected} history={history} />
       </div>
+      <OpenbotInsights
+        items={(data.openbotInsights || []).filter((i) => !dismissed.includes(i.id))}
+        onOpen={(link) => history.push(link)}
+        onDismiss={dismissInsight}
+      />
       {selected && <Detail userId={selected} period={live} defs={defs} onClose={() => setSelected(null)} />}
     </div>
   );

@@ -11,7 +11,8 @@ export const API_SCOPES = {
   "tickets:read": "Ler conversas (sem o texto)",
   "connections:read": "Ler as conexões",
   "indicators:read": "Ler indicadores consolidados",
-  "messages:send": "Enviar mensagens"
+  "messages:send": "Enviar mensagens",
+  "insights:write": "Gravar avisos e recomendações para a gestão (sem dados de pessoas)"
 } as const;
 export type ApiScope = keyof typeof API_SCOPES;
 export const FULL_ACCESS = "*";
