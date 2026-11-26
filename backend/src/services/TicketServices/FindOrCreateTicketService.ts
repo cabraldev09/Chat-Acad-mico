@@ -46,7 +46,9 @@ const FindOrCreateTicketService = async (
   contact: Contact,
   whatsappId: number,
   unreadMessages: number,
-  groupContact?: Contact
+  groupContact?: Contact,
+  // the text of the message that arrived (an answer "SAIR" to a recovery campaign is never followed by the offer)
+  inboundBody?: string
 ): Promise<Ticket> => {
   let ticket = await Ticket.findOne({
     where: {
@@ -216,6 +218,16 @@ const FindOrCreateTicketService = async (
         setTimeout(() => { noticeIfOwnerAway(routedId, ownerId).catch(() => undefined); }, 2500).unref?.();
       }
     }
+  }
+
+  // the answer to a recovery campaign follows the approach the management chose (the AI with the offer, the proposal, the consultant).
+  // Only a message the person sent counts (unread > 0): a message the system sends to them (another campaign, a notice) opens the
+  // conversation here too and is not an answer. The conversation may already be open (the campaign itself opened it), so this does
+  // not wait for a "returning" one; once per campaign and person (RecoveryReply keeps that).
+  if (unreadMessages > 0 && !groupContact) {
+    const { onRecoveryReply } = await import("../CampaignServices/RecoveryReply");
+    const approach = await onRecoveryReply(ticket, contact, inboundBody).catch(() => null);
+    if (approach === "ia") returning = false;
   }
 
   // a shared number (the official API of the polos): the client who already has a consultant goes back to them, robots and rotation stay out

@@ -9,6 +9,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager as isManagerUser } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { toast } from "react-toastify";
 import { useCrmOptions, ago } from "./shared";
 import "../../styles/dash.css";
 import { BoardHead, EmptyNote, GlowPanel, Person } from "../../components/peak";
@@ -69,10 +70,27 @@ const Recovery = () => {
     }
   };
 
+  // the management turns what is on screen (the reason and the objection chosen) into a list for a recovery campaign with an offer
+  const [listing, setListing] = useState(false);
+  const toCampaign = async () => {
+    setListing(true);
+    try {
+      const name = `Recuperação ${new Date().toLocaleDateString("pt-BR")}${reason ? ` · ${reason}` : ""}`.slice(0, 120);
+      const { data: list } = await api.post("/contact-lists/from-leads", { audience: "recovery", name, ...(reason ? { reason } : {}), ...(objection ? { objection } : {}), ...(ownerId ? { ownerId } : {}) });
+      toast.success(`Lista "${list.name}" criada com ${list.imported} ${list.imported === 1 ? "pessoa" : "pessoas"}. Em Campanhas, crie a campanha com essa lista e defina a oferta.`, { autoClose: 9000 });
+      history.push("/campaigns");
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setListing(false);
+    }
+  };
   const items = (data && data.items) || [];
   return (
     <MainContainer>
-      <BoardHead title="Recuperação" sub="Leads que pararam de responder ou desistiram, com o motivo. Retome a conversa ou devolva ao funil." />
+      <BoardHead title="Recuperação" sub="Leads que pararam de responder ou desistiram, com o motivo. Retome a conversa ou devolva ao funil.">
+        {manager && <Button variant="contained" disableElevation disabled={listing || !items.length} onClick={toCampaign} style={{ background: "#fff", color: "#0b4279" }}>{listing ? "Criando a lista…" : "Criar campanha de recuperação"}</Button>}
+      </BoardHead>
       <div className={classes.filters}>
         {manager && (
           <TextField select size="small" label="Consultor" variant="outlined" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>

@@ -465,7 +465,13 @@ const save = async (req: Request, existing?: Proposal) => {
 const rebuild = async (p: Proposal) => {
   const lead = p.leadId ? ((await Lead.findByPk(p.leadId)) as Lead) : standaloneLead(p.recipientName || "Candidato");
   const { params, snapshot } = JSON.parse(p.params);
-  return compose(lead, params, snapshot, p.createdAt);
+  const out = await compose(lead, params, snapshot, p.createdAt);
+  // a proposal with a last day (the offer of a recovery campaign) says it instead of "valid today"
+  if (p.validUntil) {
+    const until = String(p.validUntil).slice(0, 10).split("-").reverse().join("/");
+    out.messages = out.messages.map(m => (m.id === "validity" ? { ...m, text: `A condição desta proposta vale até ${until}.` } : m));
+  }
+  return out;
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {

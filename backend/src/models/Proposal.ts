@@ -57,6 +57,10 @@ class Proposal extends Model<Proposal> {
   @Column
   viewedAt: Date;
 
+  // the last day the conditions of the proposal hold (a recovery campaign sets it)
+  @Column(DataType.DATEONLY)
+  validUntil: string;
+
   @ForeignKey(() => Lead)
   @Column
   leadId: number;
