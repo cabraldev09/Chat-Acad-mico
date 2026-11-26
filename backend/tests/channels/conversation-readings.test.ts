@@ -58,3 +58,32 @@ describe("leitura das conversas: o que a resposta do modelo pode dizer", () => {
     expect(maskLongNumbers("fica R$ 199,90 com vencimento em 10/02/2027")).toBe("fica R$ 199,90 com vencimento em 10/02/2027");
   });
 });
+
+describe("leitura das conversas copiadas: colegas e dados de outra pessoa", async () => {
+  const { importHints, hasRecordOfSomeone, maskLabelledNames, teamByName, parseImportAnswer: parse } = await import("../../src/services/ReadingServices/Kinds");
+  it("um colega (equipe ou parceiro) nunca é lead, mesmo que o modelo diga e_lead", () => {
+    expect(parse(JSON.stringify({ e_lead: true, contato_tipo: "equipe", situacao: "matriculado" }))).toMatchObject({ isLead: false, contactType: "equipe" });
+    expect(parse(JSON.stringify({ e_lead: true, contato_tipo: "parceiro" })).isLead).toBe(false);
+    expect(parse(JSON.stringify({ e_lead: true, situacao: "em_andamento" }))).toMatchObject({ isLead: true, contactType: "lead" });
+    expect(parse(JSON.stringify({ e_lead: false })).contactType).toBe("outro");
+  });
+  it("cargo da equipe no nome salvo; professor não conta (costuma ser lead)", () => {
+    expect(teamByName("Douglas Coordenador")).toBe(true);
+    expect(teamByName("Jane Consultora")).toBe(true);
+    expect(teamByName("Pedro Tutor Vilhena")).toBe(true);
+    expect(teamByName("Ambientação prof Esther")).toBe(true);
+    expect(teamByName("Prof Leila")).toBe(false);
+    expect(teamByName("Gabriela Jonjob")).toBe(false);
+  });
+  it("dados de cadastro de alguém (Nome:, CPF:, Inscrição:) e o nome depois do rótulo nunca vai ao modelo", () => {
+    const rec = "Nome: Izabela Marcia Carolina Pereira\nCpf: 066.051.672-10\nInscrição: 266188360\nCurso: Letras";
+    expect(hasRecordOfSomeone([rec])).toBe(true);
+    expect(hasRecordOfSomeone(["Qual o nome do curso?", "Meu nome é Ana"])).toBe(false);
+    const masked = maskLabelledNames(rec);
+    expect(masked).not.toMatch(/Izabela|Pereira/);
+    expect(masked).toMatch(/Nome: \[OUTRA PESSOA\]/);
+    expect(maskLabelledNames("Nome: João da Silva CPF 123")).toBe("Nome: [OUTRA PESSOA] CPF 123");
+    expect(importHints("Douglas Coordenador", [rec])).toMatch(/cargo da equipe.*dados de cadastro/);
+    expect(importHints("Maria", ["Oi, quero saber de Pedagogia"])).toBe("");
+  });
+});

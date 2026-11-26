@@ -46,11 +46,14 @@ export const IMPORT_SYSTEM = [
   "Você lê, para a equipe comercial de uma faculdade EAD, uma conversa antiga de WhatsApp entre um consultor e uma pessoa.",
   "Dados pessoais e números foram trocados por marcadores como [NOME] e [NUM]. Não invente nada que não esteja na conversa.",
   "Diga se a pessoa é um lead (alguém interessado em estudar na faculdade) ou não (amigo, família, colega, fornecedor, aluno pedindo só suporte).",
+  "Atenção: o contato NÃO é lead quando é da equipe (consultor, coordenador, tutor, secretaria, polo) ou parceiro, e quando só repassa ou recebe dados de OUTRA pessoa",
+  "(nome, CPF, inscrição, RGM, curso de um aluno). Nesse caso a matrícula citada é de outra pessoa: e_lead=false e contato_tipo equipe ou parceiro.",
+  "contato_tipo: lead (a própria pessoa quer estudar), equipe, parceiro ou outro (amigo, família, fornecedor, suporte).",
   "Se for lead, diga a situação: matriculado (fez a matrícula), em_andamento (ainda decidindo), sem_resposta (parou de responder) ou desistiu (disse que não vai fazer).",
   `etapa (só para em_andamento): ${OPEN_STAGES.join(", ")}.`,
   `objecao: ${OBJECTION_TYPES.join(", ")} ou nenhuma.`,
   "Responda só com JSON válido, sem markdown, exatamente no formato",
-  "{\"e_lead\":boolean,\"situacao\":string,\"curso\":string,\"etapa\":string,\"objecao\":string,\"motivo\":string,\"resumo\":string,\"proximo_passo\":string,\"parou_em\":string,\"pendente\":string,\"melhorar\":string,\"polo\":string}.",
+  "{\"e_lead\":boolean,\"contato_tipo\":string,\"situacao\":string,\"curso\":string,\"etapa\":string,\"objecao\":string,\"motivo\":string,\"resumo\":string,\"proximo_passo\":string,\"parou_em\":string,\"pendente\":string,\"melhorar\":string,\"polo\":string}.",
   "curso: o nome do curso de interesse ou vazio. motivo: até 140 caracteres, por que não avançou (vazio se avançou).",
   "resumo: até 300 caracteres, o que a pessoa quer e em que ponto parou, para o consultor retomar a venda. proximo_passo: até 140 caracteres.",
   "parou_em: até 80 caracteres, a etapa em que a conversa parou (ex.: esperando a proposta, enviando documentos, decidindo o curso).",
@@ -59,8 +62,11 @@ export const IMPORT_SYSTEM = [
   "polo: o nome do polo ou da cidade de estudo citado na conversa, ou vazio. Nunca escreva valores, bolsas ou prazos que não estejam na conversa."
 ].join(" ");
 
+export const CONTACT_TYPES = ["lead", "equipe", "parceiro", "outro"] as const;
+
 export interface ImportAnswer {
   isLead: boolean;
+  contactType: typeof CONTACT_TYPES[number];
   situation: typeof SITUATIONS[number];
   course: string;
   stage: typeof OPEN_STAGES[number] | null;
@@ -76,10 +82,13 @@ export interface ImportAnswer {
 
 export const parseImportAnswer = (text: string): ImportAnswer => {
   const p = raw(text);
-  const isLead = p.e_lead === true;
+  // a colleague, a partner or someone else is never a lead, whatever "e_lead" says (the enrollment they talk about is of another person)
+  const contactType = oneOf(p.contato_tipo, CONTACT_TYPES, p.e_lead === true ? "lead" : "outro") as ImportAnswer["contactType"];
+  const isLead = p.e_lead === true && contactType === "lead";
   const situation = oneOf(p.situacao, SITUATIONS, "em_andamento") as ImportAnswer["situation"];
   return {
     isLead,
+    contactType,
     situation,
     course: clean(p.curso, 80),
     stage: situation === "em_andamento" ? oneOf(p.etapa, OPEN_STAGES, "in_service") : null,
@@ -155,3 +164,26 @@ export const outcomeIdeas = (rows: Array<{ outcome: string; worked: string[]; mi
 };
 // "meu RGM é 7654321", "protocolo 12.345-6": the digits never leave (a price "199,90" or a date "10/02/2027" stays readable)
 export const maskLongNumbers = (text: string): string => String(text || "").replace(/\d[\d.\-]{4,}\d/g, m => (m.replace(/\D/g, "").length >= 6 ? "[NUM]" : m));
+
+// ------------------------------------------------------------------------------------------------ colleagues and third people
+// a contact saved with a job of the team ("Douglas Coordenador", "Jane Consultora", "Pedro Tutor Vilhena"): a strong sign of a colleague. A
+// teacher ("Prof Leila") is NOT here: teachers are often leads (a second degree, the pedagogical training).
+export const TEAM_NAME = /\b(coordenador(a)?|coord\.?|consultor(a)?|tutor(a)?|secretaria|secret[aá]ri[oa]|equipe|comercial|suporte|polo|ambienta[cç][aã]o)\b/i;
+export const teamByName = (name: string | null | undefined): boolean => TEAM_NAME.test(String(name || ""));
+
+// the data of an enrollment sent in the conversation as a record ("Nome: ...", "CPF: ...", "Inscrição: ..."): what colleagues pass to each
+// other about a student. Two labels or more in one message.
+const RECORD_LABELS = [/\bnome( completo)?\s*:/i, /\bcpf\s*:/i, /\binscri[cç][aã]o\s*:/i, /\brgm\s*:/i, /\bcurso\s*:/i, /\bmatr[ií]cula\s*:/i, /\bcupom\s*:/i, /\bpolo\s*:/i];
+export const hasRecordOfSomeone = (texts: string[]): boolean => texts.some(t => RECORD_LABELS.filter(r => r.test(String(t || ""))).length >= 2);
+
+// the name written after a label is of another person: it never goes to the model (the rule of the readings: no names)
+export const maskLabelledNames = (text: string): string =>
+  String(text || "").replace(/(\b(?:nome(?: completo)?|alun[oa]|candidat[oa]|interessad[oa]|respons[aá]vel)\s*:\s*)([^\n:]{2,80}?)(?=\s+(?:cpf|inscri|rgm|curso|e-?mail|telefone|celular|cupom)\b|\n|$)/gi, "$1[OUTRA PESSOA]");
+
+// what the code knows and the model cannot see (the names are masked): said before the conversation
+export const importHints = (contactName: string | null | undefined, texts: string[]): string => {
+  const hints: string[] = [];
+  if (teamByName(contactName)) hints.push("o contato está salvo na agenda com um cargo da equipe (coordenador, consultor, tutor, secretaria ou polo)");
+  if (hasRecordOfSomeone(texts)) hints.push("a conversa traz dados de cadastro de alguém (Nome:, CPF:, Inscrição:), o que é comum entre colegas que falam de um aluno");
+  return hints.length ? `Pistas do sistema: ${hints.join("; ")}.\n\n` : "";
+};

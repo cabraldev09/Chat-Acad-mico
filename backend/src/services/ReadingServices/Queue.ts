@@ -8,7 +8,7 @@ import { portable } from "../../helpers/sqlDialect";
 import ConversationReading from "../../models/ConversationReading";
 import { logger } from "../../utils/logger";
 import { MAX_MESSAGES, reviewTranscript } from "../AnalyticsServices/ConsultantReview";
-import { IMPORT_SYSTEM, OUTCOME_SYSTEM, ReadingKind, maskLongNumbers, parseImportAnswer, parseOutcomeAnswer } from "./Kinds";
+import { IMPORT_SYSTEM, OUTCOME_SYSTEM, ReadingKind, importHints, maskLabelledNames, maskLongNumbers, parseImportAnswer, parseOutcomeAnswer } from "./Kinds";
 
 // THE QUEUE OF READINGS. Each conversation to be read waits here. Who reads it is a setting:
 //  - "sistema": the system's own AI, with the cheapest model of the key it has (300 tokens of answer), within the daily spending caps;
@@ -56,9 +56,17 @@ export const inputOf = async (reading: ConversationReading): Promise<ReadingInpu
   const [who] = await rows(`SELECT ct.name AS contact, u.name AS consultant, l.name AS lead FROM Tickets t JOIN Contacts ct ON ct.id = t.contactId
       LEFT JOIN Users u ON u.id = COALESCE(:userId, t.userId) LEFT JOIN Leads l ON l.contactId = t.contactId WHERE t.id = :ticketId LIMIT 1`, { ticketId: reading.ticketId, userId: reading.userId || null });
   const names = [who?.contact, who?.consultant, who?.lead].filter(Boolean);
+  if (reading.kind === "importacao") {
+    // the copy of a consultant's phone has colleagues too: what the code sees and the model cannot (the job in the saved name, a record of
+    // someone else's data) goes as a hint; the name written after "Nome:" is of another person and never leaves
+    const bodies = msgs.map(m => String(m.body || ""));
+    const hints = importHints(who?.contact, bodies);
+    const masked = msgs.map(m => ({ ...m, body: maskLabelledNames(String(m.body || "")), transcript: m.transcript ? maskLabelledNames(String(m.transcript)) : m.transcript }));
+    const text = hints + maskLongNumbers(reviewTranscript(masked, names)).replace(/^Interessado:/gm, "Contato:");
+    return { system: IMPORT_SYSTEM, text };
+  }
   // besides what the review masks (CPF, phones, e-mails, runs of 8 digits, the names), any number of 6 digits or more (an RGM, a protocol)
   const text = maskLongNumbers(reviewTranscript(msgs, names));
-  if (reading.kind === "importacao") return { system: IMPORT_SYSTEM, text };
   if (reading.kind === "resultado") return { system: OUTCOME_SYSTEM, text };
   const { reviewSystem } = await import("../AnalyticsServices/ConsultantReview");
   return { system: reviewSystem(await reviewSteps()), text };
@@ -165,7 +173,10 @@ export const runLocalReadings = async (opts: { limit?: number; only?: ReadingKin
   const today = todayInAppTz();
   const used = (await getSetting("readings_day", "")) === today ? Number(await getSetting("readings_count", "0")) || 0 : 0;
   const left = Math.max(0, Math.min(opts.limit ?? cfg.maxPerDay, cfg.maxPerDay - used));
-  if (!left) return { ...run, reason: "daily_limit" };
+  if (!left) {
+    await setSetting("readings_last_stop", `daily_limit:${today}`);
+    return { ...run, reason: "daily_limit" };
+  }
   const waited = cfg.provider === "openbot" ? new Date(Date.now() - cfg.waitHours * 3600000) : new Date();
   const now = new Date();
   const list = await ConversationReading.findAll({
@@ -203,13 +214,21 @@ export const runLocalReadings = async (opts: { limit?: number; only?: ReadingKin
       run.read += 1;
     } catch (err) {
       const code = String((err as Error)?.message || "");
-      if (/ERR_AI_TOKEN_CAP|ERR_AI_USD_CAP|ERR_AI_BUDGET|ERR_AI_RATE_REQUIRED/.test(code)) { run.stoppedByBudget = true; break; }
+      if (/ERR_AI_TOKEN_CAP|ERR_AI_USD_CAP|ERR_AI_BUDGET|ERR_AI_RATE_REQUIRED/.test(code)) { run.stoppedByBudget = true; run.reason = "budget"; break; }
       run.failed += 1;
       logger.warn(`Leitura #${r.id} (${r.kind}): ${code}`);
+      // an error of the call itself (before any answer) also counts: after 3, the reading fails instead of blocking the queue forever
+      if (r.status !== "feita" && r.status !== "falhou") {
+        const attempts = (r.attempts || 0) + 1;
+        // eslint-disable-next-line no-await-in-loop
+        await ConversationReading.update({ attempts, error: code.slice(0, 200), status: attempts >= MAX_ATTEMPTS ? "falhou" : "pendente", claimedBy: null, claimedUntil: null } as any, { where: { id: r.id, status: { [Op.notIn]: ["feita", "falhou"] } } as any }).catch(() => undefined);
+      }
     }
   }
   await setSetting("readings_day", today);
   await setSetting("readings_count", String(used + spent));
+  // why the queue stopped this round (shown in Recuperação): the spending cap of the readings, or nothing
+  await setSetting("readings_last_stop", run.stoppedByBudget ? `budget:${today}` : "");
   return run;
 };
 

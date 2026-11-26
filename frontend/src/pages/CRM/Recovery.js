@@ -12,6 +12,7 @@ import toastError from "../../errors/toastError";
 import { toast } from "react-toastify";
 import { useCrmOptions, ago } from "./shared";
 import EnrollDialog from "./EnrollDialog";
+import { confirmDialog } from "../../components/ConfirmDialog";
 import "../../styles/dash.css";
 import { BoardHead, EmptyNote, GlowPanel, Person } from "../../components/peak";
 
@@ -50,6 +51,31 @@ const Recovery = () => {
   const [busy, setBusy] = useState(0);
   const [tab, setTab] = useState("parados");
   const [enrolling, setEnrolling] = useState(null);
+  // "Ler de novo": the numbers by QR Code whose copied conversations can be read again (the person's own; every one for the management)
+  const [numbers, setNumbers] = useState([]);
+  const [rereadId, setRereadId] = useState("");
+  const [rereading, setRereading] = useState(false);
+  useEffect(() => { api.get("/crm/recovery/reread").then(({ data: d }) => setNumbers(Array.isArray(d) ? d : [])).catch(() => setNumbers([])); }, []);
+  const reread = async () => {
+    const target = numbers.find((n) => String(n.id) === String(rereadId || (numbers[0] && numbers[0].id)));
+    if (!target) return;
+    const ok = await confirmDialog({
+      title: "Ler de novo as conversas?",
+      message: `As conversas copiadas de "${target.name}" (${target.ownerName}) são lidas de novo, com as regras novas: colegas da equipe ficam de fora, as matrículas e os parados são refeitos. Leva alguns minutos.`,
+      confirmText: "Ler de novo",
+    });
+    if (!ok) return;
+    setRereading(true);
+    try {
+      const { data: r } = await api.post("/crm/recovery/reread", { whatsappId: target.id });
+      toast.success(`${r.queued} ${r.queued === 1 ? "conversa voltou" : "conversas voltaram"} para a fila de leitura. Atualize esta tela em alguns minutos.`, { autoClose: 9000 });
+      load();
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setRereading(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,7 +127,12 @@ const Recovery = () => {
     { key: "confirmar", label: "Matrículas a confirmar" },
   ];
   const reading = data && data.reading;
-  const STOP = { no_api_key: "parada: falta a chave da IA em um agente", disabled: "desligada pelo administrador" };
+  const STOP = {
+    no_api_key: "parada: falta a chave da IA em um agente",
+    disabled: "desligada pelo administrador",
+    daily_limit: "parada até amanhã: chegou ao limite de leituras do dia (Configurações, Integrações)",
+    budget: "parada até amanhã: chegou ao limite de gasto da leitura do dia",
+  };
   const day = (v) => (v ? new Date(v).toLocaleDateString("pt-BR") : null);
   return (
     <MainContainer>
@@ -135,6 +166,19 @@ const Recovery = () => {
             {reading.numbersWithoutOwner ? ` · ${reading.numbersWithoutOwner} ${reading.numbersWithoutOwner === 1 ? "número sem dono não é lido" : "números sem dono não são lidos"} (defina o dono em Conexões)` : ""}
           </span>
           {reading.stopped === "no_api_key" && <Button size="small" variant="outlined" onClick={() => history.push("/ai-agents")}>Configurar a IA</Button>}
+        </div>
+      )}
+      {numbers.length > 0 && (
+        <div className={classes.status} style={{ gap: 8, flexWrap: "wrap" }}>
+          <span>Leu errado ou faltou conversa? Leia de novo as conversas copiadas{numbers.length === 1 ? ` de ${numbers[0].name}` : ""}.</span>
+          <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {numbers.length > 1 && (
+              <TextField select size="small" variant="outlined" label="Número" value={rereadId || numbers[0].id} onChange={(e) => { const v = e.target.value; setRereadId(v); }} style={{ minWidth: 200 }}>
+                {numbers.map((n) => (<MenuItem key={n.id} value={n.id}>{n.name} · {n.ownerName}</MenuItem>))}
+              </TextField>
+            )}
+            <Button size="small" variant="outlined" startIcon={<RefreshCw size={15} />} disabled={rereading} onClick={reread} style={{ height: 40 }}>{rereading ? "Colocando na fila…" : "Ler de novo"}</Button>
+          </span>
         </div>
       )}
       <div className={classes.tabs} role="tablist" aria-label="Lista">

@@ -19,6 +19,8 @@ const ownerOf = (req: Request): number | null => {
 };
 
 const STALLED = "Parou de responder";
+// the consultant did not answer the person for days (see ReadingServices/ImportedLeads): also "Parados"
+const NO_REPLY = "Sem retorno do consultor";
 const CONFIRM_STAGE = "Matrícula a confirmar";
 
 // the polos the coordination sees, plus the leads with no polo yet of the consultants of those polos (the conversations read from a
@@ -45,8 +47,14 @@ const readingStatus = async (sequelize: any): Promise<any> => {
   const { readingSettings } = await import("../services/ReadingServices/Queue");
   const cfg = await readingSettings();
   const hasKey = !!(await auditorAccess().catch(() => null));
-  // only the OpenBot reads when the system's AI has no key: then nothing is stopped
-  const stopped = !cfg.enabled ? "disabled" : !hasKey && cfg.provider !== "openbot" ? "no_api_key" : null;
+  // only the OpenBot reads when the system's AI has no key: then nothing is stopped. The daily limit or the spending cap of the readings
+  // stops the queue until the next day (the last round says so)
+  const { getSetting } = await import("../helpers/AppSettings");
+  const { todayInAppTz } = await import("../helpers/AppTime");
+  const [lastStop, day] = String(await getSetting("readings_last_stop", "")).split(":");
+  const queued = by("pendente") + by("reservada");
+  const stopped = !cfg.enabled ? "disabled" : !hasKey && cfg.provider !== "openbot" ? "no_api_key"
+    : queued && day === todayInAppTz() && (lastStop === "daily_limit" || lastStop === "budget") ? lastStop : null;
   return {
     done: by("feita"), queued: by("pendente") + by("reservada"), failed: by("falhou"),
     numbers: Number(qr?.total || 0), numbersWithoutOwner: Number(qr?.noOwner || 0),
@@ -67,7 +75,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     SELECT l.id, l.name, l.phone, l.ownerId, u.name AS ownerName, c.name AS courseName, l.lastContactAt, l.lostAt, l.recoveryAt,
       COALESCE(l.recoveryReason, l.lostReason) AS reason, l.recoveryObjection AS objection, l.lostReason, s.name AS stageName, s.type AS stageType,
       lc.summary, l.recoveryState, l.recoveryStage, l.recoveryPending, l.serviceTip, l.rgmSuggested, l.enrolledAtSuggested, l.poloId, p.name AS poloName,
-      CASE WHEN s.name = :confirm THEN 'confirmar' WHEN l.recoveryReason = :stalled THEN 'parados' ELSE 'desistiram' END AS tab
+      CASE WHEN s.name = :confirm THEN 'confirmar' WHEN l.recoveryReason IN (:stalled, :noReply) THEN 'parados' ELSE 'desistiram' END AS tab
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId LEFT JOIN Users u ON u.id = l.ownerId LEFT JOIN Courses c ON c.id = l.courseId
       LEFT JOIN LeadCommercials lc ON lc.leadId = l.id LEFT JOIN Polos p ON p.id = l.poloId
     WHERE l.isHistorical = false AND l.enrolledAt IS NULL
@@ -75,7 +83,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
         OR (s.name = :confirm AND s.type = 'open'))
       AND (:ownerId IS NULL OR l.ownerId = :ownerId) ${scope}
     ORDER BY COALESCE(l.lastContactAt, l.recoveryAt, l.lostAt, l.createdAt) ASC LIMIT 800`),
-    { replacements: { ownerId, since: new Date(Date.now() - 90 * 864e5), confirm: CONFIRM_STAGE, stalled: STALLED }, type: QueryTypes.SELECT }
+    { replacements: { ownerId, since: new Date(Date.now() - 90 * 864e5), confirm: CONFIRM_STAGE, stalled: STALLED, noReply: NO_REPLY }, type: QueryTypes.SELECT }
   )) as any[];
   const all = rows.map(r => ({ ...r, objectionLabel: r.objection ? OBJECTION_LABEL[r.objection] || r.objection : null }));
   const toRecover = all.filter(r => r.tab !== "confirmar");
@@ -110,7 +118,8 @@ export const act = async (req: Request, res: Response): Promise<Response> => {
       if (first) await changeStage(lead.id, first.id, me);
     }
     if (action === "nao_matricula") {
-      await lead.update({ rgmSuggested: null, enrolledAtSuggested: null } as any);
+      const { undoReadingTraces } = await import("../services/ReadingServices/ImportedLeads");
+      await undoReadingTraces(lead);
       await addActivity(lead.id, me, "system", "A matrícula que a leitura da conversa sugeriu não se confirmou: o lead voltou ao funil.");
     } else {
       await lead.update({ recoveryState: "voltou" } as any);
@@ -121,4 +130,33 @@ export const act = async (req: Request, res: Response): Promise<Response> => {
     await addActivity(lead.id, me, "system", "Marcado para não recuperar.");
   }
   return res.json({ ok: true, recoveryState: lead.recoveryState });
+};
+
+// "Ler de novo": the conversations copied from a number are read again with the current rules (the readings of that number are reset and
+// put back in the queue). The owner of the number, or the management. What a new reading finds replaces what the old one left.
+export const reread = async (req: Request, res: Response): Promise<Response> => {
+  const whatsappId = Number(req.body?.whatsappId);
+  if (!whatsappId) throw new AppError("ERR_FIELD_REQUIRED_whatsappId", 400);
+  const Whatsapp = (await import("../models/Whatsapp")).default;
+  const w = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId", "channel"] });
+  if (!w || (w.channel || "whatsapp") !== "whatsapp" || !w.ownerId) throw new AppError("ERR_NO_WAPP_FOUND", 404);
+  if (!isManagerRole(reqRole(req)) && Number(w.ownerId) !== Number(req.user.id)) throw new AppError("ERR_NO_PERMISSION", 403);
+  const sequelize = (await import("../database")).default;
+  await sequelize.query(portable(`DELETE FROM ConversationReadings WHERE kind = 'importacao' AND status IN ('feita', 'falhou', 'pendente')
+      AND ticketId IN (SELECT id FROM Tickets WHERE whatsappId = :whatsappId)`), { replacements: { whatsappId }, type: QueryTypes.DELETE });
+  const { enqueueImported } = await import("../services/ReadingServices/ImportedLeads");
+  const queued = await enqueueImported(whatsappId);
+  // the queue is read at once (in the background), not only in the next round of the worker
+  import("../services/ReadingServices/Queue").then(({ runLocalReadings }) => runLocalReadings({ only: "importacao" })).catch(() => undefined);
+  return res.json({ queued });
+};
+
+// the numbers by QR Code whose conversations can be read again: the person's own, or every one with an owner for the management
+export const rereadNumbers = async (req: Request, res: Response): Promise<Response> => {
+  const sequelize = (await import("../database")).default;
+  const mine = !isManagerRole(reqRole(req));
+  const list = (await sequelize.query(portable(`SELECT w.id, w.name, u.name AS ownerName FROM Whatsapps w JOIN Users u ON u.id = w.ownerId
+      WHERE w.channel = 'whatsapp' AND w.ownerId IS NOT NULL ${mine ? "AND w.ownerId = :me" : ""} ORDER BY w.name`),
+    { replacements: { me: Number(req.user.id) }, type: QueryTypes.SELECT })) as any[];
+  return res.json(list);
 };

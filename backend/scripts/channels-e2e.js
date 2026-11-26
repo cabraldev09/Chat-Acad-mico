@@ -147,6 +147,8 @@ const readingAnswer = (system, text) => {
   if (/por que as vendas acontecem/.test(system)) return { resultado: "perdeu", motivo: "Preço / mensalidade", objecoes: ["preco"], o_que_funcionou: ["rapidez"], faltou: ["proposta_no_dia"] };
   const t = String(text);
   if (/churrasco/i.test(t)) return { e_lead: false, situacao: "em_andamento" };
+  // the hint of the system (a job of the team in the saved name, a record of someone else's data): a colleague, never a lead
+  if (/cargo da equipe/i.test(t)) return { e_lead: true, contato_tipo: "equipe", situacao: "matriculado", curso: "Letras", resumo: "Colega passou os dados de uma aluna." };
   if (/fiz a matr[ií]cula|j[aá] me matriculei/i.test(t)) return { e_lead: true, situacao: "matriculado", curso: "Pedagogia", etapa: "", objecao: "nenhuma", motivo: "", resumo: "Já fez a matrícula em Pedagogia.", proximo_passo: "Confirmar o RGM" };
   if (/muito caro/i.test(t)) return { e_lead: true, situacao: "desistiu", curso: "Pedagogia", etapa: "", objecao: "preco", motivo: "Achou a mensalidade alta", resumo: "Queria Pedagogia, desistiu pelo valor.", proximo_passo: "Oferecer uma bolsa", parou_em: "Depois de saber o valor", pendente: "Mostrar a bolsa", melhorar: "Apresentar a bolsa antes do valor cheio" };
   if (/vou ver com meu marido/i.test(t)) return { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Ia conversar em casa.", proximo_passo: "Perguntar se decidiu", parou_em: "Proposta enviada", pendente: "Saber se decidiu", melhorar: "Marcar um dia para o retorno" };
@@ -9291,6 +9293,11 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`UPDATE Messages SET createdAt = NOW() - INTERVAL '8 days' WHERE ticketId=${F.t}`);
       // a conversation older than 90 days is not read
       const Old = copied("Gabi Antiga Leitura", "5569955550017", [[false, "Quero Pedagogia"], [true, "Claro"]]);
+      // a colleague saved with the job ("Coordenador") who passes the record of a student: never a lead, never an enrollment to confirm
+      const H = copied("Douglas Coordenador Leitura", "5569955550018", [[true, "Nome: Izabela Teste Pereira Cpf: 529.982.247-25 Inscrição: 266188360 Curso: Letras"], [false, "Já fiz a matrícula dela, coloquei no grupo"], [true, "Valeu"]]);
+      // the person did not get an answer for 8 days: also "Parados" (the consultant did not answer)
+      const I = copied("Ivo Sem Retorno Leitura", "5569955550019", [[false, "Quero Pedagogia"], [true, "Te mando a proposta"], [false, "Me manda a proposta por favor"]]);
+      sql(`UPDATE Messages SET createdAt = NOW() - INTERVAL '8 days' WHERE ticketId=${I.t}`);
       sql(`UPDATE Tickets SET lastMessageAt = NOW() - INTERVAL '120 days' WHERE id=${Old.t}`);
       // the catch-up of the first sync already made a lead for Ana, waiting in "Novos para conferir"
       const stage1 = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
@@ -9302,6 +9309,11 @@ const postMeta = (id, payload, secret, badSig) => {
       // what went to the model is masked: no name, no RGM, no phone
       const sent = (anthropic.readingTexts || []).join(" ");
       assert(!/7654321|Bia Matriculada|Dani Desistiu|5569955550/.test(sent), "personal data went to the model");
+      assert(!/Izabela|Teste Pereira|266188360/.test(sent) && /OUTRA PESSOA/.test(sent), "the name of a third person went to the model");
+      // the colleague: no lead in the funnel, no task, no enrollment to confirm, and the contact is "Equipe" now
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE contactId=${H.c} AND isHistorical=false`) === "0", "a colleague became a lead");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks t JOIN Leads l ON l.id=t.leadId WHERE l.contactId=${H.c} AND t.automationKey LIKE 'confirm-enroll-%' AND t.doneAt IS NULL`) === "0", "a colleague got a task to confirm an enrollment");
+      assert(sql(`SELECT CASE WHEN isStaff THEN 1 ELSE 0 END FROM Contacts WHERE id=${H.c}`) === "1", "the colleague is not Equipe");
       const leadOf = c => sql(`SELECT CONCAT(l.id,'|',s.name,'|',s.type,'|',COALESCE(l.rgm,''),'|',CASE WHEN l.enrolledAt IS NULL THEN 0 ELSE 1 END,'|',COALESCE(l.recoveryState,''),'|',COALESCE(l.lostReason,''),'|',COALESCE(l.ownerId::text,''),'|',CASE WHEN l.isHistorical THEN 1 ELSE 0 END) FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.contactId=${c}`).split("|");
       const a = leadOf(A.c);
       assert(a[0] === leadA && a[2] === "open" && a[7] === String(u.id), `Ana ${a}`);
@@ -9333,6 +9345,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(item.tab === "desistiram" && item.serviceTip === "Apresentar a bolsa antes do valor cheio" && item.recoveryStage === "Depois de saber o valor" && /Mostrar a bolsa/.test(item.recoveryPending), `the fields of the reading ${JSON.stringify(item)}`);
       const fabi = rec.items.find(i => i.name === "Fabi Parada Leitura");
       assert(fabi && fabi.tab === "parados" && fabi.reason === "Parou de responder" && fabi.recoveryPending, `Fabi is not in Parados ${JSON.stringify(fabi)}`);
+      const ivo = rec.items.find(i => i.name === "Ivo Sem Retorno Leitura");
+      assert(ivo && ivo.tab === "parados" && ivo.reason === "Sem retorno do consultor", `Ivo is not in Parados ${JSON.stringify(ivo)}`);
+      assert(!rec.items.some(i => /Douglas Coordenador/.test(i.name)), "a colleague is in Recuperação");
       const bia = rec.items.find(i => String(i.id) === b[0]);
       assert(bia && bia.tab === "confirmar" && bia.rgmSuggested === "7654321" && rec.tabs.confirmar >= 2, `Bia is not to confirm ${JSON.stringify(bia)}`);
       assert(rec.reading === null, "a consultant saw the status of the reading");
@@ -9341,6 +9356,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // "Não é matrícula": Caio back to the funnel, the suggestion cleared
       assert((await http.post(`/leads/${c[0]}/recovery`, { action: "nao_matricula" }, asUser(uTok))).status === 200, "not an enrollment");
       assert(leadOf(C.c)[1] !== "Matrícula a confirmar" && !(await http.get("/crm/recovery", asUser(uTok))).data.items.some(i => String(i.id) === c[0]), "Caio is still to confirm");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${c[0]} AND automationKey='confirm-enroll-${c[0]}' AND doneAt IS NULL`) === "0", "the task to confirm stayed open after Não é matrícula");
       await http.post("/users", { name: "Outro Consultor Leitura", email: "leitura2@x.com", password: "senha123", role: "consultor" }, auth());
       const otherTok = (await http.post("/auth/login", { email: "leitura2@x.com", password: "senha123" })).data.token;
       assert(!(await http.get("/crm/recovery", asUser(otherTok))).data.items.some(i => String(i.id) === d[0]), "another consultant sees the recovery of someone else");
@@ -9355,6 +9371,15 @@ const postMeta = (id, payload, secret, badSig) => {
       // back to the funnel: out of Recuperação, in an open column
       assert((await http.post(`/leads/${d[0]}/recovery`, { action: "voltar" }, asUser(uTok))).status === 200, "back to the funnel");
       assert(leadOf(D.c)[2] === "open" && !(await http.get("/crm/recovery", asUser(uTok))).data.items.some(i => String(i.id) === d[0]), "the lead stayed in Recuperação");
+      // "Ler de novo": the owner of the number puts its copied conversations back in the queue (the colleague, now Equipe, stays out);
+      // another consultant cannot, and the list of numbers of a consultant has only theirs
+      const nums = (await http.get("/crm/recovery/reread", asUser(uTok))).data;
+      assert(nums.length === 1 && nums[0].id === qr.id, `numbers to read again ${JSON.stringify(nums)}`);
+      assert((await http.post("/crm/recovery/reread", { whatsappId: qr.id }, asUser(otherTok))).status === 403, "another consultant read again a number that is not theirs");
+      const reread = (await http.post("/crm/recovery/reread", { whatsappId: qr.id }, asUser(uTok))).data;
+      assert(reread.queued >= 6 && sql(`SELECT COUNT(*) FROM ConversationReadings WHERE ticketId=${H.t}`) === "0", `read again ${JSON.stringify(reread)}`);
+      await waitFor(() => sql(`SELECT COUNT(*) FROM ConversationReadings r JOIN Tickets t ON t.id=r.ticketId WHERE t.whatsappId=${qr.id} AND r.kind='importacao' AND r.status IN ('pendente','reservada')`) === "0", 20000, "the reading again did not finish");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${b[0]} AND automationKey='confirm-enroll-${b[0]}'`)) === 1, "reading again doubled the task of Bia");
       // OpenBot: with it reading, the system's AI leaves the new reading waiting; the token takes it masked and answers
       assert((await http.put("/readings/settings", { provider: "openbot", waitHours: 6 }, asUser(uTok))).status === 403, "a consultant changed who reads");
       // only the administrator, not the coordination, turns the readings on or off and runs a round (the audit of #205)
