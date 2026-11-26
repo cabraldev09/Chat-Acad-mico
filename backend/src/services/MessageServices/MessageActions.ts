@@ -1,3 +1,4 @@
+import { nameOrNotify } from "../../helpers/ParticipantName";
 import { forwardBodyOf } from "./ForwardBody";
 import { bodyOfMedia } from "../../helpers/MediaLabel";
 import { Op } from "sequelize";
@@ -64,7 +65,7 @@ export const toggleStar = async (id: string, starred: boolean): Promise<Message>
 
 // Stores one reaction per sender (an empty emoji removes it). `sender` is the
 // WhatsApp id of the person, or "me" for the agent.
-export const applyReaction = async (id: string, emoji: string, fromMe: boolean, sender: string): Promise<Message | null> => {
+export const applyReaction = async (id: string, emoji: string, fromMe: boolean, sender: string, shownName: string | null = null): Promise<Message | null> => {
   const message = await loadFull(id);
   if (!message) return null;
   // my own reaction comes back from WhatsApp with my phone id: it is the same person as "me", never a second reaction
@@ -80,19 +81,21 @@ export const applyReaction = async (id: string, emoji: string, fromMe: boolean, 
   // somebody reacted to a message: the list says so ("Reagiu com ❤️ a “texto”") without opening the conversation
   if (emoji && !fromMe && message.ticket) {
     fire("message.reaction", { ticketId: message.ticket.id, contactId: message.ticket.contactId, emoji });
-    await announceReaction(message, emoji, sender);
+    await announceReaction(message, emoji, sender, shownName);
   }
   return message;
 };
 
-const announceReaction = async (message: Message, emoji: string, sender: string): Promise<void> => {
+const announceReaction = async (message: Message, emoji: string, sender: string, shownName: string | null = null): Promise<void> => {
   try {
     const { ticket } = message;
     const key = String(sender || "").split("@")[0];
     let who: string | null = null;
     if (ticket.isGroup && key) {
       const person = await Contact.findOne({ where: { [Op.or]: [{ number: key }, { lid: { [Op.like]: `${key}%` } }] } as any, attributes: ["name"] });
-      who = person ? person.name : null;
+      // the contact stored here; a placeholder (the number) or no contact gives way to the name the person shows on WhatsApp
+      who = person ? nameOrNotify({ name: person.name, number: key }, shownName) : shownName;
+      if (who === "Participante") who = null;
     }
     const raw = previewOf(String(message.body || ""), message.mediaType);
     const labels: Record<string, string> = { document: "📄 Documento" };
