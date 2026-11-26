@@ -260,6 +260,8 @@ r.put("/ai-settings", isAuth, isSystemAdmin, Ai.setKeys);
 
 // visual flows (the chatbot builder)
 r.get("/flows", isAuth, isManager, Flow.index);
+// the published bots a campaign can use for who answers it (name only), for everyone who sends campaigns
+r.get("/flows/published", isAuth, campaignStaff, Flow.publishedList);
 r.get("/flow-templates", isAuth, isManager, Flow.templates);
 r.post("/flows", isAuth, isManager, Flow.store);
 r.post("/flows/import-legacy", isAuth, isManager, Flow.importLegacy);

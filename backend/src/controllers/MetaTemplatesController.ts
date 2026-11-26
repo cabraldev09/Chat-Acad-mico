@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 
 import { institutionName } from "../helpers/Institution";
-import { DEPARTMENTS, TEMPLATE_PACK, allTemplates, createTemplate, deleteTemplate, linkApproved, notifyTemplates, sendTemplatePack, templatesInfo } from "../services/CampaignServices/Templates";
+import { DEPARTMENTS, TEMPLATE_PACK, fullPack, allTemplates, createTemplate, deleteTemplate, linkApproved, notifyTemplates, sendTemplatePack, templatesInfo } from "../services/CampaignServices/Templates";
 
 // Configurações → Modelos da Meta: every template of the WhatsApp account with its status and department, a new one (always Utility),
 // the recommended pack, and removing an old one. The screen follows the changes live (socket "metaTemplates").
@@ -11,7 +11,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const linked = await linkApproved(institutionName(), templates);
   const status = new Map(templates.map(t => [t.name, t.status]));
   const category = new Map(templates.map(t => [t.name, t.category]));
-  const pack = TEMPLATE_PACK(institutionName());
+  const pack = await fullPack(institutionName());
   const info = await templatesInfo();
   const packOf = new Map(pack.map(p => [p.name, p]));
   return res.json({

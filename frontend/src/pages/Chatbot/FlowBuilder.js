@@ -70,6 +70,28 @@ const arrange = (nodes, edges) => {
   });
 };
 
+// The link for ads, Instagram and printed material: it opens the WhatsApp of the number with a message that has the keyword, so the
+// person lands straight in this bot (the number is typed here: the official API does not tell the number in a readable form)
+const AdLink = ({ keyword }) => {
+  const [phone, setPhone] = useState("");
+  const digits = phone.replace(/\D/g, "");
+  const full = digits.length === 10 || digits.length === 11 ? `55${digits}` : digits;
+  const text = `Quero conhecer os cursos ${/sested/i.test(keyword) ? "da SESTED" : `(${keyword})`}`;
+  const link = full.length >= 12 && keyword ? `https://wa.me/${full}?text=${encodeURIComponent(text)}` : "";
+  return (
+    <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)" }}>
+      <div style={{ fontWeight: 600, fontSize: 13.5 }}>Link para anúncios</div>
+      <TextField fullWidth size="small" variant="outlined" margin="dense" label="Número do WhatsApp do fluxo (com DDD)" value={phone} onChange={(ev) => { const { value } = ev.target; setPhone(value); }} placeholder="(69) 99999-0000" />
+      {link ? (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <code style={{ fontSize: 12, overflowWrap: "anywhere", flex: "1 1 220px", minWidth: 0 }}>{link}</code>
+          <Button size="small" variant="outlined" onClick={() => (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject(new Error("x"))).then(() => toast.success("Link copiado.")).catch(() => toast.error("Não foi possível copiar. Selecione o link e copie."))}>Copiar</Button>
+        </div>
+      ) : <div style={{ fontSize: 12.5, opacity: 0.75 }}>A mensagem já leva a palavra-chave: quem tocar no link cai direto neste fluxo.</div>}
+    </div>
+  );
+};
+
 const EntryDialog = ({ open, onClose, flow, onSave, connections }) => {
   const [e, setE] = useState({ type: "first_message", keywords: "" });
   const [whatsappId, setWhatsappId] = useState("");
@@ -88,6 +110,7 @@ const EntryDialog = ({ open, onClose, flow, onSave, connections }) => {
         {e.type === "keyword" && (
           <TextField fullWidth size="small" variant="outlined" margin="dense" label="Palavras-chave" value={e.keywords} onChange={(ev) => setE({ ...e, keywords: ev.target.value })} placeholder="bolsa, desconto, valor" helperText="Separe por vírgula. Vale quando a mensagem contém uma delas." />
         )}
+        {e.type === "keyword" && e.keywords.trim() && <AdLink keyword={e.keywords.split(",")[0].trim()} />}
         <TextField select fullWidth size="small" variant="outlined" margin="dense" label="Conexão" value={whatsappId} onChange={(ev) => setWhatsappId(ev.target.value)}>
           <MenuItem value="">Todas as conexões</MenuItem>
           {connections.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
@@ -153,7 +176,7 @@ const Builder = () => {
   const [showStats, setShowStats] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
   const [path, setPath] = useState([]);
-  const [lists, setLists] = useState({ stages: [], tags: [], queues: [], users: [], polos: [], agents: [], flows: [], funnel: {} });
+  const [lists, setLists] = useState({ stages: [], tags: [], queues: [], users: [], polos: [], agents: [], flows: [], funnel: {}, institutions: [] });
   const [versionsOpen, setVersionsOpen] = useState(false);
   const wrapper = useRef(null);
   const [rf, setRf] = useState(null);
@@ -180,6 +203,7 @@ const Builder = () => {
     api.get("/lead-stages").then(({ data }) => setLists((l) => ({ ...l, stages: data }))).catch(() => undefined);
     api.get("/tags").then(({ data }) => setLists((l) => ({ ...l, tags: Array.isArray(data) ? data : data.tags || [] }))).catch(() => undefined);
     api.get("/queue").then(({ data }) => setLists((l) => ({ ...l, queues: data }))).catch(() => undefined);
+    api.get("/institutions").then(({ data }) => setLists((l) => ({ ...l, institutions: (Array.isArray(data) ? data : []).filter((i) => i.active !== false) }))).catch(() => undefined);
     fetchAllUsersPage().then(({ data }) => setLists((l) => ({ ...l, users: data.users || [] }))).catch(() => undefined);
     api.get("/polos").then(({ data }) => setLists((l) => ({ ...l, polos: Array.isArray(data) ? data : data.polos || [] }))).catch(() => undefined);
   }, [id, apply, history]);
