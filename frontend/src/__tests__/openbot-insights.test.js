@@ -50,4 +50,19 @@ describe("Recomendações do OpenBot (Central Comercial)", () => {
     fireEvent.click(screen.getByText(/Ver detalhe/));
     expect(onOpen).toHaveBeenCalledWith("/estatisticas");
   });
+
+  it("Dispensar todos pede confirmação no mesmo lugar e só então chama a ação; com um item só não aparece", () => {
+    const onDismissAll = vi.fn();
+    render(<OpenbotInsights items={[item({ id: 1 }), item({ id: 2, title: "Outra" })]} onDismiss={vi.fn()} onDismissAll={onDismissAll} onOpen={vi.fn()} />);
+    fireEvent.click(screen.getByText("Dispensar todos"));
+    expect(onDismissAll).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Cancelar"));
+    expect(screen.getByText("Dispensar todos")).toBeTruthy();
+    fireEvent.click(screen.getByText("Dispensar todos"));
+    fireEvent.click(screen.getByText("Confirmar: dispensar as 2"));
+    expect(onDismissAll).toHaveBeenCalledTimes(1);
+    cleanup();
+    render(<OpenbotInsights items={[item()]} onDismiss={vi.fn()} onDismissAll={onDismissAll} onOpen={vi.fn()} />);
+    expect(screen.queryByText("Dispensar todos")).toBeNull();
+  });
 });

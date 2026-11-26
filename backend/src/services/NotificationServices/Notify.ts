@@ -5,6 +5,7 @@ import User from "../../models/User";
 import PoloMember from "../../models/PoloMember";
 import { getIO } from "../../libs/socket";
 import { logger } from "../../utils/logger";
+import { roleOf } from "../../helpers/Roles";
 
 // The notification center: each notice is kept for the person until it is read (the bell, "Avisos") and also arrives live. The same
 // dedupeKey never creates a second notice for the same person (a worker that runs every minute does not fill the bell).
@@ -52,8 +53,11 @@ export const managerIds = async (): Promise<number[]> =>
 
 // The management that may see a person's data: the administration, and the coordination only of the polos involved (a lead, a conversation
 // or a consultant of another polo is not shown to another polo's coordination; with no polo, the administration only)
+// the same definition of administrator as the permission checks (helpers/Roles.roleOf, isSystemAdmin): the bell and the screens never disagree
 export const adminIds = async (): Promise<number[]> =>
-  (await User.findAll({ where: { [Op.or]: [{ profile: "admin" }, { role: "admin" }] } as any, attributes: ["id"] })).map(u => u.id);
+  (await User.findAll({ where: { [Op.or]: [{ profile: "admin" }, { role: "admin" }] } as any, attributes: ["id", "profile", "role"] }))
+    .filter(u => roleOf(u) === "admin")
+    .map(u => u.id);
 export const managerIdsOfPolos = async (poloIds: Array<number | null | undefined>): Promise<number[]> => {
   const polos = [...new Set(poloIds.map(Number).filter(n => Number.isInteger(n) && n > 0))];
   const coord = polos.length

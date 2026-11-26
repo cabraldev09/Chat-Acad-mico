@@ -45,10 +45,11 @@ describe("recomendações do OpenBot: o corpo", () => {
     expect(code(() => cleanInsight(undefined))).toBe("ERR_INSIGHT_INVALID_KIND");
   });
 
-  it("o nível é info quando não vem; a validade é de 1 a 30 dias, 7 por padrão", () => {
+  it("o nível é info quando não vem; a validade é de 1 a 7 dias, 7 por padrão", () => {
     expect(cleanInsight({ ...valid, level: undefined }).level).toBe("info");
-    expect(cleanInsight({ ...valid, expiresInDays: 30 }).expiresInDays).toBe(30);
-    for (const bad of [0, 31, 1.5, "x", -1]) expect(code(() => cleanInsight({ ...valid, expiresInDays: bad }))).toBe("ERR_INSIGHT_INVALID_EXPIRY");
+    expect(cleanInsight({ ...valid, expiresInDays: 7 }).expiresInDays).toBe(7);
+    expect(cleanInsight({ ...valid, expiresInDays: 1 }).expiresInDays).toBe(1);
+    for (const bad of [0, 8, 30, 31, 1.5, "x", -1]) expect(code(() => cleanInsight({ ...valid, expiresInDays: bad }))).toBe("ERR_INSIGHT_INVALID_EXPIRY");
   });
 
   it("o link é só caminho interno da lista: nada de endereço externo, javascript ou caminho solto", () => {
