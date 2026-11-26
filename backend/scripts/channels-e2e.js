@@ -2081,8 +2081,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // a wrong CPF or a phone without DDD is refused; nothing is saved
       assert((await http.post("/proposals", { recipientName: "Bia Contato", recipientCpf: "123.456.789-00", courseId: propCourse.id, params }, asUser(tok))).data.error === "ERR_CPF_INVALID", "a wrong CPF was accepted");
       assert((await http.post("/proposals", { recipientName: "Bia Contato", recipientPhone: "9999-1234", courseId: propCourse.id, params }, asUser(tok))).data.error === "ERR_PROPOSAL_RECIPIENT_PHONE", "a phone without DDD was accepted");
-      const made = await http.post("/proposals", { recipientName: "Bia Contato", recipientCpf: "529.982.247-25", recipientPhone: "(69) 99911-2233", courseId: propCourse.id, params }, asUser(tok));
-      assert(made.status === 201 && made.data.recipientCpf === "52998224725" && made.data.recipientPhone === "69999112233", `contact not kept ${JSON.stringify([made.data.recipientCpf, made.data.recipientPhone])}`);
+      const made = await http.post("/proposals", { recipientName: "Bia Contato", recipientCpf: "714.602.380-01", recipientPhone: "(69) 99911-2233", courseId: propCourse.id, params }, asUser(tok));
+      assert(made.status === 201 && made.data.recipientCpf === "71460238001" && made.data.recipientPhone === "69999112233", `contact not kept ${JSON.stringify([made.data.recipientCpf, made.data.recipientPhone])}`);
       // without contact, as before
       const plain = await http.post("/proposals", { recipientName: "Sem Contato Ninguem", courseId: propCourse.id, params }, asUser(tok));
       assert(plain.status === 201 && !plain.data.recipientCpf && !plain.data.recipientPhone, "a proposal without contact got one");
@@ -2090,10 +2090,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const find = async (q, t = tok) => (await http.get("/proposals", { params: { standalone: 1, q }, ...asUser(t) })).data;
       const byName = await find("bia cont");
       assert(byName.some(p => p.id === made.data.id) && !byName.some(p => p.id === plain.data.id), "search by name");
-      const byCpf = await find("529.982");
+      const byCpf = await find("714.602");
       assert(byCpf.length && byCpf.every(p => p.id !== plain.data.id) && byCpf.some(p => p.id === made.data.id), "search by CPF");
       const row = byCpf.find(p => p.id === made.data.id);
-      assert(row.recipientCpf === undefined && row.recipientCpfMasked === "***.***.247-25", `the list shows the CPF: ${JSON.stringify([row.recipientCpf, row.recipientCpfMasked])}`);
+      assert(row.recipientCpf === undefined && row.recipientCpfMasked === "***.***.380-01", `the list shows the CPF: ${JSON.stringify([row.recipientCpf, row.recipientCpfMasked])}`);
       assert((await find("99911")).some(p => p.id === made.data.id), "search by phone");
       assert(!(await find("bia cont", otherTok)).some(p => p.id === made.data.id), "another consultant found it");
       // the link went out (the person is in the CRM now): the author still deletes the avulsa, the lead stays; another consultant cannot
@@ -2115,14 +2115,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const params = { ...d.params, admissionType: "ENEM", firstDueDate: due };
       // a colleague that does not exist is refused
       assert((await http.post("/proposals", { recipientName: "Caio Amigo", recipientOwnerId: 999999, courseId: propCourse.id, params }, asUser(tok))).status === 404, "an unknown colleague was accepted");
-      const made = (await http.post("/proposals", { recipientName: "Caio Amigo", recipientCpf: "111.444.777-35", recipientPhone: "(69) 99888-7766", recipientOwnerId: colleague, courseId: propCourse.id, params }, asUser(tok))).data;
+      const made = (await http.post("/proposals", { recipientName: "Caio Amigo", recipientCpf: "153.509.460-56", recipientPhone: "(69) 99888-7766", recipientOwnerId: colleague, courseId: propCourse.id, params }, asUser(tok))).data;
       assert(made.recipientOwnerId === colleague && !made.leadId, `the draft ${JSON.stringify([made.recipientOwnerId, made.leadId])}`);
       // the link is generated: the person is in the CRM, in Proposta, in the colleague's name, with the proposal in the history
       const shared = (await http.post(`/proposals/${made.id}/send`, { share: true }, asUser(tok))).data;
       assert(shared.crm && shared.crm.created && shared.crm.leadId, `no lead from the link ${JSON.stringify(shared.crm)}`);
       const leadId = shared.crm.leadId;
       const row = sql(`SELECT l.ownerId || '|' || l.cpf || '|' || COALESCE(l.source,'') || '|' || s.name FROM Leads l JOIN LeadStages s ON s.id = l.stageId WHERE l.id=${leadId}`).split("|");
-      assert(Number(row[0]) === colleague && row[1] === "11144477735" && row[2] === "Proposta avulsa" && /proposta/i.test(row[3]), `the lead ${JSON.stringify(row)}`);
+      assert(Number(row[0]) === colleague && row[1] === "15350946056" && row[2] === "Proposta avulsa" && /proposta/i.test(row[3]), `the lead ${JSON.stringify(row)}`);
       assert(sql(`SELECT leadId FROM Proposals WHERE id=${made.id}`) === String(leadId), "the proposal is not in the lead");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Proposta avulsa #${made.id} gerada%'`)) === 1, "no history line");
       // who made it still finds and opens it; the list says who has it in the CRM
@@ -2137,7 +2137,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const again = (await http.post("/proposals", { recipientName: "Caio A.", recipientPhone: "69998887766", courseId: propCourse.id, params }, asUser(tok))).data;
       assert((await http.get(`/proposals/${again.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" })).status === 200, "pdf");
       assert(sql(`SELECT leadId FROM Proposals WHERE id=${again.id}`) === String(leadId), "the second avulsa made another lead");
-      assert(Number(sql(`SELECT COUNT(*) FROM Leads WHERE cpf='11144477735' OR phone IN ('5569998887766','556998887766','69998887766')`)) === 1, "the person was doubled in the CRM");
+      assert(Number(sql(`SELECT COUNT(*) FROM Leads WHERE cpf='15350946056' OR phone IN ('5569998887766','556998887766','69998887766')`)) === 1, "the person was doubled in the CRM");
       assert(Number(sql(`SELECT ownerId FROM Leads WHERE id=${leadId}`)) === colleague, "the owner changed");
       // the second PDF of the same proposal changes nothing
       await http.get(`/proposals/${again.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" });
