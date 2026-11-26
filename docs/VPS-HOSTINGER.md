@@ -50,6 +50,14 @@ No fim ele mostra a linha para `deploy/vps/known_hosts`.
 O workflow "Atualizar a VPS" só publica o commit da `main` que veio de um PR **mesclado com o rótulo `publicar`** (`deploy/vps/check-label.js`; `check-ci.js` repete a conferência).
 
 - **Quem aplica:** só a coordenação (Maestro), depois da auditoria e da aprovação do dono. Nenhuma outra frente aplica o rótulo.
+- **Publicar leva a `main` inteira, então a trava confere todos os commits:** desde a última versão publicada até a ponta da `main`, **cada
+  commit** precisa vir de um PR mesclado com o rótulo. Se um PR anterior ficou sem rótulo, a publicação do seguinte também espera, e o aviso
+  lista os commits sem autorização (PR e motivo). A versão publicada é a que está no ar (`GIT_SHA` do servidor; no GitHub, a última execução de
+  "Atualizar a VPS" cuja etapa "Atualiza a VPS" terminou com sucesso). Mais de 100 commits desde a última publicação, ou uma versão publicada
+  que não está na história da `main`, falham fechado: publique por partes e confira antes.
+- **O rótulo vale só se foi aplicado depois do último commit do PR:** empurrar um commit novo no PR depois do rótulo (inclusive "atualizar
+  com o main") deixa o rótulo desatualizado; a coordenação aplica de novo (remove e põe) depois da última conferência. A data vem do evento
+  `labeled` do PR comparada com a data do último commit dele.
 - **Mesclar sem o rótulo:** o código fica na `main`, o workflow termina em sucesso com o aviso "Publicação aguardando o rótulo publicar" e o `/health` continua na versão anterior.
 - **Rótulo aplicado depois do merge:** rode "Atualizar a VPS" (`workflow_dispatch`) na `main`. A regra é a mesma: só publica a ponta da `main`, e só se o PR dela tiver o rótulo. (Escolhido no lugar de disparar por evento de rótulo: é mais simples e deixa a hora da publicação sob controle da coordenação.)
 - **Commit sem PR** (push direto): não publica.
