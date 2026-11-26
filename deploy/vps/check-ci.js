@@ -22,14 +22,16 @@ const publishDecision = (pulls, sha) => {
   return { ok: false, why, reason: `Publicação aguardando o rótulo ${PUBLISH_LABEL}, aplicado pela coordenação (${why}).` };
 };
 // The label counts only when it was applied AFTER the last commit of the pull request (the audit saw that code): a commit pushed after the
-// label leaves the label outdated and the coordination applies it again. events = /issues/{n}/events; headDate = committer date of the PR's last commit.
+// label leaves the label outdated and the coordination applies it again. events = ALL the events of /issues/{n}/events (every page);
+// headDate = when the last commit of the PR reached GitHub, by GitHub's own clock (the start of its first check run), never the date written
+// in the commit, which whoever made the commit controls.
 const labelFreshness = (events, headDate) => {
   const at = (Array.isArray(events) ? events : [])
     .filter(e => !!e && e.event === 'labeled' && !!e.label && e.label.name === PUBLISH_LABEL)
     .map(e => Date.parse(e.created_at)).filter(Number.isFinite);
   if (!at.length) return { ok: false, why: 'sem registro de quando o rótulo foi aplicado' };
   const head = Date.parse(headDate);
-  if (!Number.isFinite(head)) return { ok: false, why: 'data do último commit do PR desconhecida' };
+  if (!Number.isFinite(head)) return { ok: false, why: 'o GitHub não registrou quando o último commit do PR chegou (sem verificações)' };
   return Math.max(...at) >= head ? { ok: true } : { ok: false, why: 'o rótulo foi aplicado antes do último commit do PR (aplique de novo depois da última conferência)' };
 };
 const API = () => process.env.GITHUB_API_URL || 'https://api.github.com';
@@ -45,6 +47,25 @@ const getJson = async (fetchImpl, repo, path, what) => {
   const result = await fetchImpl(`${API()}/repos/${repo}/${path}`, { headers: apiHeaders(), signal: AbortSignal.timeout(15000) });
   if (!result.ok) throw new Error(`Não foi possível consultar ${what} (HTTP ${result.status}).`);
   return result.json();
+};
+// every page of a list that GitHub returns oldest first (the latest label is on the last page); 30 pages of 100 are far more than any PR has
+const getAllPages = async (fetchImpl, repo, path, what) => {
+  const all = [];
+  for (let page = 1; page <= 30; page += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const items = await getJson(fetchImpl, repo, `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, what);
+    if (!Array.isArray(items)) throw new Error(`Resposta inesperada ao consultar ${what}.`);
+    all.push(...items);
+    if (items.length < 100) return all;
+  }
+  throw new Error(`Há eventos demais em ${what}: confira o PR antes de publicar.`);
+};
+// When the last commit of the PR arrived, by the clock of GitHub: the earliest start of a check run of that commit (they start when the push
+// is received). No check run = no server time = the label does not count (the same checks are needed to publish anyway).
+const pushedAt = async (fetchImpl, repo, headSha, number) => {
+  const body = await getJson(fetchImpl, repo, `commits/${headSha}/check-runs?per_page=100`, `as verificações do último commit do PR #${number}`);
+  const starts = ((body && body.check_runs) || []).map(run => Date.parse(run && run.started_at)).filter(Number.isFinite);
+  return starts.length ? new Date(Math.min(...starts)).toISOString() : undefined;
 };
 // The version in production: GIT_SHA inside the server's API container (update.sh runs this file there), PUBLISHED_SHA when given, or, on
 // GitHub, the last run of "Atualizar a VPS" whose step "Atualiza a VPS" really ran and succeeded (a run that only waited does not count).
@@ -66,10 +87,10 @@ const authorizedCommit = async (sha, repo, fetchImpl, memo) => {
   const number = decision.number;
   if (!memo.has(number)) {
     const [events, head] = await Promise.all([
-      getJson(fetchImpl, repo, `issues/${number}/events?per_page=100`, `os eventos do PR #${number}`),
-      getJson(fetchImpl, repo, `commits/${decision.pull.head.sha}`, `o último commit do PR #${number}`)
+      getAllPages(fetchImpl, repo, `issues/${number}/events`, `os eventos do PR #${number}`),
+      pushedAt(fetchImpl, repo, decision.pull.head.sha, number)
     ]);
-    memo.set(number, labelFreshness(events, head && head.commit && head.commit.committer && head.commit.committer.date));
+    memo.set(number, labelFreshness(events, head));
   }
   const fresh = memo.get(number);
   if (!fresh.ok) {
@@ -96,16 +117,14 @@ const publishDecisionFor = async (sha, repo, fetchImpl = fetch, env = process.en
   }
   if (status === 'identical' || status === 'behind') return tip;
   if (status !== 'ahead') throw new Error(`A versão publicada (${base.slice(0, 7)}) não é ancestral da main (${status || 'desconhecido'}): confira antes de publicar.`);
-  const problems = [];
+  // stops at the first commit without authorization (the answer is the same and the API is not asked about the rest: the server asks again every 5 minutes)
   for (const commit of commits) {
     if (commit.sha === sha) continue;
     // eslint-disable-next-line no-await-in-loop
     const result = await authorizedCommit(commit.sha, repo, fetchImpl, memo);
-    if (!result.ok) problems.push(result.text);
-  }
-  if (problems.length) {
-    const shown = problems.slice(0, 10).join('; ');
-    return { ok: false, why: shown, reason: `Publicação aguardando o rótulo ${PUBLISH_LABEL}: ${problems.length} commit(s) da main desde a última versão publicada (${base.slice(0, 7)}) sem autorização (${shown}${problems.length > 10 ? '; ...' : ''}). Publicar leva a main inteira.` };
+    if (!result.ok) {
+      return { ok: false, why: result.text, reason: `Publicação aguardando o rótulo ${PUBLISH_LABEL}: há commit da main desde a última versão publicada (${base.slice(0, 7)}) sem autorização (${result.text}); outros podem faltar. Publicar leva a main inteira.` };
+    }
   }
   return { ok: true, number: tip.number, reason: `${tip.reason} Os ${commits.length - 1} commits anteriores desde ${base.slice(0, 7)} também estão autorizados.` };
 };

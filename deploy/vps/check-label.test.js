@@ -50,18 +50,23 @@ const T0 = '2026-11-26T10:00:00Z'; // the last commit of every pull request
 const T1 = '2026-11-26T11:00:00Z'; // the label, after it
 const T_EARLY = '2026-11-26T09:00:00Z'; // the label, before it
 // pr(n, {labeled, labeledAt, head}) makes the PR whose merge commit is commitSha(n)
-const pr = (n, { labeled = true, labeledAt = T1, headAt = T0 } = {}) => ({
+const pr = (n, { labeled = true, labeledAt = T1, headAt = T0, committerAt = '2000-01-01T00:00:00Z', extraEvents = 0, runs = undefined } = {}) => ({
   pull: { number: n, merged_at: T1, merge_commit_sha: commitSha(n), base: { ref: 'main' }, head: { sha: `head${n}`.padEnd(40, 'f') }, labels: labeled ? [{ name: PUBLISH_LABEL }] : [] },
-  events: labeled ? [{ event: 'labeled', label: { name: PUBLISH_LABEL }, created_at: labeledAt }] : [],
-  headAt,
+  // the events as GitHub lists them: oldest first; the label comes after `extraEvents` other events (references, assignments...)
+  events: [...Array.from({ length: extraEvents }, (_, i) => ({ event: 'referenced', created_at: T_EARLY, id: i })), ...(labeled ? [{ event: 'labeled', label: { name: PUBLISH_LABEL }, created_at: labeledAt }] : [])],
+  // GitHub's clock: when the check runs of the last commit started; the date written in the commit (committerAt) must never matter
+  runs: runs || [{ started_at: headAt }, { started_at: '2026-11-26T10:30:00Z' }],
+  committerAt,
 });
+const calls = [];
 const api = ({ prs = {}, range = null, runs = null, status = 200 }) => async url => {
   const path = String(url).replace(/^https?:\/\/[^/]+/, '').replace(/^\/repos\/[^/]+\/[^/]+\//, '');
   const answer = body => ({ ok: status === 200, status, json: async () => body });
   let m;
   if ((m = path.match(/^commits\/(\w{40})\/pulls/))) { const n = Number(m[1]); const p = prs[n]; return answer(p ? [p.pull] : []); }
-  if ((m = path.match(/^issues\/(\d+)\/events/))) return answer(prs[Number(m[1])].events);
-  if ((m = path.match(/^commits\/head(\d+)f+$/))) return answer({ commit: { committer: { date: prs[Number(m[1])].headAt } } });
+  if ((m = path.match(/^issues\/(\d+)\/events\?per_page=(\d+)&page=(\d+)/))) { calls.push(path); const all = prs[Number(m[1])].events; const size = Number(m[2]); return answer(all.slice((Number(m[3]) - 1) * size, Number(m[3]) * size)); }
+  if ((m = path.match(/^commits\/head(\d+)f+\/check-runs/))) { calls.push(path); return answer({ check_runs: prs[Number(m[1])].runs }); }
+  if ((m = path.match(/^commits\/head(\d+)f+$/))) return answer({ commit: { committer: { date: prs[Number(m[1])].committerAt } } });
   if (path.startsWith('compare/')) return answer(range);
   if (path.startsWith('actions/workflows/')) return answer(runs && { workflow_runs: runs.map(r => ({ id: r.id, head_sha: r.sha })) });
   if ((m = path.match(/^actions\/runs\/(\d+)\/jobs/))) { const r = runs.find(x => x.id === Number(m[1])); return answer({ jobs: [{ steps: [{ name: 'Atualiza a VPS', conclusion: r.deployed ? 'success' : 'skipped' }] }] }); }
@@ -111,7 +116,7 @@ test('A: todos os commits desde a última publicação com rótulo: publica', as
 test('A: um commit anterior sem rótulo bloqueia e diz qual PR', async () => {
   const r = await decide({ prs: { 3: pr(3, { labeled: false }), 4: pr(4), 5: pr(5) }, range: rangeOf(3, 4, 5) });
   assert.equal(r.ok, false);
-  assert.match(r.reason, /1 commit\(s\) da main desde a última versão publicada \(bbbbbbb\) sem autorização/);
+  assert.match(r.reason, /há commit da main desde a última versão publicada \(bbbbbbb\) sem autorização/);
   assert.match(r.reason, new RegExp(`commit ${commitSha(3).slice(0, 7)}: o PR #3 não tem o rótulo publicar`));
   assert.match(r.reason, /Publicar leva a main inteira/);
 });
@@ -180,4 +185,50 @@ test('script: sem PR = 2; PR sem rótulo = 2; rótulo velho = 2; commit anterior
   assert.match(older.out, /PR #3 não tem o rótulo publicar/);
   assert.equal((await run({ prs: { 3: pr(3), 5: pr(5) }, range: rangeOf(3, 5) })).code, 0);
   assert.equal((await run({ prs: {}, status: 500 })).code, 1);
+});
+
+// (A of the audit) the label is the LATEST event; a PR with more than 100 events keeps it on a later page
+test('A: PR com mais de 100 eventos: o rótulo mais recente está na última página e vale', async () => {
+  calls.length = 0;
+  const r = await decide({ prs: { 5: pr(5, { extraEvents: 250 }) }, range: rangeOf(5) });
+  assert.equal(r.ok, true);
+  assert.equal(calls.filter(c => c.startsWith('issues/5/events')).length, 3); // 100 + 100 + 51
+  // and a label applied before the last commit stays refused, however long the list
+  const stale = await decide({ prs: { 5: pr(5, { extraEvents: 250, labeledAt: T_EARLY }) }, range: rangeOf(5) });
+  assert.equal(stale.ok, false);
+  assert.match(stale.reason, /antes do último commit/);
+  // exactly 100 events: one more page is asked and comes back empty
+  calls.length = 0;
+  assert.equal((await decide({ prs: { 5: pr(5, { extraEvents: 99 }) }, range: rangeOf(5) })).ok, true);
+  assert.equal(calls.filter(c => c.startsWith('issues/5/events')).length, 2);
+});
+
+// (B of the audit) the time of the last commit is GitHub's, not the date written in the commit
+test('B: a data escrita no commit não decide: vale o horário em que o GitHub começou as verificações', async () => {
+  // commit dated far in the past (clock behind, or GIT_COMMITTER_DATE) but pushed after the label: the label is stale
+  const lateButOld = await decide({ prs: { 5: pr(5, { labeledAt: T1, runs: [{ started_at: '2026-11-26T12:00:00Z' }], committerAt: '2020-01-01T00:00:00Z' }) }, range: rangeOf(5) });
+  assert.equal(lateButOld.ok, false);
+  assert.match(lateButOld.reason, /antes do último commit/);
+  // commit dated in the future but pushed before the label: the label is good
+  const earlyButFuture = await decide({ prs: { 5: pr(5, { labeledAt: T1, headAt: T0, committerAt: '2030-01-01T00:00:00Z' }) }, range: rangeOf(5) });
+  assert.equal(earlyButFuture.ok, true);
+  // the earliest check run counts (a later re-run of the same commit does not move the push)
+  const rerun = await decide({ prs: { 5: pr(5, { runs: [{ started_at: '2026-11-26T12:30:00Z' }, { started_at: T0 }] }) }, range: rangeOf(5) });
+  assert.equal(rerun.ok, true);
+  // no check run, or none with a time: GitHub gave no time, so the label does not count
+  for (const runs of [[], [{ started_at: null }, {}]]) {
+    const none = await decide({ prs: { 5: pr(5, { runs }) }, range: rangeOf(5) });
+    assert.equal(none.ok, false);
+    assert.match(none.reason, /não registrou quando o último commit do PR chegou/);
+  }
+});
+
+// (D of the audit) stops at the first commit without authorization: the others are not asked about
+test('D: para no primeiro commit sem autorização e não consulta o resto', async () => {
+  calls.length = 0;
+  const prs = { 1: pr(1, { labeled: false }), 2: pr(2), 3: pr(3), 4: pr(4), 5: pr(5) };
+  const r = await decide({ prs, range: rangeOf(1, 2, 3, 4, 5) });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, new RegExp(`commit ${commitSha(1).slice(0, 7)}: o PR #1 não tem o rótulo publicar`));
+  assert.equal(calls.filter(c => /^issues\/[234]\//.test(c)).length, 0, 'asked about PRs after the first problem');
 });

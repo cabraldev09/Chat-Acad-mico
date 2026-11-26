@@ -56,8 +56,17 @@ O workflow "Atualizar a VPS" só publica o commit da `main` que veio de um PR **
   "Atualizar a VPS" cuja etapa "Atualiza a VPS" terminou com sucesso). Mais de 100 commits desde a última publicação, ou uma versão publicada
   que não está na história da `main`, falham fechado: publique por partes e confira antes.
 - **O rótulo vale só se foi aplicado depois do último commit do PR:** empurrar um commit novo no PR depois do rótulo (inclusive "atualizar
-  com o main") deixa o rótulo desatualizado; a coordenação aplica de novo (remove e põe) depois da última conferência. A data vem do evento
-  `labeled` do PR comparada com a data do último commit dele.
+  com o main") deixa o rótulo desatualizado; a coordenação aplica de novo (remove e põe) depois da última conferência. A comparação usa
+  **só o relógio do GitHub**: o último evento `labeled` (lidos todos os eventos do PR, página por página) contra o início da primeira
+  verificação (check run) do último commit do PR; a data escrita dentro do commit não conta, porque quem commita a controla. PR sem
+  verificações não tem horário e o rótulo não vale.
+- **Parada cedo e cota da API:** a conferência para no primeiro commit sem autorização (o aviso cita esse e diz que outros podem faltar);
+  o cron do servidor repete a cada 5 minutos, então isso evita centenas de consultas por hora.
+- **Servidor (`update.sh`):** a versão no ar vem do `GIT_SHA` do contêiner da API. Se a API estiver doente e a conferência rodar num contêiner
+  novo (`docker run`), o `update.sh` passa a versão do checkout como `PUBLISHED_SHA` (o checkout volta à versão no ar quando uma atualização
+  falha). Mesmo assim, o `GH_TOKEN` usado no servidor precisa de leitura de **Pull requests**, **Contents/Checks** e, para achar a última
+  publicação pelo histórico do GitHub (quando não há `GIT_SHA` nem `PUBLISHED_SHA`), **Actions: read**; sem isso a conferência falha fechada e
+  a atualização não acontece. Não verifiquei o token do servidor.
 - **Mesclar sem o rótulo:** o código fica na `main`, o workflow termina em sucesso com o aviso "Publicação aguardando o rótulo publicar" e o `/health` continua na versão anterior.
 - **Rótulo aplicado depois do merge:** rode "Atualizar a VPS" (`workflow_dispatch`) na `main`. A regra é a mesma: só publica a ponta da `main`, e só se o PR dela tiver o rótulo. (Escolhido no lugar de disparar por evento de rótulo: é mais simples e deixa a hora da publicação sob controle da coordenação.)
 - **Commit sem PR** (push direto): não publica.
