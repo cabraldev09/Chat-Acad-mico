@@ -68,7 +68,9 @@ Para um erro: reproduza antes de corrigir e mostre o mesmo teste passando depois
    `git merge -s ours FETCH_HEAD` antes do push.
 3. O CI precisa ficar verde: `verificar`, `telas` e os três `api-ponta-a-ponta`. Nunca pule, desligue ou apague um teste para
    passar. Um teste que falha de vez em quando tem uma causa: ache-a.
-4. Mescle por **squash**, passando o `expectedHeadSha` completo (`git rev-parse HEAD`).
+4. **Quem mescla:** só a coordenação (Maestro), depois do CI verde e da conferência do Auditor, um PR por vez; o agente que
+   escreve o código não mescla nem publica (issue #201). O merge é por **squash**, passando o `expectedHeadSha` completo
+   (`git rev-parse HEAD`).
 5. Depois do merge, o workflow "Atualizar a VPS" roda sozinho. Se o commit do `main` é o squash de um PR verde com exatamente
    o mesmo código (branch em dia com o `main`), ele publica logo após o merge; senão, quando as Verificações do `main` passam
    (`deploy/vps/check-ci.js`). Confira que terminou com sucesso e avise o usuário.
@@ -100,7 +102,7 @@ falam em "merge" e "PR" de forma genérica, mas aqui o PR só abre a pedido do u
 | `systematic-debugging` | Houver erro, teste falhando ou comportamento estranho: ache a causa antes de corrigir. |
 | `test-driven-development` | For implementar função ou corrigir erro: escreva o teste que falha primeiro. |
 | `verification-before-completion` | For dizer que está pronto, corrigido ou passando: rode os comandos e confira a saída antes. |
-| `requesting-code-review` | Terminar uma tarefa ou funcionalidade, antes de entregar: peça revisão do que mudou. |
+| `requesting-code-review` | Terminar uma tarefa ou funcionalidade, antes de entregar: peça revisão do que mudou. O revisor é o Auditor ou o Maestro, não um subagente seu. |
 | `receiving-code-review` | Receber comentários de revisão: verifique cada um e responda com fundamento, sem concordar às cegas. |
 | `webapp-testing` | Precisar abrir a tela no navegador (Playwright) para testar, ver erros do console ou tirar captura. |
 | `frontend-design` | Criar ou refazer uma tela: escolha visual com intenção, respeitando as regras de "Telas" acima. |
