@@ -1000,6 +1000,17 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sentTo("5569911120001") === 1, "the allowed message was not sent");
       // a lead of polo B: refused, nothing created
       const other = await old(ofA, { number: "5569911120002", body: "oi", whatsappId: cid });
+      // a refused call with a file leaves no file in public/ (the polo is checked after the upload, so the controller discards it)
+      const publicFiles = () => fs.readdirSync(path.join(ROOT, "public")).sort().join("|");
+      const withFile = (tok, fields) => { const form = new FormData(); Object.entries(fields).forEach(([k, v]) => form.append(k, String(v))); form.append("medias", PNG, { filename: "foto.png", contentType: "image/png" }); return http.post("/api/messages/send", form, { headers: { ...form.getHeaders(), Authorization: `Bearer ${tok}` } }); };
+      const filesBefore = publicFiles();
+      const refusedWithFile = await withFile(ofA, { number: "5569911120002", body: "oi", whatsappId: cid });
+      assert(refusedWithFile.status === 403 && refusedWithFile.data.error === "ERR_API_TOKEN_POLO", `refused call with a file: ${refusedWithFile.status} ${JSON.stringify(refusedWithFile.data)}`);
+      assert(publicFiles() === filesBefore, "a call refused for the polo left its file in public/");
+      const badNumber = await withFile(ofA, { number: "abc", body: "oi", whatsappId: cid });
+      assert(badNumber.status === 400 && publicFiles() === filesBefore, `a call with a bad number left its file: ${badNumber.status}`);
+      const noScopeFile = await withFile(reader, { number: "5569911120001", body: "oi", whatsappId: cid });
+      assert(noScopeFile.status === 403 && publicFiles() === filesBefore, "a call refused for the scope left its file in public/");
       assert(other.status === 403 && other.data.error === "ERR_API_TOKEN_POLO", `lead of another polo: ${other.status} ${JSON.stringify(other.data)}`);
       // its own lead, but a connection that serves no queue of its polos
       const wrongConn = await old(ofA, { number: "5569911120001", body: "oi", whatsappId: unlinked });
