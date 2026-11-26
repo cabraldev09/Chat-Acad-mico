@@ -173,7 +173,9 @@ const toParams = (f) => {
 const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) => {
   // a proposal "avulsa" has no lead: only the name of the person (it goes in the conversation open on screen, or as a link)
   const standalone = !lead.id;
-  const who = standalone ? { recipientName: lead.name } : { leadId: lead.id };
+  const who = standalone
+    ? { recipientName: lead.name, ...(lead.cpf !== undefined ? { recipientCpf: lead.cpf || "" } : {}), ...(lead.phone !== undefined ? { recipientPhone: lead.phone || "" } : {}) }
+    : { leadId: lead.id };
   const classes = useStyles();
   const options = (ctx && ctx.options) || {};
   const [courses, setCourses] = useState([]);

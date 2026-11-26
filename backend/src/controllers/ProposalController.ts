@@ -1,3 +1,4 @@
+import { isValidCpf, maskCpf } from "../helpers/Cpf";
 import { touchAnalytics } from "../services/AnalyticsServices/Realtime";
 import { assertLead, isAdminReq } from "../middleware/scope";
 import { Request, Response } from "express";
@@ -347,6 +348,21 @@ const standaloneLead = (name: string): Lead => ({
   affiliateId: null, ownerId: null, stageId: null, firstContactAt: null, update: async () => undefined
 }) as unknown as Lead;
 const cleanRecipient = (v: unknown): string => String(v || "").replace(/\s+/g, " ").trim().slice(0, 120);
+// the optional contact of an "avulsa": a valid CPF (or nothing) and a phone with DDD (or nothing); anything else is refused
+export const recipientContactOf = (body: any): { recipientCpf?: string | null; recipientPhone?: string | null } => {
+  const out: { recipientCpf?: string | null; recipientPhone?: string | null } = {};
+  if (body.recipientCpf !== undefined) {
+    const d = String(body.recipientCpf || "").replace(/\D/g, "");
+    if (d && !isValidCpf(d)) throw new AppError("ERR_CPF_INVALID", 400);
+    out.recipientCpf = d || null;
+  }
+  if (body.recipientPhone !== undefined) {
+    const d = String(body.recipientPhone || "").replace(/\D/g, "");
+    if (d && (d.length < 10 || d.length > 13)) throw new AppError("ERR_PROPOSAL_RECIPIENT_PHONE", 400);
+    out.recipientPhone = d || null;
+  }
+  return out;
+};
 // who the proposal is for: the lead (with its permission) or, for an "avulsa", the name typed
 const targetOf = async (req: Request, existing?: Proposal | null, query = false): Promise<Lead> => {
   const src: any = query ? req.query : req.body;
@@ -455,11 +471,14 @@ const save = async (req: Request, existing?: Proposal) => {
   if (!lead.courseId && d.course) fill.courseId = d.course.id;
   if (!lead.entryTerm && params.startYear) fill.entryTerm = `${params.startYear}/${params.startSemester}`;
   if (lead.id && Object.keys(fill).length) await lead.update(fill);
+  // an "avulsa" keeps the name, and the CPF and phone when they were typed (all can be corrected while it is a draft)
+  const contact = lead.id ? {} : recipientContactOf(req.body);
+  if (!lead.id && existing && req.body.recipientName !== undefined && cleanRecipient(req.body.recipientName)) (contact as any).recipientName = cleanRecipient(req.body.recipientName);
   if (existing) {
-    await existing.update(data);
+    await existing.update({ ...data, ...contact });
     return existing;
   }
-  return Proposal.create({ ...data, leadId: lead.id || null, recipientName: lead.id ? null : lead.name, affiliateId: lead.affiliateId || null, token: randomBytes(18).toString("hex"), createdBy: uid(req), status: "draft" });
+  return Proposal.create({ ...data, ...contact, leadId: lead.id || null, recipientName: lead.id ? null : lead.name, affiliateId: lead.affiliateId || null, token: randomBytes(18).toString("hex"), createdBy: uid(req), status: "draft" });
 };
 
 const rebuild = async (p: Proposal) => {
@@ -493,13 +512,19 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   // the proposals "avulsas": each person sees the ones they made; the management sees all of them
   if (req.query.standalone) {
+    // looked up again by the name or by the CPF (digits, any part of it)
+    const q = String(req.query.q || "").trim().slice(0, 80);
+    const digits = q.replace(/\D/g, "");
+    const search = q
+      ? { [Op.or]: [{ recipientName: { [Op.iLike]: `%${q}%` } }, ...(digits.length >= 3 ? [{ recipientCpf: { [Op.like]: `%${digits}%` } }, { recipientPhone: { [Op.like]: `%${digits}%` } }] : [])] }
+      : {};
     const own = await Proposal.findAll({
-      where: { leadId: null, ...(isAdminReq(req) ? {} : { createdBy: uid(req) }) } as any,
+      where: { leadId: null, ...(isAdminReq(req) ? {} : { createdBy: uid(req) }), ...search } as any,
       include: [{ model: User, as: "author", attributes: ["id", "name"] }],
       order: [["id", "DESC"]],
       limit: 100
     });
-    return res.json(own.map(r => ({ ...r.toJSON(), params: undefined, entry: entryOf(r), link: link(r) })));
+    return res.json(own.map(r => ({ ...r.toJSON(), params: undefined, entry: entryOf(r), link: link(r), recipientCpf: undefined, recipientCpfMasked: maskCpf(r.recipientCpf) })));
   }
   const scope = await leadScopeWhere(req);
   const allowed = scope
@@ -540,8 +565,9 @@ export const duplicate = async (req: Request, res: Response): Promise<Response> 
 export const remove = async (req: Request, res: Response): Promise<Response> => {
   const p = await Proposal.findByPk(req.params.id);
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
-  // a proposal the candidate received is part of the history of the lead; only the management removes it
-  if (p.status !== "draft" && !isAdminReq(req)) throw new AppError("ERR_PROPOSAL_ALREADY_SENT", 403);
+  // a proposal the candidate received is part of the history of the lead; only the management removes it. An "avulsa" belongs to
+  // whoever made it (no lead, no history in the CRM): they can delete it even after generating the link (the link stops opening)
+  if (p.status !== "draft" && !isAdminReq(req) && !(!p.leadId && p.createdBy === uid(req))) throw new AppError("ERR_PROPOSAL_ALREADY_SENT", 403);
   await p.destroy();
   return res.json({ message: "deleted" });
 };
