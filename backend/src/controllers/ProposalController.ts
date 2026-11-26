@@ -1,4 +1,5 @@
 import { isValidCpf, maskCpf } from "../helpers/Cpf";
+import { standaloneToCrm } from "../services/ProposalServices/StandaloneToCrm";
 import { touchAnalytics } from "../services/AnalyticsServices/Realtime";
 import { assertLead, isAdminReq } from "../middleware/scope";
 import { Request, Response } from "express";
@@ -18,6 +19,7 @@ import ProposalTemplate from "../models/ProposalTemplate";
 import Proposal from "../models/Proposal";
 import User from "../models/User";
 import AppError from "../errors/AppError";
+import { logger } from "../utils/logger";
 import { getPublicUrl } from "../helpers/PublicUrl";
 import { getIO } from "../libs/socket";
 import SendToContact from "../services/ChannelServices/SendToContact";
@@ -368,7 +370,8 @@ const targetOf = async (req: Request, existing?: Proposal | null, query = false)
   const src: any = query ? req.query : req.body;
   if (existing) {
     if (!existing.leadId) return standaloneLead(existing.recipientName || "Candidato");
-    await assertLead(req, existing.leadId);
+    // an avulsa that went to the CRM in the name of a colleague stays editable by who made it
+    if (!(existing.recipientName && existing.createdBy === uid(req))) await assertLead(req, existing.leadId);
     return (await Lead.findByPk(existing.leadId)) as Lead;
   }
   if (src.leadId) {
@@ -473,6 +476,12 @@ const save = async (req: Request, existing?: Proposal) => {
   if (lead.id && Object.keys(fill).length) await lead.update(fill);
   // an "avulsa" keeps the name, and the CPF and phone when they were typed (all can be corrected while it is a draft)
   const contact = lead.id ? {} : recipientContactOf(req.body);
+  // the consultant who takes the lead in the CRM when the avulsa is generated: who made it, or a colleague chosen in the avulsa
+  if (!lead.id && req.body.recipientOwnerId !== undefined) {
+    const owner = Number(req.body.recipientOwnerId) || null;
+    if (owner && !(await User.count({ where: { id: owner } }))) throw new AppError("ERR_NO_USER_FOUND", 404);
+    (contact as any).recipientOwnerId = owner;
+  }
   if (!lead.id && existing && req.body.recipientName !== undefined && cleanRecipient(req.body.recipientName)) (contact as any).recipientName = cleanRecipient(req.body.recipientName);
   if (existing) {
     await existing.update({ ...data, ...contact });
@@ -519,12 +528,14 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
       ? { [Op.or]: [{ recipientName: { [Op.iLike]: `%${q}%` } }, ...(digits.length >= 3 ? [{ recipientCpf: { [Op.like]: `%${digits}%` } }, { recipientPhone: { [Op.like]: `%${digits}%` } }] : [])] }
       : {};
     const own = await Proposal.findAll({
-      where: { leadId: null, ...(isAdminReq(req) ? {} : { createdBy: uid(req) }), ...search } as any,
-      include: [{ model: User, as: "author", attributes: ["id", "name"] }],
+      where: { recipientName: { [Op.ne]: null }, ...(isAdminReq(req) ? {} : { createdBy: uid(req) }), ...search } as any,
+      include: [{ model: User, as: "author", attributes: ["id", "name"] }, { model: Lead, as: "lead", attributes: ["id", "ownerId"], include: [{ model: User, as: "owner", attributes: ["id", "name"] }] }],
       order: [["id", "DESC"]],
       limit: 100
     });
-    return res.json(own.map(r => ({ ...r.toJSON(), params: undefined, entry: entryOf(r), link: link(r), recipientCpf: undefined, recipientCpfMasked: maskCpf(r.recipientCpf) })));
+    // in the CRM already: the lead and who has it (the enrollment form is sent from there)
+    const crmOf = (r: any) => (r.lead ? { leadId: r.lead.id, ownerId: r.lead.ownerId || null, ownerName: r.lead.owner ? r.lead.owner.name : null } : null);
+    return res.json(own.map(r => ({ ...r.toJSON(), lead: undefined, crm: crmOf(r), params: undefined, entry: entryOf(r), link: link(r), recipientCpf: undefined, recipientCpfMasked: maskCpf(r.recipientCpf) })));
   }
   const scope = await leadScopeWhere(req);
   const allowed = scope
@@ -567,7 +578,9 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
   // a proposal the candidate received is part of the history of the lead; only the management removes it. An "avulsa" belongs to
   // whoever made it (no lead, no history in the CRM): they can delete it even after generating the link (the link stops opening)
-  if (p.status !== "draft" && !isAdminReq(req) && !(!p.leadId && p.createdBy === uid(req))) throw new AppError("ERR_PROPOSAL_ALREADY_SENT", 403);
+  if (p.status !== "draft" && !isAdminReq(req) && !(p.recipientName && p.createdBy === uid(req))) throw new AppError("ERR_PROPOSAL_ALREADY_SENT", 403);
+  // an avulsa that went to the CRM: the lead stays, and its history says the proposal was deleted
+  if (p.leadId && p.recipientName) await addActivity(p.leadId, uid(req), "system", `Proposta avulsa #${p.id} apagada por quem a fez (o link deixou de abrir)`).catch(() => undefined);
   await p.destroy();
   return res.json({ message: "deleted" });
 };
@@ -580,6 +593,8 @@ export const pdf = async (req: Request, res: Response): Promise<Response> => {
   if (p.status === "draft") assertReady(p);
   const { html } = await rebuild(p);
   const buf = await renderPdf(html);
+  // the PDF of an avulsa was generated: the person goes to the CRM (once)
+  await toCrmSafely(p, uid(req));
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(pdfName(nameOf(p)))}`);
   return res.send(buf);
@@ -656,7 +671,8 @@ const sendStandalone = async (req: Request, res: Response, p: Proposal): Promise
   if (!ticketId && req.body.share) {
     await p.update({ status: "sent", sentAt: new Date() });
     touchAnalytics(p.createdBy);
-    return res.json(present(p));
+    const crm = await toCrmSafely(p, uid(req), { sent: true });
+    return res.json({ ...present(p), crm });
   }
   if (!ticketId) throw new AppError("ERR_PROPOSAL_NEEDS_CONVERSATION", 400);
   const { assertTicketAccess } = await import("../middleware/canAccessTicket");
@@ -686,7 +702,18 @@ const sendStandalone = async (req: Request, res: Response, p: Proposal): Promise
   }
   await p.update({ status: "sent", sentAt: new Date() });
   touchAnalytics(p.createdBy);
-  return res.json(present(p));
+  const crm = await toCrmSafely(p, uid(req), { sent: true, contactId: (ticket as any).contactId });
+  return res.json({ ...present(p), crm });
+};
+
+// the avulsa goes to the CRM; a failure there never undoes what was already sent (it is logged, and the next PDF tries again)
+const toCrmSafely = async (p: Proposal, actor: number, opts: { sent?: boolean; contactId?: number | null } = {}) => {
+  try {
+    return await standaloneToCrm(p, actor, opts);
+  } catch (err) {
+    logger.warn(`Proposal ${p.id} to the CRM failed: ${err}`);
+    return null;
+  }
 };
 
 // ------------------------------------------------------------ public viewing

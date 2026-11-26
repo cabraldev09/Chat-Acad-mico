@@ -1,4 +1,5 @@
 import { remember } from "../../../helpers/BoundedMap";
+import { ackOfCreated, mapMessageAck } from "../../../helpers/MessageAck";
 import { watchChatState } from "../../../services/WbotServices/ChatState";
 import { syncChatRead } from "../../../services/MessageServices/SyncReadState";
 import qrCode from "qrcode-terminal";
@@ -60,6 +61,10 @@ import {
 } from "../../../handlers/handleWhatsappEvents";
 import { killLeftoverBrowsers } from "./browserProcesses";
 import { safeLogout } from "../SafeLogout";
+import { applyPuppeteerCompat } from "../PuppeteerCompat";
+
+// before any browser opens: whatsapp-web.js needs browser.isConnected(), which puppeteer 25 no longer has (see PuppeteerCompat)
+applyPuppeteerCompat();
 import { chatBehind, eachLimited, isTransientState, settledChats, stateToWrite } from "./chatSync";
 
 interface Session extends Client {
@@ -90,18 +95,6 @@ const mapMessageType = (wbotType: any): MessageType => {
     location: "location"
   };
   return typeMap[wbotType] || "chat";
-};
-
-const mapMessageAck = (wbotAck: any): MessageAck => {
-  const ackMap: Record<number, MessageAck> = {
-    "-1": -1,
-    0: 0,
-    1: 1,
-    2: 2,
-    3: 3,
-    4: 4
-  };
-  return ackMap[wbotAck] ?? 0;
 };
 
 const convertToProviderMessage = (
@@ -435,7 +428,9 @@ const convertToMessagePayload = async (
     hasQuotedMsg: processedMsg.hasQuotedMsg,
     isGif: !!(processedMsg as any)._data?.isGif,
     isForwarded: !!(processedMsg as any).isForwarded,
-    quotedMsgId
+    quotedMsgId,
+    // the tick it already has (a message sent from the phone arrives as sent or delivered): without it the list shows a clock
+    ack: ackOfCreated(processedMsg)
   };
 };
 
