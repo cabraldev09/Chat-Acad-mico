@@ -33,7 +33,8 @@ describe("1ª mensalidade da proposta", () => {
     const html = render(p);
     expect(html).toContain("isenta (R$ 0,00)");
     expect(html).toContain("vencimento 01/02/2027");
-    expect(html).toMatch(/Valor total do pedido<\/span><span>R\$ 0,00/);
+    // the 1st installment is waived, but the enrollment fee is still charged at the act: it is the total of the order
+    expect(html).toMatch(/Valor total do pedido<\/span><span>R\$ 99,00/);
     expect(html).toContain("R$ 220,00"); // the 2nd installment on keeps the value of the others
   });
 
@@ -63,5 +64,17 @@ describe("logo da proposta", () => {
     const html = render(params(), { name: "Outra Universidade" });
     expect(html).not.toContain("<img");
     expect(html).toContain("Outra Universidade");
+  });
+
+  it("a taxa de matrícula entra em Produtos ou serviços e no valor total; isenta aparece como isenta e não soma", () => {
+    const charged = render(params({ firstExempt: true, firstMonthly: 0 }));
+    expect(charged).toMatch(/<td><b>Taxa de matrícula<\/b><div class="muted">no ato da inscrição<\/div><\/td>\s*<td>R\$ 99,00<\/td><td>-<\/td><td class="r">R\$ 99,00<\/td>/);
+    expect(charged).toMatch(/Valor total do pedido<\/span><span>R\$ 99,00/);
+    const both = render(params());
+    expect(both).toMatch(/Valor total do pedido<\/span><span>R\$ 319,00/);
+    const exempt = render(params({ enrollmentExempt: true }));
+    expect(exempt).toMatch(/Taxa de matrícula:<\/b> isenta/);
+    expect(exempt).toMatch(/<td><b>Taxa de matrícula<\/b>[\s\S]*?Isenta<\/td><td class="r">R\$ 0,00/);
+    expect(exempt).toMatch(/Valor total do pedido<\/span><span>R\$ 220,00/);
   });
 });
