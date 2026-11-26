@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import AppError from "../errors/AppError";
+import { logger } from "../utils/logger";
 import User from "../models/User";
 import { disconnectUser } from "../libs/socket";
 
@@ -31,6 +32,7 @@ export const update = async (
   const token: string = req.cookies.jrt;
 
   if (!token) {
+    logger.info("Sessão não renovada: cookie de renovação ausente (cookie de terceiros bloqueado, vencido ou apagado)");
     throw new AppError("ERR_SESSION_EXPIRED", 401);
   }
 

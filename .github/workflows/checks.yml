@@ -19,8 +19,8 @@ jobs:
   verificar:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: Backend compila
@@ -34,7 +34,7 @@ jobs:
           npm run test:ai
           npm run test:security
       - name: Bloqueio de publicação
-        run: node --test deploy/vps/check-ci.test.js deploy/vps/check-label.test.js
+        run: node --test deploy/vps/check-ci.test.js deploy/vps/check-label.test.js backend/scripts/e2e-logs.test.js
       - name: Tudo em português
         working-directory: backend
         run: node scripts/i18n-check.js
@@ -109,8 +109,8 @@ jobs:
       NODE_ENV: test
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: Instala e compila o backend
@@ -136,7 +136,19 @@ jobs:
           echo "PG_TEST_CONTAINER=$PG_TEST_CONTAINER" >> "$GITHUB_ENV"
       - name: Testes de ponta a ponta (${{ matrix.nome }})
         working-directory: backend
+        env:
+          # o log da API de teste fica guardado quando o job falha, SEM Authorization, Bearer, cookies nem tokens (backend/scripts/e2e-logs.js): falha que
+          # não repete deixa evidência. O repositório é público e artefatos podem ser baixados por qualquer conta do GitHub; ficam 3 dias.
+          E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
         run: node scripts/${{ matrix.script }}
+      - name: Guarda o log da API quando falha
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: log-api-${{ matrix.script }}
+          path: ${{ runner.temp }}/e2e-logs
+          retention-days: 3
+          if-no-files-found: ignore
 
   # todas as telas, como os seis perfis, digitando nos formulários e repetindo a varredura em 390×844
   telas:
@@ -175,8 +187,8 @@ jobs:
       LOGIN_RATE_MAX: "1000"
       VITE_BACKEND_URL: http://localhost:8080/
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: Backend no ar (banco novo, migrado e com os dados iniciais)

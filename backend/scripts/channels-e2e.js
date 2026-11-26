@@ -495,7 +495,22 @@ const test = async (name, fn) => {
 const assert = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 
 let token;
-const http = axios.create({ baseURL: API, validateStatus: () => true });
+// No reused connections: a server that closes an idle one used to give "read ECONNRESET" on the first call after a pause. If one still
+// happens, ONLY idempotent calls (GET, HEAD) are tried once more, and every retry is printed and counted in the final report (never silent).
+// POST, PUT and DELETE are never repeated.
+const http = axios.create({ baseURL: API, validateStatus: () => true, httpAgent: new (require("http").Agent)({ keepAlive: false }) });
+const connectionRetries = [];
+http.interceptors.response.use(undefined, async error => {
+  const config = error.config || {};
+  const method = String(config.method || "").toLowerCase();
+  if (error.code === "ECONNRESET" && (method === "get" || method === "head") && !config.__retried) {
+    config.__retried = true;
+    connectionRetries.push(`${method.toUpperCase()} ${config.url}`);
+    console.log(`      (ECONNRESET: ${method.toUpperCase()} ${config.url} repetida uma vez)`);
+    return http(config);
+  }
+  throw error;
+});
 // Public-form tests use isolated documentation-only IPs so their fixture traffic
 // cannot consume the same per-IP throttle bucket as unrelated E2E requests.
 const postLeadForm = (path, body, testIp) => http.post(path, body, {
@@ -5030,7 +5045,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const leadStage = number => sql(`SELECT s.name FROM Leads l JOIN LeadStages s ON s.id=l.stageId JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}'`);
       const leadId = number => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}'`);
       const runOf = number => sql(`SELECT CONCAT(r.status,'|',COALESCE(r.nodeId,'')) FROM ChatFlowRuns r JOIN Tickets t ON t.id=r.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${number}' AND r.flowId=${flowId} ORDER BY r.id DESC LIMIT 1`);
-      const say = async (from, id, body, until, label) => {
+      // `settle`: a turn of the agent may come in several bubbles (the answer, then the list). With settle, after the awaited text the wait goes on until
+      // NOTHING new goes to this person for that many milliseconds (at most 10 s), so the checks read the whole turn and not only its first bubble.
+      const say = async (from, id, body, until, label, { settle = 0 } = {}) => {
         const mark = graph.sent.length;
         await inboundCloud(from, id, body);
         try { await waitFor(() => until(texts(mark)), 20000, label); } catch (err) { err.message += ` | sent to everyone meanwhile: ${JSON.stringify(graph.sent.slice(mark).filter(x => x.body && x.body.text).map(x => [x.body.to, x.body.text.body && x.body.text.body.slice(0, 120)]))}`; err.message += ` | lead: ${sql(`SELECT COALESCE(string_agg(CONCAT(l.id,'/polo=',COALESCE(l.poloId::text,'-'),'/city=',COALESCE(l.city,'-')), ' ; '), 'no lead') FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`)} | polos: ${sql(`SELECT string_agg(CONCAT(id,':',name,':',city,':',active), ' ; ') FROM Polos WHERE name LIKE 'Polo %'`).slice(0, 500)} | queues: ${sql(`SELECT string_agg(CONCAT(id,':',COALESCE(poloId::text,'-'),':',role), ' ; ') FROM Queues`).slice(0, 400)} | routing: ${sql(`SELECT COALESCE(string_agg(e.note, ' || '), '') FROM TicketEvents e JOIN Tickets t ON t.id=e.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND e.type = 'transfer'`).slice(0, 700)}`; throw err; }
@@ -5038,6 +5055,15 @@ const postMeta = (id, payload, secret, badSig) => {
         // only what went to this person counts: another conversation may still be sending
         const toThem = () => graph.sent.slice(mark).filter(x => x.path === "/PN1/messages" && x.body && x.body.type === "text" && x.body.text && x.body.to === from).length;
         await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND m.fromMe=true`)) >= toThem(), 8000, "replies stored");
+        if (settle) {
+          let seenCount = toThem(), quietSince = Date.now();
+          const limit = Date.now() + 10000;
+          while (Date.now() - quietSince < settle && Date.now() < limit) {
+            await sleep(100);
+            if (toThem() !== seenCount) { seenCount = toThem(); quietSince = Date.now(); }
+          }
+          await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND m.fromMe=true`)) >= toThem(), 8000, "replies stored (whole turn)");
+        }
         return texts(mark);
       };
 
@@ -5414,13 +5440,13 @@ const postMeta = (id, payload, secret, badSig) => {
       const QA = "5511920000258";
       await say(QA, "wamid.qs-a1", "Boa tarde", t => t.some(x => /Qual curso/.test(x)), "greeting before the area");
       const llmArea = anthropic.requests.length;
-      out = await say(QA, "wamid.qs-a2", "Gostaria de saber sobre os cursos na área da saúde", t => t.some(x => /área de saúde/.test(x)), "the area is answered from the catalogue");
+      out = await say(QA, "wamid.qs-a2", "Gostaria de saber sobre os cursos na área da saúde", t => t.some(x => /área de saúde/.test(x)), "the area is answered from the catalogue", { settle: 1500 });
       assert(anthropic.requests.length === llmArea, "the area question should not call the model");
       assert(/Radiologia \(tecnólogo\)/.test(out.join("\n")) && /Biomedicina/.test(out.join("\n")), `the health courses of the catalogue are missing: ${out}`);
       assert(!/Medicina|Enfermagem|Cst Em/.test(out.join("\n")), `a course that is not offered, or a raw name, was told: ${out}`);
       // "nessa área": the area comes from what the agent just said, and the list is again the one of the catalogue, without the model
       const llmArea2 = anthropic.requests.length;
-      out = await say(QA, "wamid.qs-a2b", "Quais são os cursos nessa área?", t => t.some(x => /área de saúde/.test(x)), "the area said before is kept");
+      out = await say(QA, "wamid.qs-a2b", "Quais são os cursos nessa área?", t => t.some(x => /área de saúde/.test(x)), "the area said before is kept", { settle: 1500 });
       assert(anthropic.requests.length === llmArea2 && /Radiologia \(tecnólogo\)/.test(out.join("\n")), `the follow-up about the area went to the model: ${out}`);
       out = await say(QA, "wamid.qs-a3", "Tem o curso de radiologia semi presencial?", t => t.length > 0, "radiologia is found");
       assert(!/não oferece/.test(out.join("\n")), `an offered course was denied: ${out}`);
@@ -7654,7 +7680,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.affiliateId=${aff.id} AND s.name='Indicações de afiliados' AND l.ownerId=${ow.id} AND l.source='Indicação'`) === "2", "leads not in the affiliate column with the right owner");
       assert(sql(`SELECT COUNT(*) FROM LeadTags lt JOIN Tags t ON t.id=lt.tagId JOIN Leads l ON l.id=lt.leadId WHERE l.affiliateId=${aff.id} AND t.name='Afiliado'`) === "2", "tag Afiliado missing");
       assert(sql(`SELECT COUNT(*) FROM Leads WHERE name='Estranho'`) === "0", "a stranger's card created a lead");
-      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE userId=${ow.id} AND title LIKE '%Marta Indicadora%'`) === "2", "first-contact tasks missing");
+      // the first-contact tasks are written a moment after the leads (a side effect, not part of the answer): wait for them, then the same check
+      try { await waitFor(() => sql(`SELECT COUNT(*) FROM LeadTasks WHERE userId=${ow.id} AND title LIKE '%Marta Indicadora%'`) === "2", 10000, "first-contact tasks"); } catch (err) { /* the assertion below says what was found */ }
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE userId=${ow.id} AND title LIKE '%Marta Indicadora%'`) === "2", `first-contact tasks missing: ${sql(`SELECT COUNT(*) FROM LeadTasks WHERE userId=${ow.id} AND title LIKE '%Marta Indicadora%'`)} of 2`);
       // a normal lead does not land in the affiliate column
       const normal = (await http.post("/leads", { name: "Lead comum", phone: "69988887777", source: "Site" }, auth())).data;
       const nl = normal.lead || normal;
@@ -9444,6 +9472,25 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(limited && refused >= 25 && refused <= 31, `refused calls before the 429: ${refused}`);
       assert(limited.headers["retry-after"] && limited.headers["access-control-allow-origin"] === origin && limited.data.error === "ERR_TOO_MANY_REQUESTS", `the 429: ${JSON.stringify(limited.headers)} ${JSON.stringify(limited.data)}`);
     });
+    // The renewal of the login (ESP-008, QA-01): the server does not burn the refresh cookie when it renews, so two renewals at once with the same
+    // cookie both work; no cookie, or a person who left (logout changes the version), is a plain 401 and the cookie is cleared.
+    await test("session renewal: two at once with the same cookie both work; no cookie or a logout is a 401", async () => {
+      const email = "renova-sessao@x.com";
+      const made = await http.post("/users", { name: "Renova Sessao", email, password: "senha123", role: "consultor", profile: "user" }, auth());
+      assert(made.status === 200, `user ${made.status} ${JSON.stringify(made.data)}`);
+      const login = await http.post("/auth/login", { email, password: "senha123" });
+      const cookie = (login.headers["set-cookie"] || []).map(c => c.split(";")[0]).join("; ");
+      assert(/jrt=/.test(cookie) && login.status === 200, `login ${login.status}`);
+      const [a, b] = await Promise.all([1, 2].map(() => http.post("/auth/refresh_token", {}, { headers: { Cookie: cookie } })));
+      assert(a.status === 200 && b.status === 200 && a.data.token && b.data.token, `two renewals: ${a.status} ${b.status}`);
+      const again = await http.post("/auth/refresh_token", {}, { headers: { Cookie: cookie } });
+      assert(again.status === 200, `a third renewal with the same cookie: ${again.status}`);
+      const none = await http.post("/auth/refresh_token", {});
+      assert(none.status === 401 && none.data.error === "ERR_SESSION_EXPIRED", `no cookie: ${none.status} ${JSON.stringify(none.data)}`);
+      assert((await http.delete("/auth/logout", { headers: { Authorization: `Bearer ${a.data.token}`, Cookie: cookie } })).status === 200, "logout");
+      const after = await http.post("/auth/refresh_token", {}, { headers: { Cookie: cookie } });
+      assert(after.status === 401 && after.data.error === "ERR_SESSION_EXPIRED", `renewal after the logout: ${after.status}`);
+    });
     await test("refresh rate limit keeps CORS headers on 429", async () => {
       const origin = "http://localhost:3000";
       let limited;
@@ -9480,6 +9527,8 @@ const postMeta = (id, payload, secret, badSig) => {
   }
   const failed = results.filter(r => !r[0]);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+  if (connectionRetries.length) console.log(`ECONNRESET repetidos (só GET/HEAD): ${connectionRetries.length} -> ${connectionRetries.join("; ")}`);
+  require("./e2e-logs").save(__filename, global.__backendLog ? global.__backendLog() : "");
   failed.forEach(f => console.log(" FAIL", f[1]));
   if (failed.length && global.__backendLog) console.log("--- backend log tail ---\n" + global.__backendLog().slice(-2500));
   process.exit(failed.length ? 1 : 0);
