@@ -922,7 +922,9 @@ CREATE TABLE public."Campaigns" (
     "templateBody" text,
     "createdById" integer,
     "institutionId" integer,
-    objective text
+    objective text,
+    offer text,
+    approach character varying(20)
 );
 
 
@@ -3204,7 +3206,8 @@ CREATE TABLE public."Proposals" (
     "createdBy" integer,
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
-    "affiliateId" integer
+    "affiliateId" integer,
+    "validUntil" date
 );
 
 
@@ -8404,6 +8407,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js'
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000001-conversation-readings.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270103000002-recovery-offer.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

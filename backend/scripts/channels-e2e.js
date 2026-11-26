@@ -8571,6 +8571,54 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put("/tutoria/audit/settings", { enabled: false, maxPerDay: 5 }, auth())).data.maxPerDay === 5, "settings");
       await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 40 }, auth());
     });
+    await test("recovery campaign: only the management sets the offer, it is reviewed person by person, the template carries each one's values, and the answer gets the proposal with its last day", async () => {
+      const consultant = (await http.post("/users", { name: "Consultor Oferta", email: "oferta@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const cTok = (await http.post("/auth/login", { email: "oferta@x.com", password: "senha123" })).data.token;
+      const course = (await http.post("/courses", { name: "Pedagogia Oferta Teste", modality: "EAD", category: "Graduação - Teste", semesters: 8, monthlyFee: 500, active: true }, auth())).data;
+      const lost = sql(`SELECT id FROM LeadStages WHERE type='lost' ORDER BY position LIMIT 1`);
+      const lead = (name, phone) => sql(`INSERT INTO Leads (name, phone, stageId, courseId, ownerId, source, admissionType, isHistorical, lostAt, lostReason, recoveryState, recoveryAt, recoveryReason, recoveryObjection, createdAt, updatedAt) VALUES ('${name}', '${phone}', ${lost}, ${course.id}, ${consultant.id}, 'WhatsApp', 'ENEM', false, NOW(), 'Preço / mensalidade', 'aberta', NOW(), 'Achou caro', 'preco', NOW() - INTERVAL '20 days', NOW()) RETURNING id`).split("\n")[0];
+      const rafa = lead("Rafa Oferta", "5511944440101");
+      lead("Sara Oferta", "5511944440102");
+      // the list comes from Recuperação (the leads of the consultant that gave up)
+      const list = (await http.post("/contact-lists/from-leads", { audience: "recovery", name: "Recuperação e2e", ownerId: consultant.id }, auth())).data;
+      assert(list.imported === 2, `recovery list ${JSON.stringify(list)}`);
+      const until = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);
+      const offer = { monthlyMode: "bolsa", bolsaPct: 40, enrollmentExempt: true, startDate: "2027-02-10", validUntil: until };
+      const base = { objective: "Recuperar quem achou caro", name: "Recuperação com oferta", contactListId: list.id, whatsappId: cid, templateName: "recuperacao_oferta", templateLanguage: "pt_BR", templateParams: JSON.stringify(["primeiro_nome", "oferta_mensalidade", "oferta_prazo"]), intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 };
+      // only the management sets an offer, and only after reviewing it
+      assert((await http.post("/campaigns", { ...base, offer, approach: "proposta", offerReviewed: true }, asUser(cTok))).status === 403, "a consultant set an offer");
+      const unreviewed = await http.post("/campaigns", { ...base, offer, approach: "proposta" }, auth());
+      assert(unreviewed.status === 400 && unreviewed.data.error === "ERR_OFFER_REVIEW", `an offer saved without review ${unreviewed.status}`);
+      const bad = await http.post("/campaigns", { ...base, offer: { ...offer, bolsaPct: 0 }, approach: "proposta", offerReviewed: true }, auth());
+      assert(bad.status === 400 && bad.data.error === "ERR_OFFER_BOLSA", `a broken offer ${bad.status} ${JSON.stringify(bad.data)}`);
+      // person by person: 40% over the price of the course
+      const preview = (await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, auth())).data;
+      assert(preview.total === 2 && preview.rows.every(r => r.monthly === "R$ 300,00" && r.fee === "isenta"), `preview ${JSON.stringify(preview)}`);
+      assert((await http.post("/campaigns/offer-preview", { contactListId: list.id, offer }, asUser(cTok))).status === 403, "a consultant saw the offer preview");
+      await http.put("/operations/config", { outbound_allow_templates: "true", outbound_allow_marketing: "true" }, auth());
+      const c = await http.post("/campaigns", { ...base, offer, approach: "proposta", offerReviewed: true }, auth());
+      assert(c.status < 300 && c.data.approach === "proposta", `campaign ${c.status} ${JSON.stringify(c.data).slice(0, 200)}`);
+      const before = graph.sent.length;
+      const started = await http.post(`/campaigns/${c.data.id}/start`, {}, auth());
+      assert(started.status === 200, `start ${started.status} ${JSON.stringify(started.data)}`);
+      const sent = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "template" && x.body.to === "5511944440101"), 20000, "the template of the offer");
+      const params = sent.body.template.components[0].parameters.map(p => p.text);
+      assert(params[0] === "Rafa" && params[1] === "R$ 300,00" && params[2] === until.split("-").reverse().join("/"), `template values ${JSON.stringify(params)}`);
+      // Rafa answers: the proposal of the offer is made in the consultant's name and sent, with its last day; the consultant gets a task
+      const out = graph.sent.length;
+      await postMeta(cid, cloudEvent([{ from: "5511944440101", id: "wamid.recovery.1", type: "text", text: { body: "Tenho interesse sim" } }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${rafa} AND status='sent'`) === "1", 25000, "the proposal of the offer was sent");
+      const p = sql(`SELECT CONCAT(createdBy,'|',firstMonthly,'|',validUntil) FROM Proposals WHERE leadId=${rafa}`).split("|");
+      assert(p[0] === String(consultant.id) && Number(p[1]) === 300 && p[2] === until, `proposal ${p}`);
+      await waitFor(() => graph.sent.slice(out).some(x => x.body && JSON.stringify(x.body).includes(`vale até ${until.split("-").reverse().join("/")}`)), 15000, "the proposal says its last day");
+      assert(sql(`SELECT recoveryState FROM Leads WHERE id=${rafa}`) === "voltou", "the lead is still in Recuperação");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${rafa} AND userId=${consultant.id} AND automationKey='recovery-reply-${c.data.id}-${rafa}'`) === "1", "the consultant has no task");
+      // a second message does not make a second proposal
+      await postMeta(cid, cloudEvent([{ from: "5511944440101", id: "wamid.recovery.2", type: "text", text: { body: "Pode mandar de novo?" } }]), cloudCfg.appSecret);
+      await new Promise(r => setTimeout(r, 4500));
+      assert(sql(`SELECT COUNT(*) FROM Proposals WHERE leadId=${rafa}`) === "1", "a second proposal was made");
+      await http.put("/operations/config", { outbound_allow_marketing: "false" }, auth());
+    });
     await test("the conversations copied from a consultant's phone are read once: real leads in the funnel with a summary, enrollments with the RGM, the ones without it to confirm, who gave up in Recuperação with the reason; one notice; OpenBot takes masked readings through the API", async () => {
       const u = (await http.post("/users", { name: "Consultora Leitura", email: "leitura@x.com", password: "senha123", role: "consultor" }, auth())).data;
       const uTok = (await http.post("/auth/login", { email: "leitura@x.com", password: "senha123" })).data.token;

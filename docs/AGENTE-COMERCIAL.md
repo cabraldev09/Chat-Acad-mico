@@ -188,6 +188,37 @@ Cursos: a lista vem só do catálogo (cursos ofertados). Erro de digitação e a
 mensagem viram uma pergunta de qual começar; quem não sabe o curso recebe as áreas; área não é curso; com um curso já escolhido, perguntar
 por um não ofertado não reabre a escolha.
 
+## Campanha de recuperação com oferta (`CampaignServices/Offer.ts`, `RecoveryReply.ts`)
+É para os leads que pararam de responder ou desistiram (CRM, Recuperação). Na Recuperação, a gestão clica em "Criar campanha de
+recuperação": a lista sai com o motivo e a objeção filtrados. Em Campanhas, só a gestão vê o passo **Oferta**:
+- **Mensalidade:** valor fixo para todos, ou bolsa em % sobre o preço do curso de cada pessoa.
+- **Taxa de matrícula:** isenta ou um valor.
+- **Datas:** início (o 1º vencimento) e até quando a oferta vale.
+- **Quando a pessoa responder:**
+  - a IA do número oficial conversa com a oferta e passa ao consultor;
+  - ou o sistema gera a proposta com a oferta e envia;
+  - ou o consultor retoma a conversa.
+- **"Ver o valor de cada pessoa"** mostra a mensalidade e a taxa de cada um. O servidor só salva depois de "Revisei a oferta" (`ERR_OFFER_REVIEW`).
+
+O modelo aprovado pela Meta usa as variáveis `oferta_mensalidade`, `oferta_taxa`, `oferta_inicio` e `oferta_prazo`, com os valores de cada pessoa.
+Uma oferta é Marketing para a Meta: o envio precisa de `outbound_allow_marketing` e de um modelo aprovado nessa categoria (o sistema não
+cria nem envia o modelo sozinho).
+
+Quando a pessoa responde, em até 7 dias e com a oferta valendo, o sistema age **uma vez por campanha e pessoa**:
+- O lead sai da Recuperação (`recoveryState = voltou`) e o histórico registra a resposta.
+- **IA:**
+  - a conversa não volta direto ao consultor;
+  - à pergunta de preço, a IA responde só com os valores da oferta (`offerAnswer`), sem modelo. As travas (`Guards.unsafeAnswer`) deixam
+    passar só esses valores e datas, e qualquer outro valor continua bloqueado;
+  - se a pessoa pergunta de novo ou quer se matricular, a conversa passa ao consultor;
+  - sem agente de IA no número, vale "consultor".
+- **Proposta:**
+  - a proposta é feita em nome do consultor responsável, com a mensalidade e a taxa da oferta e o 1º vencimento no início, e vale até o
+    último dia (`Proposals.validUntil`, "A condição desta proposta vale até dd/mm/aaaa");
+  - ela é enviada na conversa e o consultor recebe uma tarefa;
+  - se faltar a forma de ingresso, a proposta fica em rascunho e a tarefa pede que o consultor envie.
+- **Consultor:** a conversa volta ao consultor, com uma tarefa.
+
 ## Simulador de leads (`backend/scripts/lead-sim`)
 
 Para testar o processo com conversas inteiras, sem WhatsApp e sem gastar com o provedor de IA:

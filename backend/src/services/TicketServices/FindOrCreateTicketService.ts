@@ -218,6 +218,13 @@ const FindOrCreateTicketService = async (
     }
   }
 
+  // the answer to a recovery campaign follows the approach the management chose (the AI with the offer, the proposal, the consultant)
+  if (returning && !groupContact) {
+    const { onRecoveryReply } = await import("../CampaignServices/RecoveryReply");
+    const approach = await onRecoveryReply(ticket, contact).catch(() => null);
+    if (approach === "ia") returning = false;
+  }
+
   // a shared number (the official API of the polos): the client who already has a consultant goes back to them, robots and rotation stay out
   if (returning && !groupContact) {
     const owner = await returnToOwner(ticket, previousUserId);

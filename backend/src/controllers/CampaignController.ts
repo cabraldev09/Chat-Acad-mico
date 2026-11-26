@@ -74,7 +74,9 @@ const crud = makeCrud(Campaign, {
     "templateName",
     "templateLanguage",
     "templateParams",
-    "templateBody"
+    "templateBody",
+    "offer",
+    "approach"
   ],
   required: ["name", "contactListId"],
   include: [
@@ -100,6 +102,30 @@ const crud = makeCrud(Campaign, {
     if (connectionId) await assertConnectionUse(_req, Number(connectionId));
     if (existing && !["draft", "scheduled", "paused"].includes(existing.status)) {
       throw new AppError("ERR_CAMPAIGN_LOCKED");
+    }
+    // the offer of a recovery campaign: only the management sets it, checked field by field, and it is saved only after it was reviewed
+    // (the screen shows the value for each person before)
+    if (data.offer !== undefined || data.approach !== undefined) {
+      if (!isManagerRole(roleOf(_req.user as any))) throw new AppError("ERR_OFFER_MANAGER_ONLY", 403);
+      if (data.offer === null || data.offer === "") {
+        data.offer = null;
+        data.approach = null;
+      } else if (data.offer !== undefined) {
+        const { cleanOffer, APPROACHES } = await import("../services/CampaignServices/Offer");
+        try {
+          data.offer = JSON.stringify(cleanOffer(typeof data.offer === "string" ? JSON.parse(data.offer) : data.offer));
+        } catch (err) {
+          throw new AppError(/^ERR_OFFER_/.test(String((err as Error).message)) ? (err as Error).message : "ERR_OFFER_INVALID", 400);
+        }
+        if (_req.body?.offerReviewed !== true) throw new AppError("ERR_OFFER_REVIEW", 400);
+        const approach = data.approach !== undefined ? data.approach : existing?.approach;
+        data.approach = (APPROACHES as readonly string[]).includes(approach) ? approach : "ia";
+        // the proposal made by the system needs the first due date: the start of the offer
+        if (data.approach === "proposta" && !JSON.parse(data.offer).startDate) throw new AppError("ERR_OFFER_START", 400);
+      } else if (data.approach !== undefined) {
+        const { APPROACHES } = await import("../services/CampaignServices/Offer");
+        if (!(APPROACHES as readonly string[]).includes(data.approach)) throw new AppError("ERR_OFFER_INVALID", 400);
+      }
     }
     await applySteps(data, existing);
     if (data.whatsappId === "" || data.whatsappId === 0) data.whatsappId = null;
@@ -553,6 +579,17 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
     const since = Number(b.enrolledDays);
     if (since > 0) and.push({ enrolledAt: { [Op.lt]: new Date(Date.now() - since * 24 * 3600 * 1000) } });
   }
+  // the leads of "Recuperação": the ones that stopped or gave up (the reading found them, or lost in the last 90 days), by reason and
+  // objection, or the ones chosen on that screen
+  const recovery = b.audience === "recovery";
+  if (recovery) {
+    and.push({ enrolledAt: { [Op.is]: null } });
+    and.push({ [Op.or]: [{ recoveryState: "aberta" }, { recoveryState: { [Op.is]: null }, lostAt: { [Op.gt]: new Date(Date.now() - 90 * 864e5) } }] });
+    if (b.reason) and.push({ [Op.or]: [{ recoveryReason: String(b.reason) }, { recoveryReason: { [Op.is]: null }, lostReason: String(b.reason) }] });
+    if (b.objection) and.push({ recoveryObjection: String(b.objection) });
+  }
+  const chosen = Array.isArray(b.leadIds) ? b.leadIds.map(Number).filter((n: number) => Number.isInteger(n) && n > 0).slice(0, 5000) : [];
+  if (chosen.length) and.push({ id: { [Op.in]: chosen } });
   const quiet = Number(b.noReplyDays);
   if (quiet > 0) {
     const limit = new Date(Date.now() - quiet * 24 * 3600 * 1000);
@@ -560,7 +597,7 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
   }
   const include: any[] = [];
   // without an explicit stage, never include people already enrolled or lost (the students are the enrolled ones: only the lost stay out)
-  if (!b.stageId) include.push({ model: LeadStage, as: "stage", attributes: [], where: students ? { type: { [Op.ne]: "lost" } } : { type: "open" }, required: true });
+  if (!b.stageId && !recovery && !chosen.length) include.push({ model: LeadStage, as: "stage", attributes: [], where: students ? { type: { [Op.ne]: "lost" } } : { type: "open" }, required: true });
   if (b.tagId) include.push({ model: Tag, as: "tags", attributes: [], where: { id: b.tagId }, required: true, through: { attributes: [] } });
 
   const leads = await Lead.findAll({
@@ -700,4 +737,31 @@ export const removeNoConsent = async (req: Request, res: Response): Promise<Resp
   const out = items.filter(i => !brPhoneVariants(i.number).some(v => consented.has(v))).map(i => i.id);
   if (out.length) await ContactListItem.destroy({ where: { id: { [Op.in]: out } } as any });
   return res.json({ removed: out.length });
+};
+
+// THE OFFER PERSON BY PERSON: what each one of the list would receive (the scholarship over the price of their course), before the send
+export const offerPreview = async (req: Request, res: Response): Promise<Response> => {
+  const { cleanOffer, offerFor } = await import("../services/CampaignServices/Offer");
+  let offer;
+  try {
+    offer = cleanOffer(req.body?.offer);
+  } catch (err) {
+    throw new AppError(/^ERR_OFFER_/.test(String((err as Error).message)) ? (err as Error).message : "ERR_OFFER_INVALID", 400);
+  }
+  const listId = Number(req.body?.contactListId);
+  if (!listId) throw new AppError("ERR_FIELD_REQUIRED_contactListId", 400);
+  const items = await ContactListItem.findAll({ where: { contactListId: listId }, attributes: ["name", "number"], limit: 2000 });
+  const Course = (await import("../models/Course")).default;
+  const rows: Array<{ name: string; course: string | null; monthly: string; fee: string }> = [];
+  let noPrice = 0;
+  for (const it of items) {
+    // eslint-disable-next-line no-await-in-loop
+    const lead = await Lead.findOne({ where: { phone: { [Op.in]: brPhoneVariants(it.number) } } as any, attributes: ["courseId"], order: [["updatedAt", "DESC"]] });
+    // eslint-disable-next-line no-await-in-loop
+    const course = lead?.courseId ? await Course.findByPk(lead.courseId, { attributes: ["name", "monthlyFee"] }) : null;
+    const v = offerFor(offer, course ? Number((course as any).monthlyFee) || null : null);
+    if (!v.text.oferta_mensalidade) noPrice += 1;
+    if (rows.length < 50) rows.push({ name: it.name, course: course ? (course as any).name : null, monthly: v.text.oferta_mensalidade || "o consultor informa", fee: v.text.oferta_taxa });
+  }
+  return res.json({ total: items.length, noPrice, rows, validUntil: offer.validUntil, startDate: offer.startDate });
 };

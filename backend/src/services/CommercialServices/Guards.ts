@@ -33,8 +33,10 @@ const PROMISE = [
 // numbers that need a source: percentages, dates (dd/mm, dd/mm/aaaa), hours (8h, 08:00)
 const NEEDS_SOURCE = [/\b\d{1,3}(?:[.,]\d+)?\s*%/g, /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, /\b\d{1,2}h(?:\d{2})?\b/g, /\b\d{1,2}:\d{2}\b/g];
 
-export const unsafeAnswer = (text: string, evidence: string): { unsafe: boolean; kind?: GuardKind; token?: string } => {
-  const t = plain(text);
+// allowed: the exact values the management set for this conversation (the offer of a recovery campaign): only they may appear
+export const unsafeAnswer = (text: string, evidence: string, allowed: string[] = []): { unsafe: boolean; kind?: GuardKind; token?: string } => {
+  const cleared = allowed.filter(Boolean).reduce((acc, v) => acc.split(v).join(" "), String(text || ""));
+  const t = plain(cleared);
   if (!t.trim()) return { unsafe: false };
   if (MONEY.some(r => r.test(t))) return { unsafe: true, kind: "price" };
   if (PERCENT_BENEFIT.some(r => r.test(t))) return { unsafe: true, kind: "percent" };
