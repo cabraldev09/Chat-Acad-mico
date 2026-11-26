@@ -1943,7 +1943,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(page.status === 200 && String(page.data).includes("Amiga da Equipe"), `public page ${page.status}`);
       const file = await http.get(`/proposals/${made.data.id}/pdf`, { ...asUser(tok), responseType: "arraybuffer" });
       assert(file.status === 200 && /Proposta%20-%20Amiga%20da%20Equipe\.pdf/.test(String(file.headers["content-disposition"])), `pdf ${file.status} ${file.headers["content-disposition"]}`);
-      assert(sql(`SELECT viewedAt IS NOT NULL FROM Proposals WHERE id=${made.data.id}`) === "t", "the view was not noted");
+      assert(sql(`SELECT viewedAt IS NOT NULL FROM Proposals WHERE id=${made.data.id}`) === "1", "the view was not noted");
     });
 
     // ------------------------------------------- admission, CPF and payments
