@@ -1,3 +1,4 @@
+import { keepPendingAck } from "../helpers/PendingAcks";
 import { insideFolder, safeStoredName } from "../helpers/SafeFile";
 import { parseVcards, registerAffiliateReferrals } from "../services/AffiliateServices/ReferralFromContact";
 import { join } from "path";
@@ -316,6 +317,8 @@ export const handleMessageAck = async (
     }
 
     if (!messageToUpdate) {
+      // the message is still being stored (a link waiting for its preview): the tick waits for it (CreateMessageService applies it)
+      keepPendingAck(messageId, ack);
       return;
     }
 
