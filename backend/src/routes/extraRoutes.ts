@@ -33,6 +33,7 @@ import * as Community from "../controllers/CommunityController";
 import * as MailSettings from "../controllers/MailSettingsController";
 import * as Webhook from "../controllers/WebhookController";
 import * as ApiToken from "../controllers/ApiTokenController";
+import * as OpenbotInsight from "../controllers/OpenbotInsightController";
 import * as Ai from "../controllers/AiAgentController";
 import * as Commercial from "../controllers/CommercialController";
 import * as Mec from "../controllers/MecController";
@@ -174,6 +175,8 @@ r.post("/webhooks-config", isAuth, isSystemAdmin, Webhook.store);
 r.put("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.update);
 r.delete("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.remove);
 r.post("/webhooks-config/:id/test", isAuth, isSystemAdmin, Webhook.test);
+// the recommendations of the OpenBot (written through POST /api/v1/insights): only the administrator dismisses them
+r.put("/openbot-insights/:id/resolve", isAuth, isSystemAdmin, OpenbotInsight.resolve);
 r.get("/api-tokens", isAuth, isSystemAdmin, ApiToken.index);
 r.get("/api-tokens/scopes", isAuth, isSystemAdmin, ApiToken.scopes);
 r.get("/api-tokens/legacy", isAuth, isSystemAdmin, ApiToken.legacyShow);

@@ -201,6 +201,94 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       }
     });
 
+    // The channel OpenBot → management (docs/API-V1.md, POST /api/v1/insights): a token with the scope writes warnings with no personal data;
+    // the administrators (only) get one notice in the bell and see them in the commercial center; the same subject lives once; a panel
+    // holds at most 20; the coordination, the consultant and the tutor neither see nor get anything.
+    await test("OpenBot → management channel: scope, no personal data, once per subject, only the administrators, dismiss, limits", async () => {
+      const mkToken = async (scopes, poloIds) => { const r = await http.post("/api-tokens", { name: `insights ${scopes.join("+")}`, scopes, ...(poloIds ? { poloIds } : {}) }, as(admin)); assert(r.status === 201, `token ${r.status} ${JSON.stringify(r.data)}`); return r.data.token; };
+      const call = (tok, body) => http.post("/api/v1/insights", body, { headers: { Authorization: `Bearer ${tok}` } });
+      const rows = () => Number(sql(`SELECT COUNT(*) FROM OpenbotInsights`));
+      const bell = async tok => ((await http.get("/notifications", as(tok))).data.notifications || []).filter(n => n.kind === "openbot");
+      const panel = async tok => (await http.get("/analytics/team", { ...as(tok), params: { range: "today" } }));
+      const base = { kind: "indicador", level: "warning", title: "Origem Instagram caiu 40% na semana", body: "Os contatos da origem Instagram caíram 40% em relação à semana anterior.", link: "/estatisticas", dedupeKey: "origem-instagram:2026-11-26" };
+
+      // scope: without insights:write, 403 and nothing written; with only insights:write the token writes but reads nothing else
+      const reader = await mkToken(["indicators:read"]);
+      const noScope = await call(reader, base);
+      assert(noScope.status === 403 && noScope.data.error === "ERR_API_TOKEN_SCOPE" && rows() === 0, `token without insights:write: ${noScope.status} ${JSON.stringify(noScope.data)}`);
+      const writer = await mkToken(["insights:write"]);
+      assert((await http.get("/api/v1/indicadores", { headers: { Authorization: `Bearer ${writer}` } })).status === 403, "a token with only insights:write read the indicators");
+
+      // a valid body: 201 with no id; one notice for each administrator, marked OpenBot; shown in the panel with the origin
+      const first = await call(writer, base);
+      assert(first.status === 201 && JSON.stringify(first.data) === JSON.stringify({ aceito: true }), `valid insight: ${first.status} ${JSON.stringify(first.data)}`);
+      assert(rows() === 1, "the insight was not recorded");
+      const notices = await bell(admin);
+      assert(notices.length === 1 && notices[0].title === `OpenBot: ${base.title}` && notices[0].level === "warning" && notices[0].link === "/estatisticas", `the administrator's bell: ${JSON.stringify(notices)}`);
+      const adminPanel = await panel(admin);
+      assert(adminPanel.status === 200 && adminPanel.data.openbotInsights.length === 1 && adminPanel.data.openbotInsights[0].source === "OpenBot" && adminPanel.data.openbotInsights[0].title === base.title, `the administrator's panel: ${JSON.stringify(adminPanel.data.openbotInsights)}`);
+      assert(!("tokenId" in adminPanel.data.openbotInsights[0]) && !("dedupeKey" in adminPanel.data.openbotInsights[0]), "the panel leaked internal fields");
+
+      // the coordination, the consultant and the tutor: no notice, no block (the coordination reads the panel, with an empty list)
+      const coordPanel = await panel(coord);
+      assert(coordPanel.status === 200 && Array.isArray(coordPanel.data.openbotInsights) && coordPanel.data.openbotInsights.length === 0, `the coordination saw the block: ${JSON.stringify(coordPanel.data.openbotInsights)}`);
+      assert((await panel(joao)).status === 403, "a consultant read the management panel");
+      for (const [who, tok] of [["coordination", coord], ["consultant", joao], ["tutor", tutor]]) assert((await bell(tok)).length === 0, `${who} got the notice of the OpenBot`);
+      assert((await http.put("/openbot-insights/1/resolve", {}, as(coord))).status === 403 && (await http.put("/openbot-insights/1/resolve", {}, as(joao))).status === 403, "someone other than the administrator dismissed it");
+
+      // the same subject again: 200 duplicate, one row, one notice (nothing new)
+      const again = await call(writer, { ...base, title: "Outro texto", body: "Outro corpo" });
+      assert(again.status === 200 && JSON.stringify(again.data) === JSON.stringify({ duplicado: true }) && rows() === 1 && (await bell(admin)).length === 1, `duplicate: ${again.status} ${JSON.stringify(again.data)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE title = 'Outro texto'`)) === 0, "the duplicate changed the content");
+
+      // no personal data (fictitious cases): 400 and nothing written; an external or unknown link: 400
+      const refused = [
+        { title: "Ligar para 69999990000" }, { body: "Falar com fulano@exemplo.com" }, { body: "CPF 000.000.000-00 pediu bolsa" },
+        { title: "Contato (69) 99999-0000" }, { body: "RGM 1234567 desistiu" }, { body: "veja https://exemplo.com/painel" }
+      ];
+      for (const [i, extra] of refused.entries()) {
+        const r = await call(writer, { ...base, dedupeKey: `pessoal-${i}`, ...extra });
+        assert(r.status === 400 && r.data.error === "ERR_INSIGHT_PERSONAL_DATA", `personal data ${JSON.stringify(extra)}: ${r.status} ${JSON.stringify(r.data)}`);
+      }
+      for (const link of ["https://exemplo.com", "javascript:alert(1)", "/users", "//exemplo.com"]) {
+        const r = await call(writer, { ...base, dedupeKey: "link-ruim", link });
+        assert(r.status === 400 && r.data.error === "ERR_INSIGHT_INVALID_LINK", `link ${link}: ${r.status} ${JSON.stringify(r.data)}`);
+      }
+      assert(rows() === 1, "a refused insight was written");
+      // HTML in the text is kept as plain text (the screen does not read HTML; a unit test of the screen proves it)
+      const html = await call(writer, { ...base, dedupeKey: "html-1", title: "<b>Atenção</b>", body: "<img src=x onerror=alert(1)>" });
+      assert(html.status === 201 && sql(`SELECT title FROM OpenbotInsights WHERE dedupeKey = 'html-1'`) === "<b>Atenção</b>", "HTML was not stored as plain text");
+
+      // a token of some polos writes too, and the insights are not filtered by polo (they are about the whole operation)
+      const poloId = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('INS', 'Polo Insights', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const ofPolo = await mkToken(["insights:write"], [Number(poloId)]);
+      assert((await call(ofPolo, { ...base, dedupeKey: "do-polo-1", title: "Matrículas do mês abaixo da meta" })).status === 201, "a token of one polo could not write");
+      assert((await panel(admin)).data.openbotInsights.length === 3, "the insights of a token of one polo were filtered or lost");
+
+      // dismiss: the administrator hides it; the row stays with resolvedAt; the subject can come back as a new one
+      const mine = (await panel(admin)).data.openbotInsights.find(i => i.title === base.title);
+      assert((await http.put(`/openbot-insights/${mine.id}/resolve`, {}, as(admin))).status === 200, "the administrator could not dismiss");
+      assert(!(await panel(admin)).data.openbotInsights.some(i => i.id === mine.id) && Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE id = ${mine.id} AND resolvedAt IS NOT NULL`)) === 1, "dismiss did not hide it and keep the row");
+      assert((await http.put("/openbot-insights/999999/resolve", {}, as(admin))).status === 404, "dismissing an unknown insight was not a 404");
+      assert((await call(writer, base)).status === 201, "a dismissed subject could not come back");
+      // an expired one leaves the panel and frees its subject
+      sql(`UPDATE OpenbotInsights SET expiresAt = NOW() - INTERVAL '1 day' WHERE dedupeKey = 'html-1'`);
+      assert(!(await panel(admin)).data.openbotInsights.some(i => i.title === "<b>Atenção</b>"), "an expired insight stayed in the panel");
+      assert((await call(writer, { ...base, dedupeKey: "html-1", title: "De novo", body: "Texto novo" })).status === 201, "an expired subject could not come back");
+
+      // limits: at most 20 in force (429 ERR_INSIGHT_LIMIT with Retry-After) and, apart, 30 calls an hour per token (429 of the limiter)
+      sql(`UPDATE OpenbotInsights SET resolvedAt = NOW() WHERE resolvedAt IS NULL`);
+      const busy = await mkToken(["insights:write"]);
+      for (let i = 0; i < 20; i++) { const r = await call(busy, { ...base, dedupeKey: `lote-${i}`, title: `Recomendação ${i}` }); assert(r.status === 201, `fill ${i}: ${r.status} ${JSON.stringify(r.data)}`); }
+      const over = await call(busy, { ...base, dedupeKey: "lote-20", title: "Recomendação 20" });
+      assert(over.status === 429 && over.data.error === "ERR_INSIGHT_LIMIT" && over.headers["retry-after"], `the 21st in force: ${over.status} ${JSON.stringify(over.data)}`);
+      assert((await call(busy, { ...base, dedupeKey: "lote-3", title: "Recomendação 3" })).status === 200, "a duplicate was refused by the panel limit");
+      for (let i = 0; i < 8; i++) assert((await call(busy, { ...base, dedupeKey: `lote-x${i}` })).status === 429, "the panel limit let one in");
+      const limited = await call(busy, { ...base, dedupeKey: "lote-y" });
+      assert(limited.status === 429 && limited.data.error === "ERR_TOO_MANY_REQUESTS" && limited.headers["retry-after"], `the 31st call in an hour: ${limited.status} ${JSON.stringify(limited.data)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM OpenbotInsights WHERE resolvedAt IS NULL AND expiresAt > NOW()`)) === 20, "more than 20 in force");
+    });
+
     await test("polo supervisor feedback skips OpenAI when the sample is insufficient", async () => {
       const response = await http.post("/dashboard/management/feedback", { days: 31 }, as(admin));
       assert(response.status === 200, `management feedback ${response.status} ${JSON.stringify(response.data)}`);

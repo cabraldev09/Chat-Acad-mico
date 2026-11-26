@@ -39,3 +39,14 @@ describe("tokens da API v1", () => {
     expect(cleanTokenInput({ name: "x", scopes: ["indicators:read"], poloIds: [] }, now).poloIds).toBeNull();
   });
 });
+
+describe("escopo insights:write", () => {
+  it("é um escopo conhecido: o token novo pode ter só ele; os antigos de acesso total também gravam", () => {
+    const now = new Date("2026-11-25T12:00:00Z");
+    expect(cleanTokenInput({ name: "OpenBot", scopes: ["insights:write", "indicators:read"] }, now).scopes).toEqual(["insights:write", "indicators:read"]);
+    expect(hasScope(["insights:write"], "insights:write")).toBe(true);
+    expect(hasScope(["indicators:read"], "insights:write")).toBe(false);
+    expect(hasScope(["insights:write"], "indicators:read")).toBe(false);
+    expect(hasScope(["*"], "insights:write")).toBe(true);
+  });
+});

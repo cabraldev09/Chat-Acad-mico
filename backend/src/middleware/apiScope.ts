@@ -24,3 +24,4 @@ export const canReadConnections = requireScope("connections:read");
 export const canReadIndicators = requireScope("indicators:read");
 export const canSendMessages = requireScope("messages:send");
 export const canWorkReadings = requireScope("readings:work");
+export const canWriteInsights = requireScope("insights:write");

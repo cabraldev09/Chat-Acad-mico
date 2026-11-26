@@ -33,6 +33,7 @@ Rotas em `/api/v1` (`backend/src/routes/apiV1Routes.ts`), autenticadas por token
 | `POST /messages/send` | `messages:send` | só para número de lead desses polos (`403 ERR_API_TOKEN_POLO`); a rota antiga `/api/messages/send` segue a mesma regra e ainda exige conexão de um desses polos (veja abaixo) |
 | `GET /indicadores?de=&ate=&polo=` | `indicators:read` | só esses polos; `polo` fora deles: `403 ERR_API_TOKEN_POLO` |
 | `GET /leituras?limite=` e `POST /leituras/:id` | `readings:work` | só leituras de leads desses polos (as sem polo ficam para tokens de todos os polos) |
+| `POST /insights` | `insights:write` | grava para a gestão geral; **não é filtrada por polo** (veja "Recomendações do OpenBot") |
 
 ### Rota antiga `POST /api/messages/send` (legado)
 
@@ -49,6 +50,40 @@ Tokens de todos os polos e o token antigo de Configurações (acesso total) envi
 As respostas trazem só os campos que a integração usa: lead sem CPF, endereço, notas nem histórico; conversa sem texto.
 Tokens de todos os polos (sem polo escolhido) continuam com as respostas de antes em `POST /leads` (`201/200` com `id`) e
 `POST /contacts` (`201/200` com `id` e `created`), por compatibilidade com as integrações em uso.
+
+### Recomendações do OpenBot para a gestão (`POST /insights`)
+
+Escopo `insights:write` ("Gravar avisos e recomendações para a gestão"). O OpenBot grava avisos sobre a operação inteira (por exemplo,
+"a origem X caiu 40% na semana"); **só a administração** os vê: um aviso no sino (marcado "OpenBot") e o bloco "Recomendações do
+OpenBot" em Estatísticas → Agora, abaixo de "Alertas e oportunidades". Coordenação, consultor e tutor não recebem nem veem.
+Token com polos escolhidos também grava; as recomendações **não** são filtradas por polo (são da gestão geral).
+
+Corpo (exemplo fictício):
+
+```json
+{ "kind": "indicador", "level": "warning", "title": "Origem Instagram caiu 40% na semana",
+  "body": "Os contatos da origem Instagram caíram 40% em relação à semana anterior.",
+  "link": "/estatisticas", "dedupeKey": "origem-instagram:2026-11-26", "expiresInDays": 7 }
+```
+
+- `kind`: `indicador`, `oportunidade`, `risco` ou `operacao`. `level`: `info` (padrão), `warning` ou `urgent`.
+- `title` até 120 e `body` até 400 caracteres, **texto puro** (a tela não lê HTML nem Markdown). `link` opcional: só um caminho interno da
+  lista (`/crm`, `/crm/painel`, `/crm/tarefas`, `/crm/matriculas`, `/crm/metas`, `/crm/metas-polos`, `/crm/retencao`, `/estatisticas`,
+  `/estatisticas/captacao`, `/estatisticas/tutoria`, `/gestao-comercial`, `/connections`, `/reports`, `/integrations`); endereço externo,
+  `javascript:` ou outro caminho: `400 ERR_INSIGHT_INVALID_LINK`.
+- `dedupeKey` (obrigatório, até 160: letras, números, `:`, `.`, `_`, `-`; convenção `tema:AAAA-MM-DD`): o mesmo assunto em vigor vale uma
+  vez só. Repetir a chave devolve `200 {"duplicado": true}` sem criar linha nem aviso (o conteúdo não muda). Um assunto novo usa chave nova.
+  `expiresInDays` de 1 a 30 (padrão 7).
+- **Sem dado pessoal, conferido no servidor:** título ou texto com telefone (8 dígitos seguidos ou escrito com separadores), e-mail ou
+  qualquer `@`, CPF, RGM ou endereço da internet: `400 ERR_INSIGHT_PERSONAL_DATA` e nada é gravado. Totais, percentuais e números com
+  separador de milhar passam ("1.250.000"). É a última defesa: envie só agregados.
+- Resposta `201 {"aceito": true}` (sem id). Limites: os 120 por minuto de todo token, mais **30 gravações por hora por token** (`429
+  ERR_TOO_MANY_REQUESTS`) e no máximo **20 recomendações em vigor** no painel (`429 ERR_INSIGHT_LIMIT` com `Retry-After`).
+- O administrador pode **dispensar** cada uma na tela (`PUT /openbot-insights/:id/resolve`, só administrador): some do painel e a linha
+  fica. Dispensadas ou vencidas há mais de 30 dias são apagadas pela limpeza noturna.
+- Erros do corpo: `ERR_INSIGHT_INVALID_KIND`, `_LEVEL`, `_TITLE`, `_BODY`, `_DEDUPE`, `_LINK`, `_EXPIRY` (todos `400`).
+- **Recomendação ao dono:** criar para o OpenBot um token novo só com `indicators:read` e `insights:write` (hoje o token "API Open Bot" tem
+  acesso total, risco aceito em 25/11). A troca depende de decisão do dono; esta rota não a exige.
 
 ### Mudança de contrato (tokens com polos)
 

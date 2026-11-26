@@ -38,6 +38,7 @@
 | Taxa paga (`payment_paid`) | o dono do lead e quem recebe a comissão |
 | Ambientação atrasada (`onboarding_late`) | a gestão (e uma tarefa sem responsável, não uma por gestor) |
 | Envios pausados pela proteção (`safety_paused`) | a gestão |
+| Recomendação do OpenBot (`openbot`), gravada pela API (`POST /api/v1/insights`, sem dados de pessoas; título começa com "OpenBot:") | **só a administração** (não a coordenação): é da operação inteira, e a equipe não tem polo |
 | Número fora do ar ou com o token vencendo (`connection_*`) | a gestão (o e-mail tem um controle de 6 h por motivo) |
 | Orçamento a 80% e 100% (`budget`) | a gestão (o do mês não repete todo dia) |
 | Trabalho sem responsável há 30 min (`unassigned`) | a gestão, no máximo uma vez por hora |
