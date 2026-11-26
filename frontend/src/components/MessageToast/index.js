@@ -38,7 +38,7 @@ const Body = ({ ticket, contact, message }) => (
       <div className="msgtoast-name">{ticket.isGroup ? `${contact.name}` : contact.name}</div>
       <div className="msgtoast-msg">{previewOf(message, ticket, contact)}</div>
     </div>
-    <span className="msgtoast-time">{new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+    <span className="msgtoast-time">{new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}</span>
   </div>
 );
 

@@ -1,3 +1,4 @@
+import { renewMediaElement } from "../../services/media-access";
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
@@ -85,7 +86,13 @@ const SharedMedia = () => {
             {rows.map((m, i) => (
               <button key={m.id} type="button" className={classes.thumb} title="Abrir"
                 onClick={() => openGallery(rows.map((x) => ({ url: x.mediaUrl, type: x.mediaType, fromMe: x.fromMe, date: when(x.createdAt) })), i)}>
-                {m.mediaType === "image" ? <img src={m.mediaUrl} alt="" loading="lazy" /> : <Play size={26} className={classes.play} style={{ position: "static" }} />}
+                {m.mediaType === "image" ? <img src={m.mediaUrl} alt="" loading="lazy" onError={renewMediaElement} /> : (
+                  // the first frame of the video as its picture (as in WhatsApp), with the play mark over it
+                  <>
+                    <video src={`${m.mediaUrl}#t=0.1`} preload="metadata" muted playsInline onError={renewMediaElement} style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }} />
+                    <Play size={26} className={classes.play} />
+                  </>
+                )}
               </button>
             ))}
           </div>
