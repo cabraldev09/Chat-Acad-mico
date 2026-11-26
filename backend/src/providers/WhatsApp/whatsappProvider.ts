@@ -46,6 +46,8 @@ export interface WhatsappProvider {
   // the picture of any chat (person or group), addressed by its full WhatsApp id
   getChatPicUrl?(sessionId: number, chatId: string): Promise<string | undefined>;
   getContacts(sessionId: number): Promise<ProviderContact[]>;
+  // every person the number knows, saved or not, with the names WhatsApp has for them (QR Code only)
+  getPhoneNames?(sessionId: number): Promise<import("../../helpers/PhoneNames").PhoneName[]>;
   // the "recado" of the profile (about), when the person shows it
   getAbout?(sessionId: number, chatId: string): Promise<string | undefined>;
   getChatUnreadCount?(sessionId: number, chatId: string): Promise<number | null>;
