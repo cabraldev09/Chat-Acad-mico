@@ -578,6 +578,11 @@ const postMeta = (id, payload, secret, badSig) => {
     global.__backendLog = () => log;
     await waitFor(async () => (await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" }, { validateStatus: () => true })).status === 200, 30000, "backend up");
     token = (await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" })).data.token;
+    // the administrator's access lasts 15 minutes and the suite takes about that: it logs in again every 10 (the same change of #245)
+    setInterval(async () => {
+      const again = await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" }, { validateStatus: () => true }).catch(() => null);
+      if (again && again.status === 200 && again.data.token) token = again.data.token;
+    }, 10 * 60000).unref();
 
     // ------------------------------------------------------------ Telegram
     console.log("\nTelegram");
