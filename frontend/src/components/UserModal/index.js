@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from "react";
-import { accessLevel, isStrictAdmin } from "../../utils/access";
+import { accessLevel, isManager, isStrictAdmin } from "../../utils/access";
 
 import * as Yup from "yup";
 import { Formik, Form, Field } from "formik";
@@ -66,14 +66,21 @@ const useStyles = makeStyles(theme => ({
 	},
 }));
 
-const UserSchema = Yup.object().shape({
+// the same rules as the server: a new person needs a password of 8 or more; when editing, an empty field keeps the current one
+const userSchema = (isNew) => Yup.object().shape({
 	name: Yup.string()
+		.trim()
 		.min(2, "Nome muito curto.")
 		.max(50, "Nome muito longo.")
 		.required("Informe o nome."),
-	password: Yup.string().min(5, "A senha precisa ter ao menos 5 caracteres.").max(50, "Senha muito longa."),
-	email: Yup.string().email("Digite um e-mail válido.").required("Informe o e-mail."),
+	password: isNew
+		? Yup.string().min(8, "A senha precisa ter pelo menos 8 caracteres.").max(50, "Senha muito longa.").required("Crie uma senha com pelo menos 8 caracteres.")
+		: Yup.string().min(8, "A senha precisa ter pelo menos 8 caracteres.").max(50, "Senha muito longa."),
+	email: Yup.string().trim().email("Digite um e-mail válido.").required("Informe o e-mail."),
 });
+
+// only the fields of the form go to the server (the screen data of the person, such as sectors or the number objects, stays out)
+const FORM_FIELDS = ["name", "email", "password", "profile", "role", "coordArea", "phone"];
 
 const DAYS = [[1, "Seg"], [2, "Ter"], [3, "Qua"], [4, "Qui"], [5, "Sex"], [6, "Sáb"], [0, "Dom"]];
 // the hours of the person, day by day (each day its own start and end): starts as the team's week (Mon-Thu 08-18, Fri 08-17)
@@ -112,6 +119,9 @@ const UserModal = ({ open, onClose, userId }) => {
 	};
 
 	const { user: loggedInUser } = useContext(AuthContext);
+	// the management edits the team; anyone else only opens their own profile (name, phone and password): the e-mail of the
+	// login, the role, the sectors, the number and the working hours stay with the management
+	const manager = isManager(loggedInUser);
 
 	const [user, setUser] = useState(initialState);
 	const [selectedQueueIds, setSelectedQueueIds] = useState([]);
@@ -124,9 +134,10 @@ const UserModal = ({ open, onClose, userId }) => {
 			if (!userId) return;
 			try {
 				const { data } = await api.get(`/users/${userId}`);
-				setUser(prevState => {
-					return { ...prevState, ...data };
-				});
+				// starts from a clean form: nothing of the person opened before stays behind; the password field starts empty (= keep it)
+				const loaded = {};
+				FORM_FIELDS.forEach((f) => { if (data[f] !== undefined && data[f] !== null) loaded[f] = data[f]; });
+				setUser({ ...initialState, ...loaded, password: "" });
 				const userQueueIds = data.queues?.map(queue => queue.id);
 				setSelectedQueueIds(userQueueIds);
 				setWhatsappId(data.whatsappId ? data.whatsappId : '');
@@ -173,7 +184,10 @@ const UserModal = ({ open, onClose, userId }) => {
 	};
 
 	const handleSaveUser = async values => {
-		const userData = { ...values, whatsappId, queueIds: selectedQueueIds };
+		const userData = { whatsappId, queueIds: selectedQueueIds };
+		FORM_FIELDS.forEach((f) => { if (values[f] !== undefined) userData[f] = values[f]; });
+		// an empty password when editing means "keep the current one": it is not sent
+		if (!String(userData.password || "").trim()) delete userData.password;
 		try {
 			let savedId = userId;
 			if (userId) {
@@ -183,13 +197,14 @@ const UserModal = ({ open, onClose, userId }) => {
 				savedId = data && data.id;
 			}
 			toast.success(i18n.t("userModal.success"));
-			if (savedId && WITH_HOURS.includes(values.role)) {
+			if (savedId && manager && WITH_HOURS.includes(values.role)) {
 				try { await saveWork(savedId); } catch (e) { toast.warn("O usuário foi salvo, mas o horário de trabalho não. Defina em Gestão Comercial > Configuração."); }
 			}
+			handleClose();
 		} catch (err) {
+			// the window stays open with what was typed, so the person can fix it and save again
 			toastError(err);
 		}
-		handleClose();
 	};
 
 	return (
@@ -209,12 +224,10 @@ const UserModal = ({ open, onClose, userId }) => {
 				<Formik
 					initialValues={user}
 					enableReinitialize={true}
-					validationSchema={UserSchema}
-					onSubmit={(values, actions) => {
-						setTimeout(() => {
-							handleSaveUser(values);
-							actions.setSubmitting(false);
-						}, 400);
+					validationSchema={userSchema(!userId)}
+					onSubmit={async (values, actions) => {
+						await handleSaveUser(values);
+						actions.setSubmitting(false);
 					}}
 				>
 					{({ touched, errors, isSubmitting, values, setFieldValue }) => (
@@ -236,8 +249,9 @@ const UserModal = ({ open, onClose, userId }) => {
 										as={TextField}
 										label={i18n.t("userModal.form.email")}
 										name="email"
+										disabled={!manager}
 										error={touched.email && Boolean(errors.email)}
-										helperText={touched.email && errors.email}
+										helperText={(touched.email && errors.email) || (!manager ? "O e-mail de acesso é alterado pela gestão." : "")}
 										variant="outlined"
 										margin="dense"
 										fullWidth
@@ -282,7 +296,8 @@ const UserModal = ({ open, onClose, userId }) => {
 										margin="dense"
 										label={i18n.t("userModal.form.password")}
 										error={touched.password && Boolean(errors.password)}
-										helperText={touched.password && errors.password}
+										helperText={(touched.password && errors.password) || (userId ? "Deixe em branco para manter a senha atual." : "Pelo menos 8 caracteres.")}
+										autoComplete="new-password"
 										type={showPassword ? 'text' : 'password'}
 										InputProps={{
 										endAdornment: (
@@ -352,7 +367,7 @@ const UserModal = ({ open, onClose, userId }) => {
 										</FormControl>
 									)}
 								/>
-								{WITH_HOURS.includes(values.role) && (
+								{manager && WITH_HOURS.includes(values.role) && (
 									<div style={{ marginTop: 14 }}>
 										<div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
 											<div style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>Horário de trabalho</div>

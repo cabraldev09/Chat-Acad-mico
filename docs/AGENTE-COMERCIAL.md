@@ -125,6 +125,36 @@ O tutor que inicia ou conclui um aluno sem tutor o assume (a conversa fica abert
 ## Medir (aba Resultados da Central)
 Além do funil: quantos leads **entraram** no sistema (evento `lead_created`, por qualquer porta) contra os atendidos pelo agente; funil **por polo** e **por origem** (pelo lead, cada lead uma vez por etapa); **motivo de perda** estruturado na coluna "Sem interesse" (preço, outra instituição, horário, desistência) a partir da objeção que apareceu (`Ports.lostReasonOf`); tempo e pendências de resposta da equipe só das conversas **deste** agente; e "conversas atendidas" por agente.
 
+## Atendimento consultivo: o curso é o que a pessoa pediu (o que o sistema garante)
+
+- **Um só jeito de reconhecer o curso** (`CommercialServices/CourseMatch.ts`), usado pelo turno (`Detect.detectFromText`), pela busca do modelo (`Academic.findCourse`) e pela checagem de "não ofertado":
+  - pelo nome, por apelido ou sigla (RH, ADS, adm, ed. física, contábeis, gestão de pessoas), por parte do nome ("recursos humanos" para "Cst Em Gestão De Recursos Humanos") e com erro de digitação;
+  - sem exigir "curso de" e em áudio longo transcrito;
+  - cursos repetidos no cadastro ("Educação Física" e "… (Área Básica De Ingresso)", "Cst Em Criminologia" e "Criminologia") contam como um curso só; vale o de nome simples;
+  - os cursos "2.0" ("Educação Física 2.0", "Administração 2.0") são outros cursos: só são escolhidos quando a pessoa diz "2.0", e pedir um deles com o outro anotado é troca de curso;
+- **Graduação 2.0** (`CommercialServices/Graduacao2.ts`): segunda graduação com percurso mais curto, só para quem já tem uma formação específica (tabela institucional; o consultor confirma pelo diploma). Vale para os cursos "2.0" do cadastro:
+
+  | Curso 2.0 | Quem pode | Semestres |
+  |---|---|---|
+  | Administração | Ciências Contábeis, Gestão da TI ou tecnólogo da área de negócios | 4 |
+  | Ciências Contábeis | Administração, Administração Pública, Ciências Econômicas ou Atuariais | 2 |
+  | Ciências Econômicas | Administração ou Administração Pública | 4 |
+  | Educação Física (bacharelado) | Licenciatura em Educação Física | 4 |
+  | Engenharia Ambiental | Engenharia Civil (5); Elétrica, Produção, Mecânica ou Gestão Ambiental (6) | 5 ou 6 |
+  | Engenharia de Produção | Engenharia Civil, Elétrica ou Mecânica (5); Ambiental ou Gestão da Produção Industrial (6) | 5 ou 6 |
+
+  - pedido um curso 2.0 sem a formação conhecida: a IA diz para quem é e pergunta "Você já tem essa formação?"; "não" leva ao curso regular;
+  - formação que não dá acesso: a IA diz isso e indica a segunda graduação regular, com análise do histórico;
+  - quem tem a formação e pede o curso regular ouve, uma vez, que pode fazer pela Graduação 2.0; "sim" troca o curso para o 2.0;
+  - as licenciaturas 2.0 e o percurso de Engenharia Civil para bombeiros não estão no cadastro de cursos e não são oferecidos; a tabela é atualizada aqui quando a instituição mudar.
+  - uma palavra que serve para muitos cursos ("gestão", "segurança") não decide nada; uma parte que serve para até quatro ("letras") vira uma escolha para a pessoa.
+- **Outros nomes e siglas do curso:** em Cursos e materiais, dentro do curso, a gestão escreve como as pessoas chamam o curso (`Courses.aliases`). A IA passa a reconhecê-lo por esses nomes.
+- **Um só curso do lead:** o nome e o código do curso andam juntos. O nome reconhecido na conversa é o mais novo e decide; o código antigo do cadastro não é posto ao lado dele (`Slots.hydrate`), e uma busca com código e nome de cursos diferentes fica com o nome (`Academic.findCourse`).
+- **Outro curso pedido:** a IA troca na hora, responde só sobre o curso novo e não cita o anterior. Vale também quando a pessoa conta o que já estudou e diz o que quer agora ("já fiz biomedicina, quero saber de educação física").
+- **Curso não ofertado:** avisa, cita até três da mesma área e pergunta qual interessa. O curso anterior não é empurrado de volta. Se o modelo negar um curso que o cadastro tem, a resposta é trocada.
+- **Pergunta no meio do roteiro:** a mensagem é só a resposta, em até dois balões, com uma única pergunta no fim (`Rules.oneQuestion`, `Blocks.splitIntoBlocks(texto, 3)`). O que o roteiro ainda deve (aproveitamento de estudos, formato, grade, tutoria) fica para a mensagem seguinte, um passo por vez.
+- **Quem volta depois de um tempo e só cumprimenta:** a IA lembra o curso da última conversa e pergunta "Você continua com interesse nesse curso ou quer ver outro?". O roteiro só continua depois da resposta.
+
 ## Ordem do processo (o que o sistema garante, sem depender do modelo)
 
 1. Curso, depois primeira graduação ou não, depois cidade. Nunca pergunta de novo o que já foi dito; cidade sem polo é aceita.

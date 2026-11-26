@@ -1,4 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
+import { useTutors } from "../../components/TutorPicker";
 import { useHistory, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import { ChevronDown, Search, Trash2 } from "lucide-react";
@@ -70,6 +73,12 @@ const UploadForm = ({ onCreated }) => {
   const [confirmed, setConfirmed] = useState(false);
   const [students, setStudents] = useState([]);
   const [studentId, setStudentId] = useState("");
+  // a student without a tutor: the management sets one while sending the analysis (the tutor is told and follows the student)
+  const { user } = useContext(AuthContext);
+  const chosen = students.find((s) => String(s.id) === String(studentId)) || null;
+  const needsTutor = !!user && isManager(user) && !!chosen && !chosen.responsibleUserId;
+  const tutors = useTutors(chosen && chosen.poloId, needsTutor);
+  const [tutorPick, setTutorPick] = useState("");
   useEffect(() => { api.get("/students").then(({ data }) => setStudents(data)).catch(() => setStudents([])); }, []);
 
   const choose = (candidate) => {
@@ -87,6 +96,7 @@ const UploadForm = ({ onCreated }) => {
       const form = new FormData();
       form.append("file", file);
       if (studentId) form.append("studentId", studentId);
+      if (needsTutor && tutorPick) form.append("tutorId", tutorPick);
       const { data } = await api.post("/analysis/academic", form);
       toast.success(data.reused ? "Este documento já estava analisado: nada mudou." : "Análise pronta.");
       onCreated(data);
@@ -127,7 +137,20 @@ const UploadForm = ({ onCreated }) => {
             </select>
             <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
           </span>
-          <span className="mt-1 block text-xs font-normal text-slate-500">Ligando a um aluno, a análise entra no histórico dele e aparece no Portal do Aluno.</span>
+          <span className="mt-1 block text-xs font-normal text-slate-500">Ligando a um aluno, a análise entra no registro dele, aparece no Portal do Aluno e o tutor dele é avisado.</span>
+        </label>
+      )}
+      {needsTutor && (
+        <label className="block text-xs font-semibold text-slate-600">Tutor do aluno (opcional)
+          <span className="relative mt-1.5 block">
+            <select value={tutorPick} onChange={(e) => setTutorPick(e.target.value)} className={selectClass} disabled={!tutors}>
+              <option value="">{tutors ? "Deixar sem tutor por enquanto" : "Carregando os tutores..."}</option>
+              <option value="auto">Escolher pelo rodízio da tutoria</option>
+              {(tutors || []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+          </span>
+          <span className="mt-1 block text-xs font-normal text-slate-500">Este aluno ainda não tem tutor. O escolhido recebe o aviso da análise e passa a acompanhar o aluno.</span>
         </label>
       )}
       <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm leading-5 text-slate-700">

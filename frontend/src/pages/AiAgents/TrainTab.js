@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { EmptyState, Section, Segmented } from "../../components/ui";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 // THE TRAINER, in one simple screen: on the left "Ensinar" (a rule, how I answer a customer, a conversation or a file, or a chat with the agent), on the
 // right "Testar agora" (the same customer message answered again after every change), and below "O que o agente aprendeu", where each lesson can be
@@ -66,7 +67,7 @@ const Learned = ({ agentId, version, onChanged }) => {
     try { await api.put(`/ai-rules/${r.id}`, body); load(); onChanged && onChanged(); } catch (e) { toastError(e); }
   };
   const remove = async (r) => {
-    if (!window.confirm("Apagar este ensinamento? O agente deixa de segui-lo.")) return;
+    if (!(await confirmDialog({ title: "Apagar este ensinamento?", message: "O agente deixa de segui-lo.", confirmText: "Apagar", tone: "danger" }))) return;
     try { await api.delete(`/ai-rules/${r.id}`); load(); onChanged && onChanged(); } catch (e) { toastError(e); }
   };
   const count = (k) => (rules || []).filter((r) => (k === "todas" ? true : k === "desligadas" ? !r.active : r.kind === k)).length;

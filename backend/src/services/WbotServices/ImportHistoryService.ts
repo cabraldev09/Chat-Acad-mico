@@ -28,12 +28,27 @@ const MEDIA_KIND: Record<string, string> = {
 
 export const isHistoryRunning = (whatsappId: number): boolean => running.has(whatsappId);
 
+// On a person's own number (QR Code), the chats with activity in the last days come into "Atendendo" with that person, as on the phone;
+// older ones stay as history (in "Todas" and in the search). Everything copied stays HISTORY for the numbers of the system (dashboards,
+// CRM, response times), whatever list it shows in.
+export const RECENT_DAYS = Number(process.env.WHATSAPP_IMPORT_RECENT_DAYS || 30);
+export const placeOf = (
+  chat: { archived?: boolean; isGroup?: boolean },
+  ownerId: number | null | undefined,
+  lastAt: Date,
+  now: Date = new Date()
+): { status: "open" | "closed"; userId: number | null } => {
+  const recent = now.getTime() - lastAt.getTime() <= RECENT_DAYS * 86400000;
+  if (ownerId && recent && !chat.archived) return { status: "open", userId: ownerId };
+  return { status: "closed", userId: ownerId || null };
+};
+
 // Copies the conversations that already exist on the phone into the system as HISTORY: readable and
 // searchable, but never counted in the dashboards or the CRM, and silent (no automations, no alerts).
 // When the person writes again, the conversation comes back to life by itself.
 export const importHistory = async (
   connection: Whatsapp,
-  options: { perChat?: number; includeGroups?: boolean } = {},
+  options: { perChat?: number; includeGroups?: boolean; waitForSync?: boolean; onlyChatIds?: string[] } = {},
   onProgress?: (done: number, total: number) => void
 ): Promise<HistoryReport> => {
   if (!whatsappProvider.importChats) throw new AppError("ERR_WAPP_NOT_INITIALIZED");
@@ -51,19 +66,29 @@ export const importHistory = async (
   try {
     await whatsappProvider.importChats(
       connection.id,
-      { perChat: Math.min(Math.max(Number(options.perChat) || 60, 10), 300), includeGroups: options.includeGroups !== false },
+      {
+        // one chat asked by name may go further back (scrolling to its start); the copy of the whole number stays light
+        perChat: Math.min(Math.max(Number(options.perChat) || 100, 10), options.onlyChatIds ? 3000 : 300),
+        includeGroups: options.includeGroups !== false,
+        waitForSync: !!options.waitForSync,
+        onlyChatIds: options.onlyChatIds
+      },
       async chat => {
         const contact = await CreateOrUpdateContactService({
           name: chat.contact.name,
           number: chat.contact.number,
           lid: chat.contact.lid,
-          isGroup: chat.isGroup
+          isGroup: chat.isGroup,
+          community: chat.community
         });
 
+        // a group can come with no message copied (it is part of the number all the same): its time is the chat's
         const times = chat.messages.map(m => m.timestamp * 1000).sort((a, b) => a - b);
-        const first = new Date(times[0]);
-        const last = new Date(times[times.length - 1]);
-        const latest = [...chat.messages].sort((a, b) => b.timestamp - a.timestamp)[0];
+        const chatTime = chat.timestamp ? chat.timestamp * 1000 : Date.now();
+        const first = new Date(times.length ? times[0] : chatTime);
+        const last = new Date(times.length ? Math.max(times[times.length - 1], chatTime) : chatTime);
+        const latest = [...chat.messages].sort((a, b) => b.timestamp - a.timestamp)[0] || null;
+        const place = placeOf(chat, connection.ownerId, last);
 
         let ticket = await Ticket.findOne({
           where: { contactId: contact.id, whatsappId: connection.id },
@@ -74,19 +99,21 @@ export const importHistory = async (
           ticket = await Ticket.create({
             contactId: contact.id,
             whatsappId: connection.id,
-            status: "closed",
+            status: place.status,
             isGroup: chat.isGroup,
-            unreadMessages: 0,
+            // the phone's unread count, shown as it is (copied history never rings)
+            unreadMessages: place.status === "open" ? chat.unreadCount || 0 : 0,
             isHistorical: true,
-            userId: connection.ownerId || null,
-            lastMessage: latest.body.slice(0, 1000),
-            lastMessageId: latest.id,
-            lastMessageFromMe: !!latest.fromMe,
-            lastMessageAck: latest.ack || 0,
+            userId: place.userId,
+            lastMessage: latest ? latest.body.slice(0, 1000) : null,
+            lastMessageId: latest ? latest.id : null,
+            lastMessageFromMe: latest ? !!latest.fromMe : false,
+            lastMessageAck: latest ? latest.ack || 0 : 0,
             lastMessageType: "chat",
             lastMessageAt: last,
-            lastMessageAuthor: chat.isGroup && !latest.fromMe && latest.author ? latest.author.name : null,
-            closedAt: last,
+            lastMessageAuthor: latest && chat.isGroup && !latest.fromMe && latest.author ? latest.author.name : null,
+            waChatTimestamp: last,
+            closedAt: place.status === "closed" ? last : null,
             createdAt: first
           } as any);
           await Ticket.update({ updatedAt: last }, { where: { id: ticket.id }, silent: true } as any);
@@ -110,7 +137,7 @@ export const importHistory = async (
           }
         }
 
-        await Message.bulkCreate(
+        if (chat.messages.length) await Message.bulkCreate(
           chat.messages.map(m => ({
             id: m.id,
             ticketId: ticket.id,
@@ -137,7 +164,7 @@ export const importHistory = async (
         }
         report.messages += chat.messages.length;
         report.chats += 1;
-        if (!isNew && ticket.isHistorical) {
+        if (!isNew && ticket.isHistorical && latest) {
           await Ticket.update(
             {
               lastMessage: latest.body.slice(0, 1000),
@@ -146,7 +173,9 @@ export const importHistory = async (
               lastMessageAck: latest.ack || 0,
               lastMessageType: "chat",
               lastMessageAt: last,
-              lastMessageAuthor: chat.isGroup && !latest.fromMe && latest.author ? latest.author.name : null
+              lastMessageAuthor: chat.isGroup && !latest.fromMe && latest.author ? latest.author.name : null,
+              // a copy run again places it as the phone has it now (recent: in Atendendo with its owner)
+              ...(ticket.status !== "open" && place.status === "open" ? { status: "open", userId: place.userId, closedAt: null } : {})
             } as any,
             { where: { id: ticket.id }, silent: true } as any
           );
@@ -154,7 +183,8 @@ export const importHistory = async (
       },
       onProgress
     );
-    await connection.update({ historyImportedAt: new Date() });
+    // a copy of some chats only (a contact opened by hand) does not mark the number as copied
+    if (!options.onlyChatIds) await connection.update({ historyImportedAt: new Date() });
     return report;
   } catch (err) {
     logger.error({ info: "History import failed", err: String(err) });
@@ -168,11 +198,40 @@ export const importHistory = async (
 export const startHistoryImport = (
   connection: Whatsapp,
   userId: number | null,
-  options: { perChat?: number; includeGroups?: boolean } = {}
-): void => {
+  options: { perChat?: number; includeGroups?: boolean; waitForSync?: boolean } = {}
+): Promise<HistoryReport | null> => {
   const io = getIO();
   const base = { userId, whatsappId: connection.id, connection: connection.name };
-  importHistory(connection, options, (done, total) => io.emit("historyImport", { ...base, finished: false, done, total }))
-    .then(report => io.emit("historyImport", { ...base, finished: true, ok: true, ...report }))
-    .catch(err => io.emit("historyImport", { ...base, finished: true, ok: false, message: err?.message || "ERR_IMPORT" }));
+  io.emit("historyImport", { ...base, finished: false, done: 0, total: 0 });
+  return importHistory(connection, options, (done, total) => io.emit("historyImport", { ...base, finished: false, done, total }))
+    .then(report => {
+      io.emit("historyImport", { ...base, finished: true, ok: true, ...report });
+      return report;
+    })
+    .catch(err => {
+      io.emit("historyImport", { ...base, finished: true, ok: false, message: err?.message || "ERR_IMPORT" });
+      return null;
+    });
+};
+
+// The copy that starts by itself when a number connects: it waits for WhatsApp Web to finish receiving the chats and tries again (up to 3
+// times, waiting longer each time) when it fails or finds nothing. A number already copied is never copied again here.
+export const autoImportHistory = async (connection: Whatsapp, waits: number[] = [60000, 180000, 600000]): Promise<HistoryReport | null> => {
+  for (let attempt = 0; attempt <= waits.length; attempt += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const fresh = await Whatsapp.findByPk(connection.id);
+    if (!fresh || fresh.historyImportedAt || fresh.status !== "CONNECTED") return null;
+    if (running.has(fresh.id)) return null;
+    // eslint-disable-next-line no-await-in-loop
+    const report = await startHistoryImport(fresh, fresh.ownerId || null, { waitForSync: true });
+    if (report && report.chats > 0) return report;
+    // nothing came (the phone had not sent the chats yet) or it failed: the number is not marked as copied, so it is tried again
+    if (report && report.chats === 0) await fresh.update({ historyImportedAt: null } as any);
+    if (attempt < waits.length) {
+      logger.warn(`History: copy of ${fresh.name} ${report ? "found no chat" : "failed"}; trying again in ${Math.round(waits[attempt] / 1000)}s`);
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(resolve => setTimeout(resolve, waits[attempt]));
+    }
+  }
+  return null;
 };

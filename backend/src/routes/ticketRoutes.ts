@@ -64,6 +64,6 @@ ticketRoutes.post("/tickets/:ticketId/typing", isAuth, canWriteTicket, TicketCon
 
 ticketRoutes.put("/tickets/:ticketId", isAuth, canWriteTicket, TicketController.update);
 
-ticketRoutes.delete("/tickets/:ticketId", isAuth, isAdmin, TicketController.remove);
+ticketRoutes.delete("/tickets/:ticketId", isAuth, isAdmin, canWriteTicket, TicketController.remove);
 
 export default ticketRoutes;

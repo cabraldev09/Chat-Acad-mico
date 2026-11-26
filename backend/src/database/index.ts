@@ -82,6 +82,7 @@ import LeadReminderLog from "../models/LeadReminderLog";
 import LeadDocument from "../models/LeadDocument";
 import EnrollmentForm from "../models/EnrollmentForm";
 import TutoringIssue from "../models/TutoringIssue";
+import SendRelease from "../models/SendRelease";
 import NpsSurvey from "../models/NpsSurvey";
 import RetentionMessage from "../models/RetentionMessage";
 import AffiliateBonus from "../models/AffiliateBonus";
@@ -105,9 +106,10 @@ import CopilotSnapshot from "../models/CopilotSnapshot";
 import AiBudgetReservation from "../models/AiBudgetReservation";
 import EnrollmentProof from "../models/EnrollmentProof";
 import GoalChange from "../models/GoalChange";
+import DataPurgeRun from "../models/DataPurgeRun";
 
 const models = [
-  CopilotRequest, CopilotProgress, CopilotSnapshot, OutboundDelivery, MetaWebhookEvent, Notification, PoloInstitution, InstitutionSetting, ConsultantReview, AiBudgetReservation, EnrollmentProof, GoalChange,
+  CopilotRequest, CopilotProgress, CopilotSnapshot, OutboundDelivery, MetaWebhookEvent, Notification, PoloInstitution, InstitutionSetting, ConsultantReview, AiBudgetReservation, EnrollmentProof, GoalChange, DataPurgeRun,
   WebhookDelivery,
   User,
   Contact,
@@ -190,6 +192,7 @@ const models = [
   LeadDocument,
   EnrollmentForm,
   TutoringIssue,
+  SendRelease,
   NpsSurvey,
   RetentionMessage,
   AffiliateBonus

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { noticeDialog } from "../../components/ConfirmDialog";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import { makeStyles } from "@material-ui/core/styles";
@@ -90,10 +91,9 @@ const useStyles = makeStyles(() => ({
   input: {
     width: "100%", boxSizing: "border-box", height: 48, padding: "0 14px", borderRadius: 12, border: "1px solid #CBD5E1", background: "#fff", color: "#0F172A",
     fontFamily: "inherit", fontSize: 16, outline: "none", transition: "border-color .15s, box-shadow .15s",
-    "&:focus": { borderColor: "#0a5ba8", boxShadow: "0 0 0 3px rgba(10,91,168,.15)" },
     "&:disabled": { background: "#F1F5F9", color: "#475569" },
   },
-  inputBad: { borderColor: "#DC2626", "&:focus": { borderColor: "#DC2626", boxShadow: "0 0 0 3px rgba(220,38,38,.12)" } },
+  inputBad: { borderColor: "#DC2626", "&:focus": { borderColor: "#DC2626" } },
   problem: { display: "flex", gap: 6, alignItems: "flex-start", marginTop: 6, fontSize: 12.5, color: "#B91C1C" },
   slots: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14, "@media (max-width: 480px)": { gridTemplateColumns: "1fr" } },
   slot: { border: "1.5px dashed #CBD5E1", borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 10, minHeight: 132, background: "#F8FAFC" },
@@ -213,6 +213,9 @@ const EnrollmentForm = () => {
       setStatus("saved");
       setSavedAt(new Date());
     } catch (err) {
+      // a link that expired or no longer exists is not a connection problem: say what to do
+      const code = err && err.response && err.response.status;
+      if (code === 404 || code === 410) { setView(null); setFailure(errorText(err)); return; }
       pending.current = { ...patch, ...pending.current };
       setStatus("error");
     }
@@ -246,7 +249,7 @@ const EnrollmentForm = () => {
       setSavedAt(new Date());
       setStatus("saved");
     } catch (err) {
-      window.alert(errorText(err));
+      noticeDialog({ title: "Não foi possível concluir", message: errorText(err) });
     }
     setUploading((u) => ({ ...u, [kind]: false }));
   };
@@ -255,7 +258,7 @@ const EnrollmentForm = () => {
       const { data: v } = await api.delete(`/ficha-publica/${token}/files/${kind}`);
       apply(v);
     } catch (err) {
-      window.alert(errorText(err));
+      noticeDialog({ title: "Não foi possível concluir", message: errorText(err) });
     }
   };
 
@@ -269,7 +272,7 @@ const EnrollmentForm = () => {
       setEditing(false);
       window.scrollTo(0, 0);
     } catch (err) {
-      window.alert(errorText(err));
+      noticeDialog({ title: "Não foi possível concluir", message: errorText(err) });
     }
     setSending(false);
   };

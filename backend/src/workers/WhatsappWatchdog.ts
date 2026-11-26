@@ -12,11 +12,15 @@ import { alertAdmins } from "./CloudHealth";
 // minutes for what slipped through (a process that lost its timers, a session that gave up long ago while its login is still saved):
 //   - opening / timeout for more than 8 minutes with nothing in progress → open it again;
 //   - connected in the database but without a live session in this process → open it again;
-//   - disconnected for more than 30 minutes with a saved login → one more try (never faster: hammering WhatsApp is a ban signal).
+//   - disconnected for more than 30 minutes with a saved login → one more try (never faster: hammering WhatsApp is a ban signal);
+//   - after 3 tries that did not bring it back, once every 6 hours (and an alert to the administrators).
 const STUCK_MIN = 8;
 const DEAD_MIN = 30;
 const lastTry = new Map<number, number>();
 const failedReopens = new Map<number, number>();
+// after 3 reopenings that did not bring a number back, only one more try every 6 hours: a number that never connects (a QR Code nobody
+// read) used to be reopened every 30 minutes forever, 6 browsers each time
+const SLOW_MS = Number(process.env.WHATSAPP_WATCHDOG_SLOW_MS ?? 6 * 3600000);
 // the sessions are opened one by one when the server starts: the watchdog waits for them
 const bootAt = Date.now();
 const GRACE_MS = Number(process.env.WHATSAPP_WATCHDOG_GRACE_MS ?? 5 * 60000);
@@ -45,11 +49,14 @@ const tick = async (): Promise<void> => {
       const recently = now - (lastTry.get(w.id) || 0) < 10 * 60000;
       let why = "";
       if ((w.status === "OPENING" || w.status === "TIMEOUT") && minutes > STUCK_MIN && !watch.initializing) why = `${w.status === "TIMEOUT" ? "sem resposta" : "abrindo"} há ${Math.round(minutes)} min`;
-      else if (w.status === "CONNECTED" && !watch.live && minutes > 5) why = "conectada no banco, mas sem sessão ativa neste servidor";
+      else if (w.status === "CONNECTED" && !watch.live && !watch.inGrace && minutes > 5) why = "conectada no banco, mas sem sessão ativa neste servidor";
       else if (w.status === "DISCONNECTED" && minutes > DEAD_MIN && !watch.initializing && hasLogin(w.id) && now - (lastTry.get(w.id) || 0) > DEAD_MIN * 60000) why = `desconectada há ${Math.round(minutes)} min com o login salvo`;
       // a number that came back clears the count of failed reopenings
       if (w.status === "CONNECTED" && watch.live) failedReopens.delete(w.id);
+      // a live session (registered and answering) or one in its first sync is never reopened here: that would cut the sync it is doing
+      if (watch.live && (watch.inGrace || w.status === "OPENING" || w.status === "TIMEOUT")) continue;
       if (!why || (recently && w.status !== "DISCONNECTED")) continue;
+      if ((failedReopens.get(w.id) || 0) >= 3 && now - (lastTry.get(w.id) || 0) < SLOW_MS) continue;
       lastTry.set(w.id, now);
       logger.warn(`WhatsApp watchdog: ${w.name} ${why}. Reabrindo.`);
       // after 3 reopenings that did not bring it back: a notice that stays on the connection and an e-mail to the administrators

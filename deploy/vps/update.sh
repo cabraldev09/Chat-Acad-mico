@@ -43,7 +43,20 @@ if [ "${WANT_SHA:-}" != "" ] && [ "$(docker exec chat-academico-api-1 printenv G
   exit 0
 fi
 # Run the target revision's check gate in the existing Node container.
-git show "$REMOTE:deploy/vps/check-ci.js" | docker compose -f deploy/vps/docker-compose.yml --env-file deploy/vps/.env exec -T -e GH_TOKEN="${GH_TOKEN:-}" api node - "$REMOTE"
+# A sick API container (no free processes: "pthread_create", "Cannot fork") used to abort or hang here while holding the lock, so every
+# later update gave up after 15 minutes. Now the check has a time limit, and when the container cannot run it, a throwaway container of
+# the same image runs it instead (a refusal of the check itself, exit 1, still stops the update).
+CHECK=$(git show "$REMOTE:deploy/vps/check-ci.js")
+set +e
+printf '%s\n' "$CHECK" | timeout 120 docker compose -f deploy/vps/docker-compose.yml --env-file deploy/vps/.env exec -T -e GH_TOKEN="${GH_TOKEN:-}" api node - "$REMOTE"
+rc=$?
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+  log "a conferência não rodou dentro da API (código $rc): rodando num contêiner novo da mesma imagem"
+  printf '%s\n' "$CHECK" | timeout 120 docker run --rm -i -e GH_TOKEN="${GH_TOKEN:-}" --entrypoint node chat-academico-api:vps - "$REMOTE"
+  rc=$?
+fi
+set -e
+[ "$rc" -eq 0 ] || exit "$rc"
 log "atualizando ${LOCAL:0:7} -> ${REMOTE:0:7}"
 
 # 1) a migration in the new commit: a fresh dump of the database first (a failure is logged, and the update goes on only when a recent dump exists)

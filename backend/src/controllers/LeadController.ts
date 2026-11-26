@@ -7,7 +7,7 @@ import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
 import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes, standardWeek } from "../helpers/BusinessTime";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
-import { withLeadScope, withOnboardingScope, isAdminReq, reqRole } from "../middleware/scope";
+import { withLeadScope, withOnboardingScope, isAdminReq, reqRole, crmPolosOf, poloSql } from "../middleware/scope";
 import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
 import { Op, literal } from "sequelize";
 import { randomBytes } from "crypto";
@@ -85,6 +85,14 @@ const buildWhere = (q: any) => {
       { email: { [Op.iLike]: s } },
       ...(digits.length >= 4 ? [{ phone: { [Op.like]: `%${digits}%` } }] : [])
     ];
+  }
+  // the leads that came in a period (the "Ver leads" of the Painel do CRM): from/to are days of the company, as in the panel's numbers
+  const isDay = (v: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+  if (isDay(q.from) || isDay(q.to)) {
+    where.createdAt = {
+      ...(isDay(q.from) ? { [Op.gte]: dayBounds(String(q.from)).start } : {}),
+      ...(isDay(q.to) ? { [Op.lte]: dayBounds(String(q.to)).end } : {})
+    };
   }
   if (q.followUp === "overdue") where.nextFollowUpAt = { [Op.lt]: new Date() };
   if (q.followUp === "today") {
@@ -167,6 +175,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const allowed: Record<string, any> = {};
   [...FIELDS, "shift", "channel", "tagIds", "stageId"].forEach(f => { if (b[f] !== undefined) allowed[f] = b[f]; });
   if (isAdminReq(req) && b.affiliateId) allowed.affiliateId = b.affiliateId;
+  // a non-manager puts a lead only in their own name: they cannot create it for (or hand it to) another person
+  if (!isManagerRole(reqRole(req)) && b.ownerId !== undefined && b.ownerId !== null && Number(b.ownerId) !== uid(req)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
   const { lead, created } = await upsertLead(
     {
       ...allowed,
@@ -200,6 +212,10 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (patch.email !== undefined) patch.email = normalizeEmail(patch.email);
   if (patch.name === null) throw new AppError("ERR_FIELD_REQUIRED_name");
 
+  // only the management reassigns a lead to someone else; a non-manager may keep it with themselves, not hand it off
+  if (patch.ownerId !== undefined && !isManagerRole(reqRole(req)) && Number(patch.ownerId) !== uid(req)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
   const ownerChanged = patch.ownerId !== undefined && patch.ownerId !== lead.ownerId;
   const previousOwner = lead.ownerId;
   const same = (a: any, b: any): boolean => String(a ?? "").trim() === String(b ?? "").trim();
@@ -283,6 +299,16 @@ export const setStage = async (req: Request, res: Response): Promise<Response> =
     const current = await Lead.findByPk(req.params.id, { attributes: ["id", "enrolledAt"] });
     if (current && !current.enrolledAt && !(req.body.skipEnroll === true && isManagerRole(roleOf(req.user)))) {
       throw new AppError("ERR_ENROLL_REQUIRED", 409);
+    }
+  }
+  // an enrolled student taken back to an open column: the enrollment is undone (asked first; it used to leave the lead in the open funnel
+  // still saying "Matrícula confirmada", with no way to confirm it again)
+  if (target && target.type === "open") {
+    const current = await Lead.findByPk(req.params.id);
+    if (current && current.enrolledAt) {
+      if (req.body.undoEnroll !== true) throw new AppError("ERR_ENROLL_UNDO_CONFIRM", 409);
+      const { undoEnrollment } = await import("../services/CrmServices/EnrollLead");
+      await undoEnrollment(current, uid(req));
     }
   }
   try {
@@ -429,13 +455,18 @@ export const removeTask = async (req: Request, res: Response): Promise<Response>
 export const releaseUnreachable = async (_req: Request, res: Response): Promise<Response> => res.json(await runTaskSweep());
 
 // the filter of the list: overdue (due already), today (still to come today), upcoming (after today), open (all not done), done
-const taskWhere = (req: Request, status: string): any => {
+const taskWhere = async (req: Request, status: string): Promise<any> => {
   const where: any = {};
   const { scope = "mine" } = req.query as any;
   if (scope === "mine" || !isAdminReq(req)) where.userId = uid(req);
   // a manager looking at one person's tasks: the person is filtered here (a filter on the screen came after the 300-row limit)
   else if ((req.query as any).userId === "0") where.userId = { [Op.is]: null };
   else if (Number((req.query as any).userId)) where.userId = Number((req.query as any).userId);
+  // the coordination looking at the team: only the tasks of the leads of its polos (its own tasks stay whole)
+  if (scope !== "mine" && isAdminReq(req)) {
+    const polos = await crmPolosOf(req);
+    if (polos) where.leadId = { [Op.in]: literal(`(SELECT l.id FROM "Leads" l WHERE true ${poloSql(polos, 'l."poloId"')})`) };
+  }
   const now = new Date();
   const { end } = dayBounds();
   if (status === "done") where.doneAt = { [Op.not]: null };
@@ -450,7 +481,7 @@ const taskWhere = (req: Request, status: string): any => {
 export const tasksIndex = async (req: Request, res: Response): Promise<Response> => {
   const status = String((req.query as any).status || "open");
   const rows = await LeadTask.findAll({
-    where: taskWhere(req, status),
+    where: await taskWhere(req, status),
     include: [
       { model: Lead, as: "lead", attributes: ["id", "name", "phone", "stageId", "contactId"], include: [{ model: LeadStage, as: "stage", attributes: ["name", "color"] }] },
       { model: User, as: "user", attributes: ["id", "name"] },
@@ -465,7 +496,7 @@ export const tasksIndex = async (req: Request, res: Response): Promise<Response>
 
 // the numbers of the tabs, of the menu badge and of the strip on top, in one request
 export const tasksCounts = async (req: Request, res: Response): Promise<Response> => {
-  const [overdue, today, upcoming] = await Promise.all(["overdue", "today", "upcoming"].map(st => LeadTask.count({ where: taskWhere(req, st) })));
+  const [overdue, today, upcoming] = await Promise.all(["overdue", "today", "upcoming"].map(async st => LeadTask.count({ where: await taskWhere(req, st) })));
   return res.json({ overdue, today, upcoming, open: overdue + today + upcoming });
 };
 
@@ -515,6 +546,10 @@ export const openTicket = async (req: Request, res: Response): Promise<Response>
 
 // ------------------------------------------------------------------ import
 export const importLeads = async (req: Request, res: Response): Promise<Response> => {
+  // a non-manager imports leads only in their own name, never assigning the batch to someone else
+  if (!isManagerRole(reqRole(req)) && req.body.ownerId && Number(req.body.ownerId) !== uid(req)) {
+    throw new AppError("ERR_NO_PERMISSION", 403);
+  }
   const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 5000) : [];
   const courses = await Course.findAll();
   const byName = new Map(courses.map(c => [c.name.toLowerCase(), c.id]));
@@ -579,11 +614,14 @@ export const stages = {
 
 export const courses = makeCrud(Course, {
   event: "course",
-  fields: ["name", "level", "modality", "category", "semesters", "institutionId", "monthlyFee", "active"],
+  fields: ["name", "level", "modality", "category", "semesters", "institutionId", "monthlyFee", "active", "durationMonths", "installmentsTotal", "enrollmentFee", "certificationFee", "singlePayment"],
   required: ["name"],
   order: [["name", "ASC"]],
   beforeSave: data => {
     if (data.monthlyFee === "" || data.monthlyFee === undefined) data.monthlyFee = null;
+    // optional numbers of a course in installments: empty means "not set"
+    ["durationMonths", "installmentsTotal", "enrollmentFee", "certificationFee"].forEach(k => { if (data[k] === "") data[k] = null; });
+    if (data.semesters === "" || data.semesters === null) delete data.semesters;
     if (data.institutionId === "" || data.institutionId === 0) data.institutionId = null;
     return data;
   }
@@ -600,7 +638,21 @@ const yes = (v: any, fallback = true): boolean => {
 };
 
 
-// body: { items: [{ name, category, level, modality, monthlyFee, semesters, active, institution }], institutionId, dryRun }
+// a money cell of the sheet: "1.073,80", "1073,80", "R$ 99" or a number; empty is null, anything else NaN
+const moneyCell = (v: any): number | null => {
+  if (v === undefined || v === null || String(v).trim() === "") return null;
+  if (typeof v === "number") return v;
+  return Number(String(v).replace(/[^\d.,-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+};
+// a whole number cell (months, installments): empty is null
+const countCell = (v: any): number | null => {
+  if (v === undefined || v === null || String(v).trim() === "") return null;
+  const n = Number(String(v).replace(/[^\d]/g, ""));
+  return Number.isFinite(n) ? n : NaN;
+};
+
+// body: { items: [{ name, category, level, modality, monthlyFee, semesters, active, institution, durationMonths, installmentsTotal,
+//   enrollmentFee, certificationFee, singlePayment }], institutionId, dryRun }
 // Returns one row per line (new | update | error) so the wizard can show a preview.
 export const importCourses = async (req: Request, res: Response): Promise<Response> => {
   const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 3000) : [];
@@ -623,6 +675,14 @@ export const importCourses = async (req: Request, res: Response): Promise<Respon
     if (fee !== null && (Number.isNaN(fee) || fee < 0)) { rows.push({ line, status: "error", error: "Mensalidade inválida", name }); continue; }
     const semesters = it.semesters === undefined || it.semesters === "" ? 8 : Number(it.semesters);
     if (!Number.isInteger(semesters) || semesters < 1 || semesters > 20) { rows.push({ line, status: "error", error: "Semestres deve ser um número de 1 a 20", name }); continue; }
+    // courses in installments (post-graduate, technical, short courses)
+    const durationMonths = countCell(it.durationMonths);
+    if (durationMonths !== null && (!(durationMonths >= 1) || durationMonths > 120)) { rows.push({ line, status: "error", error: "Duração em meses deve ser de 1 a 120", name }); continue; }
+    const installmentsTotal = countCell(it.installmentsTotal);
+    if (installmentsTotal !== null && (!(installmentsTotal >= 1) || installmentsTotal > 120)) { rows.push({ line, status: "error", error: "Parcelas deve ser um número de 1 a 120", name }); continue; }
+    const enrollmentFee = moneyCell(it.enrollmentFee);
+    const certificationFee = moneyCell(it.certificationFee);
+    if ([enrollmentFee, certificationFee].some(v => v !== null && (Number.isNaN(v) || (v as number) < 0))) { rows.push({ line, status: "error", error: "Taxa inválida", name }); continue; }
     let institutionId = req.body.institutionId ? Number(req.body.institutionId) : null;
     if (it.institution) {
       const inst = institutions.find(x => x.name.toLowerCase() === String(it.institution).trim().toLowerCase());
@@ -631,7 +691,8 @@ export const importCourses = async (req: Request, res: Response): Promise<Respon
     }
     const data: any = {
       name, category: String(it.category || "").trim() || null, level: String(it.level || "").trim() || null,
-      modality: normalizeModality(it.modality), monthlyFee: fee, semesters, institutionId, active: yes(it.active)
+      modality: normalizeModality(it.modality), monthlyFee: fee, semesters, institutionId, active: yes(it.active),
+      durationMonths, installmentsTotal, enrollmentFee, certificationFee, singlePayment: yes(it.singlePayment, false)
     };
     // the same course of two universities is two courses (one line per university)
     // eslint-disable-next-line no-await-in-loop
@@ -656,7 +717,13 @@ export const loadDefaultCourses = async (req: Request, res: Response): Promise<R
 
 export const options = async (_req: Request, res: Response): Promise<Response> => {
   const { terms, defaultTerm } = await getEntryTerms();
-  return res.json({ ...CRM_OPTIONS, entryTerms: terms, defaultEntryTerm: defaultTerm });
+  // the periods of the polo goals in force: the team may record a student in one of them (a late enrollment of the previous semester)
+  // even when it is no longer offered to new leads (entryTerms, what the AI and the forms offer)
+  const { default: Goal } = await import("../models/Goal");
+  const { goalTerm } = await import("../helpers/EntryTerm");
+  const goals = await Goal.findAll({ where: { kind: "polo", status: "active" }, attributes: ["entryTerm", "title"] });
+  const goalTerms = [...new Set(goals.map(g => goalTerm(g)).filter(Boolean) as string[])].sort();
+  return res.json({ ...CRM_OPTIONS, entryTerms: terms, defaultEntryTerm: defaultTerm, goalTerms });
 };
 
 export const getSettings = async (_req: Request, res: Response): Promise<Response> =>
@@ -748,6 +815,8 @@ export const triageList = async (req: Request, res: Response): Promise<Response>
   const sequelize = (await import("../database")).default;
   const { QueryTypes } = await import("sequelize");
   const ownerId = ownerFilter(req);
+  // the coordination sees the new people of its polos only
+  const polos = poloSql(await crmPolosOf(req));
   const todayStart = dayBounds(undefined).start;
   const rows = (await sequelize.query(
     portable(`
@@ -756,7 +825,7 @@ export const triageList = async (req: Request, res: Response): Promise<Response>
     LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.contactId = l.contactId AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
     LEFT JOIN Users u ON u.id = COALESCE(t.userId, l.ownerId)
     WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL AND l.isHistorical = false
-      AND (:ownerId IS NULL OR COALESCE(t.userId, l.ownerId) = :ownerId)
+      AND (:ownerId IS NULL OR COALESCE(t.userId, l.ownerId) = :ownerId) ${polos}
     ORDER BY l.createdAt ASC LIMIT 200`),
     { replacements: { ownerId }, type: QueryTypes.SELECT }
   )) as any[];
@@ -819,7 +888,9 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   const courseId = req.query.courseId ? Number(req.query.courseId) : null;
   const rep = { from, to, ownerId, courseId, feeTag: FEE_PENDING_TAG.name, docsTag: DOCS_PENDING_LABEL.name };
   // "of a person" = the lead that person ANSWERS (owner of its open conversation, or of the lead while nobody has it): the same rule of the list of new leads
-  const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR COALESCE((SELECT t9.userId FROM Tickets t9 WHERE t9.contactId = l.contactId AND t9.status <> 'closed' ORDER BY t9.id DESC LIMIT 1), l.ownerId) = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
+  // the coordination: only the leads of its polos (the same rule of the lists, see middleware/scope)
+  const polos = poloSql(await crmPolosOf(req));
+  const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR COALESCE((SELECT t9.userId FROM Tickets t9 WHERE t9.contactId = l.contactId AND t9.status <> 'closed' ORDER BY t9.id DESC LIMIT 1), l.ownerId) = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId) ${polos}`;
   const lane = await affiliateStageId();
   const q = async (sql: string): Promise<any[]> =>
     (await sequelize.query(portable(sql), { replacements: rep, type: QueryTypes.SELECT })) as any[];
@@ -996,7 +1067,8 @@ export const enroll = async (req: Request, res: Response): Promise<Response> => 
       additional: req.body.additional === true,
       courseId: req.body.courseId ? Number(req.body.courseId) : null,
       courseName: req.body.courseName || null,
-      rgm: req.body.rgm || null
+      rgm: req.body.rgm || null,
+      entryTerm: req.body.entryTerm || null
     });
   // the print attached in the dialog becomes the proof of this enrollment (the first one, or the extra course)
   if (req.body.proofId && !result.repeated) {
@@ -1076,8 +1148,16 @@ export const onboardingAccessSave = async (req: Request, res: Response): Promise
 export const onboardingAccessSend = async (req: Request, res: Response): Promise<Response> => {
   const { lead, student } = await accessStudent(req);
   if (!student.academicEmail) throw new AppError("Informe primeiro o e-mail de acesso do aluno.", 400);
-  const ticket = lead.contactId ? await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } as any, order: [["id", "DESC"]] }) : null;
-  if (!ticket) throw new AppError("Este aluno não tem a conversa de ambientação aberta.", 400);
+  let ticket = lead.contactId ? await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } as any, order: [["id", "DESC"]] }) : null;
+  // the ambientação conversation was closed: it opens again with the person sending (the access is sent there, not lost)
+  if (!ticket && lead.contactId) {
+    const closed = await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding" } as any, order: [["id", "DESC"]] });
+    if (closed) {
+      await closed.update({ status: "open", userId: closed.userId || uid(req) });
+      ticket = closed;
+    }
+  }
+  if (!ticket) throw new AppError("ERR_ONBOARDING_NO_CONVERSATION", 400);
   const { issueToken } = await import("../analysis/Store");
   const token = await issueToken(student, student.activatedAt ? "reset" : "invite");
   const base = String(process.env.FRONTEND_URL || "").split(",")[0].trim().replace(/\/$/, "") || "http://localhost:3000";
@@ -1143,8 +1223,9 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
   if (!manager && !["tutor", "academico"].includes(role)) throw new AppError("ERR_NO_PERMISSION", 403);
   const { since: periodSince, until: periodUntil = Number.MAX_SAFE_INTEGER, label: periodLabel } = await periodStart(String(req.query.period || ""), req.query.from ? String(req.query.from) : undefined, req.query.to ? String(req.query.to) : undefined);
   const slaHours = Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24);
+  const polos = manager ? await crmPolosOf(req) : null;
   const rows = await Lead.findAll({
-    where: { onboardingStatus: { [Op.ne]: "none" }, enrolledAt: { [Op.ne]: null }, ...(manager ? {} : { onboardingTutorId: uid(req) }) } as any,
+    where: { onboardingStatus: { [Op.ne]: "none" }, enrolledAt: { [Op.ne]: null }, ...(manager ? {} : { onboardingTutorId: uid(req) }), ...(polos ? { poloId: { [Op.in]: polos.length ? polos : [0] } } : {}) } as any,
     attributes: ["id", "onboardingStatus", "onboardingTutorId", "enrolledAt", "onboardingStartedAt", "onboardingDoneAt"],
     order: [["enrolledAt", "DESC"]],
     limit: 5000
@@ -1202,7 +1283,8 @@ export const onboardingStats = async (req: Request, res: Response): Promise<Resp
 
 // how many students wait for the first contact of the person (the badge of the menu)
 export const onboardingPending = async (req: Request, res: Response): Promise<Response> => {
-  const mine = reqRole(req) === "consultor" ? { ownerId: uid(req) } : reqRole(req) === "tutor" ? { onboardingTutorId: uid(req) } : {};
+  // a tutor counts their own students and the ones of their polos still without a tutor (the scope decides which); a consultant, theirs
+  const mine = reqRole(req) === "consultor" ? { ownerId: uid(req) } : {};
   const total = await Lead.count({ where: await withOnboardingScope(req, { onboardingStatus: "pending", ...mine }) });
   return res.json({ pending: total });
 };
@@ -1217,7 +1299,13 @@ export const onboardingList = async (req: Request, res: Response): Promise<Respo
   const { parseChecklist } = await import("../services/CrmServices/EnrollLead");
   const rows = await Lead.findAll({
     // a consultant sees only the students THEY sent to the ambientação; tutors see theirs (and the polo's queue), the management everyone
-    where: await withOnboardingScope(req, { onboardingStatus: { [Op.ne]: "none" }, ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}) }),
+    // the board is the work of the ambientação: the concluded ones only of the last 30 days, and never the students imported into a tutor's
+    // list (they arrive concluded, with no ambientação of their own, and used to fill the board)
+    where: await withOnboardingScope(req, {
+      onboardingStatus: { [Op.ne]: "none" },
+      ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}),
+      [Op.or]: [{ onboardingStatus: { [Op.ne]: "done" } }, { onboardingDoneAt: { [Op.gte]: new Date(Date.now() - 30 * 864e5) } }]
+    }),
     include: leadInclude as any,
     order: [["enrolledAt", "DESC"]],
     limit: 300

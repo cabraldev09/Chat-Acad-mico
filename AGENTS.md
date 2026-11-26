@@ -24,7 +24,7 @@ Perfis de usuário: `admin`, `coordenacao`, `consultor`, `tutor`, `academico`, `
 Documentos por assunto: `COPILOTO.md` (copiloto do consultor), `AGENTE-COMERCIAL.md` e `IA-E-CONVERSAS.md` (agentes de IA e
 conversas), `WHATSAPP-NUMEROS.md` (números e canais), `ANALYTICS.md` (estatísticas), `ROTAS.md` (rotas e permissões),
 `BANCO-DE-DADOS.md`, `UNIVERSIDADES.md` (as universidades do grupo), `PROPOSTA.md` (proposta de bolsa e calendário de entradas), `FICHA-DE-MATRICULA.md` (ficha que o lead preenche pelo link),
-`VERIFICACOES.md` (tudo que roda antes de publicar).
+`VERIFICACOES.md` (tudo que roda antes de publicar), `API-V1.md` (API das integrações: tokens, escopos e polos).
 
 ## Como verificar uma mudança
 
@@ -32,7 +32,8 @@ A lista completa, com a pasta de cada comando, está em **`docs/VERIFICACOES.md`
 
 - Backend (pasta `backend`): `npx tsc --noEmit`, `npx vitest run`, `node scripts/i18n-check.js`, `node scripts/audit-routes.js`.
   Mexeu em segurança ou em IA: `npm run test:security` e `npm run test:ai`.
-- Frontend (pasta `frontend`): `npx vite build`, `node scripts/check-menu-icons.js`, `node scripts/check-lazy-events.js`.
+- Frontend (pasta `frontend`): `npx vite build`, `node scripts/check-menu-icons.js`, `node scripts/check-lazy-events.js`,
+  `node scripts/check-native-dialogs.js`.
   Instale com `npm install --legacy-peer-deps`.
 - Ponta a ponta (a API inteira com WhatsApp e Efí simulados): suba o Postgres, rode `npm run build` e então
   `PGUSER=postgres PGHOST=localhost LOGIN_RATE_MAX=100 NODE_ENV=test node scripts/channels-e2e.js` (pasta `backend`).
@@ -66,8 +67,9 @@ Para um erro: reproduza antes de corrigir e mostre o mesmo teste passando depois
 3. O CI precisa ficar verde: `verificar`, `telas` e os três `api-ponta-a-ponta`. Nunca pule, desligue ou apague um teste para
    passar. Um teste que falha de vez em quando tem uma causa: ache-a.
 4. Mescle por **squash**, passando o `expectedHeadSha` completo (`git rev-parse HEAD`).
-5. Depois do merge, o workflow "Atualizar a VPS" roda sozinho quando as Verificações do `main` passam. Confira que terminou
-   com sucesso e avise o usuário.
+5. Depois do merge, o workflow "Atualizar a VPS" roda sozinho. Se o commit do `main` é o squash de um PR verde com exatamente
+   o mesmo código (branch em dia com o `main`), ele publica logo após o merge; senão, quando as Verificações do `main` passam
+   (`deploy/vps/check-ci.js`). Confira que terminou com sucesso e avise o usuário.
 6. Nunca abra PR sem o usuário ter pedido.
 
 ## Segurança e privacidade

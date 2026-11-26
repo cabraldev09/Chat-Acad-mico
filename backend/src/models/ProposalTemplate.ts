@@ -110,6 +110,50 @@ class ProposalTemplate extends Model<ProposalTemplate> {
   @Column
   firstExempt: boolean;
 
+  // an inactive model is not offered in new proposals (the ones already made keep their numbers)
+  @Default(true)
+  @Column
+  active: boolean;
+
+  // "semestral": the graduation (semester projection with adjustments); "parcelado": a fixed number of installments of a fixed value
+  @Default("semestral")
+  @Column
+  planType: string;
+
+  // the installments by the course's duration, as JSON [{ months, installments }] ("6 months = 12 installments")
+  @Column(DataType.TEXT)
+  installmentsByDuration: string;
+
+  // the certification fee, paid when the course is concluded (the consultant charges it, waives it or changes it)
+  @Default(0)
+  @Column(DataType.DECIMAL(10, 2))
+  certificationFee: number;
+
+  @Default(false)
+  @Column
+  chargeCertification: boolean;
+
+  // the ways of paying a course paid at once: the Pix discount and the card (installments, monthly rate, whether the interest is passed on)
+  @Default(0)
+  @Column(DataType.DECIMAL(5, 2))
+  pixDiscountPct: number;
+
+  @Default(12)
+  @Column
+  cardMaxInstallments: number;
+
+  @Default(0)
+  @Column(DataType.DECIMAL(5, 2))
+  cardRatePct: number;
+
+  @Default(true)
+  @Column
+  cardPassInterest: boolean;
+
+  // the course levels this model is for (JSON list); empty = any level
+  @Column(DataType.TEXT)
+  courseLevels: string;
+
   @Column(DataType.TEXT)
   waIntro: string;
 

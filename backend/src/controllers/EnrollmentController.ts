@@ -4,15 +4,19 @@ import { Op } from "sequelize";
 
 import AppError from "../errors/AppError";
 import { dayBounds, getAppTz } from "../helpers/AppTime";
+import { countsInGoal, goalTerm } from "../helpers/EntryTerm";
 import Course from "../models/Course";
 import EnrollmentProof from "../models/EnrollmentProof";
 import Goal from "../models/Goal";
 import GoalChange from "../models/GoalChange";
 import GoalPolo from "../models/GoalPolo";
+import GoalMember from "../models/GoalMember";
+import { assertGoalEditable } from "./GoalController";
 import Lead from "../models/Lead";
 import LeadEnrollment from "../models/LeadEnrollment";
 import Polo from "../models/Polo";
 import User from "../models/User";
+import { crmPolosOf } from "../middleware/scope";
 import { proofFilePath, storeProof } from "../services/CommercialServices/EnrollmentProof";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -37,21 +41,25 @@ export const proofFile = async (req: Request, res: Response): Promise<void> => {
   fs.createReadStream(full).pipe(res);
 };
 
-// the polo goals and their periods: an enrollment is "inside the goal" when its day falls in the period of a goal of its polo
-const goalPeriods = async (): Promise<Map<number, Array<{ title: string; start: string; end: string }>>> => {
+type GoalSpan = { title: string; start: string; end: string; term?: string | null };
+
+// the polo goals and their periods: an enrollment is "inside the goal" of its polo by the entry term of the student (the same rule of
+// the board of goals, helpers/EntryTerm), else by its day inside the period
+const goalPeriods = async (): Promise<{ byPolo: Map<number, GoalSpan[]>; knownTerms: Set<string> }> => {
   const goals = await Goal.findAll({ where: { kind: "polo", status: { [Op.notIn]: ["deleted", "archived"] } } as any });
+  const all = await Goal.findAll({ where: { kind: "polo" }, attributes: ["entryTerm", "title"] });
   const lines = goals.length ? await GoalPolo.findAll({ where: { goalId: goals.map(g => g.id) } as any, attributes: ["goalId", "poloId"] }) : [];
-  const out = new Map<number, Array<{ title: string; start: string; end: string }>>();
+  const out = new Map<number, GoalSpan[]>();
   lines.forEach(l => {
     const g = goals.find(x => x.id === l.goalId);
     if (!g) return;
-    out.set(l.poloId, [...(out.get(l.poloId) || []), { title: g.title, start: String(g.startsOn).slice(0, 10), end: String(g.endsOn).slice(0, 10) }]);
+    out.set(l.poloId, [...(out.get(l.poloId) || []), { title: g.title, start: String(g.startsOn).slice(0, 10), end: String(g.endsOn).slice(0, 10), term: goalTerm(g) }]);
   });
-  return out;
+  return { byPolo: out, knownTerms: new Set(all.map(g => goalTerm(g)).filter(Boolean) as string[]) };
 };
 
-export const goalStatusOf = (day: string, periods: Array<{ title: string; start: string; end: string }> | undefined): { inGoal: boolean; goal: string | null } => {
-  const hit = (periods || []).find(p => day >= p.start && day <= p.end);
+export const goalStatusOf = (day: string, periods: GoalSpan[] | undefined, entryTerm?: string | null, knownTerms?: Set<string>): { inGoal: boolean; goal: string | null } => {
+  const hit = (periods || []).find(p => countsInGoal({ entryTerm, day }, { term: p.term || null, start: p.start, end: p.end }, knownTerms || new Set()));
   return { inGoal: !!hit, goal: hit ? hit.title : null };
 };
 
@@ -64,15 +72,18 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const from = String(req.query.from || `${today.slice(0, 8)}01`);
   if (!DAY.test(from) || !DAY.test(to) || from > to) throw new AppError("ERR_INVALID_PERIOD", 400);
   const range = { [Op.gte]: dayBounds(from).start, [Op.lte]: dayBounds(to).end };
-  const poloId = Number(req.query.poloId) || null;
   const ownerId = Number(req.query.ownerId) || null;
+  // the coordination sees the enrollments of its polos only (middleware/scope): a polo outside them reads as none
+  const mine = await crmPolosOf(req);
+  const asked = Number(req.query.poloId) || null;
+  const polo = mine === null ? (asked ? { poloId: asked } : {}) : { poloId: { [Op.in]: (asked ? mine.filter(id => id === asked) : mine).concat(0) } };
 
   const firsts = await Lead.findAll({
-    where: { isHistorical: false, wonAt: range, ...(poloId ? { poloId } : {}), ...(ownerId ? { ownerId } : {}) } as any,
-    attributes: ["id", "name", "rgm", "wonAt", "poloId", "ownerId", "courseId"], limit: 3000, order: [["wonAt", "DESC"]]
+    where: { isHistorical: false, wonAt: range, ...polo, ...(ownerId ? { ownerId } : {}) } as any,
+    attributes: ["id", "name", "rgm", "wonAt", "poloId", "ownerId", "courseId", "entryTerm"], limit: 3000, order: [["wonAt", "DESC"]]
   });
   const extras = await LeadEnrollment.findAll({
-    where: { enrolledAt: range, ...(poloId ? { poloId } : {}), ...(ownerId ? { ownerId } : {}) } as any, limit: 3000, order: [["enrolledAt", "DESC"]]
+    where: { enrolledAt: range, ...polo, ...(ownerId ? { ownerId } : {}) } as any, limit: 3000, order: [["enrolledAt", "DESC"]]
   });
   const leadIds = [...new Set([...firsts.map(l => l.id), ...extras.map(e => e.leadId)])];
   const extraLeads = await Lead.findAll({ where: { id: extras.map(e => e.leadId) } as any, attributes: ["id", "name"] });
@@ -87,11 +98,11 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const proofOf = (leadId: number, enrollmentId: number | null) => proofs.find(p => p.leadId === leadId && (p.enrollmentId || null) === enrollmentId)?.id || null;
   const dayOf = (d: Date) => new Date(d).toLocaleDateString("en-CA", { timeZone: tz });
   const rows = [
-    ...firsts.map(l => ({ leadId: l.id, enrollmentId: null as number | null, name: l.name, rgm: l.rgm || null, at: l.wonAt, poloId: l.poloId, ownerId: l.ownerId, course: nameOf(courses, l.courseId) })),
-    ...extras.map(e => ({ leadId: e.leadId, enrollmentId: e.id, name: extraLeads.find(l => l.id === e.leadId)?.name || "—", rgm: e.rgm || null, at: e.enrolledAt, poloId: e.poloId, ownerId: e.ownerId, course: e.courseName || nameOf(courses, e.courseId) }))
+    ...firsts.map(l => ({ leadId: l.id, enrollmentId: null as number | null, name: l.name, rgm: l.rgm || null, at: l.wonAt, poloId: l.poloId, ownerId: l.ownerId, course: nameOf(courses, l.courseId), entryTerm: (l as any).entryTerm || null })),
+    ...extras.map(e => ({ leadId: e.leadId, enrollmentId: e.id, name: extraLeads.find(l => l.id === e.leadId)?.name || "—", rgm: e.rgm || null, at: e.enrolledAt, poloId: e.poloId, ownerId: e.ownerId, course: e.courseName || nameOf(courses, e.courseId), entryTerm: null }))
   ].map(r => ({
     ...r, polo: nameOf(polos, r.poloId), owner: nameOf(users, r.ownerId), proofId: proofOf(r.leadId, r.enrollmentId),
-    ...goalStatusOf(dayOf(r.at), r.poloId ? periods.get(r.poloId) : undefined)
+    ...goalStatusOf(dayOf(r.at), r.poloId ? periods.byPolo.get(r.poloId) : undefined, r.entryTerm, periods.knownTerms)
   })).sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   const byPolo = new Map<string, { polo: string; total: number; inGoal: number }>();
   rows.forEach(r => { const k = r.polo || "Sem polo"; const cur = byPolo.get(k) || { polo: k, total: 0, inGoal: 0 }; cur.total += 1; if (r.inGoal) cur.inGoal += 1; byPolo.set(k, cur); });
@@ -100,8 +111,10 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 // postpones (or brings forward) the end of a goal, keeping who did it, from when to when and why
 export const postponeGoal = async (req: Request, res: Response): Promise<Response> => {
-  const goal = await Goal.findByPk(req.params.id);
+  const goal = await Goal.findByPk(req.params.id, { include: [GoalMember] });
   if (!goal) throw new AppError("ERR_NOT_FOUND", 404);
+  // postponing changes the whole goal: the coordination only for a goal of its own people (GoalController.assertGoalEditable)
+  await assertGoalEditable(req, goal);
   const endsOn = String(req.body?.endsOn || "");
   const reason = String(req.body?.reason || "").trim().slice(0, 500);
   if (!DAY.test(endsOn) || endsOn < String(goal.startsOn).slice(0, 10)) throw new AppError("ERR_INVALID_PERIOD", 400);

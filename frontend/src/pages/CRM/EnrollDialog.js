@@ -14,7 +14,7 @@ const useStyles = makeStyles((theme) => ({
   badge: { width: 40, height: 40, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "#16a34a", background: "rgba(22,163,74,.14)" },
   section: { margin: theme.spacing(2, 0, 0.5), fontSize: 13, fontWeight: 700, color: theme.palette.text.secondary },
   hint: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
-  drop: { display: "flex", alignItems: "center", gap: 12, padding: theme.spacing(1.5), borderRadius: 12, border: `1.5px dashed ${theme.palette.divider}`, cursor: "pointer", transition: "border-color .15s, background .15s", "&:hover, &:focus-visible": { borderColor: "#4595D8", background: "rgba(69,149,216,.06)", outline: "none" } },
+  drop: { display: "flex", alignItems: "center", gap: 12, padding: theme.spacing(1.5), borderRadius: 12, border: `1.5px dashed ${theme.palette.divider}`, cursor: "pointer", transition: "border-color .15s, background .15s", "&:hover": { borderColor: "#4595D8", background: "rgba(69,149,216,.06)", outline: "none" } },
   dropOn: { borderColor: "#4595D8", background: "rgba(69,149,216,.08)" },
   thumb: { width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: `1px solid ${theme.palette.divider}`, flex: "none" },
   feeBox: { padding: theme.spacing(0.5, 1.5), borderRadius: 12, border: `1px solid ${theme.palette.divider}`, marginTop: 6 },
@@ -33,7 +33,9 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState(null);
   const [courses, setCourses] = useState([]);
-  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "" });
+  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "", entryTerm: "" });
+  // the periods the student may be enrolled for: those offered by the CRM and those of the polo goals in force
+  const [terms, setTerms] = useState({ list: [], fallback: "" });
   // the print of the enrollment: read when attached (the RGM fills the field); kept with the enrollment for the management
   const [proof, setProof] = useState(null); // { id, preview, reading, readNote }
   const [reading, setReading] = useState(false);
@@ -58,14 +60,15 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
 
   useEffect(() => {
     if (!open) return;
-    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "" });
+    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "", entryTerm: "" });
+    api.get("/crm/options").then(({ data }) => setTerms({ list: [...new Set([...(data.goalTerms || []), ...(data.entryTerms || [])])].sort(), fallback: data.defaultEntryTerm || "" })).catch(() => setTerms({ list: [], fallback: "" }));
     setProof(null); setNoProof(false);
     api.get("/courses").then(({ data }) => setCourses(data.filter((c) => c.active))).catch(() => undefined);
     api.get("/polos").then(({ data }) => setPolos(data.filter((p) => p.active))).catch(toastError);
     // the board card is a summary: the CPF and polo come from the full record
     api.get(`/leads/${lead.id}`).then(({ data }) => {
       setDetail(data);
-      setV((cur) => ({ ...cur, poloId: cur.poloId || data.poloId || "", courseId: cur.courseId || (!additional && data.courseId) || "", rgm: cur.rgm || (!additional && data.rgm) || "" }));
+      setV((cur) => ({ ...cur, poloId: cur.poloId || data.poloId || "", courseId: cur.courseId || (!additional && data.courseId) || "", rgm: cur.rgm || (!additional && data.rgm) || "", entryTerm: cur.entryTerm || data.entryTerm || "" }));
     }).catch(() => setDetail(null));
   }, [open, lead, additional]);
 
@@ -84,6 +87,15 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const rgm = String(v.rgm || "").replace(/\s+/g, "");
   const rgmOk = /^[A-Za-z0-9.\-/]{3,40}$/.test(rgm);
   const invalid = !v.poloId || !v.courseId || !rgmOk || (v.fee === "later" && !v.feeDueDate) || needsCpf || reading || (!proof && !noProof);
+  // what is missing, said next to the button (a grey button alone did not tell why)
+  const missing = [
+    !proof && !noProof ? "o print da matrícula (ou marque “Não tenho o print agora”)" : null,
+    !v.courseId ? "o curso" : null,
+    !rgmOk ? "o RGM" : null,
+    !v.poloId ? "o polo" : null,
+    v.fee === "later" && !v.feeDueDate ? "o vencimento combinado da taxa" : null,
+    needsCpf ? "o CPF na ficha do lead (para gerar a cobrança)" : null,
+  ].filter(Boolean);
 
   const confirm = async () => {
     setBusy(true);
@@ -97,6 +109,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
         additional: additional || undefined,
         courseId: v.courseId,
         rgm,
+        entryTerm: additional ? undefined : (v.entryTerm || terms.fallback || undefined),
         proofId: proof ? proof.id : undefined
       });
       toast.success(additional ? `Nova matrícula registrada (${data.number}ª). ${data.tutor ? `Tutor: ${data.tutor.name}.` : "Aguardando um tutor."}` : data.tutor ? `Matrícula confirmada. Tutor: ${data.tutor.name}.` : "Matrícula confirmada. Aguardando um tutor na fila.");
@@ -146,6 +159,12 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
           helperText={additional ? "O aluno continua com a primeira matrícula; esta conta como mais uma para você e para o polo." : "O curso em que o aluno se matriculou."}>
           {courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
         </TextField>
+        {!additional && (
+          <TextField select fullWidth variant="outlined" margin="dense" label="Período de entrada" value={v.entryTerm || terms.fallback || ""} onChange={(e) => setV({ ...v, entryTerm: e.target.value })}
+            helperText="O semestre da meta em que esta matrícula conta, mesmo feita depois do fim do período.">
+            {[...new Set([...terms.list, ...(v.entryTerm ? [v.entryTerm] : []), ...(terms.fallback ? [terms.fallback] : [])])].sort().map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
+          </TextField>
+        )}
         <TextField fullWidth variant="outlined" margin="dense" label="RGM do aluno" required value={v.rgm} onChange={(e) => setV({ ...v, rgm: e.target.value })}
           error={!!v.rgm && !rgmOk} inputProps={{ maxLength: 40 }}
           helperText={v.rgm && !rgmOk ? "Use só letras, números e traços." : "O número de matrícula que a instituição gerou. Com ele o aluno já fica cadastrado no portal; o tutor só informa o e-mail de acesso."} />
@@ -184,6 +203,9 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
           helperText="Aparece no histórico. Ex.: prefere à noite, já tem notebook." />
         <div className={classes.hint}>{additional ? "Nenhuma mensagem é enviada ao aluno agora." : "O aluno recebe nesta conversa o número da tutoria, com o nome do tutor, e o pedido para mandar mensagem por lá e agendar a ambientação."} O tutor recebe a conversa com o texto de boas-vindas pronto. Daqui para frente o consultor não vê as mensagens do tutor, e o tutor não vê as suas; o contato com o aluno volta a você depois da ambientação.</div>
       </DialogContent>
+      {!reading && missing.length > 0 && (
+        <div role="status" style={{ padding: "8px 24px 0", fontSize: 13, color: "#b45309" }}>Falta {missing.join(", ")}.</div>
+      )}
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
         <Button variant="contained" color="primary" onClick={confirm} disabled={busy || invalid}>

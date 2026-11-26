@@ -13,6 +13,7 @@ import { connectionOfTeam } from "../ChannelServices/ConnectionTeam";
 import { ensureShippings } from "../CampaignServices/Shippings";
 import { CampaignCost, assertCampaignCost, campaignCost } from "../CampaignServices/CostGate";
 import { TEMPLATE_PACK, approvedTemplates, cleanParam, fillTemplate } from "../CampaignServices/Templates";
+import type { SendQuota } from "../CampaignServices/SendQuota";
 
 // Avisos da tutoria: the two notices of the month to the students (a summary of the activities and a reminder in the week of the test),
 // sent through the official tutoring number with a Utility template, by the campaign queue. One number serves the 8 polos; each
@@ -28,6 +29,8 @@ export const NOTICE_TEMPLATES: Record<NoticeKind, { name: string; label: string 
 export interface NoticeInput {
   kind: NoticeKind; date: string; subject?: string; note?: string;
   poloId?: number | null; courseId?: number | null; tutorId?: number | null;
+  // the polos the sender sees (the coordination: its polos); null = every polo
+  poloIds?: number[] | null;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -68,7 +71,7 @@ const audience = async (n: NoticeInput, tutorOnly: number | null) => {
       lostAt: null,
       phone: { [Op.ne]: null },
       ...(tutorOnly ? { onboardingTutorId: tutorOnly } : n.tutorId ? { onboardingTutorId: n.tutorId } : {}),
-      ...(n.poloId ? { poloId: n.poloId } : {}),
+      ...(n.poloId || n.poloIds ? { poloId: { [Op.in]: (n.poloIds ? n.poloIds.filter(id => !n.poloId || id === n.poloId) : [n.poloId as number]).concat(0) } } : {}),
       ...(n.courseId ? { courseId: n.courseId } : {})
     } as any,
     attributes: ["id", "name", "phone", "consentAt"],
@@ -90,11 +93,15 @@ export interface NoticePreview {
   connection: { id: number; name: string; official: boolean } | null;
   template: { name: string; approved: boolean; category: string | null };
   sample: string; cost: CampaignCost | null; blockers: string[];
+  // the quota of sends of the month of the person sending (null without a person)
+  quota: SendQuota | null;
 }
 
 // What would happen if the notice went out now. Nothing is sent or changed.
-export const previewNotice = async (n: NoticeInput, tutorOnly: number | null): Promise<NoticePreview & { people: Awaited<ReturnType<typeof audience>>; whatsapp: Whatsapp | null }> => {
-  const [people, whatsapp, allowTemplates] = await Promise.all([audience(n, tutorOnly), connectionOfTeam("tutoria"), getSetting("outbound_allow_templates", "false")]);
+export const previewNotice = async (n: NoticeInput, tutorOnly: number | null, actorId: number | null = null): Promise<NoticePreview & { people: Awaited<ReturnType<typeof audience>>; whatsapp: Whatsapp | null }> => {
+  const [people, whatsapp, allowTemplates, quota] = await Promise.all([
+    audience(n, tutorOnly), connectionOfTeam("tutoria"), getSetting("outbound_allow_templates", "false"), actorId ? import("../CampaignServices/SendQuota").then(m => m.quotaOf(actorId)) : Promise.resolve(null)
+  ]);
   const consented = people.filter(p => p.consentAt);
   const official = whatsapp?.channel === "whatsapp_cloud";
   const name = NOTICE_TEMPLATES[n.kind].name;
@@ -115,11 +122,13 @@ export const previewNotice = async (n: NoticeInput, tutorOnly: number | null): P
   if (cost && cost.category === "MARKETING" && cost.categoryKnown && !cost.marketingAllowed) blockers.push("ERR_CAMPAIGN_MARKETING_BLOCKED");
   if (cost && !cost.fitsMonth) blockers.push("ERR_OUTBOUND_MONTH_BUDGET");
   if (!consented.length) blockers.push("ERR_NOTICE_NO_STUDENTS");
+  // past the person's quota of the month: they ask the management for more (Pedir liberação)
+  if (quota && quota.limited && consented.length > (quota.left as number)) blockers.push("ERR_SEND_QUOTA");
   const sample = fillTemplate(noticeParams(n), { primeiro_nome: "Maria", curso: "Pedagogia" }, templateBody(n.kind)).text;
   return {
     kind: n.kind, label: NOTICE_TEMPLATES[n.kind].label, total: people.length, canReceive: consented.length, noConsent: people.length - consented.length,
     connection: whatsapp ? { id: whatsapp.id, name: whatsapp.name, official } : null,
-    template: { name, approved, category }, sample, cost, blockers, people: consented, whatsapp
+    template: { name, approved, category }, sample, cost, blockers, quota, people: consented, whatsapp
   };
 };
 
@@ -131,8 +140,8 @@ export const publicPreview = (p: Awaited<ReturnType<typeof previewNotice>>): Not
 // Sends the notice: a list with the students, a campaign of the template on the tutoring number, started at once. Refused with the
 // first blocker of the preview, so nothing goes out that the preview would not allow.
 export const sendNotice = async (n: NoticeInput, actorId: number, tutorOnly: number | null): Promise<{ campaignId: number; people: number }> => {
-  const p = await previewNotice(n, tutorOnly);
-  if (p.blockers.length) throw new AppError(p.blockers[0], p.blockers[0] === "ERR_OUTBOUND_MONTH_BUDGET" || p.blockers[0] === "ERR_CAMPAIGN_MARKETING_BLOCKED" ? 409 : 400);
+  const p = await previewNotice(n, tutorOnly, actorId);
+  if (p.blockers.length) throw new AppError(p.blockers[0], ["ERR_OUTBOUND_MONTH_BUDGET", "ERR_CAMPAIGN_MARKETING_BLOCKED", "ERR_SEND_QUOTA"].includes(p.blockers[0]) ? 409 : 400);
   const whatsapp = p.whatsapp as Whatsapp;
   const title = `${p.label} ${brDate(n.date)}${n.kind === "prova" ? ` (${n.subject})` : ""}`;
   const list = await ContactList.create({ name: `Aviso da tutoria: ${title}`, createdById: actorId } as any);
@@ -142,6 +151,7 @@ export const sendNotice = async (n: NoticeInput, actorId: number, tutorOnly: num
   const body = templateBody(n.kind);
   const campaign = await Campaign.create({
     name: `Aviso da tutoria: ${title}`,
+    objective: n.kind === "prova" ? `Lembrar os alunos da prova de ${n.subject} em ${brDate(n.date)}` : `Avisar os alunos das atividades do mês (até ${brDate(n.date)})`,
     message: p.sample,
     steps: [{ body: p.sample, mediaUrl: null, delaySec: 0 }],
     whatsappId: whatsapp.id,

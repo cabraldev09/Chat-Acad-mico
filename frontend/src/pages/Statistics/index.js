@@ -14,6 +14,7 @@ import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
 import { Leads, mins } from "../CommercialCenter/ProcessTab";
+import Sends from "./Sends";
 
 // Estatísticas: one panel with the real numbers of the system, in tabs. The management sees the whole team; a consultant sees only their
 // own numbers (the server decides, whatever is asked); a tutor sees the tutoring. Every block handles loading, empty and error.
@@ -444,13 +445,14 @@ export const Tutoring = ({ params }) => {
 
 // Estatísticas: one page with the tabs of the management (the tab comes in ?aba=, so the hub bar and a link open the right one). A tab
 // already opened stays mounted when the person moves to another one, so going back is instant and nothing blinks.
-const TABS = ["geral", "consultores", "polos", "treinamento"];
-const TITLES = { geral: "Estatísticas", consultores: "Estatísticas: consultores", polos: "Estatísticas: polos e metas", treinamento: "Estatísticas: treinamento" };
+const TABS = ["geral", "consultores", "polos", "treinamento", "disparos"];
+const TITLES = { geral: "Estatísticas", consultores: "Estatísticas: consultores", polos: "Estatísticas: polos e metas", treinamento: "Estatísticas: treinamento", disparos: "Estatísticas: disparos" };
 const LEADS = {
   geral: "O resultado do período, o que acontece agora, as metas dos polos, o atendimento e o comercial.",
   consultores: "Cada consultor no período: conversas, matrículas, resposta, o processo e o que cada um vende.",
   polos: "As metas do semestre, os números de cada polo e os horários e metas diárias da equipe.",
   treinamento: "O que a revisão diária da IA encontrou repetindo nas conversas de cada consultor.",
+  disparos: "Os pedidos de liberação de disparos e o que cada pessoa enviou e gastou com a Meta e a IA no período.",
 };
 
 export default function Statistics() {
@@ -461,14 +463,19 @@ export default function Statistics() {
   const tutor = !!user && ["tutor", "academico"].includes(user.role);
   const wanted = new URLSearchParams(search).get("aba") || "geral";
   const tab = TABS.includes(wanted) ? wanted : "geral";
-  const [period, setPeriod] = useState({ range: "month" });
+  // the period can come in the address (the "Ver por consultor" of the Painel do CRM)
+  const [period, setPeriod] = useState(() => {
+    const q = new URLSearchParams(search);
+    const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : "");
+    return day(q.get("from")) ? { range: "custom", from: day(q.get("from")), to: day(q.get("to")) || day(q.get("from")) } : { range: "month" };
+  });
   const params = useMemo(() => periodParams(period), [period]);
   const [visited, setVisited] = useState(() => new Set([tab]));
   useEffect(() => { setVisited((v) => (v.has(tab) ? v : new Set([...v, tab]))); }, [tab]);
   if (tutor) return <Redirect to="/estatisticas/tutoria" />;
   // a consultant has their own place (Meu desempenho); the statistics of the team are the management's
   if (!manager) return <Redirect to="/meu-desempenho" />;
-  const view = { geral: <Overview params={params} period={period} />, consultores: <Consultants params={params} />, polos: <PolosAndGoals params={params} period={period} />, treinamento: <Training params={params} /> };
+  const view = { geral: <Overview params={params} period={period} />, consultores: <Consultants params={params} />, polos: <PolosAndGoals params={params} period={period} />, treinamento: <Training params={params} />, disparos: <Sends params={params} /> };
   return (
     <div className={`${c.page} dash-scope gv-plain`}>
       <StatsHubBar />

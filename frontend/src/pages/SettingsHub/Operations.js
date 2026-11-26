@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 // the rules of the operation live in one endpoint but each part is shown in the group where it belongs (no group "Operação" mixing
 // deadlines, money and deliveries): "atendimento" in Horário e atendimento, "limites" in Custos, "modelos" in Modelos da Meta,
@@ -36,7 +37,7 @@ export default function Operations({ part = "atendimento" }) {
   useEffect(() => { load(); }, []);
   const save = async () => { setBusy(true); try { const { data } = await api.put("/operations/config", settings); setSettings(data); toast.success("Regras de operação salvas."); } catch (err) { toastError(err); } finally { setBusy(false); } };
   const reconcile = async (kind, id, status) => {
-    if (!window.confirm(`Você já conferiu a conversa e confirmou que a mensagem ${status === "sent" ? "chegou" : "não chegou"}? Esta ação não reenvia mensagens.`)) return;
+    if (!(await confirmDialog({ title: status === "sent" ? "Marcar como entregue?" : "Marcar como não entregue?", message: `Confira na conversa se a mensagem ${status === "sent" ? "chegou" : "não chegou"}. Esta ação não reenvia mensagens.`, confirmText: "Confirmar" }))) return;
     try { await api.post(`/operations/reconcile/${kind}/${id}`, { status }); load(); } catch (err) { toastError(err); }
   };
   if (!settings || !summary) return null;
@@ -66,6 +67,12 @@ export default function Operations({ part = "atendimento" }) {
   }
 
   if (part === "limites") return <div style={{ display: "grid", gap: 16 }}>
+    {settings.send_quota_monthly !== undefined && <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 14 }}>
+      <Typography variant="h6">Cota de disparos por pessoa</Typography>
+      <Typography variant="body2" color="textSecondary">Quantas mensagens as campanhas e os avisos de cada pessoa podem enviar no mês. Quem passa da cota pede liberação, e a gestão aprova em Estatísticas, aba Disparos. A gestão não tem cota. 0 deixa sem limite.</Typography>
+      {numbers([["send_quota_monthly", "Mensagens por pessoa no mês (0 sem limite)"]])}
+      {saveBtn}
+    </Paper>}
     <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 14 }}>
       <Typography variant="h6">Limites de gasto por dia</Typography>
       <Typography variant="body2" color="textSecondary">Ao chegar no limite, o sistema para de gastar até o dia seguinte. 0 deixa sem limite.</Typography>

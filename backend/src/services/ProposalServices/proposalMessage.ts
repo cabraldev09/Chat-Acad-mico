@@ -1,5 +1,5 @@
 import { getAppTz } from "../../helpers/AppTime";
-import { ProposalParams, ProposalResult } from "./calc";
+import { ProposalParams, ProposalResult, baseMonthly, firstPayment } from "./calc";
 
 // The text a consultant sends on WhatsApp together with the PDF: a few short
 // messages, in the order people read them. Each block can be copied or edited.
@@ -48,16 +48,45 @@ export const buildProposalMessages = (i: Input): MessageBlock[] => {
   );
 
   const lines: string[] = [];
+  // a proposal in installments: the installments, the fees and (paid at once) the ways of paying; no semesters, no punctuality
+  if (p.planType === "parcelado" && r.plan) {
+    const plan = r.plan;
+    const single = plan.single;
+    const d1 = day(p.firstDueDate);
+    const out: string[] = [`*${i.courseName}${i.modalityLabel ? ` | ${i.modalityLabel}` : ""}*`];
+    if (single) {
+      out.push(`*Valor do curso:* ${brl(single.value)} (parcela única)`);
+      if (single.pixPct > 0) out.push(`*No Pix:* ${brl(single.pix)} (${pct(single.pixPct)} de desconto)`);
+      if (single.card) out.push(`*No cartão:* ${single.card.installments}x de ${brl(single.card.installment)}${single.card.installments > 1 ? (single.card.passInterest && single.card.ratePct > 0 ? ` (com juros; total ${brl(single.card.total)})` : " (sem juros)") : ""}`);
+      if (d1) out.push(`*Vencimento:* ${d1}`);
+    } else {
+      out.push(`*Parcelas:* ${plan.installments} de ${brl(plan.monthly)} (valor fixo, sem reajuste)`);
+      if (plan.installments > 1 && Math.abs(plan.first - plan.monthly) >= 0.01) out.push(`*1ª parcela:* ${plan.first === 0 ? "isenta" : brl(plan.first)}${d1 ? ` (vencimento ${d1})` : ""}`);
+      else if (d1) out.push(`*1ª parcela vence em:* ${d1}`);
+      out.push(`*Demais parcelas:* todo dia ${p.dueDay}`);
+    }
+    out.push(`*Taxa de matrícula:* ${p.enrollmentExempt || !(Number(p.enrollmentFee) > 0) ? "isenta" : `${brl(p.enrollmentFee)} no ato`}`);
+    if (p.certification === "charge" && Number(p.certificationFee) > 0) out.push(`*Taxa de certificação:* ${brl(Number(p.certificationFee))}, paga ao concluir o curso`);
+    else if (p.certification === "exempt") out.push("*Taxa de certificação:* isenta");
+    const validity = fill(i.closing && i.closing.trim() ? i.closing : "A condição da proposta é válida na data de hoje ({{hoje}}).", { ...vars, hoje: today });
+    return [
+      { id: "intro", title: "Abertura", text: intro },
+      { id: "summary", title: "Resumo (vai junto com o PDF)", text: out.join("\n") },
+      { id: "validity", title: "Validade", text: validity }
+    ];
+  }
   lines.push(`*${i.courseName}${i.modalityLabel ? ` | ${i.modalityLabel}` : ""}*`);
   lines.push(`*Duração:* ${p.semesters} semestre${p.semesters > 1 ? "s" : ""}`);
   lines.push(`*Mensalidade normal:* ${brl(p.gross)}`);
   lines.push(`*Bolsa aplicada:* ${pct(r.bolsaApplied)}`);
-  lines.push(`*Mensalidade com bolsa:* ${brl(p.firstMonthly)}`);
+  lines.push(`*Mensalidade com bolsa:* ${brl(baseMonthly(p))}`);
 
   const d1 = day(p.firstDueDate);
   const d2 = day(p.secondDueDate);
   if (p.firstExempt) {
-    lines.push(`*1ª mensalidade:* isenta${d2 ? ` · a 2ª vence em ${d2}` : ""}`);
+    lines.push(`*1ª mensalidade:* isenta${d1 ? ` (vencimento ${d1})` : ""}${d2 ? ` · a 2ª vence em ${d2}` : ""}`);
+  } else if (Math.abs(firstPayment(p) - baseMonthly(p)) >= 0.01) {
+    lines.push(`*1ª mensalidade:* ${brl(firstPayment(p))}${d1 ? ` (vencimento ${d1})` : ""}`);
   } else if (d1) {
     lines.push(`*Vencimento da 1ª mensalidade:* ${d1}`);
   }

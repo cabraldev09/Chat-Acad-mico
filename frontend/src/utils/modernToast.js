@@ -63,5 +63,5 @@ export const noticeToast = ({ title, body, level, actionLabel, onAction, id }) =
   const type = LEVEL_TYPE[level] || "info";
   const fn = type === "error" ? "error" : type === "warn" ? "warning" : type === "success" ? "success" : "info";
   const content = <Body type={type} title={title} content={body || ""} action={onAction ? { label: actionLabel || "Abrir", onClick: onAction } : null} />;
-  return toast[fn](content, { toastId: id, autoClose: level === "urgent" ? false : 8000, closeOnClick: false });
+  return toast[fn](content, { toastId: id, autoClose: level === "urgent" ? 15000 : 8000, closeOnClick: false });
 };

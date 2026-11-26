@@ -1,12 +1,14 @@
 import { notOfferedReply } from "./InventedCourse";
+import { matchCourses, sameCourseName } from "./CourseMatch";
 import { courseInstitutionWhere, currentInstitutionId, institutionsWithNumbers } from "../../helpers/Institution";
 import fs from "fs";
 import path from "path";
 import { Op } from "sequelize";
 
 import { gradePath } from "../../analysis/Grades";
-import { chooseGrade, gradeCaption, internshipPitch } from "./GradeChoice";
+import { chooseGrade, gradeCaption, internshipPitch, withoutGradeTitle } from "./GradeChoice";
 import { gradeSummaryOf } from "../../analysis/services/commercial-grades/reader";
+import { safeStoredName } from "../../helpers/SafeFile";
 import { createCurricular } from "../../analysis/Store";
 import { PUBLIC_DIR } from "../../config/paths";
 import CommercialGrade from "../../models/CommercialGrade";
@@ -78,15 +80,15 @@ const cached = async <T>(ctx: AcademicCtx, key: string, fn: () => Promise<T>): P
 export const clearAcademicCache = (): void => memo.clear();
 
 // The courses the institution offers: the active ones of the catalogue of the system. The agent talks about these and only these.
-export interface OfferedCourse { id: number; name: string; level: string | null; modality: string | null }
+export interface OfferedCourse { id: number; name: string; level: string | null; modality: string | null; aliases?: string | null }
 export const offeredCourses = async (): Promise<OfferedCourse[]> => {
   const stamp = await stampOf();
   // each university offers its own courses (and the ones of no university in particular)
   const key = `offered:${currentInstitutionId() || 0}:${currentInstitutionId() ? (await institutionsWithNumbers()).join(",") : ""}`;
   const hit = memo.get(key);
   if (hit && hit.stamp === stamp) return hit.value as OfferedCourse[];
-  const rows = await Course.findAll({ where: { active: true, ...(await courseInstitutionWhere()) } as any, attributes: ["id", "name", "level", "modality"], order: [["name", "ASC"]], limit: 300 });
-  const value = rows.map(c => ({ id: c.id, name: String(c.name || "").trim(), level: c.level || null, modality: c.modality || null })).filter(c => c.name);
+  const rows = await Course.findAll({ where: { active: true, ...(await courseInstitutionWhere()) } as any, attributes: ["id", "name", "level", "modality", "aliases"], order: [["name", "ASC"]], limit: 300 });
+  const value = rows.map(c => ({ id: c.id, name: String(c.name || "").trim(), level: c.level || null, modality: c.modality || null, aliases: c.aliases || null })).filter(c => c.name);
   memo.set(key, { stamp, value });
   return value;
 };
@@ -166,12 +168,24 @@ const fuzzyCourse = async (name: string): Promise<Course | null> => {
 
 export const findCourse = async (input: { courseId?: any; courseName?: any; offerId?: any }, modality?: string | null): Promise<Course | null> => {
   const id = Number(input.offerId || input.courseId) || 0;
+  const name = String(input.courseName || "").trim();
   if (id) {
     const byId = await Course.findByPk(id);
-    if (byId) return byId;
+    // an id and the name of ANOTHER course together (the id is older than the name): the name is what the person is talking about now
+    if (byId && (!name || sameCourseName(name, byId.name) || matchCourses(name, [byId]).length)) return byId;
+    if (byId && !name) return byId;
+    if (byId) {
+      const byName = await findCourse({ courseName: name }, modality);
+      return byName || byId;
+    }
   }
-  const name = String(input.courseName || "").trim();
   if (!name) return null;
+  // the way people write it first ("RH", "ADS", "recursos humanos", a typo): the same rule the turn uses
+  const hits = matchCourses(`${name}${modality ? ` ${modality}` : ""}`, await offeredCourses().catch(() => []));
+  if (hits.length === 1 && hits[0].course.id) {
+    const hit = await Course.findByPk(hits[0].course.id);
+    if (hit) return hit;
+  }
   const like = isPg() ? { [Op.iLike]: `%${name.replace(/[%_]/g, "")}%` } : { [Op.like]: `%${name.replace(/[%_]/g, "")}%` };
   const want = plain(name);
   const found = (await Course.findAll({ where: { active: true, name: like, ...(await courseInstitutionWhere()) } as any, limit: 12 })).filter(c => startsAWord(plain(c.name), want));
@@ -430,13 +444,15 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
         return { enviado: false, erro: "O PDF desta grade não está disponível. Diga que a equipe envia." };
       }
       try {
-        const copyName = `grade-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.pdf`;
+        // the copy carries the course's name (the lead and the conversation see the course, not a code)
+        const copyName = safeStoredName(`${grade.courseName || "Grade do curso"}.pdf`, "application/pdf");
         fs.copyFileSync(source, path.join(PUBLIC_DIR, copyName));
         const display = `${grade.courseName}.pdf`.replace(/[\\/:*?"<>|]/g, "_");
         await SendWhatsAppMedia({
           media: { filename: copyName, originalname: display, mimetype: "application/pdf", path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
           ticket: ctx.ticket,
-          body: caption,
+          // the course is the name of the file: the caption does not repeat it
+          body: withoutGradeTitle(caption),
           displayName: display,
           automated: true
         } as any);

@@ -20,6 +20,15 @@ test('access JWT cannot be reused as a file capability', () => {
   const token = jwt.sign({ id: 1 }, auth.secret);
   assert.throws(() => verifyFileToken(token, 'contract.pdf'));
 });
+test('the credentials/secrets guard admits only the administrator, not coordination', () => {
+  const isSystemAdmin = require('../dist/middleware/isSystemAdmin').default;
+  const admitted = user => { let passed = false; isSystemAdmin({ user }, {}, () => { passed = true; }); return passed; };
+  assert.equal(admitted({ profile: 'admin' }), true);
+  assert.equal(admitted({ role: 'admin' }), true);
+  for (const user of [{ role: 'coordenacao' }, { role: 'coordenacao', coordArea: 'academica' }, { role: 'consultor' }, { role: 'tutor' }, {}]) {
+    assert.throws(() => admitted(user), e => e.statusCode === 403 && e.message === 'ERR_NO_PERMISSION');
+  }
+});
 test('Meta window checks all channels and the exact boundary', () => {
   const now = Date.now();
   for (const channel of ['whatsapp_cloud', 'instagram', 'messenger']) {

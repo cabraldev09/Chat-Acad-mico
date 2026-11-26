@@ -1,7 +1,8 @@
 // What a person may do is decided by the server; the screens only decide what to show.
 //  admin         everything
-//  coordenacao   coordinator: same powers as the administrator (settings, keys, connections, payments), except
-//                creating or promoting administrators
+//  coordenacao   coordinator: manages the team, the sectors, the connections and the CRM, but never creates or
+//                promotes administrators and never reads the credentials (payment gateway, API tokens, webhooks,
+//                AI keys, e-mail/SMTP): those are the administrator's alone (isStrictAdmin)
 //  everyone else their own area
 export const accessLevel = (user) => (user && user.profile === "admin" ? "admin" : user && user.role === "coordenacao" ? "coordenacao" : "user");
 export const isManager = (user) => accessLevel(user) !== "user";
@@ -10,8 +11,10 @@ export const canOperateRetention = (user) => accessLevel(user) === "admin" || (!
 export const isStrictAdmin = (user) => accessLevel(user) === "admin";
 // a QR Code number the management gave to this person (they read its QR Code on their own phone)
 export const isOwnQrNumber = (user, w) => !!user && !!w && w.ownerId === user.id && (w.channel || "whatsapp") === "whatsapp";
-// Conexões: the management, or whoever has a QR Code number of their own to keep connected
-export const canSeeConnections = (user, whatsApps) => isManager(user) || (whatsApps || []).some((w) => isOwnQrNumber(user, w));
+// who may connect a WhatsApp of their own by QR Code (the server checks the same: canConnectOwnQr)
+export const canConnectOwnQr = (user) => !!user && ["consultor", "tutor", "academico", "relacionamento"].includes(user.role);
+// Conexões: the management, whoever has a QR Code number of their own, and whoever may connect one
+export const canSeeConnections = (user, whatsApps) => isManager(user) || canConnectOwnQr(user) || (whatsApps || []).some((w) => isOwnQrNumber(user, w));
 
 export const COORD_AREA_LABEL = { comercial: "Coordenação comercial", academica: "Coordenação acadêmica" };
 export const roleLabel = (u) =>

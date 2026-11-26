@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { MenuItem, TextField } from "@material-ui/core";
 import { CheckCircle2, Download, ImagePlus } from "lucide-react";
 
@@ -10,6 +11,9 @@ import api from "../../services/api";
 import { ErrorState, Skeleton } from "../../components/ui";
 import toastError from "../../errors/toastError";
 import { fetchAllUsers } from "../../utils/fetchAllUsers";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isStrictAdmin } from "../../utils/access";
+import { enrollmentsCsv } from "../../utils/enrollmentsCsv";
 
 // the print is behind the login: opened through a blob with its own type (image or PDF)
 const openProof = async (url) => {
@@ -29,9 +33,13 @@ const th = { ...cell, fontSize: 12, fontWeight: 700, color: "var(--text-2)", bac
 const card = { border: "1px solid var(--line-strong)", borderRadius: 12, background: "var(--surface)", padding: 14, boxShadow: "var(--shadow-card)", minWidth: 0 };
 
 export default function Enrollments() {
+  const { user } = useContext(AuthContext);
   const now = new Date();
-  const [from, setFrom] = useState(iso(new Date(now.getFullYear(), now.getMonth(), 1)));
-  const [to, setTo] = useState(iso(now));
+  // the period can come in the address (the "Ver matrículas" of the Painel do CRM)
+  const asked = new URLSearchParams(useLocation().search);
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : "");
+  const [from, setFrom] = useState(day(asked.get("from")) || iso(new Date(now.getFullYear(), now.getMonth(), 1)));
+  const [to, setTo] = useState(day(asked.get("to")) || iso(now));
   const [poloId, setPoloId] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [polos, setPolos] = useState([]);
@@ -51,9 +59,8 @@ export default function Enrollments() {
   }, [from, to, poloId, ownerId, again]);
   const rows = data ? data.rows : [];
   const download = () => {
-    const head = ["Aluno", "RGM", "Curso", "Polo", "Consultor", "Data", "Hora", "Dentro da meta", "Meta", "Print anexado"];
-    const lines = rows.map((r) => { const d = new Date(r.at); return [r.name, r.rgm || "", r.course || "", r.polo || "", r.owner || "", d.toLocaleDateString("pt-BR"), d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }), r.inGoal ? "Sim" : "Não", r.goal || "", r.proofId ? "Sim" : "Não"]; });
-    const csv = [head, ...lines].map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n");
+    // name and RGM only for the administration; the other profiles get the identifier of the lead (utils/enrollmentsCsv)
+    const csv = enrollmentsCsv(rows, { full: isStrictAdmin(user) || (!!user && user.role === "admin") });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" }));
     a.download = `matriculas-${from}-a-${to}.csv`; a.click();

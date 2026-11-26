@@ -10,22 +10,63 @@
 - **O WhatsApp corporativo do consultor (QR code)** fica só para quem ainda não migrou. É uma conexão não oficial e corre risco de banimento, principalmente com contatos frios e envios em volume.
 
 ## Quem cria e quem vê as conexões
-- **Só a gestão** (`admin` e `coordenacao`) adiciona, edita e apaga conexões, incluindo o Instagram. Consultores e tutores não criam
-  número próprio.
+- **A gestão** (`admin` e `coordenacao`) adiciona, edita e apaga conexões, incluindo o Instagram.
+- **Número próprio por QR Code (desde 25/11/2026):** consultor, tutor e relacionamento conectam o próprio WhatsApp em Conexões,
+  no botão **"Conectar meu WhatsApp"** (`POST /whatsapp/mine`, `canConnectOwnQr`).
+  - É um número por pessoa (`ERR_QR_ALREADY_HAS`) e respeita o limite de números QR do servidor (`WHATSAPP_MAX_QR`).
+  - O número nasce com o nome "WhatsApp de <primeiro nome>", em proteção "rígida" contra bloqueio, e vira o número de envio da pessoa.
+  - A tela avisa que é conexão não oficial: sem envio em massa e sem contato frio. Campanhas grandes e avisos da tutoria saem pelo oficial.
 - **Número QR Code de uma pessoa:** ao criar um WhatsApp por QR Code, a gestão escolhe em **"Responsável pelo número"** o consultor
   ou tutor. O número vira dele:
   - as conversas que chegam nele vão para ele;
   - vira o número de envio dele.
 
   A gestão pode trocar o responsável ou devolver o número à empresa depois.
-- **Conexões para quem não é da gestão:** o item aparece no menu só para quem tem um número QR Code próprio.
+- **Conexões para quem não é da gestão:** o item aparece no menu para quem tem ou pode ter um número QR Code próprio.
   - A tela mostra só esse número. A pessoa lê o QR Code com o celular, reconecta, desconecta e escolhe quais grupos viram conversas.
   - Os números da empresa, o Instagram e os botões de adicionar, editar e apagar não aparecem.
-  - Sem número próprio, o endereço `/connections` leva para Conversas.
+  - Sem número próprio, a tela mostra o cartão "Conectar meu WhatsApp".
 - **No servidor:**
   - `POST /whatsapp`, `DELETE /whatsapp/:id` e `/channels/instagram/authorize` são só da gestão;
+  - `POST /whatsapp/mine` cria o número QR da própria pessoa (consultor, tutor, relacionamento e a gestão);
   - as rotas de sessão (`/whatsappsession/:id`) e `PUT /whatsapp/:id` aceitam a gestão e o dono do número QR (`canManageWhatsapp`);
   - no `PUT`, o dono só muda os grupos (`groupsMode` e `allowedGroups`).
+
+## Número QR que não volta (reaberturas e processos do navegador)
+- O vigia (`workers/WhatsappWatchdog.ts`) reabre sozinho um número QR caído com o login salvo, a cada 30 min no máximo.
+  Depois de 3 reaberturas sem sucesso, avisa os administradores e passa a tentar só uma vez a cada 6 horas. Para voltar na hora,
+  clique em QR CODE e leia o código no celular.
+- Ao fechar o navegador de um número (ou antes de abrir de novo), os processos do Chromium daquele número que ficaram abertos são
+  encerrados (`browserProcesses.ts`). Antes, eles se acumulavam até o contêiner não conseguir criar processos ("pthread_create",
+  "Cannot fork"), a API ficar doente e as atualizações travarem.
+- Se a API travar assim, rode o workflow **"Reiniciar a API"**: com `executar = nao` só mostra quem segura o bloqueio da
+  atualização e quantos processos há; com `executar = sim` encerra as atualizações presas e reinicia só o contêiner da API
+  (1 a 2 minutos fora). Depois, rode "Atualizar a VPS".
+
+## Número QR: as conversas do celular vêm sozinhas, sem avisar
+Ao ler o QR Code, o sistema copia o WhatsApp do celular, sem ninguém clicar em nada (`autoImportHistory`, em
+`services/WbotServices/ImportHistoryService.ts`).
+- **Espera o celular:** logo depois da leitura, o WhatsApp Web ainda está recebendo as conversas. A lista é lida a cada 20 s até
+  ficar do mesmo tamanho três vezes, por no máximo 6 minutos (`settledChats`, em `Implementations/chatSync.ts`). Se falhar ou vier
+  vazia, tenta de novo depois de 1, 3 e 10 minutos, e também no próximo "conectado", enquanto `historyImportedAt` estiver vazio.
+- **Rápida, sem travar o celular:** duas conversas por vez (`WHATSAPP_IMPORT_PARALLEL`), com até 25 s cada
+  (`WHATSAPP_IMPORT_CHAT_TIMEOUT_MS`). A que trava é tentada de novo no fim. As últimas 100 mensagens de cada conversa vêm na cópia.
+  As fotos vêm depois, aos poucos. Durante a cópia e nos primeiros 30 minutos (`WHATSAPP_SYNC_GRACE_MS`), a checagem de vida do
+  navegador é mais paciente, para não reabrir a página no meio da sincronização (o celular mostrava "a sincronização parou").
+- **Sem avisar:** tudo o que veio do celular entra como histórico, sem som, sem aviso, sem IA, sem fluxo e sem prazo de resposta.
+  Antes da cópia, a checagem de 5 minutos não traz nada como mensagem nova (`chatBehind`). Só o que chega depois avisa.
+- **Igual ao celular:**
+  - no número de uma pessoa, as conversas com mensagem nos últimos 30 dias (`WHATSAPP_IMPORT_RECENT_DAYS`) e não arquivadas
+    entram em **Atendendo** com o dono, com o contador de não lidas do celular. As mais antigas ficam em **Todas** e na busca;
+  - arquivadas e fixadas ficam iguais ao celular;
+  - todos os grupos e comunidades viram conversa, mesmo sem mensagem recente. A comunidade aparece no chip "Comunidades" do dono;
+  - o contato que só tinha o número recebe o nome salvo na agenda do celular (ou o do perfil). Um nome digitado no sistema não muda.
+  - No número da empresa (sem dono), tudo fica como histórico, sem responsável.
+- **Mensagens mais antigas:** na conversa aberta, ao rolar até o topo, as anteriores vêm do celular, de 100 em 100, até o começo
+  (`ChatHistoryFromPhone.ts`, até 3000 por conversa, `WHATSAPP_HISTORY_MAX_PER_CHAT`).
+- **Contato aberto pelo "+":** a conversa já vem com as últimas mensagens do celular.
+- **Progresso:** o topo de Conversas e a tela Conexões mostram "Trazendo as conversas do WhatsApp: 120 de 340".
+- **De novo:** o botão "Copiar conversas" de Conexões refaz a cópia. O que já está aqui não se repete.
 
 ## Como a carteira funciona
 - **Dono do cliente**: é o **responsável no CRM**, se ele já conversou com o cliente. Se não, é **quem atendeu por último**.
@@ -69,6 +110,9 @@
 - Respostas livres dentro das 24 h (serviço): cada número oficial tem 1.000 grátis por mês; acima disso, cada uma é cobrada.
 - O custo é por mensagem, não por número: um número a mais não encarece e traz mais 1.000 respostas grátis.
 - QR Code não paga a Meta, mas disparo em massa por QR derruba o número. O sistema limita o QR a poucos contatos frios por dia.
+- Transcrição dos áudios das conversas da equipe (oficial e QR): não é cobrança da Meta, é da OpenAI. Estimativa: cerca de
+  US$ 0,006 por minuto de áudio; com o teto padrão de 120 minutos por dia, no máximo cerca de US$ 0,72 por dia. Regras em
+  `IA-E-CONVERSAS.md` (Retomada, passagem para a equipe e áudio).
 
 Como o sistema controla:
 - Cada envio guarda a categoria (`OutboundDeliveries.category`) e o custo estimado pela tabela `ChannelServices/MetaRates.ts`
@@ -79,6 +123,19 @@ Como o sistema controla:
 - **Marketing em campanhas** fica desligado (`outbound_allow_marketing`): um modelo que a Meta classificou como Marketing não começa.
 - Tudo isso fica em Configurações → Custos: a aba WhatsApp oficial mostra o mês contra o teto, a aba Limites de gasto tem o teto,
   a cotação do dólar e os preços digitados (vazio usa a tabela).
+- **Cota de disparos por pessoa** (`send_quota_monthly`, padrão 200 mensagens por mês; 0 desliga): conta as mensagens das campanhas
+  e dos avisos que a pessoa criou no mês (enviadas, a caminho e as que esperam numa campanha em andamento; rascunho, pausada,
+  cancelada e bloqueada antes de sair não contam). Passou da cota, a prévia do aviso e a conferência da campanha mostram
+  `ERR_SEND_QUOTA` e o botão "Pedir liberação à gestão" (`SendReleases`, um pedido aguardando por vez). A gestão aprova ou recusa em
+  Estatísticas → Disparos, e o que aprova soma à cota daquele mês. Administradores e coordenação não têm cota
+  (`CampaignServices/SendQuota.ts`). Uma campanha agendada que não cabe mais na cota pausa na hora de começar.
+- **Objetivo do disparo** (`Campaigns.objective`): obrigatório em toda campanha nova; o aviso da tutoria preenche sozinho.
+- **Quem gastou** (`OutboundDeliveries.userId`, `AiUsage.userId`): cada mensagem da Meta e cada chamada da IA guarda quem a
+  provocou. Vale a pessoa logada no pedido (`helpers/Actor.ts`, posto em `isAuth`), o criador da campanha (`CampaignRunner`) e
+  quem agendou a mensagem (`Scheduler`). O que ninguém pediu (respostas automáticas, auditorias, rotinas) fica como "Automação".
+  As sessões por QR Code começam sem pessoa, para não herdar quem as ligou. O relatório é `GET /operations/costs-by-user` (gestão),
+  e a aba Disparos mostra disparos, mensagens, cota e o gasto da Meta e da IA de cada pessoa no período. As mensagens da Meta de
+  antes disso ganharam a pessoa pela chave do envio (migração `20261230000001`); as chamadas antigas da IA ficam como Automação.
 
 ## Estratégia para os 8 polos (fase 1)
 

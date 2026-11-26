@@ -14,6 +14,7 @@ import { portable } from "../../helpers/sqlDialect";
 import { Role, SEGMENTS_OF, isManagerRole } from "../../helpers/Roles";
 import { connectionScopeOf, ticketScopeWhere } from "../../helpers/ConnectionScope";
 import { remember } from "../../helpers/TtlCache";
+import { ticketPoloSql, ticketPolosOf } from "../../helpers/TicketPoloScope";
 
 // who sees which numbers and sectors changes rarely: the lists of one person read it from memory for a few seconds
 // (each new message makes every open screen count its chips again)
@@ -230,6 +231,13 @@ const ListTicketsService = async ({
     whereCondition = { [Op.and]: [whereCondition, ...scope] } as any;
   }
 
+  // the coordination and the relationship team: the conversations given to them and the ones of their polos, never another polo's nor
+  // the ones with no polo (helpers/TicketPoloScope); the same rule covers the search and the counts
+  const polos = role ? await remember(`scope:ticket-polos:${userId}:${role}`, SCOPE_TTL, () => ticketPolosOf(role, Number(userId))) : null;
+  if (polos) {
+    whereCondition = { [Op.and]: [whereCondition, { [Op.or]: [{ userId: Number(userId) }, literal(ticketPoloSql(polos, role === "relacionamento"))] }] } as any;
+  }
+
   // groups, communities and private chats follow the connection: nobody reads another number's groups or personal chats
   const byConnection = ticketScopeWhere(await remember(`scope:connections:${userId}:${role || ""}`, SCOPE_TTL, () => connectionScopeOf(userId, role)), userId);
   if (byConnection) whereCondition = { [Op.and]: [whereCondition, byConnection] } as any;
@@ -245,7 +253,14 @@ const ListTicketsService = async ({
   // History (conversations copied from the phone) has its own view, and only the administrator and the person
   // who owns the number may open it: it is that person's personal chat history. "all" is the WhatsApp-like view:
   // every live conversation plus the history the person is allowed to see, newest first, pinned on top.
-  let finalWhere: any = { [Op.and]: [whereCondition || {}, { isHistorical: false }] };
+  // the person's own number (QR Code): the chats copied from the phone that are recent come open, with that person, and show in the
+  // usual lists as on the phone ("Atendendo"); the rest of the history stays in its own view
+  const mineCopied: any = {
+    isHistorical: true,
+    userId: Number(userId) || 0,
+    [Op.and]: [literal(portable(`Ticket.whatsappId IN (SELECT w.id FROM Whatsapps w WHERE w.ownerId = ${Number(userId) || 0})`))]
+  };
+  let finalWhere: any = { [Op.and]: [whereCondition || {}, { [Op.or]: [{ isHistorical: false }, mineCopied] }] };
   if (historical === "true" || historical === "all") {
     const owned =
       role === "admin"

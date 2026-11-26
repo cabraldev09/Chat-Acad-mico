@@ -25,10 +25,11 @@ const weeklyTraining = async (): Promise<void> => {
   if (!list.length) return;
   const d = new Date();
   const week = `${d.getUTCFullYear()}-${Math.ceil(((+d - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7)}`;
-  const { notifyManagers } = await import("../services/NotificationServices/Notify");
+  const { notify, managerIdsOfUser } = await import("../services/NotificationServices/Notify");
   for (const c of list) {
+    // a consultant's training goes to the administration and to the coordination of that consultant's polos only
     // eslint-disable-next-line no-await-in-loop
-    await notifyManagers({ kind: "training", level: "info", title: `Treinamento sugerido: ${c.name}`, body: c.items.slice(0, 2).map(i => i.text).join("; "), link: "/estatisticas", dedupeKey: `training:${week}:${c.userId}` });
+    await notify(await managerIdsOfUser(c.userId), { kind: "training", level: "info", title: `Treinamento sugerido: ${c.name}`, body: c.items.slice(0, 2).map(i => i.text).join("; "), link: "/estatisticas", dedupeKey: `training:${week}:${c.userId}` });
   }
 };
 

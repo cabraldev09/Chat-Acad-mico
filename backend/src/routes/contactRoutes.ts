@@ -33,6 +33,6 @@ contactRoutes.put("/contacts/:contactId/staff", isAuth, canAccessContact, Contac
 contactRoutes.put("/contacts/:contactId/relation", isAuth, canAccessContact, ContactController.setRelation);
 contactRoutes.put("/contacts/:contactId/community", isAuth, canAccessContact, ContactController.setCommunity);
 
-contactRoutes.delete("/contacts/:contactId", isAuth, isAdmin, ContactController.remove);
+contactRoutes.delete("/contacts/:contactId", isAuth, isAdmin, canAccessContact, ContactController.remove);
 
 export default contactRoutes;

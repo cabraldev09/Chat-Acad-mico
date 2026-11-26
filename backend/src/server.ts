@@ -24,6 +24,7 @@ import { startChannelTokenRefresh } from "./workers/ChannelTokenRefresh";
 import { startCloudHealth } from "./workers/CloudHealth";
 import { startPendingDigest } from "./workers/PendingDigest";
 import { startDataRetention } from "./workers/DataRetention";
+import { startHumanTranscription } from "./workers/HumanTranscription";
 import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
 import { startAckReconciler } from "./workers/AckReconciler";
@@ -75,6 +76,7 @@ whenLeader(() => {
   startConsultantReview();
   startTutoringAudit();
   startDataRetention();
+  startHumanTranscription();
   startFollowUpAlert();
   startProfilePicSync();
   startAckReconciler();

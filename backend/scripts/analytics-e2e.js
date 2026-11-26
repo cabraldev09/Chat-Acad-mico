@@ -46,7 +46,7 @@ const assert = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 
 // ------------------------------------------------------------------ Telegram mock
 const tg = { updates: [], sent: [], n: 100, failChats: new Set(), delayMs: 0 };
-const aiMock = { requests: [], poloId: 0 };
+const aiMock = { requests: [], poloId: 0, transcriptions: 0 };
 const startTelegramMock = () => {
   const app = express();
   app.use(express.json());
@@ -77,6 +77,12 @@ const startTelegramMock = () => {
 const startAiMock = () => {
   const app = express();
   app.use(express.json());
+  // OpenAI audio transcription (simulated): what a voice note of a conversation between people said
+  app.post("/v1/audio/transcriptions", (req, res) => {
+    aiMock.transcriptions += 1;
+    req.resume();
+    req.on("end", () => res.json({ text: "Quero saber o valor da mensalidade de Direito", duration: 4 }));
+  });
   app.post("/v1/chat/completions", (req, res) => {
     aiMock.requests.push(req.body);
     return res.json({
@@ -145,7 +151,9 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       ...process.env, DATABASE_URL: "", DATABASE_URL_POOL: "", DB_SSL: "false", NODE_ENV: "test", DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: process.env.PGPASSWORD || "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API, FRONTEND_URL: "http://localhost:3000",
       JWT_SECRET: "e2e", DASHBOARD_CACHE_MS: "0", JWT_REFRESH_SECRET: "e2e-r", LOGIN_RATE_MAX: "1000", TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`,
-      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn"
+      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn",
+      // the background transcription of voice notes is run by the scenario itself (one run at a time, at the moment it wants)
+      HUMAN_TRANSCRIBE_MS: "86400000"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
@@ -213,6 +221,8 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const salesQueue = (polo.data.queues || []).find(q => q.role === "comercial");
       assert(salesQueue, "test polo has no sales queue");
       aiMock.poloId = Number(polo.data.id);
+      // the coordination asks about its own polos only: this coordinator belongs to the polo of the sample
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${aiMock.poloId}, ${ids.coord}, 'coordenacao', NOW(), NOW())`);
       sql("UPDATE AiAgents SET active=false");
       const agent = await http.post("/ai-agents", { name: "Supervisor QA", provider: "openai", model: "gpt-4o-mini", apiKey: "sk-test-only", active: true, dailyTokenCap: 100000 }, as(admin));
       assert(agent.status === 201, `create test AI agent ${agent.status} ${JSON.stringify(agent.data)}`);
@@ -267,12 +277,13 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
         const seen = (await A(admin, `/analytics/consultant/${ids.joao}?range=${range}`)).data;
         const team = (await A(admin, `/analytics/team?range=${range}`)).data;
         const inTeam = team.consultants.find(c => c.user.id === ids.joao);
-        const coordTeam = (await A(coord, `/analytics/team?range=${range}`)).data.consultants.find(c => c.user.id === ids.joao);
-        assert(mine.metrics && seen.metrics && inTeam && coordTeam, "a door answered without João");
+        // a coordinator with no polo yet sees no consultant (the same rule of the CRM); the polo comes in the test below
+        const coordTeam = (await A(coord, `/analytics/team?range=${range}`)).data.consultants;
+        assert(coordTeam.length === 0, `coordination with no polo sees ${coordTeam.length} consultants`);
+        assert(mine.metrics && seen.metrics && inTeam, "a door answered without João");
         for (const k of KPIS) {
           assert(mine.metrics[k] === seen.metrics[k], `${k}: me=${mine.metrics[k]} manager=${seen.metrics[k]}`);
           assert(mine.metrics[k] === inTeam.metrics[k], `${k}: me=${mine.metrics[k]} team=${inTeam.metrics[k]}`);
-          assert(mine.metrics[k] === coordTeam.metrics[k], `${k}: me=${mine.metrics[k]} coordination=${coordTeam.metrics[k]}`);
         }
         assert(JSON.stringify(mine.series) === JSON.stringify(seen.series) && JSON.stringify(mine.series) === JSON.stringify(inTeam.series), "history differs");
         assert(JSON.stringify(mine.goals) === JSON.stringify(seen.goals), "goals differ");
@@ -306,7 +317,11 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       for (let i = 0; i < 4; i += 1) assert(ok(await send(laura, first.ticketId, `parte ${i}`)), "send");
       await sentOk(first.ticketId);
       sql(`UPDATE Tickets SET status = 'closed' WHERE id = ${first.ticketId}`);
-      const again = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('pending', ${first.contactId}, ${connectionId}, ${queueId}, NULL, 1, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      // the same person on another number (one live conversation per person and per number: the second one is on another line)
+      const other = await http.post("/whatsapp", { name: "Telegram 2", channel: "telegram", config: JSON.stringify({ botToken: "456:DEF" }), queueIds: [queueId] }, as(admin));
+      assert(other.status === 200, `second connection ${other.status}`);
+      await waitFor(async () => (await http.get(`/whatsapp/${other.data.id}`, as(admin))).data.status === "CONNECTED", 12000, "second connected");
+      const again = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('pending', ${first.contactId}, ${other.data.id}, ${queueId}, NULL, 1, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('seed-${again}', ${again}, ${first.contactId}, 'Voltei', false, false, 'chat', 0, NOW(), NOW())`);
       assert(ok(await send(laura, Number(again), "de novo")), "send again");
       await sentOk(Number(again));
@@ -837,6 +852,381 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       await waitFor(() => taskOf(task).done, 10000, "the transcript task closed");
       assert(taskOf(task).reason === "transcript_received", `reason ${taskOf(task).reason}`);
       await waitFor(() => sql(`SELECT stageId FROM Leads WHERE id=${leadId}`) === String(analysis), 8000, "the lead left Aguardando histórico");
+    });
+    await test("voice notes of the conversations between people: transcribed once in the background, only on WhatsApp numbers, never with the switch off or the cap reached, shown only to who sees the conversation", async () => {
+      const fs = require("fs");
+      const pub = path.join(ROOT, "public");
+      fs.mkdirSync(pub, { recursive: true });
+      const tag = `hv${process.pid}`;
+      // run asynchronously: the simulated OpenAI lives in this process and must keep answering while the child waits for it
+      const run = async () => {
+        const { stdout } = await require("util").promisify(require("child_process").execFile)("node", ["-e", "require('./dist/services/AiServices/HumanTranscription').transcribePending().then(r => { process.stdout.write('\\n' + JSON.stringify(r) + '\\n'); process.exit(0); }, e => { console.error(e); process.exit(1); })"], { cwd: ROOT, env });
+        return JSON.parse(String(stdout).trim().split("\n").pop());
+      };
+      const number = (channel) => sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('${channel} ${tag}', 'CONNECTED', '${channel}', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cloud = number("whatsapp_cloud"), qr = number("whatsapp");
+      let n = 0;
+      const conversation = (whatsappId, { group = false, owner = ids.joao } = {}) => {
+        n += 1;
+        const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Voz ${n}', '55690000${tag.length}${n}${process.pid % 1000}', '', ${group}, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, aiActive, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('open', ${contactId}, ${whatsappId}, ${queueId}, ${owner || "NULL"}, false, 0, ${group}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return { contactId, ticketId };
+      };
+      const voice = (c, id, { fromMe = false, minutesAgo = 5 } = {}) => {
+        const f = `${tag}-${id}.ogg`;
+        fs.writeFileSync(path.join(pub, f), Buffer.alloc(8000));
+        sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, mediaUrl, ack, createdAt, updatedAt) VALUES ('${tag}-${id}', ${c.ticketId}, ${c.contactId}, '${f}', ${fromMe}, true, 'audio', '${f}', 0, NOW() - INTERVAL '${minutesAgo} minutes', NOW())`);
+        return f;
+      };
+      const transcriptOf = (id) => sql(`SELECT COALESCE(transcript, '') FROM Messages WHERE id='${tag}-${id}'`);
+      const files = [];
+      try {
+        assert((await http.put("/ai-settings", { openai: "sk-openai-test" }, as(admin))).status === 200, "openai key");
+        const lead = conversation(cloud), team = conversation(qr), group = conversation(cloud, { group: true }), telegram = conversation(connectionId);
+        files.push(voice(lead, "lead"), voice(team, "team", { fromMe: true }), voice(group, "group"), voice(telegram, "telegram"), voice(lead, "fresh", { minutesAgo: 0 }));
+        // off by default (the owner turns it on after telling the team and the leads): nothing is sent
+        assert((await http.get("/ai-handoff", as(admin))).data.settings.transcribeHuman === false, "the transcription of the team should start off");
+        assert((await run()).stopped === "off" && aiMock.transcriptions === 0, "transcribed while off by default");
+        assert((await http.put("/ai-handoff", { transcribeHuman: true }, as(admin))).data.settings.transcribeHuman === true, "turn on");
+        const first = await run();
+        assert(first.transcribed === 2 && first.failed === 0, `first run ${JSON.stringify(first)}`);
+        assert(aiMock.transcriptions === 2, `the OpenAI was called ${aiMock.transcriptions} times`);
+        assert(transcriptOf("lead") === "Quero saber o valor da mensalidade de Direito" && transcriptOf("team") === "Quero saber o valor da mensalidade de Direito", "the transcript of the lead and of the team was not kept");
+        // a group, another channel and a voice note that just arrived (left to the AI agent and to the download) are not sent
+        assert(!transcriptOf("group") && !transcriptOf("telegram") && !transcriptOf("fresh"), "a voice note out of the rule was transcribed");
+        // once: the next run sends nothing again
+        const second = await run();
+        assert(second.transcribed === 0 && aiMock.transcriptions === 2, `second run ${JSON.stringify(second)} / ${aiMock.transcriptions}`);
+        // the cost is counted with no agent, as a reading of the conversation
+        assert(Number(sql(`SELECT COUNT(*) FROM AiUsage WHERE kind='reading' AND agentId IS NULL AND model='whisper-1'`)) === 2, "the usage was not logged");
+
+        // who sees the conversation sees the text; a colleague who does not, does not
+        const shown = (await http.get(`/messages/${lead.ticketId}`, as(joao)));
+        assert(shown.status === 200 && shown.data.messages.some(m => m.transcript === "Quero saber o valor da mensalidade de Direito"), "the owner does not see the transcript");
+        assert((await http.get(`/messages/${lead.ticketId}`, as(gabrielli))).status === 403, "another consultant read the conversation");
+
+        // the switch of the conversations between people off (only the management changes it): nothing is sent
+        assert((await http.put("/ai-handoff", { transcribeHuman: false }, as(joao))).status === 403, "a consultant changed the switch");
+        const off = await http.put("/ai-handoff", { transcribeHuman: false }, as(admin));
+        assert(off.status === 200 && off.data.settings.transcribeHuman === false, `switch off ${JSON.stringify(off.data.settings)}`);
+        files.push(voice(lead, "off"));
+        assert((await run()).stopped === "off" && !transcriptOf("off") && aiMock.transcriptions === 2, "transcribed with the switch off");
+        // on again, but the own cap of the day reached (8 seconds used of 0 minutes): nothing is sent and the voice note waits
+        const capped = await http.put("/ai-handoff", { transcribeHuman: true, humanMinutes: 0 }, as(admin));
+        assert(capped.status === 200 && capped.data.settings.humanMinutes === 0, "cap");
+        assert((await run()).stopped === "own_cap" && !transcriptOf("off") && aiMock.transcriptions === 2, "transcribed with the cap reached");
+        // room in the cap again: the one that waited is sent
+        await http.put("/ai-handoff", { humanMinutes: 120 }, as(admin));
+        assert((await run()).transcribed === 1 && transcriptOf("off") && aiMock.transcriptions === 3, "the voice note that waited was not transcribed");
+      } finally {
+        await http.put("/ai-settings", { openai: "" }, as(admin)).catch(() => null);
+        files.forEach(f => fs.rmSync(path.join(pub, f), { force: true }));
+      }
+    });
+
+    await test("retention of conversations and voice notes: off deletes nothing, the simulation deletes nothing, on deletes only what is allowed and keeps the transcript", async () => {
+      const fs = require("fs");
+      const pub = path.join(ROOT, "public");
+      fs.mkdirSync(pub, { recursive: true });
+      const tag = `ret${process.pid}`;
+      const file = (n) => { const f = `${tag}-${n}`; fs.writeFileSync(path.join(pub, f), "x"); return f; };
+      const has = (f) => fs.existsSync(path.join(pub, f));
+      const OLD = "NOW() - INTERVAL '400 days'";
+      const RECENT = "NOW() - INTERVAL '10 days'";
+      let n = 0;
+      const conversation = (status, when) => {
+        n += 1;
+        const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Retenção ${n}', 'tg_${tag}_${n}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return { contactId, ticketId: ticketIn(contactId, status, when) };
+      };
+      const ticketIn = (contactId, status, when, whatsappId = connectionId) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, aiActive, unreadMessages, isGroup, lastMessage, lastMessageAt, createdAt, updatedAt)
+        VALUES ('${status}', ${contactId}, ${whatsappId}, ${queueId}, false, 0, false, 'última mensagem', ${when}, ${when}, ${when}) RETURNING id`).split("\n")[0];
+      // a second number of the company: the same contact can be in a conversation there (one conversation per contact and number)
+      const otherNumber = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('Outro número ${tag}', 'DISCONNECTED', 'telegram', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const msg = (c, id, { body = "", media = null, type = "chat", transcript = null, when = OLD } = {}) =>
+        sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, mediaUrl, transcript, ack, createdAt, updatedAt)
+          VALUES ('${tag}-${id}', ${c.ticketId}, ${c.contactId}, '${body}', false, true, '${type}', ${media ? `'${media}'` : "NULL"}, ${transcript ? `'${transcript}'` : "NULL"}, 0, ${when}, ${when})`);
+      const m = (id) => {
+        const [body, media, transcript, bodyPurged, mediaPurged] = sql(`SELECT body, COALESCE(mediaUrl, ''), COALESCE(transcript, ''), CASE WHEN bodyPurgedAt IS NULL THEN 0 ELSE 1 END, CASE WHEN mediaPurgedAt IS NULL THEN 0 ELSE 1 END FROM Messages WHERE id='${tag}-${id}'`).split("|");
+        return { body, media, transcript, bodyPurged: bodyPurged === "1", mediaPurged: mediaPurged === "1" };
+      };
+      const night = () => JSON.parse(execFileSync("node", ["-e", "require('./dist/services/SystemServices/ContentRetention').runContentRetention().then(r => { process.stdout.write('\\n' + JSON.stringify(r) + '\\n'); process.exit(0); }, e => { console.error(e); process.exit(1); })"], { cwd: ROOT, env }).toString().trim().split("\n").pop());
+
+      // T1: closed, nothing for 400 days (goes); T2: closed and old, but the same contact has an open conversation (stays);
+      // T3: closed and old, the lead was won and waits for the confirmation of the enrollment (stays, its old voice note too);
+      // T4: closed 10 days ago (stays), with an old transcribed voice note (its file goes with the audio rule, the transcript stays) and
+      // an old one never transcribed (stays); T5: open, with an old transcribed voice note and a recent one (both stay)
+      const T1 = conversation("closed", OLD);
+      const f1 = file("foto.jpg"), f2 = file("voz-antiga.ogg"), f4 = file("voz-aberta.ogg"), f5 = file("voz-recente.ogg");
+      const f6 = file("voz-fechada.ogg"), f7 = file("voz-sem-texto.ogg"), f8 = file("voz-matricula.ogg");
+      msg(T1, "t1-text", { body: "texto antigo" });
+      msg(T1, "t1-photo", { body: f1, media: f1, type: "image" });
+      msg(T1, "t1-voice", { body: f2, media: f2, type: "audio", transcript: "o que foi dito no áudio" });
+      const T2 = conversation("closed", OLD);
+      msg(T2, "t2-text", { body: "conversa de quem tem atendimento aberto" });
+      ticketIn(T2.contactId, "open", RECENT, otherNumber);
+      const T3 = conversation("closed", OLD);
+      msg(T3, "t3-text", { body: "conversa da matrícula pendente" });
+      msg(T3, "t3-voice", { body: f8, media: f8, type: "audio", transcript: "áudio da matrícula pendente" });
+      const pendingLead = sql(`INSERT INTO Leads (name, phone, source, stageId, contactId, isHistorical, wonAt, createdAt, updatedAt) VALUES ('Lead retenção', '5569000000999', 'WhatsApp', ${stageWon.id}, ${T3.contactId}, false, ${OLD}, ${OLD}, ${OLD}) RETURNING id`).split("\n")[0];
+      const T4 = conversation("closed", RECENT);
+      msg(T4, "t4-text", { body: "conversa recente", when: RECENT });
+      msg(T4, "t4-voice-old", { body: f6, media: f6, type: "audio", transcript: "áudio antigo transcrito" });
+      msg(T4, "t4-voice-notr", { body: f7, media: f7, type: "audio" });
+      const T5 = conversation("open", RECENT);
+      msg(T5, "t5-voice-old", { body: f4, media: f4, type: "audio", transcript: "transcrição que fica" });
+      msg(T5, "t5-voice-new", { body: f5, media: f5, type: "audio", when: RECENT });
+      const activities = sql(`SELECT COUNT(*) FROM LeadActivities`);
+      const leads = sql(`SELECT COUNT(*) FROM Leads`);
+      const intact = () => ["t1-text", "t2-text", "t3-text", "t4-text"].every(id => !m(id).bodyPurged && m(id).body) && [f1, f2, f4, f5, f6, f7, f8].every(has) && m("t1-voice").transcript === "o que foi dito no áudio";
+
+      // off by default: the night run does nothing at all
+      const off = await http.get("/data-retention", as(admin));
+      assert(off.status === 200 && off.data.audioDays === 0 && off.data.conversationDays === 0, `the rules should start off: ${JSON.stringify(off.data)}`);
+      assert(off.data.suggested.conversationDays === 180 && off.data.suggested.audioDays === 90, "suggested days");
+      assert(night().ran === false && intact(), "retention off deleted something");
+      assert(sql(`SELECT COUNT(*) FROM DataPurgeRuns`) === "0", "a run was recorded while off");
+
+      // only the administrator: coordination and the consultants are refused, and the generic settings route cannot turn it on
+      for (const token of [coord, joao]) {
+        assert((await http.get("/data-retention", as(token))).status === 403, "a non-admin read the retention");
+        assert((await http.put("/data-retention", { audioDays: 90 }, as(token))).status === 403, "a non-admin changed the retention");
+        assert((await http.post("/data-retention/simulate", {}, as(token))).status === 403, "a non-admin simulated");
+      }
+      for (const token of [admin, coord]) assert((await http.put("/settings/retention_audio_days", { value: "30" }, as(token))).status === 403, "the generic settings route changed the retention");
+      // turning on without a simulation of the same days in the last 24 hours is refused
+      for (const body of [{ audioDays: 90 }, { conversationDays: 180 }]) {
+        const r = await http.put("/data-retention", body, as(admin));
+        assert(r.status === 409 && r.data.error === "ERR_RETENTION_SIMULATION_REQUIRED", `turned on without a simulation: ${r.status} ${JSON.stringify(r.data)}`);
+      }
+
+      // the simulation counts by polo and by type and deletes nothing
+      const sim = await http.post("/data-retention/simulate", { audioDays: 90, conversationDays: 180 }, as(admin));
+      assert(sim.status === 200, `simulate ${sim.status} ${JSON.stringify(sim.data)}`);
+      // the audio rule: only closed, unprotected conversations, and only the voice notes already transcribed (t1-voice, t4-voice-old)
+      assert(sim.data.audio.files === 2 && sim.data.audio.withTranscript === 2 && sim.data.audio.withoutTranscript === 1, `audio simulation ${JSON.stringify(sim.data.audio)}`);
+      const c = sim.data.conversations;
+      assert(c.conversations === 1 && c.messages === 3 && c.byType.text === 1 && c.byType.image === 1 && c.byType.audio === 1, `conversation simulation ${JSON.stringify(c)}`);
+      assert(c.kept.openElsewhere === 1 && c.kept.pendingEnrollment === 1, `protected conversations ${JSON.stringify(c.kept)}`);
+      assert(Array.isArray(c.byPolo) && c.byPolo.length >= 1, "by polo");
+      assert(intact(), "the simulation deleted something");
+      assert(sql(`SELECT mode FROM DataPurgeRuns ORDER BY id`) === "simulation", "the simulation was not recorded");
+
+      // out of range is refused; then both rules on (180 and 90 days)
+      assert((await http.put("/data-retention", { audioDays: 5 }, as(admin))).status === 400, "5 days accepted");
+      assert((await http.put("/data-retention", { audioDays: 100 }, as(admin))).status === 409, "turned on with days that were not simulated");
+      const on = await http.put("/data-retention", { audioDays: 90, conversationDays: 180 }, as(admin));
+      assert(on.status === 200 && on.data.audioDays === 90 && on.data.conversationDays === 180, `turn on ${JSON.stringify(on.data)}`);
+      const run = night();
+      assert(run.ran && !run.failed && run.conversations === 1 && run.conversationMessages === 3 && run.audioFiles === 1 && run.filesDeleted === 3, `run ${JSON.stringify(run)}`);
+
+      // T1 lost its content (the record of each message stays), its files and the preview of the list
+      ["t1-text", "t1-photo", "t1-voice"].forEach(id => { const x = m(id); assert(x.bodyPurged && x.body === "" && x.media === "" && x.transcript === "", `${id} was not cleared: ${JSON.stringify(x)}`); });
+      assert(!has(f1) && !has(f2), "the files of the old conversation stayed");
+      assert(sql(`SELECT lastMessage FROM Tickets WHERE id=${T1.ticketId}`) === "", "the preview of the old conversation stayed");
+      // the protected and the recent ones are untouched
+      ["t2-text", "t3-text", "t4-text"].forEach(id => assert(!m(id).bodyPurged && m(id).body, `${id} should stay`));
+      // the old voice note lost only its file: the message and the transcript stay; the recent one is untouched
+      // the old transcribed voice note of a closed conversation lost only its file: the message and the transcript stay
+      const v = m("t4-voice-old");
+      assert(v.mediaPurged && v.media === "" && v.transcript === "áudio antigo transcrito" && v.body === f6 && !v.bodyPurged && !has(f6), `old voice note ${JSON.stringify(v)}`);
+      // the one never transcribed, the one of the open conversation, the one of the pending enrollment and the recent one stay
+      assert(!m("t4-voice-notr").mediaPurged && has(f7), "a voice note without transcript lost its file");
+      assert(!m("t5-voice-old").mediaPurged && m("t5-voice-old").media === f4 && has(f4), "a voice note of an open conversation lost its file");
+      assert(!m("t3-voice").mediaPurged && has(f8), "a voice note of a lead waiting for the enrollment lost its file");
+      assert(has(f5) && m("t5-voice-new").media === f5, "the recent voice note was touched");
+      // nothing of the CRM is deleted
+      assert(sql(`SELECT COUNT(*) FROM Leads`) === leads && sql(`SELECT COUNT(*) FROM LeadActivities`) === activities, "leads or the activity history changed");
+      assert(sql(`SELECT wonAt IS NOT NULL FROM Leads WHERE id=${pendingLead}`) === "1", "the pending lead changed");
+      // the run is recorded; the screen of the conversation shows it; the file is not brought back from the phone
+      assert(sql(`SELECT mode || ':' || conversationMessages || ':' || audioFiles FROM DataPurgeRuns ORDER BY id DESC LIMIT 1`) === "run:3:1", "the run was not recorded");
+      const shown = (await http.get(`/messages/${T1.ticketId}`, as(admin))).data.messages;
+      assert(shown.length === 3 && shown.every(x => x.bodyPurgedAt && !x.body), "the conversation does not show the cleared messages");
+      assert((await http.post(`/messages/${tag}-t4-voice-old/media`, {}, as(admin))).status === 410, "a purged file was offered again");
+      // a second night finds nothing more
+      const again = night();
+      assert(again.conversationMessages === 0 && again.audioFiles === 0, `second night ${JSON.stringify(again)}`);
+      [f4, f5, f7, f8].forEach(f => fs.rmSync(path.join(pub, f), { force: true }));
+    });
+
+    // The CRM by polo (middleware/scope): the coordination sees only the leads of the polos it belongs to, the relationship team only the
+    // enrolled students of its polos, a coordinator with no polo sees no lead, the administration sees everything. Every door of the CRM
+    // follows the same rule: the list, the counts of the board and of the panel, the search, the report (CSV), Matrículas realizadas,
+    // the list of new leads, the tasks of the team and the record itself.
+    await test("CRM by polo: coordination and relationship see only their polos, in lists, counts, search and exports", async () => {
+      const poloA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('SCA', 'Polo Escopo A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const poloB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('SCB', 'Polo Escopo B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const coordA = await mkUser("Coordenação Escopo A", "coord-sca@x.com", "coordenacao");
+      const coordNone = await mkUser("Coordenação sem polo", "coord-scn@x.com", "coordenacao");
+      const relA = await mkUser("Relacionamento Escopo A", "rel-sca@x.com", "relacionamento");
+      const coordAId = userId("coord-sca@x.com");
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${poloA}, ${coordAId}, 'coordenacao', NOW(), NOW()), (${poloA}, ${userId("rel-sca@x.com")}, 'comercial', NOW(), NOW())`);
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const won = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
+      const mk = (name, polo, enrolled) => sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, poloId, isHistorical, ${enrolled ? "enrolledAt, wonAt, " : ""}createdAt, updatedAt) VALUES ('${name}', '55690${Math.floor(Math.random() * 1e8)}', 'Escopo', ${enrolled ? won : open}, ${ids.joao}, ${polo}, false, ${enrolled ? "NOW(), NOW(), " : ""}NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const leadA = mk("SCOPEA aberto", poloA, false);
+      const enrolledA = mk("SCOPEA matriculado", poloA, true);
+      const leadB = mk("SCOPEB aberto", poloB, false);
+      const enrolledB = mk("SCOPEB matriculado", poloB, true);
+      sql(`INSERT INTO LeadTasks (leadId, userId, title, type, dueAt, createdAt, updatedAt) VALUES (${leadA}, ${ids.joao}, 'Tarefa SCOPEA', 'ligacao', NOW() + INTERVAL '1 day', NOW(), NOW()), (${leadB}, ${ids.joao}, 'Tarefa SCOPEB', 'ligacao', NOW() + INTERVAL '1 day', NOW(), NOW())`);
+      const names = r => (r.data.leads || []).map(l => l.name).sort();
+
+      // list and search
+      const listA = await A(coordA, "/leads?search=SCOPE&limit=100");
+      assert(listA.status === 200 && JSON.stringify(names(listA)) === JSON.stringify(["SCOPEA aberto", "SCOPEA matriculado"]) && listA.data.count === 2, `coordination A list ${listA.status} ${JSON.stringify(names(listA))}`);
+      const searchB = await A(coordA, "/leads?search=SCOPEB");
+      assert(searchB.status === 200 && searchB.data.count === 0, `coordination A found a lead of polo B by search: ${searchB.data.count}`);
+      const adminList = await A(admin, "/leads?search=SCOPE&limit=100");
+      assert(adminList.data.count === 4, `administration sees every polo: ${adminList.data.count}`);
+      // the record itself and what hangs from it
+      assert((await A(coordA, `/leads/${leadB}`)).status === 403, "coordination A opened a lead of polo B");
+      assert((await A(coordA, `/leads/${leadB}/activities`)).status === 403, "coordination A read the history of a lead of polo B");
+      assert((await A(coordA, `/leads/${leadA}`)).status === 200, "coordination A cannot open a lead of its polo");
+      assert((await A(admin, `/leads/${leadB}`)).status === 200, "administration cannot open a lead of polo B");
+      // counts: the board and the panel of the CRM
+      const board = (await A(coordA, "/crm/board?search=SCOPE")).data.stages.reduce((t, st) => t + Number(st.count || 0), 0);
+      assert(board === 2, `board count of coordination A: ${board}`);
+      const kpi = (await A(coordA, "/crm/metrics")).data.kpi;
+      assert(kpi.leads === 2, `panel count of coordination A: ${JSON.stringify(kpi)}`);
+      const kpiNow = (await A(coordA, "/crm/metrics?now=1")).data.funnel.reduce((t, st) => t + Number(st.total || 0), 0);
+      assert(kpiNow === 2, `funnel now of coordination A: ${kpiNow}`);
+      assert((await A(admin, "/crm/metrics")).data.kpi.leads >= 4, "administration panel misses leads");
+      const triage = (await A(coordA, "/crm/triage")).data.items.map(i => i.name);
+      assert(triage.includes("SCOPEA aberto") && !triage.some(n => /SCOPEB/.test(n)), `new leads of coordination A: ${JSON.stringify(triage)}`);
+      const tasks = (await A(coordA, "/lead-tasks?scope=all&status=open")).data.map(t => t.title);
+      assert(tasks.includes("Tarefa SCOPEA") && !tasks.includes("Tarefa SCOPEB"), `team tasks of coordination A: ${JSON.stringify(tasks)}`);
+      // exports: the report of the CRM (CSV) and Matrículas realizadas
+      const csv = String((await http.get("/crm/report?groupBy=polo&format=csv", { ...as(coordA), responseType: "text" })).data);
+      assert(csv.includes("Polo Escopo A") && !csv.includes("Polo Escopo B"), `report CSV of coordination A: ${csv.slice(0, 300)}`);
+      const adminCsv = String((await http.get("/crm/report?groupBy=polo&format=csv", { ...as(admin), responseType: "text" })).data);
+      assert(adminCsv.includes("Polo Escopo A") && adminCsv.includes("Polo Escopo B"), "administration report misses a polo");
+      const enr = (await A(coordA, "/enrollments")).data.rows.map(r => r.name);
+      assert(enr.includes("SCOPEA matriculado") && !enr.includes("SCOPEB matriculado"), `enrollments of coordination A: ${JSON.stringify(enr)}`);
+      const enrAsked = (await A(coordA, `/enrollments?poloId=${poloB}`)).data.rows.length;
+      assert(enrAsked === 0, `coordination A asked for polo B and got ${enrAsked} enrollments`);
+      const enrAdmin = (await A(admin, "/enrollments")).data.rows.map(r => r.name);
+      assert(enrAdmin.includes("SCOPEA matriculado") && enrAdmin.includes("SCOPEB matriculado"), "administration enrollments miss a polo");
+      // the relationship team: the enrolled students of its polos, never the sales funnel
+      const rel = await A(relA, "/leads?search=SCOPE&limit=100");
+      assert(rel.status === 200 && JSON.stringify(names(rel)) === JSON.stringify(["SCOPEA matriculado"]), `relationship A: ${JSON.stringify(names(rel))}`);
+      assert((await A(relA, `/leads/${enrolledB}`)).status === 403, "relationship A opened a student of polo B");
+      // a coordinator with no polo sees no lead
+      const none = await A(coordNone, "/leads?limit=5");
+      assert(none.status === 200 && none.data.count === 0, `coordination with no polo sees ${none.data.count} leads`);
+      assert((await A(coordNone, "/crm/metrics")).data.kpi.leads === 0, "coordination with no polo counts leads");
+      // and the coordination does not put itself in another polo to see it
+      assert((await http.post(`/polos/${poloB}/members/${coordAId}`, { role: "coordenacao" }, as(coordA))).status === 403, "coordination A joined polo B by itself");
+      assert((await http.post(`/polos/${poloA}/members/${userId("rel-sca@x.com")}`, { role: "comercial" }, as(coordA))).status === 200, "coordination A cannot manage its own polo");
+      assert(Number(sql(`SELECT COUNT(*) FROM PoloMembers WHERE poloId=${poloB} AND userId=${coordAId}`)) === 0, "coordination A is in polo B");
+      // nor changes the data of polo B: the cities it serves decide the polo of the leads (it would pull them), its name, deleting it, importing over it
+      assert((await http.put(`/polos/${poloB}/coverage`, { cities: ["Cidade Escopo - RO"] }, as(coordA))).status === 403, "coordination A changed the cities of polo B");
+      assert((await http.put(`/polos/${poloB}`, { name: "Polo tomado" }, as(coordA))).status === 403, "coordination A edited polo B");
+      assert((await http.delete(`/polos/${poloB}`, as(coordA))).status === 403, "coordination A deleted polo B");
+      const imp = (await http.post("/polos/import", { items: [{ code: "SCB", name: "Polo tomado" }], dryRun: false }, as(coordA))).data;
+      assert(imp.errors === 1 && imp.updated === 0, `coordination A imported over polo B: ${JSON.stringify(imp).slice(0, 200)}`);
+      assert(sql(`SELECT name FROM Polos WHERE id=${poloB}`) === "Polo Escopo B" && Number(sql(`SELECT COUNT(*) FROM PoloCoverages WHERE poloId=${poloB}`)) === 0, "polo B changed");
+      assert((await http.put(`/polos/${poloA}/coverage`, { cities: ["Cidade Escopo - RO"] }, as(coordA))).status === 200, "coordination A cannot set the cities of its polo");
+      void enrolledA;
+    });
+    // Conversations, contacts, goals and panels by polo (helpers/TicketPoloScope): the coordination reads and changes only the conversations
+    // of its polos (a queue of the polo or a contact who is a lead there) and the ones given to it; the relationship team only its enrolled
+    // students; a conversation with no polo is the administration's. Everybody reads the goals of every polo; the coordination changes only
+    // the lines of its polos.
+    await test("conversations, contacts, goals and panels by polo: another polo's data is refused in the backend", async () => {
+      const pA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('CVA', 'Polo Conversa A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const pB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('CVB', 'Polo Conversa B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cA = await mkUser("Coordenação Conversa A", "coord-cva@x.com", "coordenacao");
+      const cNone = await mkUser("Coordenação Conversa sem polo", "coord-cvn@x.com", "coordenacao");
+      const rA = await mkUser("Relacionamento Conversa A", "rel-cva@x.com", "relacionamento");
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${pA}, ${userId("coord-cva@x.com")}, 'coordenacao', NOW(), NOW()), (${pA}, ${userId("rel-cva@x.com")}, 'comercial', NOW(), NOW())`);
+      let qn = 0;
+      const queue = (name, polo) => sql(`INSERT INTO Queues (name, color, poloId, createdAt, updatedAt) VALUES ('${name}', '#12345${(qn += 1)}', ${polo || "NULL"}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const qA = queue("Fila Conversa A", pA), qB = queue("Fila Conversa B", pB), q0 = queue("Fila Conversa sem polo", null);
+      // the relationship team works in a queue with no polo (as the real Relacionamento queue): only the polo of the student separates them
+      sql(`INSERT INTO UserQueues (userId, queueId, createdAt, updatedAt) VALUES (${userId("rel-cva@x.com")}, ${q0}, NOW(), NOW())`);
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      let n = 0;
+      const person = (name, polo, enrolled) => {
+        n += 1;
+        const number = `55699${String(77700000 + n)}`;
+        const contact = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        if (polo) sql(`INSERT INTO Leads (name, phone, source, stageId, poloId, contactId, isHistorical, ${enrolled ? "enrolledAt, wonAt, " : ""}createdAt, updatedAt) VALUES ('${name}', '${number}', 'Escopo', ${open}, ${polo}, ${contact}, false, ${enrolled ? "NOW(), NOW(), " : ""}NOW(), NOW())`);
+        return { contact, number };
+      };
+      const ticket = (who, q, segment) => {
+        const t = sql(`INSERT INTO Tickets (status, contactId, queueId, userId, unreadMessages, isGroup, segment, lastMessageAt, createdAt, updatedAt) VALUES ('pending', ${who.contact}, ${q}, NULL, 1, false, '${segment || "sales"}', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
+        sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('cv-${t}', ${t}, ${who.contact}, 'Oi CONVERSAESC', false, false, 'chat', 0, NOW(), NOW())`);
+        return t;
+      };
+      const a = person("CONVERSAESC A", pA), b = person("CONVERSAESC B", pB), none = person("CONVERSAESC sem polo", null);
+      const leadOfA = person("CONVERSAESC lead A fila geral", pA);
+      const stA = person("CONVERSAESC aluno A", pA, true), stB = person("CONVERSAESC aluno B", pB, true);
+      const tA = ticket(a, qA), tB = ticket(b, qB), t0 = ticket(none, q0), tLeadA = ticket(leadOfA, q0);
+      const tStA = ticket(stA, q0, "relationship"), tStB = ticket(stB, q0, "relationship");
+      const listed = async (token, extra = "") => ((await A(token, `/tickets?searchParam=CONVERSAESC&showAll=true&allQueues=true&status=pending${extra}`)).data.tickets || []).map(t => Number(t.id)).sort((x, y) => x - y);
+      const sorted = arr => arr.map(Number).sort((x, y) => x - y);
+
+      // the list (and the search inside it) and the counts
+      assert(JSON.stringify(await listed(cA)) === JSON.stringify(sorted([tA, tLeadA, tStA])), `coordination A list: ${JSON.stringify(await listed(cA))}`);
+      assert((await listed(cNone)).length === 0, "a coordination with no polo listed conversations");
+      const adminList = await listed(admin);
+      assert([tA, tB, t0, tLeadA, tStA, tStB].every(t => adminList.includes(Number(t))), "the administration misses a conversation");
+      // one conversation, its messages, changing it, deleting it
+      assert((await A(cA, `/tickets/${tA}`)).status === 200 && (await A(cA, `/messages/${tA}`)).status === 200, "coordination A cannot read its polo");
+      for (const t of [tB, t0, tStB]) {
+        assert((await A(cA, `/tickets/${t}`)).status === 403, `coordination A opened conversation ${t}`);
+        assert((await A(cA, `/messages/${t}`)).status === 403, `coordination A read the messages of ${t}`);
+      }
+      assert((await http.put(`/tickets/${tB}`, { status: "open" }, as(cA))).status === 403, "coordination A changed a conversation of polo B");
+      assert((await http.delete(`/tickets/${tB}`, as(cA))).status === 403, "coordination A deleted a conversation of polo B");
+      assert(sql(`SELECT status FROM Tickets WHERE id=${tB}`) === "pending", "the conversation of polo B changed");
+      assert((await A(admin, `/tickets/${t0}`)).status === 200, "the administration cannot read a conversation with no polo");
+      // the relationship team: its enrolled students only
+      assert((await A(rA, `/tickets/${tStA}`)).status === 200, "relationship A cannot read its student");
+      assert((await A(rA, `/tickets/${tStB}`)).status === 403 && (await A(rA, `/messages/${tStB}`)).status === 403, "relationship A read a student of polo B");
+      // (the screen sends the person's queues)
+      const relList = await listed(rA, `&queueIds=${encodeURIComponent(JSON.stringify([Number(q0)]))}`);
+      assert(relList.includes(Number(tStA)) && !relList.includes(Number(tStB)), `relationship A list: ${JSON.stringify(relList)}`);
+
+      // contacts: list, spreadsheet, record, lookup by number, deleting
+      const contactNames = async token => ((await A(token, "/contacts?searchParam=CONVERSAESC")).data.contacts || []).map(c => c.name);
+      const seen = await contactNames(cA);
+      assert(seen.includes("CONVERSAESC A") && seen.includes("CONVERSAESC lead A fila geral") && !seen.some(x => / B$|sem polo/.test(x)), `coordination A contacts: ${JSON.stringify(seen)}`);
+      assert((await contactNames(cNone)).length === 0, "a coordination with no polo listed contacts");
+      const csv = String((await http.get("/contacts/export.csv?searchParam=CONVERSAESC", { ...as(cA), responseType: "text" })).data);
+      assert(csv.includes("CONVERSAESC A") && !csv.includes("CONVERSAESC B") && !csv.includes("CONVERSAESC sem polo"), `coordination A spreadsheet: ${csv.slice(0, 300)}`);
+      assert((await A(cA, `/contacts/${b.contact}`)).status === 403, "coordination A opened a contact of polo B");
+      assert((await A(cA, `/contacts/${a.contact}`)).status === 200, "coordination A cannot open a contact of its polo");
+      assert((await http.post("/contact", { number: b.number }, as(cA))).status === 403, "coordination A looked up a contact of polo B by number");
+      assert((await http.delete(`/contacts/${b.contact}`, as(cA))).status === 403, "coordination A deleted a contact of polo B");
+      assert(Number(sql(`SELECT COUNT(*) FROM Contacts WHERE id=${b.contact}`)) === 1, "the contact of polo B is gone");
+      assert((await contactNames(admin)).length >= 6, "the administration misses contacts");
+
+      // goals: everybody reads every polo; the coordination changes only the lines of its polos
+      const today = new Date();
+      const d = days => new Date(today.getTime() + days * 864e5).toISOString().slice(0, 10);
+      const goal = sql(`INSERT INTO Goals (title, startsOn, endsOn, status, kind, workDays, createdAt, updatedAt) VALUES ('Meta escopo', '${d(-3)}', '${d(30)}', 'active', 'polo', 5, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO GoalPolos (goalId, poloId, target, manualCount, canceled, createdAt, updatedAt) VALUES (${goal}, ${pA}, 10, 0, 0, NOW(), NOW()), (${goal}, ${pB}, 10, 0, 0, NOW(), NOW())`);
+      assert((await A(cA, `/goals/polos?goalId=${goal}`)).status === 200, "coordination A cannot read the goals");
+      assert((await http.put(`/goals/${goal}/polos/${pB}`, { target: 99 }, as(cA))).status === 403, "coordination A changed the goal of polo B");
+      assert((await http.put(`/goals/${goal}/polos/${pA}`, { target: 12 }, as(cA))).status === 200, "coordination A cannot change the goal of its polo");
+      assert((await http.put(`/goals/${goal}/polos`, { rows: [{ poloId: pB, target: 1 }] }, as(cA))).status === 403, "coordination A replaced the lines of polo B");
+      assert((await http.put(`/goals/${goal}/polos`, { workDays: 6 }, as(cA))).status === 403, "coordination A changed the working days of every polo");
+      assert((await http.post(`/goals/${goal}/postpone`, { endsOn: d(40), reason: "teste" }, as(cA))).status === 403, "coordination A postponed the goal of every polo");
+      assert(sql(`SELECT target FROM GoalPolos WHERE goalId=${goal} AND poloId=${pB}`) === "10" && sql(`SELECT target FROM GoalPolos WHERE goalId=${goal} AND poloId=${pA}`) === "12", "goal lines");
+      const imp = (await http.post(`/goals/${goal}/polos/import`, { items: [{ code: "CVB", name: "Polo Conversa B", target: 50 }], dryRun: false }, as(cA))).data;
+      assert(imp.errors === 1 && sql(`SELECT target FROM GoalPolos WHERE goalId=${goal} AND poloId=${pB}`) === "10", `coordination A imported over polo B: ${JSON.stringify(imp).slice(0, 200)}`);
+
+      // panels: nothing of polo B (nor with no polo) reaches the coordination of A
+      // (/dashboard/manager also carries the goals of every polo, which everybody reads: there only people and conversations are checked)
+      for (const path of ["/dashboard", "/dashboard/management", "/dashboard/manager"]) {
+        const body = JSON.stringify((await A(cA, path)).data);
+        assert(!body.includes("CONVERSAESC B") && !body.includes("CONVERSAESC sem polo") && (path === "/dashboard/manager" || !body.includes("Polo Conversa B")), `${path} of coordination A shows another polo: ${body.slice(0, 300)}`);
+      }
+      const mgr = (await A(cA, "/dashboard/manager")).data;
+      const lineB = (mgr.polos || []).find(x => Number(x.poloId) === Number(pB));
+      assert(!lineB || (!lineB.unanswered && !lineB.onboardingLate && !lineB.atRisk), `the manager overview counts what is stuck in polo B: ${JSON.stringify(lineB)}`);
+      void cNone;
     });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);

@@ -4,6 +4,7 @@ import { usageCounts } from "./Policy";
 import AiUsage from "../../models/AiUsage";
 import { dayBounds } from "../../helpers/AppTime";
 import { priceInfoOf } from "./Prices";
+import { currentActorId } from "../../helpers/Actor";
 
 interface Counts {
   input_tokens?: number;
@@ -25,6 +26,7 @@ export const logUsage = async (a: {
   nodeId?: string | null;
   latencyMs?: number | null;
   leadId?: number | null;
+  userId?: number | null;
 }): Promise<void> => {
   const u = usageCounts(a.usage);
   const price = await priceOf(a.model);
@@ -38,6 +40,7 @@ export const logUsage = async (a: {
     nodeId: a.nodeId ? String(a.nodeId).slice(0, 40) : null,
     latencyMs: a.latencyMs ?? null,
     leadId: a.leadId || null,
+    userId: a.userId ?? currentActorId(),
     model: a.model,
     kind: a.kind,
     inputTokens: regularInput,

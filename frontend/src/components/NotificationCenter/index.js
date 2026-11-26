@@ -49,7 +49,8 @@ export const useNotices = () => {
       if (!n) return;
       setState((s) => ({ ...s, list: [n, ...(s.list || []).filter((x) => x.id !== n.id)].slice(0, 40), unread: s.unread + 1 }));
       if (!HAS_TOAST.has(n.kind)) {
-        // the same card everywhere: its title, one sentence and the button to where it is solved
+        // the same card everywhere: its title, one sentence and the button to where it is solved; every pop-up closes by itself
+        // (the urgent one stays longer, 15 s); the notice stays in the bell until read
         noticeToast({ id: `notice-${n.id}`, title: n.title, body: n.body, level: n.level, actionLabel: "Abrir", onAction: n.link ? () => { window.dispatchEvent(new CustomEvent("openNotice", { detail: n })); } : null });
       }
     });

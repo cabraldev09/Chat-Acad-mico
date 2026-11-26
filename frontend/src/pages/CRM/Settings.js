@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
-  Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, Tooltip, makeStyles,
+  Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, Tooltip, IconButton, makeStyles,
 } from "@material-ui/core";
 import { Copy, RefreshCw, DatabaseBackup, Library, Upload, ShieldCheck, PlugZap, KeyRound } from "lucide-react";
 import { Dialog, DialogTitle, DialogContent, DialogActions } from "@material-ui/core";
@@ -14,11 +14,15 @@ import ImportWizard from "../../components/ImportWizard";
 import ColorSwatchPicker from "../../components/ColorSwatchPicker";
 import api from "../../services/api";
 import { getBackendUrl } from "../../config";
+import { publicApiBase } from "../../utils/publicApiBase";
 import toastError from "../../errors/toastError";
 import { dayDefault } from "../../utils/workWeek";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const useStyles = makeStyles((theme) => ({
+  formHead: { fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: theme.palette.text.secondary, marginTop: theme.spacing(1.5), paddingTop: theme.spacing(1), borderTop: `1px solid ${theme.palette.divider}` },
+  off: { color: theme.palette.text.secondary, fontWeight: 400 },
   pane: { padding: theme.spacing(2.5), display: "grid", gap: theme.spacing(2), maxWidth: 720, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
   code: {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12.5, background: theme.palette.action.hover, padding: theme.spacing(1.25),
@@ -81,7 +85,7 @@ export const Capture = ({ s, setS, save }) => {
           <div className={classes.row}>
             <Button variant="outlined" size="small" href={link} target="_blank">Abrir formulário</Button>
             <Button variant="outlined" size="small" startIcon={<RefreshCw size={14} />}
-              onClick={() => window.confirm("Gerar um novo link desativa o anterior. Continuar?") && save({ regenerateFormToken: true })}>Gerar novo link</Button>
+              onClick={async () => { if (await confirmDialog({ title: "Gerar um novo link?", message: "O link atual para de funcionar. Quem já tem o link antigo precisa receber o novo.", confirmText: "Gerar novo link", tone: "danger" })) save({ regenerateFormToken: true }); }}>Gerar novo link</Button>
           </div>
         </>
       ) : <Button variant="contained" color="primary" onClick={() => save({ regenerateFormToken: true })}>Ativar formulário</Button>}
@@ -95,7 +99,7 @@ export const Capture = ({ s, setS, save }) => {
         <Typography className={classes.hint}>
           Conversas de qualquer canal viram lead automaticamente. Para ligar RD Station, Meta Lead Ads (via Zapier/Make), landing pages ou planilhas, use a API com um token criado em API &amp; Webhooks:
         </Typography>
-        <Copyable text={`POST ${base}/api/v1/leads  {"name":"Maria","phone":"11999990000","email":"m@x.com","source":"Google","utmCampaign":"vestibular"}`} />
+        <Copyable text={`POST ${publicApiBase(base)}/api/v1/leads  {"name":"Maria","phone":"11999990000","email":"m@x.com","source":"Google","utmCampaign":"vestibular"}`} />
         <Typography className={classes.hint} style={{ marginTop: 8 }}>Eventos por webhook: lead.created, lead.stage_changed, lead.won, lead.lost.</Typography>
       </div>
     </Paper>
@@ -224,7 +228,8 @@ export const EfiSettings = ({ stages }) => {
             helperText="Para vencimentos distantes" style={{ width: 220 }} />
           <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ flex: 1, minWidth: 240 }}>
             <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
-            {stages.map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
+            {/* a payment never enrolls by itself (the RGM and the tutor come from the enrollment dialog): only the open columns */}
+            {stages.filter((st) => st.type === "open" || st.id === v.moveStageId).map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
           </TextField>
         </div>
         <div><Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button></div>
@@ -481,13 +486,20 @@ export const Automation = ({ s, setS, save, users }) => {
   );
 };
 
+const COURSE_LEVELS = ["Bacharelado", "Licenciatura", "Tecnólogo", "Pós-graduação", "MBA", "Técnico", "Técnico regular", "Técnico por competência", "Profissionalizante", "Extensão"];
+
 const COURSE_COLUMNS = [
   { key: "name", label: "Nome do curso", required: true, aliases: ["curso", "nome"], hint: "Nome como aparece na proposta. Ex.: Administração" },
   { key: "category", label: "Categoria", aliases: ["tipo"], hint: "Ex.: Graduação, Pós-graduação, Segunda graduação, Técnico" },
-  { key: "level", label: "Nível", hint: "Bacharelado, Licenciatura, Tecnólogo, Pós-graduação, MBA, Técnico ou Extensão" },
+  { key: "level", label: "Nível", hint: "Bacharelado, Licenciatura, Tecnólogo, Pós-graduação, MBA, Técnico regular, Técnico por competência, Profissionalizante ou Extensão" },
   { key: "modality", label: "Modalidade", aliases: ["modalidade de ensino"], hint: "EAD, Semipresencial ou Presencial" },
   { key: "monthlyFee", label: "Mensalidade bruta", aliases: ["mensalidade", "valor", "preco"], hint: "Valor cheio, sem bolsa. Ex.: 1073,80" },
   { key: "semesters", label: "Semestres", aliases: ["duracao", "periodos"], hint: "Duração do curso em semestres (1 a 20). Vazio = 8" },
+  { key: "durationMonths", label: "Duração (meses)", aliases: ["meses", "duracao em meses"], hint: "Para pós, técnicos e cursos livres. Ex.: 9" },
+  { key: "installmentsTotal", label: "Parcelas", aliases: ["numero de parcelas", "nº de parcelas", "qtd de parcelas", "quantidade de parcelas"], hint: "Quantas mensalidades o curso tem, quando não vão até o fim. Ex.: 15" },
+  { key: "enrollmentFee", label: "Taxa de matrícula", aliases: ["matricula"], hint: "Ex.: 99,00. Vazio = a do modelo de proposta" },
+  { key: "certificationFee", label: "Taxa de certificação", aliases: ["certificacao", "taxa de certificado"], hint: "Paga ao concluir. Ex.: 150,00. 0 = sem taxa" },
+  { key: "singlePayment", label: "Parcela única", aliases: ["a vista", "pagamento unico"], hint: "Sim para cursos pagos de uma vez (profissionalizante). Vazio = Não" },
   { key: "institution", label: "Instituição", aliases: ["faculdade", "universidade"], hint: "Nome exato de uma instituição já cadastrada (opcional)" },
   { key: "active", label: "Ativo", hint: "Sim ou Não. Vazio = Sim" },
 ];
@@ -525,6 +537,7 @@ const ActiveToggle = ({ row: course, endpoint = "/courses", label = "curso" }) =
 };
 
 const CrmSettings = () => {
+  const classes = useStyles();
   const [tab, setTab] = useState(0);
   const [s, setS] = useState({});
   const [users, setUsers] = useState([]);
@@ -615,17 +628,23 @@ const CrmSettings = () => {
               fields={[
                 { name: "name", label: "Nome do curso", required: true },
                 { name: "category", label: "Categoria", type: "combo", options: categories },
-                { name: "level", label: "Nível", type: "select", options: opts(["Bacharelado", "Licenciatura", "Tecnólogo", "Pós-graduação", "MBA", "Técnico", "Extensão"]) },
+                { name: "level", label: "Nível", type: "select", options: opts(COURSE_LEVELS) },
                 { name: "modality", label: "Modalidade", type: "select", options: opts(options.modalities) },
                 { name: "monthlyFee", label: "Mensalidade bruta (R$)", type: "number" },
-                { name: "semesters", label: "Semestres", type: "number", default: 8 },
+                { name: "semesters", label: "Semestres", type: "number", default: 8, helper: "Graduação. Pós e técnicos usam a duração em meses." },
+                { name: "durationMonths", label: "Duração (meses)", type: "number", helper: "Pós, técnicos e cursos livres. Na pós da Cruzeiro: 6, 9 ou 12." },
+                { name: "installmentsTotal", label: "Parcelas", type: "number", helper: "Quantas mensalidades. Vazio = pela duração (regra do modelo de proposta)." },
+                { name: "enrollmentFee", label: "Taxa de matrícula (R$)", type: "number", helper: "Vazio = a do modelo de proposta." },
+                { name: "certificationFee", label: "Taxa de certificação (R$)", type: "number", helper: "Paga ao concluir. Vazio = a do modelo; 0 = sem taxa." },
+                { name: "singlePayment", label: "Parcela única (o curso é pago de uma vez; o consultor pode parcelar na proposta)", type: "switch", default: false },
                 { name: "institutionId", label: "Instituição", type: "select", options: institutions.map((i) => ({ value: i.id, label: i.name })) },
                 { name: "active", label: "Ativo (aparece no formulário e nas propostas)", type: "switch", default: true },
               ]}
               columns={[
                 { header: "Curso", field: "name" }, { header: "Categoria", render: (r) => r.category || "—" }, { header: "Modalidade", render: (r) => r.modality || "—" },
                 { header: "Mensalidade", render: (r) => (r.monthlyFee ? Number(r.monthlyFee).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—") },
-                { header: "Semestres", render: (r) => r.semesters },
+                { header: "Duração", render: (r) => (r.durationMonths ? `${r.durationMonths} meses` : `${r.semesters} sem.`) },
+                { header: "Parcelas", render: (r) => (r.singlePayment ? "Única" : r.installmentsTotal || "—") },
                 { header: "Ativo", render: (r) => <ActiveToggle key={r.id} row={r} /> },
               ]} />
           </>
@@ -664,16 +683,32 @@ const CrmSettings = () => {
         {tab === 3 && (
           <CrudPage embedded title="Modelos de proposta" endpoint="/proposal-templates" addLabel="Novo modelo" socketEvent="proposalTemplate" dialogWidth="md"
             emptyText="Nenhum modelo." reloadKey={reload}
-            mapIn={(r) => ({ ...r, institutionIds: (r.institutions || []).map((i) => i.id), semestralSchedule: (() => { try { const v = JSON.parse(r.semestralSchedule || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } })().map((x) => `${x.from}=${x.pct}`).join("\n") })}
+            mapIn={(r) => ({ ...r, institutionIds: (r.institutions || []).map((i) => i.id), semestralSchedule: (() => { try { const v = JSON.parse(r.semestralSchedule || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } })().map((x) => `${x.from}=${x.pct}`).join("\n"),
+              installmentsByDuration: (() => { try { const v = JSON.parse(r.installmentsByDuration || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } })().map((x) => `${x.months}=${x.installments}`).join("\n"),
+              courseLevels: (() => { try { const v = JSON.parse(r.courseLevels || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } })() })}
             mapOut={(v) => ({ ...v, semestralSchedule: String(v.semestralSchedule || "").split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [from, pct] = l.split("="); return { from: Number(from), pct: Number(String(pct).replace(",", ".")) }; }) })}
             fields={[
               { name: "name", label: "Nome do modelo", required: true },
+              { name: "active", label: "Ativo (aparece nas propostas novas)", type: "switch", default: true },
+              { name: "planType", label: "Tipo de proposta", type: "select", default: "semestral", options: [{ value: "semestral", label: "Graduação: por semestre, com projeção e reajustes" }, { value: "parcelado", label: "Parcelada: parcelas de valor fixo (pós, técnicos, cursos livres)" }],
+                helper: "Na parcelada, o número de parcelas vem do curso ou da tabela por duração abaixo." },
               { name: "institutionIds", label: "Instituições que usam este modelo", type: "multiselect", options: institutions.map((i) => ({ value: i.id, label: i.name })), helper: "O modelo aparece na proposta dos cursos dessas instituições. Vazio = serve para todas." },
+              { name: "courseLevels", label: "Níveis de curso", type: "multiselect", options: opts(COURSE_LEVELS), helper: "A proposta escolhe sozinha este modelo para cursos desses níveis. Vazio = serve para todos." },
+              { name: "_hvalores", type: "custom", render: () => <div className={classes.formHead}>Valores e parcelas</div> },
               { name: "enrollmentFee", label: "Taxa de matrícula (R$)", type: "number", default: 0 },
               { name: "dueDay", label: "Dia de vencimento", type: "number", default: 10 },
-              { name: "installments", label: "Parcelas por semestre", type: "number", default: 6 },
+              { name: "installments", label: "Parcelas por semestre (graduação)", type: "number", default: 6 },
+              { name: "installmentsByDuration", label: "Parcelas pela duração (parcelada)", type: "textarea", rows: 3, helper: "Uma linha por duração: meses=parcelas. Ex.: 6=12, 9=15 e 12=18. O número de parcelas do curso, quando preenchido, vale mais." },
               { name: "installmentsFixed", label: "Total de parcelas do curso (fixo)", type: "number", helper: "Deixe vazio quando as mensalidades seguem até o fim do curso." },
-              { name: "firstExempt", label: "1ª mensalidade isenta (a 2ª leva a data de vencimento)", type: "switch", default: false },
+              { name: "firstExempt", label: "1ª mensalidade isenta (R$ 0,00; o consultor pode mudar na proposta)", type: "switch", default: false },
+              { name: "chargeCertification", label: "Cobra taxa de certificação (ao concluir o curso)", type: "switch", default: false },
+              { name: "certificationFee", label: "Taxa de certificação (R$)", type: "number", default: 0, helper: "O consultor pode isentar ou mudar na proposta. A do curso, quando preenchida, vale mais." },
+              { name: "_hpagamento", type: "custom", render: () => <div className={classes.formHead}>Formas de pagamento (parcela única)</div> },
+              { name: "pixDiscountPct", label: "Desconto no Pix (%)", type: "number", default: 0 },
+              { name: "cardMaxInstallments", label: "Cartão: em quantas vezes", type: "number", default: 12 },
+              { name: "cardRatePct", label: "Cartão: juros ao mês (%)", type: "number", default: 0, helper: "Taxa da maquininha por parcela. 0 = sem juros." },
+              { name: "cardPassInterest", label: "Repassar os juros do cartão ao aluno", type: "switch", default: true },
+              { name: "_hregras", type: "custom", render: () => <div className={classes.formHead}>Bolsa e reajustes</div> },
               { name: "hasRegression", label: "Tem regressão da bolsa (cai após o 1º semestre)", type: "switch", default: true },
               { name: "hasAdjustment", label: "Tem reajuste semestral e anual", type: "switch", default: true },
               { name: "fixedUntilEnd", label: "Mensalidade fixa até o fim do curso (sem regressão nem reajuste)", type: "switch", default: false },
@@ -685,6 +720,7 @@ const CrmSettings = () => {
               { name: "annualMin", label: "Reajuste anual mínimo (%)", type: "number", default: 5 },
               { name: "annualMax", label: "Reajuste anual teto (%)", type: "number", default: 11 },
               { name: "semestralSchedule", label: "Reajuste semestral", type: "textarea", rows: 3, default: "2=2\n6=3", helper: "Uma linha por degrau: semestre=percentual. “2=2” e “6=3” = 2% do 2º ao 5º semestre e 3% do 6º em diante." },
+              { name: "_htextos", type: "custom", render: () => <div className={classes.formHead}>Textos da proposta</div> },
               { name: "bolsaNote", label: "Nota da bolsa aplicada", type: "textarea", rows: 2 },
               { name: "observation", label: "Observação", type: "textarea", rows: 2 },
               { name: "disclaimer", label: "Aviso da projeção", type: "textarea", rows: 3 },
@@ -693,11 +729,35 @@ const CrmSettings = () => {
               { name: "waClosing", label: "WhatsApp · fechamento (validade)", type: "textarea", rows: 2, helper: "Variáveis: {{nome}}, {{curso}} e {{hoje}}." },
               { name: "isDefault", label: "Modelo padrão", type: "switch", default: false },
             ]}
+            rowActions={(r, load) => (
+              <>
+                <Tooltip title={r.isDefault ? "O modelo padrão fica sempre ativo" : r.active === false ? "Ativar" : "Desativar"}>
+                  <span>
+                    <Switch size="small" color="primary" checked={r.active !== false} disabled={!!r.isDefault}
+                      inputProps={{ "aria-label": `${r.active === false ? "Ativar" : "Desativar"} o modelo ${r.name}` }}
+                      onChange={async (e) => {
+                        const on = e.target.checked;
+                        try { await api.put(`/proposal-templates/${r.id}`, { active: on }); toast.success(on ? "Modelo ativado." : "Modelo desativado: não aparece nas propostas novas."); load(); } catch (err) { toastError(err); }
+                      }} />
+                  </span>
+                </Tooltip>
+                <Tooltip title="Duplicar">
+                  <IconButton size="small" aria-label={`Duplicar o modelo ${r.name}`} onClick={async () => {
+                    const { id, createdAt, updatedAt, institutions, isDefault, name, ...rest } = r;
+                    try {
+                      await api.post("/proposal-templates", { ...rest, name: `${name} (cópia)`, isDefault: false, active: true, institutionIds: (institutions || []).map((i) => i.id) });
+                      toast.success("Modelo duplicado. Edite a cópia.");
+                      load();
+                    } catch (err) { toastError(err); }
+                  }}><Copy size={17} /></IconButton>
+                </Tooltip>
+              </>
+            )}
             columns={[
-              { header: "Modelo", render: (r) => (<>{r.name}{r.isDefault ? " (padrão)" : ""}</>) },
+              { header: "Modelo", render: (r) => (<>{r.name}{r.isDefault ? " (padrão)" : ""}{r.active === false ? <span className={classes.off}> · inativo</span> : null}</>) },
               { header: "Matrícula", render: (r) => Number(r.enrollmentFee).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) },
               { header: "Bolsa 1º / demais", render: (r) => `${Number(r.bolsaFirst)}% / ${Number(r.bolsaNext)}%` },
-              { header: "Regras", render: (r) => [r.fixedUntilEnd ? "Fixa até o fim" : null, !r.fixedUntilEnd && r.hasRegression === false ? "Sem regressão" : null, !r.fixedUntilEnd && r.hasAdjustment === false ? "Sem reajuste" : null, r.firstExempt ? "1ª isenta" : null, r.installmentsFixed ? `${r.installmentsFixed} parcelas` : null].filter(Boolean).join(" · ") || "Padrão" },
+              { header: "Regras", render: (r) => [r.planType === "parcelado" ? "Parcelada" : null, r.fixedUntilEnd ? "Fixa até o fim" : null, !r.fixedUntilEnd && r.hasRegression === false ? "Sem regressão" : null, !r.fixedUntilEnd && r.hasAdjustment === false ? "Sem reajuste" : null, r.firstExempt ? "1ª isenta" : null, r.installmentsFixed ? `${r.installmentsFixed} parcelas` : null].filter(Boolean).join(" · ") || "Padrão" },
               { header: "Instituições", render: (r) => ((r.institutions || []).map((i) => i.name).join(", ") || "Todas") },
             ]} />
         )}

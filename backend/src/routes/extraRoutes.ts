@@ -1,4 +1,6 @@
 import * as Tutoria from "../controllers/TutoriaController";
+import * as AnalysisCtl from "../controllers/AnalysisController";
+import * as SendReleases from "../controllers/SendReleaseController";
 import * as Notifications from "../controllers/NotificationController";
 import * as MetaCosts from "../controllers/MetaCostsController";
 import * as MetaTemplates from "../controllers/MetaTemplatesController";
@@ -17,8 +19,9 @@ import * as Preferences from "../controllers/PreferencesController";
 import canManageWhatsapp from "../middleware/canManageWhatsapp";
 import isAdmin from "../middleware/isAdmin";
 import isManager from "../middleware/isManager";
+import isSystemAdmin from "../middleware/isSystemAdmin";
 import { canReadTicket, canWriteTicket } from "../middleware/canAccessTicket";
-import { canAccessLead, canAccessOnboarding, canAccessProposal, canAccessPayment } from "../middleware/scope";
+import { canAccessLead, canAccessOnboarding, canAccessProposal, canAccessPayment, loadCrmPolos } from "../middleware/scope";
 import * as EnrollmentForm from "../controllers/EnrollmentFormController";
 import * as TutoringIssue from "../controllers/TutoringIssueController";
 import uploadConfig from "../config/upload";
@@ -149,12 +152,12 @@ r.get("/dashboard", isAuth, Dashboard.index);
 // tags
 r.get("/tags", isAuth, cached(), Tag.index);
 r.get("/communities", isAuth, Community.index);
-r.get("/mail/settings", isAuth, isAdmin, MailSettings.show);
-r.put("/mail/settings", isAuth, isAdmin, MailSettings.update);
-r.post("/mail/test", isAuth, isAdmin, MailSettings.test);
-r.get("/mail/templates", isAuth, isAdmin, MailSettings.templates);
-r.get("/mail/templates/:key/preview", isAuth, isAdmin, MailSettings.preview);
-r.post("/mail/templates/:key/test", isAuth, isAdmin, MailSettings.testTemplate);
+r.get("/mail/settings", isAuth, isSystemAdmin, MailSettings.show);
+r.put("/mail/settings", isAuth, isSystemAdmin, MailSettings.update);
+r.post("/mail/test", isAuth, isSystemAdmin, MailSettings.test);
+r.get("/mail/templates", isAuth, isSystemAdmin, MailSettings.templates);
+r.get("/mail/templates/:key/preview", isAuth, isSystemAdmin, MailSettings.preview);
+r.post("/mail/templates/:key/test", isAuth, isSystemAdmin, MailSettings.testTemplate);
 r.post("/tags", isAuth, isManager, Tag.store);
 r.put("/tags/:id", isAuth, isManager, Tag.update);
 r.delete("/tags/:id", isAuth, isManager, Tag.remove);
@@ -163,15 +166,18 @@ r.get("/contacts/:contactId/tags", isAuth, canAccessContact, Tag.contactTags);
 r.put("/contacts/:contactId/tags", isAuth, canAccessContact, Tag.setContactTags);
 
 // webhooks / api tokens (admin)
-r.get("/webhooks-config/events", isAuth, isAdmin, Webhook.events);
-r.get("/webhooks-config", isAuth, isAdmin, Webhook.index);
-r.post("/webhooks-config", isAuth, isAdmin, Webhook.store);
-r.put("/webhooks-config/:id", isAuth, isAdmin, Webhook.update);
-r.delete("/webhooks-config/:id", isAuth, isAdmin, Webhook.remove);
-r.post("/webhooks-config/:id/test", isAuth, isAdmin, Webhook.test);
-r.get("/api-tokens", isAuth, isAdmin, ApiToken.index);
-r.post("/api-tokens", isAuth, isAdmin, ApiToken.store);
-r.delete("/api-tokens/:id", isAuth, isAdmin, ApiToken.remove);
+r.get("/webhooks-config/events", isAuth, isSystemAdmin, Webhook.events);
+r.get("/webhooks-config", isAuth, isSystemAdmin, Webhook.index);
+r.post("/webhooks-config", isAuth, isSystemAdmin, Webhook.store);
+r.put("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.update);
+r.delete("/webhooks-config/:id", isAuth, isSystemAdmin, Webhook.remove);
+r.post("/webhooks-config/:id/test", isAuth, isSystemAdmin, Webhook.test);
+r.get("/api-tokens", isAuth, isSystemAdmin, ApiToken.index);
+r.get("/api-tokens/scopes", isAuth, isSystemAdmin, ApiToken.scopes);
+r.get("/api-tokens/legacy", isAuth, isSystemAdmin, ApiToken.legacyShow);
+r.put("/api-tokens/legacy", isAuth, isSystemAdmin, ApiToken.legacySave);
+r.post("/api-tokens", isAuth, isSystemAdmin, ApiToken.store);
+r.delete("/api-tokens/:id", isAuth, isSystemAdmin, ApiToken.remove);
 
 // AI agents
 r.get("/ai-agents", isAuth, isManager, Ai.index);
@@ -247,8 +253,8 @@ r.post("/ai-agents/:id/train/analyze", isAuth, isManager, Ai.trainAnalyze);
 r.post("/ai-agents/:id/train/apply", isAuth, isManager, Ai.trainApply);
 r.post("/ai-agents/:id/train/from-conversation", isAuth, isManager, Ai.trainFromConversation);
 r.get("/ai-agents/:id/usage", isAuth, isManager, Ai.usage);
-r.get("/ai-settings", isAuth, isAdmin, Ai.getKeys);
-r.put("/ai-settings", isAuth, isAdmin, Ai.setKeys);
+r.get("/ai-settings", isAuth, isSystemAdmin, Ai.getKeys);
+r.put("/ai-settings", isAuth, isSystemAdmin, Ai.setKeys);
 
 // visual flows (the chatbot builder)
 r.get("/flows", isAuth, isManager, Flow.index);
@@ -329,7 +335,7 @@ r.get("/channels/instagram/authorize", isAuth, isManager, ChannelOAuth.authorize
 r.get("/channels/instagram/app", isAuth, isManager, ChannelOAuth.getApp);
 r.put("/channels/instagram/app", isAuth, isManager, ChannelOAuth.putApp);
 r.get("/channels/:whatsappId/info", isAuth, isManager, Channel.info);
-r.get("/channels/:whatsappId/safety", isAuth, Channel.safety);
+r.get("/channels/:whatsappId/safety", isAuth, canManageWhatsapp, Channel.safety);
 r.get("/channels/:whatsappId/groups", isAuth, canManageWhatsapp, Channel.groups);
 
 // polos (branches) and the team of each one
@@ -358,28 +364,28 @@ r.post("/crm/backfill", isAuth, isManager, Lead.backfill);
 r.get("/crm/settings", isAuth, isManager, Lead.getSettings);
 r.put("/crm/settings", isAuth, isManager, Lead.putSettings);
 r.post("/crm/cadences/run", isAuth, isManager, Lead.runCadencesNow);
-r.get("/retention/config", isAuth, Retention.getConfig);
-r.put("/retention/config", isAuth, isRetentionOperator, Retention.putConfig);
-r.post("/retention/run", isAuth, isRetentionOperator, Retention.runNow);
-r.get("/retention/summary", isAuth, Retention.summary);
-r.get("/retention/today", isAuth, Retention.today);
-r.post("/retention/contact/:leadId", isAuth, Retention.contact);
-r.get("/retention/students", isAuth, Retention.students);
-r.get("/retention/audience", isAuth, Retention.audience);
-r.post("/retention/preview", isAuth, Retention.preview);
-r.post("/retention/send", isAuth, Retention.sendBulk);
-r.get("/retention/log", isAuth, Retention.log);
-r.get("/retention/log.csv", isAuth, Retention.logCsv);
-r.get("/retention/operations", isAuth, Retention.operations);
-r.get("/retention/nps", isAuth, Retention.nps);
-r.get("/retention/nps.csv", isAuth, Retention.npsCsv);
-r.post("/retention/nps/send/:leadId", isAuth, Retention.sendNps);
-r.get("/retention/risk", isAuth, Retention.risk);
-r.get("/retention/risk.csv", isAuth, Retention.riskCsv);
-r.post("/retention/risk/:leadId/message", isAuth, Retention.riskMessage);
-r.get("/retention/rematricula", isAuth, Retention.rematricula);
-r.get("/retention/rematricula.csv", isAuth, Retention.rematriculaCsv);
-r.post("/retention/rematricula/:leadId", isAuth, Retention.setRematricula);
+r.get("/retention/config", isAuth, loadCrmPolos, Retention.getConfig);
+r.put("/retention/config", isAuth, loadCrmPolos, isRetentionOperator, Retention.putConfig);
+r.post("/retention/run", isAuth, loadCrmPolos, isRetentionOperator, Retention.runNow);
+r.get("/retention/summary", isAuth, loadCrmPolos, Retention.summary);
+r.get("/retention/today", isAuth, loadCrmPolos, Retention.today);
+r.post("/retention/contact/:leadId", isAuth, loadCrmPolos, Retention.contact);
+r.get("/retention/students", isAuth, loadCrmPolos, Retention.students);
+r.get("/retention/audience", isAuth, loadCrmPolos, Retention.audience);
+r.post("/retention/preview", isAuth, loadCrmPolos, Retention.preview);
+r.post("/retention/send", isAuth, loadCrmPolos, Retention.sendBulk);
+r.get("/retention/log", isAuth, loadCrmPolos, Retention.log);
+r.get("/retention/log.csv", isAuth, loadCrmPolos, Retention.logCsv);
+r.get("/retention/operations", isAuth, loadCrmPolos, Retention.operations);
+r.get("/retention/nps", isAuth, loadCrmPolos, Retention.nps);
+r.get("/retention/nps.csv", isAuth, loadCrmPolos, Retention.npsCsv);
+r.post("/retention/nps/send/:leadId", isAuth, loadCrmPolos, Retention.sendNps);
+r.get("/retention/risk", isAuth, loadCrmPolos, Retention.risk);
+r.get("/retention/risk.csv", isAuth, loadCrmPolos, Retention.riskCsv);
+r.post("/retention/risk/:leadId/message", isAuth, loadCrmPolos, Retention.riskMessage);
+r.get("/retention/rematricula", isAuth, loadCrmPolos, Retention.rematricula);
+r.get("/retention/rematricula.csv", isAuth, loadCrmPolos, Retention.rematriculaCsv);
+r.post("/retention/rematricula/:leadId", isAuth, loadCrmPolos, Retention.setRematricula);
 r.get("/leads/:id/documents", isAuth, canAccessLead, Lead.documents);
 r.put("/leads/:id/documents/:docId", isAuth, canAccessLead, Lead.setDocument);
 r.post("/leads/:id/documents/remind", isAuth, canAccessLead, Lead.remindDocs);
@@ -397,6 +403,7 @@ r.delete("/lead-stages/:id", isAuth, isManager, Lead.stages.remove);
 r.get("/course-materials", isAuth, Materials.index);
 r.get("/courses/:id/materials", isAuth, Materials.list);
 r.put("/courses/:id/active", isAuth, isManager, Materials.setActive);
+r.put("/courses/:id/aliases", isAuth, isManager, Materials.setAliases);
 r.post("/courses/:id/materials", isAuth, isManager, materialUpload.single("file"), Materials.upload);
 r.get("/course-materials/:id/file", isAuth, Materials.file);
 r.put("/course-materials/:id/confirm", isAuth, isManager, Materials.confirm);
@@ -418,6 +425,8 @@ r.delete("/leads/:id", isAuth, canAccessLead, isAdmin, Lead.remove);
 r.put("/leads/:id/stage", isAuth, canAccessLead, Lead.setStage);
 r.post("/leads/:id/relation", isAuth, canAccessLead, Lead.classify);
 r.get("/leads/:id/activities", isAuth, canAccessLead, Lead.activities);
+// the academic and curricular analyses of the person, for their record
+r.get("/leads/:id/analyses", isAuth, canAccessLead, AnalysisCtl.leadAnalyses);
 r.post("/leads/:id/activities", isAuth, canAccessLead, Lead.addNote);
 r.get("/leads/:id/tasks", isAuth, canAccessLead, Lead.leadTasks);
 r.post("/leads/:id/tasks", isAuth, canAccessLead, Lead.addTask);
@@ -456,6 +465,14 @@ const tutoriaStaff = (req: any, _res: any, next: any) => {
 };
 r.post("/tutoria/notices/preview", isAuth, tutoriaStaff, Tutoria.noticePreview);
 r.post("/tutoria/notices", isAuth, tutoriaStaff, Tutoria.noticeSend);
+// the quota of sends of the month: each person sees theirs and asks the management for more; the management decides and follows
+// what each person sent and spent (Meta + AI)
+r.get("/send-quota/me", isAuth, campaignStaff, SendReleases.myQuota);
+r.post("/send-releases", isAuth, campaignStaff, rateLimit({ windowMs: 60 * 60 * 1000, max: 10, key: req => `send-release:${req.user.id}` }), SendReleases.requestRelease);
+r.get("/send-releases", isAuth, isManager, SendReleases.listReleases);
+r.put("/send-releases/:id", isAuth, isManager, SendReleases.decideRelease);
+r.get("/operations/costs-by-user", isAuth, isManager, SendReleases.costsByUser);
+r.get("/operations/costs-by-user/:userId/sends", isAuth, isManager, SendReleases.sendsOfUser);
 r.get("/meta/costs", isAuth, isManager, MetaCosts.show);
 // the templates of the official WhatsApp account: list with status, create one (Utility only) and send the recommended pack
 r.get("/meta/templates", isAuth, isManager, MetaTemplates.index);
@@ -526,20 +543,21 @@ r.post("/courses/import", isAuth, isManager, Lead.importCourses);
 r.post("/courses/load-default", isAuth, isManager, Lead.loadDefaultCourses);
 
 // ----------------------------------------------------- enrollment payments (Efí)
-r.get("/payments/efi/settings", isAuth, isAdmin, Payment.getSettings);
-r.put("/payments/efi/settings", isAuth, isAdmin, Payment.putSettings);
-r.post("/payments/efi/certificate", isAuth, isAdmin, certUpload.single("certificate"), Payment.uploadCertificate);
-r.post("/payments/efi/test", isAuth, isAdmin, Payment.testConnection);
-r.post("/payments/efi/webhook", isAuth, isAdmin, Payment.registerWebhook);
-r.get("/payments/efi/wallets", isAuth, isAdmin, Payment.listWallets);
-r.put("/payments/efi/wallets/:userId", isAuth, isAdmin, Payment.saveUserWallet);
-r.delete("/payments/efi/wallets/:userId", isAuth, isAdmin, Payment.clearUserWallet);
+r.get("/payments/efi/settings", isAuth, isSystemAdmin, Payment.getSettings);
+r.put("/payments/efi/settings", isAuth, isSystemAdmin, Payment.putSettings);
+r.post("/payments/efi/certificate", isAuth, isSystemAdmin, certUpload.single("certificate"), Payment.uploadCertificate);
+r.post("/payments/efi/test", isAuth, isSystemAdmin, Payment.testConnection);
+r.post("/payments/efi/webhook", isAuth, isSystemAdmin, Payment.registerWebhook);
+r.get("/payments/efi/wallets", isAuth, isSystemAdmin, Payment.listWallets);
+r.put("/payments/efi/wallets/:userId", isAuth, isSystemAdmin, Payment.saveUserWallet);
+r.delete("/payments/efi/wallets/:userId", isAuth, isSystemAdmin, Payment.clearUserWallet);
 r.get("/me/efi", isAuth, Payment.myEfi);
 r.put("/me/efi", isAuth, Payment.saveMyEfi);
 r.delete("/me/efi", isAuth, Payment.clearMyEfi);
 // commissions of the enrollment fee: each person sees their own, administration and coordination see everyone's
 // team enrollment goals (administration and coordination)
 // the whole team follows the polos; only managers change the numbers
+r.get("/goals/semesters", isAuth, Goal.semesters);
 r.get("/goals/polos", isAuth, Goal.poloBoard);
 r.get("/goals/calendar", isAuth, isManager, Goal.calendar);
 r.put("/goals/:id/polos", isAuth, isManager, Goal.updatePolos);

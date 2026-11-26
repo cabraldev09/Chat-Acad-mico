@@ -52,7 +52,10 @@ const sendTutoriaContactNow = async (lead: Lead, tutorName?: string | null): Pro
     const contact = await Contact.findByPk(lead.contactId);
     if (!contact) return null;
     // the consultant's conversation (the last one that is not the tutoring), on its own connection
-    const last = await Ticket.findOne({ where: { contactId: contact.id, [Op.or]: [{ segment: null }, { segment: { [Op.notIn]: ["onboarding", "support"] } }] } as any, order: [["updatedAt", "DESC"]] });
+    // (on a number shared by both sides the enrollment turned that conversation into the tutoring one: it is still where the student
+    // talks, so the contact goes there, never on the tutoring line itself)
+    const last = (await Ticket.findOne({ where: { contactId: contact.id, [Op.or]: [{ segment: null }, { segment: { [Op.notIn]: ["onboarding", "support"] } }] } as any, order: [["updatedAt", "DESC"]] }))
+      || (await Ticket.findOne({ where: { contactId: contact.id, isGroup: false, isHistorical: false, ...(connection ? { whatsappId: { [Op.ne]: connection.id } } : {}) } as any, order: [["updatedAt", "DESC"]] }));
     const whatsapp = last ? await Whatsapp.findByPk(last.whatsappId) : null;
     if (!last || !whatsapp) return null;
     // the student already writes on the tutoring number: nothing to hand over

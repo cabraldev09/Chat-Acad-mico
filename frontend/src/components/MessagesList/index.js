@@ -197,6 +197,8 @@ const useStyles = makeStyles((theme) => {
     quoteName: { display: "block", fontSize: 12.5, fontWeight: 700, color: c.quoteName, marginBottom: 1 },
     text: { whiteSpace: "pre-wrap", overflowWrap: "anywhere", "& p": { margin: 0 } },
     deleted: { fontStyle: "italic", color: c.textSecondary, display: "flex", alignItems: "center", gap: 6 },
+    transcript: { fontSize: 13.5, lineHeight: "19px", margin: "6px 2px 2px", maxWidth: 320, overflowWrap: "anywhere", whiteSpace: "pre-wrap" },
+    transcriptLabel: { display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: c.textSecondary, marginBottom: 2 },
     meta: {
       float: "right",
       display: "inline-flex",
@@ -615,6 +617,15 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
 
   // ---------------------------------------------------------------- rendering
   const renderMedia = (m) => {
+    // the retention policy deleted the file on purpose (Configurações > Retenção de dados): nothing to bring back from the phone
+    if (!m.mediaUrl && m.mediaPurgedAt) {
+      return (
+        <div className={classes.deleted}>
+          <Block style={{ fontSize: 16 }} />
+          {m.mediaType === "audio" ? "Áudio apagado pela política de retenção" : "Arquivo apagado pela política de retenção"}
+        </div>
+      );
+    }
     if (needsMedia(m)) return <MediaPlaceholder message={m} />;
     if (m.mediaType === "location" && (m.body || "").split("|").length >= 2) {
       const [image, link, description] = m.body.split("|");
@@ -655,7 +666,20 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         </div>
       );
     }
-    if (m.mediaType === "audio") return <Audio url={m.mediaUrl} />;
+    // the text of the voice note (written down once by the transcription), for whoever can already read this conversation
+    if (m.mediaType === "audio") {
+      return (
+        <>
+          <Audio url={m.mediaUrl} />
+          {m.transcript && (
+            <div className={classes.transcript}>
+              <span className={classes.transcriptLabel}>Transcrição</span>
+              {m.transcript}
+            </div>
+          )}
+        </>
+      );
+    }
     if (m.mediaType === "video") {
       return (
         <div className={classes.media}>
@@ -730,9 +754,10 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     const mine = m.fromMe;
     // stickers (webp) show alone, without a bubble, like on WhatsApp
     const isSticker = m.mediaType === "image" && /\.webp(\?|$)/i.test(m.mediaUrl || "");
-    const hasMedia = m.mediaUrl || needsMedia(m) || m.mediaType === "location" || m.mediaType === "vcard";
+    const filePurged = !m.mediaUrl && !!m.mediaPurgedAt;
+    const hasMedia = m.mediaUrl || filePurged || needsMedia(m) || m.mediaType === "location" || m.mediaType === "vcard";
     const mediaOnly = hasMedia && (m.mediaType === "image" || m.mediaType === "video") && isOnlyFileName(m);
-    const showText = !m.isDeleted && !(hasMedia && (isOnlyFileName(m) || m.mediaType === "vcard" || m.mediaType === "location" || m.mediaType === "audio"));
+    const showText = !m.isDeleted && !m.bodyPurgedAt && !(hasMedia && (isOnlyFileName(m) || filePurged || m.mediaType === "vcard" || m.mediaType === "location" || m.mediaType === "audio"));
     const rx = reactionsOf(m);
     const isMatch = matchIds.includes(m.id);
     const isActive = isMatch && matchIds[matchIndex] === m.id;
@@ -783,6 +808,12 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
             <div className={classes.deleted}>
               <Block style={{ fontSize: 16 }} />
               Mensagem apagada
+              <span className={classes.meta}>{clock(m.createdAt)}</span>
+            </div>
+          ) : m.bodyPurgedAt ? (
+            <div className={classes.deleted}>
+              <Block style={{ fontSize: 16 }} />
+              Conteúdo apagado pela política de retenção
               <span className={classes.meta}>{clock(m.createdAt)}</span>
             </div>
           ) : (

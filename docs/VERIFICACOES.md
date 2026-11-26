@@ -8,12 +8,14 @@ Rode tudo isto antes de enviar ao GitHub e de atualizar a VPS. Qualquer falha im
 | Testes de unidade (motor de análise, proposta, e-mails) | `npx vitest run` | `backend` |
 | Testes de ponta a ponta (API inteira com WhatsApp/Telegram/Efí simulados) | `NODE_ENV=test CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" CHROME_ARGS="--no-sandbox --disable-setuid-sandbox" LOGIN_RATE_MAX=100 node scripts/channels-e2e.js` | `backend` |
 | Responsabilidade pela conversa (visualizar não assume; enviar atribui de forma atômica; ninguém toma a conversa de outro; IA silenciada; concorrência e idempotência) | `NODE_ENV=test npm run test:assign` | `backend` |
-| Estatísticas e Centro de Gestão Comercial (mesmos números nas duas telas, permissões, tempo real) | `NODE_ENV=test npm run test:analytics` | `backend` |
+| Estatísticas e Centro de Gestão Comercial (mesmos números nas duas telas, permissões, tempo real) e o CRM por polo (coordenação e relacionamento só nos seus polos) | `NODE_ENV=test npm run test:analytics` | `backend` |
 | Textos em português e códigos de erro traduzidos | `node scripts/i18n-check.js` | `backend` |
 | Esquema do banco (depois de criar uma migração) | `node scripts/build-schema.js` | `backend` |
 | Auditoria de rotas por perfil | `node scripts/audit-routes.js` | `backend` |
 | **Leitura tardia de evento (erro "reading 'value'")** | `node scripts/check-lazy-events.js` | `frontend` |
 | Menu lateral sem ícone repetido | `node scripts/check-menu-icons.js` | `frontend` |
+| Sem caixas do navegador (`confirm`, `alert`, `prompt`): use `components/ConfirmDialog` | `node scripts/check-native-dialogs.js` | `frontend` |
+| Avisos (toasts) somem sozinhos: a barra que conta o tempo não pode ser escondida com `display: none` nem parada | `node scripts/check-toast-timer.js` | `frontend` |
 | Build do frontend | `npx vite build` | `frontend` |
 | Varredura de todas as rotas GET da API como administrador, consultor e tutor: falha em erro 500 ou rota da gestão aberta para quem não é da gestão | `API=http://localhost:8080 PGDATABASE=telas node scripts/route-sweep.js` (API em 8080) | `backend` |
 | Varredura de todas as telas, 4 perfis + a Central do Afiliado pública (abas, QR Code e arte em Story e Feed), digitando nos formulários | `node scripts/smoke-pages.js portal admin coordenacao consultor tutor` (API em 8080 e `vite preview` em 3000) | `frontend` |

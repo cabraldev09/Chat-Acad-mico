@@ -18,6 +18,8 @@ import Polo from "../../models/Polo";
 import PoloMember from "../../models/PoloMember";
 import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
+import { normTerm } from "../../helpers/EntryTerm";
+import { createLiveTicket, liveTicketOf } from "../TicketServices/LiveTicket";
 import TicketEvent from "../../models/TicketEvent";
 import User from "../../models/User";
 import { connectionOfTeam, TUTORIA_SEGMENTS } from "../ChannelServices/ConnectionTeam";
@@ -68,6 +70,8 @@ export interface EnrollInput {
   courseName?: string | null;
   // the registration number the institution gave the student: required to confirm the enrollment (the student of the portal is created with it)
   rgm?: string | null;
+  // the entry term of the student ("2026/2"): the semester whose polo goal counts this enrollment (helpers/EntryTerm)
+  entryTerm?: string | null;
 }
 
 // Confirms the enrollment and hands the student to the polo's tutoring team:
@@ -166,10 +170,12 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   }
 
   // 2) the lead
+  const entryTerm = normTerm(input.entryTerm);
   await lead.update({
     poloId: polo.id,
     poloSource: "enrollment",
     rgm,
+    ...(entryTerm ? { entryTerm } : {}),
     ...(course && course.id !== lead.courseId ? { courseId: course.id } : {}),
     onboardingStatus: "pending",
     onboardingTutorId: tutor?.id || null,
@@ -181,6 +187,8 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   await changeStage(lead.id, won.id, actorId);
   // the only way to the "Matriculado" column is this one (the AI agent cannot do it); the agent only records the milestone
   void markMilestone(lead.id, "enrolled");
+  // the tasks that asked for this enrollment (fee paid, form received) are done
+  await LeadTask.update({ doneAt: new Date(), closedReason: "enrolled" } as any, { where: { leadId: lead.id, doneAt: null, automationKey: { [Op.like]: "enroll-after-%" } } as any });
 
   // 3) the tutor's own conversation
   let ticket = await Ticket.findOne({
@@ -200,8 +208,19 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
       await ticket.save();
     }
   }
+  // the tutoring talks on the same number as the commercial side (no number of its own yet): the person's conversation on that number
+  // (just closed above) becomes the tutoring one, never a second one beside it (it showed two cards, one "Sem mensagens"); the tutor's
+  // attendance starts from here (the time of the first answer is the tutor's)
   if (!ticket) {
-    ticket = await Ticket.create({
+    const same = await liveTicketOf(contact.id, whatsapp.id);
+    if (same) {
+      same.set({ status: tutor ? "open" : "pending", userId: tutor?.id || null, queueId: queue.id, segment: "onboarding", leadId: same.leadId || lead.id, closedAt: null, aiActive: false, chatbotNodeId: -1, firstResponseAt: null } as any);
+      await same.save();
+      ticket = same;
+    }
+  }
+  if (!ticket) {
+    ticket = await createLiveTicket({
       contactId: contact.id,
       whatsappId: whatsapp.id,
       status: tutor ? "open" : "pending",
@@ -213,7 +232,7 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
       unreadMessages: 0,
       aiActive: false,
       chatbotNodeId: -1
-    } as any);
+    });
   }
   await TicketEvent.create({
     ticketId: ticket.id,
@@ -539,4 +558,18 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
   return out;
+};
+
+// the enrollment undone (the lead goes back to the open funnel): it stops counting as enrolled and the pending onboarding is cancelled.
+// The RGM, the portal access and the conversations stay (they are history); a new confirmation starts the handoff again.
+export const undoEnrollment = async (lead: Lead, actorId: number | null): Promise<void> => {
+  if (!lead.enrolledAt) return;
+  const wasDone = lead.onboardingStatus === "done";
+  // (the tutor stays when the ambientação was done: it is history; the board only shows enrolled students)
+  lead.set({ enrolledAt: null, onboardingStatus: "none", onboardingTutorId: wasDone ? lead.onboardingTutorId : null, onboardingStartedAt: wasDone ? lead.onboardingStartedAt : null, onboardingAlertAt: null } as any);
+  await lead.save();
+  const { closeTasksFor } = await import("./TaskLifecycle");
+  await closeTasksFor(lead.id, ["onboarding", "onboarding_late"], "enrollment_undone");
+  const { addActivity } = await import("./LeadCore");
+  await addActivity(lead.id, actorId, "system", "Matrícula desfeita: o lead voltou ao funil e a ambientação pendente foi cancelada.");
 };

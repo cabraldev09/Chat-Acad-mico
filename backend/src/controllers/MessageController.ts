@@ -36,10 +36,19 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
   const { pageNumber, silent } = req.query as IndexQuery;
 
-  const { count, messages, ticket, hasMore } = await ListMessagesService({
+  let { count, messages, ticket, hasMore } = await ListMessagesService({
     pageNumber,
     ticketId
   });
+  // scrolling to the top of a conversation of a QR Code number: what is before the oldest message held comes from the phone
+  if (!hasMore) {
+    const phone = await import("../services/WbotServices/ChatHistoryFromPhone");
+    if (Number(pageNumber) > 1 && (await phone.copyChatFromPhone(Number(ticketId), "older")) > 0) {
+      ({ count, messages, ticket, hasMore } = await ListMessagesService({ pageNumber, ticketId }));
+    }
+    // the screen asks for the next page when the person reaches the top: the phone may still have older messages
+    if (!hasMore) hasMore = await phone.mayHaveOlder(Number(ticketId)).catch(() => false);
+  }
 
   // opening the conversation marks it read; scrolling back through older pages must not repeat that
   if (!silent && (!pageNumber || Number(pageNumber) <= 1)) SetTicketMessagesAsRead(ticket, Number(req.user.id));

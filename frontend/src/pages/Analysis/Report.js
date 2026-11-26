@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import ReactDOM from "react-dom";
 
 import logoWhite from "../../assets/logo-cruzeiro.svg";
@@ -237,8 +237,24 @@ export const AcademicReportPage = ({ a }) => {
   );
 };
 
+// the name the browser gives the PDF is the title of the tab: while the report is open it carries the name of the student
+// ("Relatório acadêmico - Maria Souza"), without the characters a file name cannot have; the title of before comes back on close
+export const reportFileTitle = (name) => {
+  const who = String(name || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+  return who ? `Relatório acadêmico - ${who}` : "Relatório acadêmico";
+};
+const useReportTitle = (name) => {
+  useEffect(() => {
+    const before = document.title;
+    document.title = reportFileTitle(name);
+    return () => { document.title = before; };
+  }, [name]);
+};
+
 // the report over the whole screen, with the buttons to print or close (they do not print)
-export const AcademicReportOverlay = ({ a, onClose }) => ReactDOM.createPortal(
+const ReportOverlayBody = ({ a, onClose }) => {
+  useReportTitle(a && a.studentName);
+  return ReactDOM.createPortal(
   <div className="orig orig-report-overlay" role="dialog" aria-modal="true" aria-label="Relatório do aluno">
     <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
       <p className="text-sm font-semibold text-slate-800">Relatório do aluno</p>
@@ -251,3 +267,5 @@ export const AcademicReportOverlay = ({ a, onClose }) => ReactDOM.createPortal(
   </div>,
   document.body
 );
+};
+export const AcademicReportOverlay = (props) => <ReportOverlayBody {...props} />;

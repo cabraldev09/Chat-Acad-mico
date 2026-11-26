@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 import IconAction from "../../components/IconAction";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const useStyles = makeStyles((theme) => ({
   row: { display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: theme.border.divider },
@@ -61,7 +62,7 @@ const CohortsPanel = () => {
     setBusy(false);
   };
   const remove = async (c) => {
-    if (!window.confirm("Apagar esta turma? O agente volta a dizer que o calendário dela não foi confirmado.")) return;
+    if (!(await confirmDialog({ title: "Apagar esta turma?", message: "O agente volta a dizer que o calendário dela não foi confirmado.", confirmText: "Apagar", tone: "danger" }))) return;
     try { await api.delete(`/course-cohorts/${c.id}`); load(); } catch (e) { toastError(e); }
   };
 

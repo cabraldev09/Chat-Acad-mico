@@ -20,6 +20,7 @@ import toastError from "../../errors/toastError";
 import { fetchAllUsers } from "../Affiliates/shared";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const SHARE_WIDTH = 600;
 const MONTHS = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
@@ -95,8 +96,8 @@ const Goals = () => {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const choose = (g) => {
-    if (dirty && !window.confirm("Há alterações não salvas. Descartar?")) return;
+  const choose = async (g) => {
+    if (dirty && !(await confirmDialog({ title: "Descartar as alterações?", message: "Há alterações que não foram salvas.", confirmText: "Descartar", tone: "danger" }))) return;
     setSelected(g.id); setDraft(clean(g)); setDirty(false);
   };
   const change = (fn) => { setDraft((d) => { const next = clean(d); fn(next); return next; }); setDirty(true); };
@@ -122,11 +123,11 @@ const Goals = () => {
     } catch (e) { toastError(e); }
   };
   const repeat = async () => {
-    if (dirty && !window.confirm("Há alterações não salvas. Repetir o período sem salvar descarta o que foi digitado. Continuar?")) return;
+    if (dirty && !(await confirmDialog({ title: "Repetir sem salvar?", message: "Há alterações não salvas. Repetir o período agora descarta o que foi digitado.", confirmText: "Repetir mesmo assim", tone: "danger" }))) return;
     try { const { data } = await api.post(`/goals/${draft.id}/repeat`); toast.success("Período repetido com as mesmas pessoas e metas."); await load(data.id); } catch (e) { toastError(e); }
   };
   const remove = async () => {
-    if (!window.confirm("Excluir este período de metas?")) return;
+    if (!(await confirmDialog({ title: "Excluir este período de metas?", message: "As metas deste período deixam de aparecer nos painéis.", confirmText: "Excluir", tone: "danger" }))) return;
     try { await api.delete(`/goals/${draft.id}`); setSelected(null); await load(); } catch (e) { toastError(e); }
   };
 
@@ -219,9 +220,9 @@ const Goals = () => {
               <div className={classes.card}>
                 <div className={classes.head}>
                   <CalendarDays size={18} />
-                  <TextField size="small" variant="outlined" type="date" label="Início" value={view.startsOn} onChange={(e) => change((d) => { d.startsOn = e.target.value; })} InputLabelProps={{ shrink: true }} />
-                  <TextField size="small" variant="outlined" type="date" label="Prazo" value={view.endsOn} onChange={(e) => change((d) => { d.endsOn = e.target.value; })} InputLabelProps={{ shrink: true }} />
-                  <TextField size="small" variant="outlined" label="Título (opcional)" placeholder="Ex.: Meta de outubro" value={view.title || ""} onChange={(e) => change((d) => { d.title = e.target.value; })} style={{ minWidth: 200 }} />
+                  <TextField size="small" variant="outlined" type="date" label="Início" value={view.startsOn} onChange={(e) => { const v = e.target.value; change((d) => { d.startsOn = v; }); }} InputLabelProps={{ shrink: true }} />
+                  <TextField size="small" variant="outlined" type="date" label="Prazo" value={view.endsOn} onChange={(e) => { const v = e.target.value; change((d) => { d.endsOn = v; }); }} InputLabelProps={{ shrink: true }} />
+                  <TextField size="small" variant="outlined" label="Título (opcional)" placeholder="Ex.: Meta de outubro" value={view.title || ""} onChange={(e) => { const v = e.target.value; change((d) => { d.title = v; }); }} style={{ minWidth: 200 }} />
                   <span style={{ flex: 1 }} />
                   <Tooltip title="Repetir para o próximo período"><IconButton size="small" aria-label="Repetir para o próximo período" onClick={repeat}><Repeat2 size={18} /></IconButton></Tooltip>
                   <Tooltip title="Excluir período"><IconButton size="small" aria-label="Excluir período" onClick={remove}><Trash2 size={18} /></IconButton></Tooltip>

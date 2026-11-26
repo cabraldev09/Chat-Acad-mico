@@ -22,10 +22,15 @@ import ImportDialog from "./ImportDialog";
 import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, StagePill, ago, short, isOverdue, burst } from "./shared";
 import { tint } from "../../utils/color";
 import { NEXT_LABEL, TEMP_COLOR, TEMP_LABEL } from "../../utils/commercial";
+import { putStage } from "./moveStage";
+
+// 2026-11-01 → 01/11/2026
+const brDay = (v) => (v ? String(v).split("-").reverse().join("/") : "");
 
 const useStyles = makeStyles((theme) => ({
   filters: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", marginBottom: theme.spacing(1.5) },
   // on the phone: the search and a "Filtros" button on one line; the filters open in a sheet from the bottom
+  periodRow: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: theme.spacing(1), marginBottom: theme.spacing(1), fontSize: 13.5, color: theme.palette.text.secondary },
   phoneBar: { display: "flex", gap: theme.spacing(1), alignItems: "stretch", marginBottom: theme.spacing(1), "& > :first-child": { flex: 1, minWidth: 0 } },
   filterBtn: { flex: "none", minHeight: 40, textTransform: "none", fontWeight: 600, borderRadius: 10, whiteSpace: "nowrap" },
   sheet: { borderRadius: "18px 18px 0 0", padding: theme.spacing(2, 2, "calc(16px + env(safe-area-inset-bottom))"), maxHeight: "85vh", display: "grid", gap: theme.spacing(1.5) },
@@ -202,11 +207,17 @@ const Board = () => {
   const history = useHistory();
   const location = useLocation();
   const ctx = useCrmOptions();
-  const [view, setView] = useState("board");
+  // a period in the address opens the list (the leads of that period, newest first)
+  const [view, setView] = useState(() => (new URLSearchParams(location.search).get("from") ? "list" : "board"));
   const phone = useMediaQuery((t) => t.breakpoints.down("xs"));
   const [sheet, setSheet] = useState(false);
   const [current, setCurrent] = useState(null);
-  const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", affiliate: "", tagId: new URLSearchParams(location.search).get("tagId") || "", ready: "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
+  const [filters, setFilters] = useState(() => {
+    const q = new URLSearchParams(location.search);
+    // from/to: the leads that came in a period (the "Ver leads" of the Painel do CRM)
+    const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : "");
+    return { search: "", ownerId: "", courseId: "", source: "", affiliate: "", tagId: q.get("tagId") || "", ready: "", followUp: q.get("followUp") || "", from: day(q.get("from")), to: day(q.get("to")) };
+  });
   const [board, setBoard] = useState(null);
   const [list, setList] = useState({ leads: [], count: 0 });
   const [openId, setOpenId] = useState(Number(new URLSearchParams(location.search).get("lead")) || null);
@@ -290,8 +301,8 @@ const Board = () => {
       return without.map((s) => (s.id === stage.id && moved ? { ...s, count: s.count + 1, leads: [moved, ...s.leads] } : s));
     });
     try {
-      await api.put(`/leads/${leadId}/stage`, { stageId: stage.id, ...extra });
-      if (stage.type === "won" && e) burst(e.clientX, e.clientY);
+      const pos = e ? { x: e.clientX, y: e.clientY } : null;
+      if ((await putStage(leadId, stage, extra)) && stage.type === "won" && pos) burst(pos.x, pos.y);
     } catch (err) { toastError(err); }
     load();
   };
@@ -344,7 +355,7 @@ const Board = () => {
     setBoard((prev) => prev.map((s) => (s.id === stage.id ? { ...s, leads: [...s.leads, ...data.leads] } : s)));
   };
 
-  const activeFilters = ["ownerId", "courseId", "source", "affiliate", "tagId", "ready", "followUp"].filter((k) => filters[k]).length;
+  const activeFilters = ["ownerId", "courseId", "source", "affiliate", "tagId", "ready", "followUp", "from"].filter((k) => filters[k]).length;
   const totalOpen = board ? board.filter((s) => s.type === "open").reduce((a, s) => a + s.count, 0) : 0;
 
   return (
@@ -391,6 +402,12 @@ const Board = () => {
         </MainHeaderButtonsWrapper>
       </MainHeader>
 
+      {filters.from && (
+        <div className={classes.periodRow} role="status">
+          <span>Leads que chegaram de {brDay(filters.from)} a {brDay(filters.to || filters.from)}</span>
+          <Button size="small" onClick={() => setFilters((f) => ({ ...f, from: "", to: "" }))}>Ver todos</Button>
+        </div>
+      )}
       {phone ? (
         <>
           <div className={classes.phoneBar}>
@@ -404,7 +421,7 @@ const Board = () => {
           <Drawer anchor="bottom" open={sheet} onClose={() => setSheet(false)} PaperProps={{ className: classes.sheet, role: "dialog", "aria-label": "Filtros do funil" }}>
             <div className={classes.sheetHead}>
               <h2>Filtros</h2>
-              {activeFilters > 0 && <Button size="small" onClick={() => setFilters((f) => ({ ...f, ownerId: "", courseId: "", source: "", affiliate: "", tagId: "", ready: "", followUp: "" }))}>Limpar</Button>}
+              {activeFilters > 0 && <Button size="small" onClick={() => setFilters((f) => ({ ...f, ownerId: "", courseId: "", source: "", affiliate: "", tagId: "", ready: "", followUp: "", from: "", to: "" }))}>Limpar</Button>}
             </div>
             <TextField select size="small" variant="outlined" label="Responsável" value={filters.ownerId} onChange={(e) => setFilters({ ...filters, ownerId: e.target.value })} style={phone ? { width: "100%" } : { minWidth: 160 }}>
           <MenuItem value="">Todos</MenuItem>

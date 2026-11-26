@@ -1,6 +1,5 @@
 import { AuthContext } from "../../context/Auth/AuthContext";
 import React, { useState, useCallback, useContext, useEffect } from "react";
-import { Redirect } from "react-router-dom";
 import openSocket from "../../services/socket-io";
 import ChannelIcon from "../../components/ChannelIcon";
 import { toast } from "react-toastify";
@@ -56,6 +55,9 @@ const useStyles = makeStyles(theme => ({
 		"&:hover": { borderColor: theme.palette.primary.main, boxShadow: "0 4px 14px rgba(15,23,42,.08)" },
 		"&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
 	},
+	ownCard: { margin: theme.spacing(0, 2, 2), padding: theme.spacing(2.5), borderRadius: 14, border: `1px solid ${theme.palette.divider}`, background: theme.palette.background.paper, display: "flex", gap: theme.spacing(2), alignItems: "flex-start", [theme.breakpoints.down("xs")]: { flexDirection: "column" } },
+	ownText: { flex: 1, minWidth: 0, "& h2": { margin: "0 0 6px", fontSize: 17 }, "& p": { margin: "0 0 6px", fontSize: 14, lineHeight: 1.5, color: theme.palette.text.secondary }, "& ul": { margin: "6px 0 0", paddingLeft: 18, fontSize: 13.5, lineHeight: 1.5, color: theme.palette.text.secondary } },
+	ownBtn: { minHeight: 44, borderRadius: 10, textTransform: "none", fontWeight: 600, whiteSpace: "nowrap", [theme.breakpoints.down("xs")]: { width: "100%" } },
 	tileText: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0, "& b": { fontSize: 15 }, "& small": { fontSize: 12.5, color: theme.palette.text.secondary, lineHeight: 1.35 } },
 	mainPaper: {
 		flex: 1,
@@ -158,7 +160,7 @@ const Connections = () => {
 				return;
 			}
 			toast.success(
-				`Conversas de “${d.connection}” copiadas: ${d.chats} conversas (${d.newConversations} novas), ${d.messages} mensagens${d.pinned ? `, ${d.pinned} fixadas` : ""}. Veja em Tickets → Histórico.`,
+				`Conversas de “${d.connection}” copiadas: ${d.chats} conversas (${d.newConversations} novas), ${d.messages} mensagens${d.pinned ? `, ${d.pinned} fixadas` : ""}. As recentes ficam em Atendendo; as mais antigas, em Todas.`,
 				{ autoClose: 15000 }
 			);
 		});
@@ -396,8 +398,36 @@ const Connections = () => {
 		);
 	};
 
-	// a consultant or tutor without a QR Code number of their own has nothing to do here
-	if (!isAdmin && !loading && whatsApps.length === 0) return <Redirect to="/tickets" />;
+	// a consultant, tutor or relationship person connects their own WhatsApp here (QR Code read on their own phone)
+	const [connecting, setConnecting] = useState(false);
+	const connectMine = async () => {
+		setConnecting(true);
+		try {
+			const { data } = await api.post("/whatsapp/mine");
+			toast.success("Número criado. Leia o QR Code com o WhatsApp do seu celular.");
+			handleOpenQrModal(data);
+		} catch (err) {
+			toastError(err);
+		}
+		setConnecting(false);
+	};
+	const ownCard = !isAdmin && !loading && whatsApps.length === 0 ? (
+		<div className={classes.ownCard}>
+			<ChannelIcon channel="whatsapp" size={36} />
+			<div className={classes.ownText}>
+				<h2>Conectar o meu WhatsApp</h2>
+				<p>Use o seu próprio número para atender pelo sistema. Você lê o QR Code com o WhatsApp do seu celular, como no WhatsApp Web.</p>
+				<ul>
+					<li>É uma conexão não oficial: evite mandar a mesma mensagem para muita gente de uma vez e para quem nunca falou com você, para o número não ser bloqueado.</li>
+					<li>Envios em massa e avisos da tutoria saem pelo número oficial.</li>
+					<li>Só você e a gestão veem o QR Code deste número.</li>
+				</ul>
+			</div>
+			<Button className={classes.ownBtn} variant="contained" color="primary" disableElevation disabled={connecting} onClick={connectMine}>
+				{connecting ? "Criando..." : "Conectar meu WhatsApp"}
+			</Button>
+		</div>
+	) : null;
 
 	return (
 		<MainContainer>
@@ -434,6 +464,7 @@ const Connections = () => {
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
 			</MainHeader>
+			{ownCard}
 			{isAdmin && (
 				<div className={classes.tiles} role="group" aria-label="Conectar um canal">
 					{/* for now the team works only through the official number (API of the Meta): the administrator adds connections */}

@@ -9,7 +9,7 @@ vi.mock("../../../src/models/User", () => ({ default: {} }));
 vi.mock("../../../src/services/NotificationServices/Notify", () => ({ notify: async () => 0 }));
 vi.mock("../../../src/models/ConsultantReview", () => ({ default: {} }));
 
-import { KINDS, SYSTEM, parseAuditAnswer } from "../../../src/services/TutoriaServices/Issues";
+import { KINDS, SYSTEM, findProtocolNumbers, parseAuditAnswer } from "../../../src/services/TutoriaServices/Issues";
 
 describe("auditoria da tutoria", () => {
   it("o texto do sistema não vende: só aponta o que ficou pendente, para a coordenação acadêmica", () => {
@@ -41,5 +41,17 @@ describe("auditoria da tutoria", () => {
     expect(() => parseAuditAnswer("não sei", [])).toThrow("ERR_AI_BAD_ANSWER");
     expect(() => parseAuditAnswer("[]", [])).toThrow("ERR_AI_BAD_ANSWER");
     expect(parseAuditAnswer("```json\n{\"pendencias\":[],\"resolvidas\":[],\"ideia\":\"\"}\n```", []).pendencias).toEqual([]);
+  });
+
+  it("acha o número do protocolo na conversa sem chamar o modelo: só perto das palavras do sistema da instituição, nunca datas", () => {
+    expect(findProtocolNumbers([
+      "Abri um chamado no CAA, protocolo 2026112400123, e te dou retorno",
+      "Sua solicitação nº 4512-889/2026 foi aberta",
+      "o atendimento é dia 24/11/2026 às 10h",
+      "meu RGM 12345678 e telefone 69 99999-0000",
+      "protocolo: 2026112400123 de novo"
+    ])).toEqual(["2026112400123", "45128892026"]);
+    expect(findProtocolNumbers(["chamado 12345"])).toEqual([]);
+    expect(findProtocolNumbers(["CAA aberto, número do protocolo 98765432"])).toEqual(["98765432"]);
   });
 });

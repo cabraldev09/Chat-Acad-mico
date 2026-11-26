@@ -117,6 +117,10 @@ const UpdateTicketService = async ({
       throw new AppError("ERR_CHANNEL_MISMATCH", 422);
     }
     await CheckContactOpenTickets(ticket.contactId, whatsappId);
+    // the person already has a conversation on that number (even a closed one): it is the one to use, never a second one there
+    const { liveTicketOf } = await import("./LiveTicket");
+    const there = ticket.isHistorical ? null : await liveTicketOf(ticket.contactId, whatsappId);
+    if (there && there.id !== ticket.id) throw new AppError("ERR_TICKET_EXISTS_ON_NUMBER", 409);
   }
 
   const oldStatus = ticket.status;
@@ -157,7 +161,8 @@ const UpdateTicketService = async ({
   }
 
   // reopening a conversation from the copied history makes it a real one, counted from this moment
-  if (status && status !== "closed" && ticket.isHistorical) {
+  // (only when the person has no current conversation on this number: then the history is reopened as it is, never a second one)
+  if (status && status !== "closed" && ticket.isHistorical && !(await (await import("./LiveTicket")).liveTicketOf(ticket.contactId, ticket.whatsappId))) {
     await ticket.update({ isHistorical: false, firstResponseAt: null });
     await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
   }

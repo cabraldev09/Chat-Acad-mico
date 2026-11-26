@@ -5,7 +5,9 @@ export const OPERATION_DEFAULTS: Record<string, string> = {
   outbound_allow_templates: "false", outbound_meta_service_usd: "", outbound_meta_template_usd: "",
   // the cap of the month for the Meta (about R$ 800 at the rate below), the rate used to show the values in reais, and whether a
   // campaign may use a Marketing template (about 9 times the price of a Utility one)
-  outbound_monthly_usd: "148", outbound_usd_brl: "5.40", outbound_allow_marketing: "false"
+  outbound_monthly_usd: "148", outbound_usd_brl: "5.40", outbound_allow_marketing: "false",
+  // the quota of sends of each person in the month (campaigns and notices of the tutoring; 0 = no limit). The management has none.
+  send_quota_monthly: "200"
 };
 export const FINANCIAL_KEYS = Object.keys(OPERATION_DEFAULTS).filter(k => k.startsWith("ai_") || k.startsWith("outbound_"));
 export const validateOperationSetting = (key: string, value: unknown): string => {

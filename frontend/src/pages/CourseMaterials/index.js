@@ -8,6 +8,7 @@ import toastError from "../../errors/toastError";
 import { copyText, errorText } from "../Analysis/shared";
 import { BackButton, Badge, Button, Card, CardContent, Input, Portal, cn } from "../Analysis/orig";
 import { ContactChooser } from "../Analysis/ContactChooser";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 // THE COMMERCIAL AREA OF THE COURSES. Each course with its format and the practical share that the MEC asks for, the text the institution approved and the prints it
 // sent. The management attaches a print, the AI reads it, the management confirms; from then on the agent and the consultants say the same. Whoever sells copies
@@ -95,7 +96,7 @@ const MaterialCard = ({ m, canManage, courseName, onChanged }) => {
     setBusy(false);
   };
   const remove = async () => {
-    if (!window.confirm("Excluir este print?")) return;
+    if (!(await confirmDialog({ title: "Excluir este print?", message: "A IA deixa de usar este material.", confirmText: "Excluir", tone: "danger" }))) return;
     try { await api.delete(`/course-materials/${m.id}`); onChanged(); } catch (e) { toastError(e); }
   };
   return (
@@ -141,6 +142,32 @@ const MaterialCard = ({ m, canManage, courseName, onChanged }) => {
   );
 };
 
+// "Outros nomes e siglas": how people call the course in a hurry ("RH", "gestão de pessoas"); the AI recognises the course by them
+const AliasesCard = ({ course, onSaved }) => {
+  const [value, setValue] = useState(course.aliases || "");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.put(`/courses/${course.id}/aliases`, { aliases: value });
+      setValue(data.aliases || "");
+      toast.success("Nomes salvos. A IA já reconhece o curso por eles.");
+      onSaved && onSaved();
+    } catch (e) { toastError(e); }
+    setBusy(false);
+  };
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Outros nomes e siglas</div>
+      <p className="mt-1 text-sm text-muted-foreground">Como as pessoas chamam este curso, separados por vírgula. Ex.: RH, gestão de pessoas. A IA reconhece o curso por estes nomes.</p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Ex.: RH, gestão de pessoas" aria-label="Outros nomes e siglas" maxLength={400} className="h-10 w-full shrink-0 bg-white sm:min-w-0 sm:flex-1 sm:shrink" />
+        <Button className="h-10" disabled={busy || value.trim() === (course.aliases || "").trim()} onClick={save}>{busy ? "Salvando..." : "Salvar"}</Button>
+      </div>
+    </div>
+  );
+};
+
 const CourseDetail = ({ id }) => {
   const [data, setData] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -177,6 +204,7 @@ const CourseDetail = ({ id }) => {
           <div className="mt-2 space-y-2"><p className="whitespace-pre-wrap text-sm">{c.approvedText}</p><Button variant="outline" className="h-9" onClick={() => copyText(c.approvedText)}><ClipboardCopy className="mr-1.5 size-4" />Copiar</Button></div>
         ) : <p className="mt-2 text-sm text-muted-foreground">Nenhum texto aprovado ainda: a IA usa o texto padrão do formato do curso.</p>}
       </div>
+      {data.canManage && <AliasesCard key={c.aliases || ""} course={c} onSaved={load} />}
       {data.canManage && (
         <label className={cn("flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center text-sm", uploading && "opacity-60")}
           onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); upload(e.dataTransfer.files && e.dataTransfer.files[0]); }}>
@@ -203,7 +231,7 @@ const CourseList = () => {
   // a course that is no longer offered is turned off here: the AI, the forms and the lists stop showing it at once
   const toggle = async (c) => {
     const next = c.active === false;
-    if (!next && !window.confirm(`Deixar de ofertar ${c.name}? A IA e os formulários param de oferecer este curso. Você pode voltar atrás quando quiser.`)) return;
+    if (!next && !(await confirmDialog({ title: `Deixar de ofertar ${c.name}?`, message: "A IA e os formulários param de oferecer este curso. Você pode voltar atrás quando quiser.", confirmText: "Deixar de ofertar", tone: "danger" }))) return;
     setBusyId(c.id);
     try {
       await api.put(`/courses/${c.id}/active`, { active: next });

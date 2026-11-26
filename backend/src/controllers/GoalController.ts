@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { normTerm, termOfTitle, goalTerm, countsInGoal } from "../helpers/EntryTerm";
 import { countWorkDays as countDays, holidaysBetween, parseExtraDays } from "../helpers/WorkCalendar";
 import { Op } from "sequelize";
 
@@ -11,6 +12,8 @@ import User from "../models/User";
 import Lead from "../models/Lead";
 import LeadEnrollment from "../models/LeadEnrollment";
 import { dayBounds, getAppTz } from "../helpers/AppTime";
+import PoloMember from "../models/PoloMember";
+import { crmPolosOf } from "../middleware/scope";
 
 // Team enrollment goals (administration and coordination). Each line counts, by itself, the enrollments (Leads.wonAt) of
 // its CRM users inside the period, plus a manual adjustment for people without a login or shared lines.
@@ -135,6 +138,27 @@ const writeMembers = async (goalId: number, list: any[]): Promise<void> => {
   if (rows.length) await GoalMember.bulkCreate(rows as any);
 };
 
+// WHO CHANGES WHICH GOAL. Everybody reads every goal (decisão do dono registrada em 2026-11-25: the whole team follows all the polos and consultants).
+// The administration changes any goal. The coordination changes only what belongs to its polos:
+//   - the line of a polo (target, manual, canceled): only its polos;
+//   - a team goal: only when every person in it works in one of its polos;
+//   - a polo goal cycle as a whole (create, dates, remove, repeat, postpone, working days): it covers every polo, so only the administration.
+const editablePolosOf = (req: Request): Promise<number[] | null> => crmPolosOf(req);
+export const assertGoalEditable = async (req: Request, goal: { kind?: string; members?: GoalMember[] } | null, newMembers?: any[]): Promise<void> => {
+  const polos = await editablePolosOf(req);
+  if (!polos) return;
+  if (goal?.kind === "polo") throw new AppError("ERR_NO_PERMISSION", 403);
+  const people = new Set<number>([
+    ...((goal?.members || []).reduce((all: number[], m) => all.concat(ids(m.userIds)), [])),
+    ...((newMembers || []).reduce((all: number[], m: any) => all.concat(ids(m.userIds)), []))
+  ]);
+  if (!people.size) return;
+  const inMine = new Set(
+    (await PoloMember.findAll({ where: { userId: { [Op.in]: [...people] }, poloId: { [Op.in]: polos.length ? polos : [0] } } as any, attributes: ["userId"] })).map(m => m.userId)
+  );
+  if ([...people].some(id => !inMine.has(id))) throw new AppError("ERR_NO_PERMISSION", 403);
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const status = req.query.status === "archived" ? "archived" : "active";
   const goals = await Goal.findAll({ where: { status, kind: "team" }, include: [GoalMember], order: [["endsOn", "DESC"], ["id", "DESC"]], limit: 24 });
@@ -144,7 +168,12 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const b = req.body || {};
   if (!isDate(b.startsOn) || !isDate(b.endsOn) || b.startsOn > b.endsOn) throw new AppError("ERR_GOAL_PERIOD", 400);
-  const goal = await Goal.create({ title: b.title ? String(b.title).slice(0, 80) : null, startsOn: b.startsOn, endsOn: b.endsOn, kind: b.kind === "polo" ? "polo" : "team", createdBy: Number(req.user.id) } as any);
+  const kind = b.kind === "polo" ? "polo" : "team";
+  const title = b.title ? String(b.title).slice(0, 80) : null;
+  // a polo goal counts the enrollments of its entry term: the one chosen, else the one in its name ("2º semestre de 2026" -> "2026/2")
+  const entryTerm = kind === "polo" ? normTerm(b.entryTerm) || termOfTitle(title) : null;
+  await assertGoalEditable(req, { kind, members: [] }, b.members || []);
+  const goal = await Goal.create({ title, startsOn: b.startsOn, endsOn: b.endsOn, kind, entryTerm, createdBy: Number(req.user.id) } as any);
   await writeMembers(goal.id, b.members || []);
   return res.status(201).json(await present(await load(goal.id)));
 };
@@ -152,11 +181,15 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 export const update = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
   const b = req.body || {};
+  await assertGoalEditable(req, goal, Array.isArray(b.members) ? b.members : []);
   const data: any = {};
   if (b.title !== undefined) data.title = b.title ? String(b.title).slice(0, 80) : null;
   if (b.startsOn !== undefined) data.startsOn = b.startsOn;
   if (b.endsOn !== undefined) data.endsOn = b.endsOn;
   if (b.status !== undefined) data.status = b.status === "archived" ? "archived" : "active";
+  if (goal.kind === "polo" && (b.entryTerm !== undefined || b.title !== undefined)) {
+    data.entryTerm = normTerm(b.entryTerm) || (b.entryTerm === undefined ? normTerm(goal.entryTerm) : null) || termOfTitle(data.title ?? goal.title);
+  }
   const startsOn = data.startsOn || goal.startsOn;
   const endsOn = data.endsOn || goal.endsOn;
   if (!isDate(startsOn) || !isDate(endsOn) || startsOn > endsOn) throw new AppError("ERR_GOAL_PERIOD", 400);
@@ -167,6 +200,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 
 export const remove = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
+  await assertGoalEditable(req, goal);
   await GoalMember.destroy({ where: { goalId: goal.id } });
   await goal.destroy();
   return res.json({ ok: true });
@@ -175,6 +209,7 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
 // "repeat the previous period": same people and targets, dates moved to the next period of the same length
 export const repeat = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
+  await assertGoalEditable(req, goal);
   const addDays = (d: string, n: number) => {
     const t = new Date(`${d}T12:00:00Z`);
     t.setUTCDate(t.getUTCDate() + n);
@@ -269,6 +304,28 @@ const perDayOf = (missing: number | null, daysLeft: number): number | null =>
 
 // The board of the polos: target, done and pace of each one in the current period. Used by the Metas screen and by the
 // manager's overview (Estatísticas), so both always show the same numbers.
+// The semester in force: among the polo goals that contain today, the longest one (a short goal of one month that also contains
+// today does not take the place of the semester)
+const spanOf = (g: { startsOn: any; endsOn: any }) => new Date(String(g.endsOn)).getTime() - new Date(String(g.startsOn)).getTime();
+const SHORT_GOAL_MS = 60 * 86400000;
+// The semester in force: among the goals that contain today, the one that started last (when a new semester opens while the previous one
+// is still running, the new one is the one being worked on). Short goals (up to 60 days, a goal of one month) only count when no longer
+// one contains today; on the same start, the longer wins.
+export const currentSemester = <T extends { startsOn: any; endsOn: any }>(periods: T[], today: string): T | undefined => {
+  const live = periods.filter(g => String(g.startsOn) <= today && String(g.endsOn) >= today);
+  const long = live.filter(g => spanOf(g) > SHORT_GOAL_MS);
+  return (long.length ? long : live).sort((a, b) => String(b.startsOn).localeCompare(String(a.startsOn)) || spanOf(b) - spanOf(a))[0];
+};
+
+// The semesters (the polo goals, in force and archived), the newest first, for the "Semestre" of the period filters: any person signed
+// in may read them (only titles and dates)
+export const semesters = async (_req: Request, res: Response): Promise<Response> => {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: getAppTz() }).format(new Date());
+  const list = await Goal.findAll({ where: { kind: "polo", status: { [Op.in]: ["active", "archived"] } } as any, attributes: ["id", "title", "startsOn", "endsOn", "status"], order: [["startsOn", "DESC"], ["id", "DESC"]], limit: 24 });
+  const current = currentSemester(list.filter(g => g.status === "active"), today);
+  return res.json(list.map(g => ({ id: g.id, title: g.title || "", startsOn: String(g.startsOn).slice(0, 10), endsOn: String(g.endsOn).slice(0, 10), current: !!current && current.id === g.id })));
+};
+
 export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promise<any> => {
   const periods = await Goal.findAll({ where: { status: "active", kind: "polo" }, order: [["startsOn", "DESC"], ["id", "DESC"]], limit: 24 });
   // no semester yet: the same shape, empty, so the screen can show the way to create one
@@ -278,7 +335,7 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
   const wanted = goalIdWanted;
   const goal =
     periods.find(g => g.id === wanted) ||
-    periods.find(g => g.startsOn <= today && g.endsOn >= today) ||
+    currentSemester(periods, today) ||
     periods[0];
   const wd = goal.workDays || 5;
   const extra = extraOf(goal);
@@ -288,22 +345,38 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
 
   const start = dayBounds(goal.startsOn).start;
   const end = dayBounds(goal.endsOn).end;
+  const term = goalTerm(goal);
+  // the entry terms that have a polo goal: a lead of one of them counts in that goal, whatever the day (helpers/EntryTerm)
+  const allGoals = await Goal.findAll({ where: { kind: "polo" }, attributes: ["entryTerm", "title"] });
+  const knownTerms = new Set(allGoals.map(g => goalTerm(g)).filter(Boolean) as string[]);
+  // the leads of this term may have enrolled before or after the period: a year around it is read, then filtered by the rule
+  const wide = { [Op.gte]: new Date(start.getTime() - 365 * 86400000), [Op.lte]: new Date(end.getTime() + 365 * 86400000) };
   const [polos, saved, wonLeads, wonExtra] = await Promise.all([
     Polo.findAll({ where: { active: true }, order: [["name", "ASC"]] }),
     GoalPolo.findAll({ where: { goalId: goal.id } }),
     Lead.findAll({
-      where: { isHistorical: false, poloId: { [Op.ne]: null } as any, wonAt: { [Op.gte]: start, [Op.lte]: end } as any },
-      attributes: ["poloId", "wonAt"],
+      where: {
+        isHistorical: false,
+        poloId: { [Op.ne]: null } as any,
+        [Op.or]: [{ wonAt: { [Op.gte]: start, [Op.lte]: end } }, ...(term ? [{ wonAt: wide, entryTerm: { [Op.ne]: null } }] : [])]
+      } as any,
+      attributes: ["poloId", "wonAt", "entryTerm"],
       raw: true
     }) as unknown as Promise<any[]>,
     LeadEnrollment.findAll({ where: { poloId: { [Op.ne]: null } as any, enrolledAt: { [Op.gte]: start, [Op.lte]: end } as any }, attributes: ["poloId", "enrolledAt"], raw: true }) as unknown as Promise<any[]>
   ]);
-  const wonRows = wonLeads.concat(wonExtra.map(r => ({ poloId: r.poloId, wonAt: r.enrolledAt })));
-  // enrollments of each polo by month (in the company timezone)
-  const wonBy = new Map<number, Record<string, number>>();
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz });
+  const span = { term, start: String(goal.startsOn).slice(0, 10), end: String(goal.endsOn).slice(0, 10) };
+  const wonRows = wonLeads
+    .filter(r => countsInGoal({ entryTerm: r.entryTerm, day: fmt.format(new Date(r.wonAt)) }, span, knownTerms))
+    // the extra courses have no entry term: the day decides
+    .concat(wonExtra.map(r => ({ poloId: r.poloId, wonAt: r.enrolledAt })));
+  // enrollments of each polo by month (in the company timezone); one made before or after the period (its entry term is this one)
+  // goes to the first or the last month, so the months add up to the total
+  const wonBy = new Map<number, Record<string, number>>();
   wonRows.forEach(r => {
-    const key = fmt.format(new Date(r.wonAt)).slice(0, 7);
+    const raw = fmt.format(new Date(r.wonAt)).slice(0, 7);
+    const key = months.length ? (raw < months[0] ? months[0] : raw > months[months.length - 1] ? months[months.length - 1] : raw) : raw;
     const bucket = wonBy.get(r.poloId) || {};
     bucket[key] = (bucket[key] || 0) + 1;
     wonBy.set(r.poloId, bucket);
@@ -412,7 +485,7 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
   });
   return {
     periods: periods.map(g => ({ id: g.id, title: g.title, startsOn: g.startsOn, endsOn: g.endsOn })),
-    goal: { id: goal.id, title: goal.title, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft, daysTotal, elapsed, extraHolidays: extra, holidays: wd >= 7 ? [] : holidaysBetween(goal.startsOn, goal.endsOn, extra) },
+    goal: { id: goal.id, title: goal.title, entryTerm: term, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft, daysTotal, elapsed, extraHolidays: extra, holidays: wd >= 7 ? [] : holidaysBetween(goal.startsOn, goal.endsOn, extra) },
     months,
     month: monthKey,
     rows,
@@ -462,6 +535,9 @@ export const calendar = async (req: Request, res: Response): Promise<Response> =
 export const updatePolos = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
   const b = req.body || {};
+  // the coordination: only the lines of its polos; the working days are the whole cycle's (administration)
+  const mine = await editablePolosOf(req);
+  if (mine && (b.workDays !== undefined || b.extraHolidays !== undefined)) throw new AppError("ERR_NO_PERMISSION", 403);
   if (b.workDays !== undefined) {
     const wd = Number(b.workDays);
     await goal.update({ workDays: wd === 6 || wd === 7 ? wd : 5 });
@@ -474,11 +550,14 @@ export const updatePolos = async (req: Request, res: Response): Promise<Response
     const months = monthsOf(goal.startsOn, goal.endsOn);
     const valid = new Set((await Polo.findAll({ attributes: ["id"] })).map(p => p.id));
     // each line keeps what was typed; only the lines that changed are written (with who did it), the ones taken out are removed
-    const rows = b.rows.map((r: any) => poloLine(goal.id, months, r)).filter((r: any) => valid.has(r.poloId));
-    const previous = await GoalPolo.findAll({ where: { goalId: goal.id } });
+    const allowed = (poloId: number) => valid.has(poloId) && (!mine || mine.includes(poloId));
+    if (mine && b.rows.some((r: any) => !allowed(Number(r.poloId)))) throw new AppError("ERR_NO_PERMISSION", 403);
+    const rows = b.rows.map((r: any) => poloLine(goal.id, months, r)).filter((r: any) => allowed(r.poloId));
+    const previous = await GoalPolo.findAll({ where: { goalId: goal.id, ...(mine ? { poloId: { [Op.in]: mine.length ? mine : [0] } } : {}) } as any });
     const byPolo = new Map(previous.map(g => [g.poloId, g]));
     const keep = new Set(rows.map((r: any) => r.poloId));
-    await GoalPolo.destroy({ where: { goalId: goal.id, poloId: { [Op.notIn]: keep.size ? [...keep] : [0] } } as any });
+    // a line taken out is removed; the coordination removes only lines of its polos
+    await GoalPolo.destroy({ where: { goalId: goal.id, poloId: { [Op.notIn]: keep.size ? [...keep] : [0], ...(mine ? { [Op.in]: mine.length ? mine : [0] } : {}) } } as any });
     for (const row of rows) {
       const old = byPolo.get(row.poloId);
       const same = old && ["target", "manualCount", "canceled", "monthly", "manualMonthly"].every(k => String((old as any)[k] ?? "") === String((row as any)[k] ?? ""));
@@ -497,6 +576,8 @@ export const updatePolo = async (req: Request, res: Response): Promise<Response>
   const goal = await load(req.params.id);
   const poloId = Number(req.params.poloId);
   if (!(await Polo.findByPk(poloId))) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  const mine = await editablePolosOf(req);
+  if (mine && !mine.includes(poloId)) throw new AppError("ERR_NO_PERMISSION", 403);
   const months = monthsOf(goal.startsOn, goal.endsOn);
   const previous = await GoalPolo.findOne({ where: { goalId: goal.id, poloId } });
   // a field that is not sent keeps what was saved
@@ -522,7 +603,7 @@ const norm = (s: string): string =>
 // body: { items: [{ code, name, target, done, canceled }] } — a table pasted from the spreadsheet. A polo is found by its
 // code or name and created when it does not exist yet. "done" is the TOTAL the polo has in the period: what the CRM already
 // counted is discounted, so the same enrollment is never counted twice.
-export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean) => {
+export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean, allowedPolos: number[] | null = null) => {
   const months = monthsOf(goal.startsOn, goal.endsOn);
   const polos = await Polo.findAll();
   const startAt = dayBounds(goal.startsOn).start;
@@ -534,6 +615,8 @@ export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean)
     const target = int(it.target);
     if (!name || target === null) { out.push({ line: i + 1, status: "error", name }); continue; }
     let polo = polos.find(p => code && p.code === code) || polos.find(p => norm(p.name) === norm(name));
+    // the coordination imports only the lines of its polos and never creates a polo
+    if (allowedPolos && (!polo || !allowedPolos.includes(polo.id))) { out.push({ line: i + 1, status: "error", name, error: "Polo fora dos seus polos" }); continue; }
     const status = polo ? "update" : "new";
     if (!dryRun) {
       if (!polo) {
@@ -559,5 +642,5 @@ export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean)
 export const importPoloGoals = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
   const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 300) : [];
-  return res.json(await applyPoloImport(goal, items, Boolean(req.body.dryRun)));
+  return res.json(await applyPoloImport(goal, items, Boolean(req.body.dryRun), await editablePolosOf(req)));
 };

@@ -14,6 +14,14 @@ export interface ProviderHistoryMessage {
 
 export interface ProviderHistoryChat {
   isGroup: boolean;
+  // the chat id on WhatsApp ("5569...@c.us", "...@g.us")
+  chatId?: string;
+  // seconds since 1970 of the last activity of the chat, as the phone shows it (also for a group with no message copied)
+  timestamp?: number;
+  // the unread count the phone shows
+  unreadCount?: number;
+  // a WhatsApp Community, its announcement group or one of its groups
+  community?: { kind: "community" | "group"; role?: "parent" | "announcement" | "member"; communityId?: string | null; parentGroupId?: string | null; readOnly?: boolean };
   // as it is on the phone: pinned at the top, archived
   pinned: boolean;
   archived: boolean;
@@ -30,4 +38,8 @@ export interface ProviderHistoryChat {
 export interface HistoryOptions {
   perChat: number;
   includeGroups: boolean;
+  // right after a QR Code is read WhatsApp Web is still receiving the chats from the phone: wait until their count stops growing
+  waitForSync?: boolean;
+  // only these chats (a contact opened by hand, a chat found later): the rest is left as it is
+  onlyChatIds?: string[];
 }

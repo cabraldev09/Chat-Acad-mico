@@ -1,3 +1,4 @@
+@layer focusreset;
 /* ---------- design tokens: flat surfaces, hairline borders, one colour per meaning (clean, like Linear/Vercel/Stripe) ---------- */
 :root {
   --surface: #ffffff;
@@ -103,8 +104,6 @@
 .ui-lift:hover { transform: translateY(-1px); border-color: var(--line-strong); }
 .ui-lift:active { transform: translateY(0); box-shadow: var(--ui-shadow-1); }
 .ui-press { cursor: pointer; }
-.ui-press:focus-visible { outline: 2px solid var(--brand-cerulean); outline-offset: 2px; }
-
 /* the children of .ui-stagger come in one after the other (the delay grows with the position) */
 .ui-stagger > * { animation: page-in 0.42s var(--ease-out) both; }
 .ui-stagger > *:nth-child(1) { animation-delay: 0ms; }
@@ -156,8 +155,6 @@
 .stats-hub__item:hover { color: var(--text-1); background: var(--accent-soft); }
 .stats-hub__item.is-on { color: #fff; background: #0b4279; }
 :root[data-theme="dark"] .stats-hub__item.is-on { background: #1f5f99; }
-.stats-hub__item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
 /* segmented tabs inside a page header (e.g. Alunos da tutoria: Alunos | Ambientação) */
 .ui-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); margin-left: 12px; max-width: 100%; overflow-x: auto; }
 .ui-tabs__btn { border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 13.5px; font-weight: 600; padding: 6px 14px; border-radius: 8px; cursor: pointer; white-space: nowrap; transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
@@ -195,8 +192,6 @@
 :root[data-theme="dark"] { --card-bg: #1b1d1f; --card-line: rgba(255, 255, 255, 0.1); --card-shadow: none; }
 
 /* a click (mouse or touch) never leaves a frame around what was clicked: the focus ring shows only while moving with the keyboard */
-:focus:not(:focus-visible) { outline: none; }
-
 /* Touch screens (iPhone and Android): every control at least 40 px, the size of a fingertip; a chip or a link inside a text keeps
    its size. A field with letters under 16 px makes the iPhone zoom in on tap (and the page stays zoomed): 16 px on touch screens. */
 @media (pointer: coarse), (max-width: 599px) {
@@ -212,18 +207,23 @@
   input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea, .MuiInputBase-input, .MuiSelect-root { font-size: 16px !important; }
 }
 
-/* Moving with the keyboard (Tab), wherever the focus is, a clear ring around it; a click or a tap shows nothing (rule above) */
-:focus-visible, .MuiButtonBase-root.Mui-focusVisible {
-  outline: 2px solid var(--brand-cerulean, #0693e3);
-  outline-offset: 2px;
-}
-/* No ring where it would be a second frame or where nobody chose the focus (Safari draws it in both cases):
-   - text fields: their own border already shows the focus (and a field focused when a screen opens looked like a stray blue box);
-   - what receives the focus only by code: a dialog, a drawer, a panel (tabindex -1), and the page root. */
-input:not([type=checkbox]):not([type=radio]):not([type=range]):focus-visible, textarea:focus-visible, select:focus-visible,
-[contenteditable]:focus-visible, .MuiInputBase-input:focus-visible, .MuiSelect-root:focus-visible,
-[tabindex="-1"]:focus-visible, .MuiDialog-container:focus-visible, .MuiPaper-root[role=dialog]:focus-visible, .MuiDrawer-paper:focus-visible, .MuiPopover-paper:focus-visible, .MuiMenu-list:focus-visible, .MuiList-root:focus-visible {
-  outline: none;
+/* What is inside a <details> inherits from the browser's own inner box (content-box), not from the page: a field with width 100%
+   and padding then grew past its column (the search of "Histórico de análises" over "Período", the select over "Buscar", the
+   fields past the edge of the phone). Its content goes back to the box model of the rest of the system. */
+details > :not(summary) { box-sizing: border-box; }
+
+/* No focus frame anywhere in the system (decided by the company): neither a click, a tap nor the keyboard draws a box or a
+   ring around what has the focus, in every browser (Safari included). Where the person is stays visible through each
+   component's own selected/pressed state. In the first cascade layer (focusreset, declared before Tailwind's layers in
+   styles/orig.css too): an !important rule there wins over every other one, also over the important utilities of Tailwind. */
+@layer focusreset {
+  *:focus, *:focus-visible, *:focus-within, .Mui-focusVisible, .MuiButtonBase-root.Mui-focusVisible {
+    outline: none !important;
+    outline-offset: 0 !important;
+    --tw-ring-shadow: 0 0 #0000 !important;
+    --tw-ring-offset-shadow: 0 0 #0000 !important;
+    --tw-ring-offset-width: 0px !important;
+  }
 }
 
 /* The loading mark of the whole system: instead of the spinning ring, a spark of eight points (the long and the short ones
@@ -241,3 +241,17 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]):focus-visible, te
   100% { transform: rotate(360deg) scale(.78); opacity: .75; }
 }
 @media (prefers-reduced-motion: reduce) { .MuiCircularProgress-indeterminate::before { animation-duration: 3s; } }
+
+/* Estatísticas → Disparos: the requests for more sends and the cost per person */
+.snd-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.snd-chip { border: 1px solid var(--border); background: transparent; color: var(--text-2); font: inherit; font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.snd-chip.is-on { color: #fff; background: #0b4279; border-color: #0b4279; }
+.snd-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+.snd-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; min-width: 0; }
+.snd-card__top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.snd-card__amount { font-weight: 700; font-variant-numeric: tabular-nums; }
+.snd-card__reason { margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.snd-card__meta { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--text-2); }
+.snd-card__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.snd-link { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 600; color: var(--accent, #0b4279); cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+.snd-note { font-size: 12.5px; color: var(--text-2); margin-top: 10px; }

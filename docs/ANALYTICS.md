@@ -5,7 +5,7 @@ As definições de cada indicador estão em `definitions.ts` e saem em `GET /ana
 
 | Ambiente | Tela | API | Quem acessa |
 |---|---|---|---|
-| Estatísticas (gestão) | `/estatisticas` com as abas Visão geral, Consultores, Polos e metas e Treinamento (`?aba=`), mais Captação, Atendimento e Tutoria | `GET /analytics/team`, `/analytics/commercial`, `/analytics/process`, `/analytics/consultant/:id`, `/analytics/team/export.csv`, `GET/PUT /analytics/config`, `GET /dashboard` e `GET /stats/overview` (o período de atendimento) | administração (todos) e coordenação (consultores dos seus polos; sem polo vinculado, todos) |
+| Estatísticas (gestão) | `/estatisticas` com as abas Visão geral, Consultores, Polos e metas e Treinamento (`?aba=`), mais Captação, Atendimento e Tutoria | `GET /analytics/team`, `/analytics/commercial`, `/analytics/process`, `/analytics/consultant/:id`, `/analytics/team/export.csv`, `GET/PUT /analytics/config`, `GET /dashboard` e `GET /stats/overview` (o período de atendimento) | administração (todos) e coordenação (consultores dos seus polos; sem polo vinculado, nenhum) |
 | Meu desempenho (consultor) | `/meu-desempenho` | `GET /analytics/me`, `/analytics/me/overview` | cada consultor, **somente os próprios números** (a rota ignora `userId` em URL, query ou cabeçalho) |
 | Metas dos polos | Visão geral, Polos e metas e Meu desempenho | `GET /dashboard/polos-progress` | todos os logados: só meta, feito e ritmo de cada polo, sem pessoas; marca os polos de quem vê |
 
@@ -80,6 +80,13 @@ Cada ação que altera números (envio concluído, atividade no lead, tarefa cri
 
 ## Teste de aceite
 `npm run test:analytics` (`scripts/analytics-e2e.js`): mesma produção de João pelas duas portas em hoje/7 dias/mês/intervalo, João sem acesso aos números de Gabrielli e Laura, coordenação limitada ao polo, exportação, configuração e eventos em tempo real.
+O mesmo script confere o CRM por polo: a coordenação do polo A não vê lead do polo B na lista, na busca, no quadro, no Painel do CRM
+(`/crm/metrics`, também a aba Captação), nos novos para conferir, nas tarefas da equipe, no Relatório do CRM (CSV) nem em Matrículas
+realizadas; o relacionamento vê só os matriculados dos seus polos; a coordenação sem polo não vê lead; a administração vê tudo
+(regra completa em `docs/ROTAS.md`, "Quem vê quais leads no CRM").
+
+A planilha de Matrículas realizadas (gerada no navegador, `frontend/src/utils/enrollmentsCsv.js`) leva nome e RGM só para a
+administração; os outros perfis recebem o identificador do lead (`#123`).
 
 ## Estatísticas do comercial (`GET /analytics/commercial`)
 Serviço `AnalyticsServices/SalesInsights.ts`. A gestão vê os consultores que pode ver (`poloId` e `userId` filtram); qualquer outra pessoa vê só os próprios números, seja qual for a query.
@@ -97,7 +104,7 @@ Serviço `AnalyticsServices/SalesInsights.ts`. A gestão vê os consultores que 
 ## Revisão diária pela IA e treinamento sugerido
 - **Worker** `workers/ConsultantReview.ts`: uma vez por dia, depois de `consultant_review_hour` (19 h no fuso da empresa), lê as conversas com mensagem humana de consultor no dia (até `consultant_review_max_tickets`, 60). Desliga com `consultant_review_enabled = "false"`.
 - **Precisa** de um agente ativo com provider `openai` e chave. Respeita os limites diários de gasto (`Budget`); o uso entra em Custos como "Resumos e leituras".
-- **O que vai para a IA:** só o texto das últimas 40 mensagens, com CPF, RG, telefones, e-mails, CEP, números longos e os nomes do lead e do consultor trocados por marcadores (`scrub`).
+- **O que vai para a IA (pseudonimizado, não anonimizado):** só o texto das últimas 40 mensagens (um áudio vai como a transcrição dele, marcada com `[áudio]`; sem transcrição, só o marcador `[áudio sem transcrição]`), com CPF, RG, telefones, e-mails, CEP, números longos e os nomes do lead e do consultor trocados por marcadores (`scrub`). Nomes de terceiros (parentes, empregador), endereços e números falados por extenso não são trocados e podem passar, sobretudo nos áudios transcritos.
 - **O que fica gravado** (`ConsultantReviews`): só códigos (objeção e se foi respondida, etapas difíceis, etapas puladas) e uma nota curta sem dados pessoais. A limpeza noturna apaga depois de 400 dias.
 - **`GET /analytics/coaching`** (gestão): o que se repete por consultor. Regra fixa: no mínimo 5 conversas lidas, 3 ocorrências e 30% das conversas (objeção: metade sem resposta). Também lista os pontos fortes.
 - **`POST /analytics/coaching/text`** (gestão): uma frase de treinamento por pessoa, escrita pela IA só a partir desses códigos (sem nomes), com cache de 24 h.

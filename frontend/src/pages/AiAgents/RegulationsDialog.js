@@ -9,6 +9,7 @@ import toastError from "../../errors/toastError";
 import MecDefaultsPanel from "./MecDefaultsPanel";
 import CohortsPanel from "./CohortsPanel";
 import NormsPanel from "./NormsPanel";
+import { confirmDialog } from "../../components/ConfirmDialog";
 
 const useStyles = makeStyles((theme) => ({
   row: { display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: theme.border.divider },
@@ -52,7 +53,7 @@ const RegulationsDialog = ({ open, onClose }) => {
     setBusy(false);
   };
   const remove = async (r) => {
-    if (!window.confirm("Apagar esta regra? O agente volta a não afirmar nada sobre o MEC para este curso.")) return;
+    if (!(await confirmDialog({ title: "Apagar esta regra?", message: "O agente volta a não afirmar nada sobre o MEC para este curso.", confirmText: "Apagar", tone: "danger" }))) return;
     try { await api.delete(`/course-regulations/${r.id}`); load(); } catch (e) { toastError(e); }
   };
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));

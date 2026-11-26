@@ -8,11 +8,17 @@ on:
     workflows: ["Verificações"]
     types: [completed]
     branches: [main]
+  # logo após o merge: quando o commit é o squash de um PR que passou nos testes com exatamente o mesmo código, publica na hora,
+  # sem esperar a segunda rodada dos mesmos testes na main (deploy/vps/check-ci.js confere). Fora disso, este disparo não faz nada
+  # e a publicação acontece quando as Verificações da main passarem, como sempre.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
   checks: read
+  pull-requests: read
 
 concurrency:
   group: deploy-vps
@@ -20,7 +26,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
     env:
       # the server's address is the first column of deploy/vps/known_hosts (changing server = changing that one line)
@@ -33,15 +39,27 @@ jobs:
         with:
           node-version: 22
       - name: Testes aprovados para a revisão exata
+        id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node deploy/vps/check-ci.js "${{ github.event.workflow_run.head_sha || github.sha }}"
+          EARLY: ${{ github.event_name == 'push' }}
+        run: |
+          if node deploy/vps/check-ci.js "${{ github.event.workflow_run.head_sha || github.sha }}"; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          elif [ "$EARLY" = "true" ]; then
+            echo "Ainda sem testes aprovados para este código: a publicação fica para quando as Verificações da main passarem."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            exit 1
+          fi
       - name: Confere os segredos
+        if: steps.gate.outputs.go == 'true'
         env:
           KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           [ -n "$KEY" ] || { echo "::error::Falta o segredo VPS_SSH_KEY (veja docs/VPS-HOSTINGER.md)"; exit 1; }
       - name: Prepara o SSH e confere a identidade do servidor
+        if: steps.gate.outputs.go == 'true'
         env:
           KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
@@ -61,6 +79,7 @@ jobs:
           echo "chave guardada: ${want:0:30}…  chave vista agora: ${seen:0:30}…"
           [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere com deploy/vps/known_hosts. Chave vista agora: $seen"; exit 1; }
       - name: Atualiza a VPS
+        if: steps.gate.outputs.go == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           WANT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}

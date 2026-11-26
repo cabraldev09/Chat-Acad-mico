@@ -11,7 +11,7 @@ export interface Effects {
   // the text is what the history shows; `choices` lets channels with buttons send them natively
   say(text: string, choices?: { question: string; options: Array<{ id: string; label: string }> }): Promise<void>;
   // what the AI wrote: sent as short bubbles, one after the other, like a person
-  sayBlocks?(text: string): Promise<void>;
+  sayBlocks?(text: string, max?: number): Promise<void>;
   // the value a condition looks at ("lead.course", "tag", "hours", "channel", "message"...)
   readField(field: string): Promise<string>;
   // an answer to a question: saved on the lead when the field is one of its own
@@ -46,6 +46,8 @@ export interface StageTurnArgs {
 }
 export interface StageTurn {
   text: string;
+  // the most bubbles this answer may take (an answer to a question is short); empty = the usual limit
+  blocks?: number;
   // done | human | off | limit | the id of an exit by intention; null/undefined = keep talking
   exit?: string | null;
   collected?: Record<string, string>;
@@ -256,7 +258,7 @@ const stageStep = async (graph: Graph, node: FlowNode, state: RunState, fx: Effe
     const out = render(turn.text, state.vars, who);
     // "uma mensagem só" holds for a normal answer; a long one (the presentation of the course) still goes in short bubbles, never as a wall
     const long = out.length > 300 && out.includes("\n\n");
-    await (fx.sayBlocks && (!turn.single || long) ? fx.sayBlocks(out) : fx.say(out));
+    await (fx.sayBlocks && (!turn.single || long) ? fx.sayBlocks(out, turn.blocks) : fx.say(out));
   }
   if (!turn.exit) return { status: "waiting", state, path: [] };
 

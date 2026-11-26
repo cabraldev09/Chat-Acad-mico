@@ -117,7 +117,8 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 .bubble-in { animation: pop-in .22s var(--ease-out) both; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  /* the toasts' hidden bar is their timer (react-toastify closes the toast when its animation ends): it keeps its own duration */
+  *:not(.Toastify__progress-bar), *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 
 /* ---------- animated border beam (Magic UI) ---------- */
@@ -174,7 +175,8 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 :root[data-theme="dark"] .Toastify__close-button { background: rgba(70, 70, 76, .95); color: #f3f4f6; }
 .Toastify__toast:hover .Toastify__close-button, .Toastify__close-button:focus-visible { opacity: 1; }
 @media (hover: none) { .Toastify__close-button { opacity: .9; } }
-.Toastify__progress-bar { display: none; }
+/* hidden but running: react-toastify closes the toast when this bar's animation ends (display: none would keep it on the screen) */
+.Toastify__progress-bar { opacity: 0 !important; height: 0; pointer-events: none; }
 @media (max-width: 480px) { .Toastify__toast-container { width: 100vw; padding: 8px 10px; } }
 
 /* the bell's notices, as the Notification Center of the Mac: each one a frosted card */
@@ -210,7 +212,7 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 .msgtoast-name { font-weight: 700; font-size: 14px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .msgtoast-msg { font-size: 13px; line-height: 17px; opacity: .82; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
 .msgtoast-time { align-self: flex-start; font-size: 11px; opacity: .55; font-variant-numeric: tabular-nums; }
-.msgtoast-progress.Toastify__progress-bar { display: none; }
+.msgtoast-progress.Toastify__progress-bar { opacity: 0 !important; height: 0; }
 @keyframes msgtoast-in { from { opacity: 0; transform: translateX(28px) scale(.97); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .msgtoast-card.Toastify__toast { animation: none; } }
 
@@ -235,5 +237,4 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 /* an option in a small menu (check list of polos and similar): it answers to the mouse and to the keyboard */
 .polo-option { background: transparent; transition: background-color .15s ease; }
 .polo-option:hover:not(:disabled) { background: var(--surface-2); }
-.polo-option:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .polo-option:disabled { cursor: progress !important; }

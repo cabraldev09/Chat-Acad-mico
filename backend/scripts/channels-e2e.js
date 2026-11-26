@@ -252,6 +252,8 @@ const startAnthropicMock = () => {
       if (/^quero fazer o curso de empreendedorismo$/i.test(said2.trim())) return turn("Empreendedorismo é uma ótima escolha.", { intent: "other", curso: "Empreendedorismo" });
       if (/texto com markdown/i.test(said2)) return turn("**Pedagogia** tem 8 semestres.\n\n### Como funciona\nVeja [a grade](https://exemplo.com/g.pdf) e a tabela:\n| Item | Valor |\n|---|---|\n| Duração | 8 semestres |", { intent: "other" });
       if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
+      // the model denies a course the catalogue has and pushes the old one (a real conversation): the rules put it right
+      if (/saber de rh/i.test(said2)) return turn("A Gestão de Recursos Humanos não está entre os cursos que oferecemos. Podemos explorar outras opções, como Direito, que você já conhece? Qual delas você prefere?", { intent: "other" });
       if (/nasa/i.test(said2)) return turn("Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto.", { intent: "unknown", pergunta_sem_resposta: "convênio com a Nasa" });
       if (/vou pensar/i.test(said2)) return turn("Combinado! Fico no aguardo. 😊", { intent: "follow_up", retorno_em: "2026-12-01", motivo_retorno: "vai conversar com a família" });
       if (/não tenho o histórico/i.test(said2)) return turn("Sem problema!", { intent: "other", tem_historico: false }, [{ type: "tool_use", id: `toolu_x${anthropic.requests.length}`, name: "escolher_resultado", input: { resultado: "sem_historico" } }]);
@@ -520,7 +522,10 @@ const postMeta = (id, payload, secret, badSig) => {
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "150",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`, INSTAGRAM_TOKEN_URL: `http://localhost:${GRAPH_PORT}/ig/oauth/access_token`, INSTAGRAM_GRAPH_URL: `http://localhost:${GRAPH_PORT}/ig`, CHANNEL_TOKEN_REFRESH_MS: "2500", CHANNEL_TOKEN_FIRST_MS: "1500",
       SKIP_WHATSAPP_SESSIONS: "1", TRUST_PROXY: "loopback", SKIP_DEFAULT_DATA: "1", SETTINGS_CACHE_MS: "0", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
-      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ONBOARDING_SLA_MS: "4000", REACTIVATION_MS: "3000", ALLOW_PRIVATE_URLS: "true", CRM_WATCH: "off"
+      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000",
+      // this suite counts the transcriptions of the AI agent exactly: the background transcription of the conversations between people
+      // (workers/HumanTranscription) is tested on its own in analytics-e2e.js
+      HUMAN_TRANSCRIBE_MS: "86400000", ONBOARDING_SLA_MS: "4000", REACTIVATION_MS: "3000", ALLOW_PRIVATE_URLS: "true", CRM_WATCH: "off"
 
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
@@ -942,7 +947,7 @@ const postMeta = (id, payload, secret, badSig) => {
     // ------------------------------------------------------ Outbound webhooks
     console.log("\napi & webhooks");
     await test("API token sends through any channel and rejects bad tokens", async () => {
-      const t = (await http.post("/api-tokens", { name: "e2e" }, auth())).data.token;
+      const t = (await http.post("/api-tokens", { name: "e2e", scopes: ["connections:read", "messages:send"] }, auth())).data.token;
       assert((await http.get("/api/v1/connections", { headers: { Authorization: "Bearer wrong" } })).status >= 400, "bad token accepted");
       const list = (await http.get("/api/v1/connections", { headers: { Authorization: `Bearer ${t}` } })).data;
       assert(list.length >= 5, `connections=${list.length}`);
@@ -950,6 +955,246 @@ const postMeta = (id, payload, secret, badSig) => {
       const r = await http.post("/api/v1/messages/send", { number: "5511988887777", body: "Olá {{name}}!", whatsappId: cid, name: "Lead API" }, { headers: { Authorization: `Bearer ${t}` } });
       assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
       assert(graph.sent.slice(before).some(x => x.body && x.body.to === "5511988887777"), "not sent through cloud api");
+    });
+
+    // API v1 tokens (docs/API-V1.md): each route asks for its scope, a token of some polos reads only those polos, a token that expired is
+    // refused, the token itself is never in the database (only its SHA-256), the ones made before the scopes keep full access (legacy)
+    // and the old single token of Configurações can be turned off.
+    await test("API tokens: scopes, polos, validity, kept only as a hash, legacy tokens and the old token of Configurações", async () => {
+      const api = (t, method, url, body) => http.request({ method, url, data: body, headers: { Authorization: `Bearer ${t}` } });
+      const mk = async body => { const r = await http.post("/api-tokens", body, auth()); assert(r.status === 201, `token ${r.status} ${JSON.stringify(r.data)}`); return r.data; };
+      assert((await http.post("/api-tokens", { name: "sem escopo" }, auth())).status === 400, "a token without scopes was created");
+      assert((await http.post("/api-tokens", { name: "tudo", scopes: ["*"] }, auth())).status === 400, "a token with full access was created");
+      assert((await http.post("/api-tokens", { name: "longo", scopes: ["leads:read"], expiresInDays: 400 }, auth())).status === 400, "a token of more than a year was created");
+
+      // a read-only token does not send messages
+      const reader = await mk({ name: "só leitura", scopes: ["leads:read"] });
+      const denied = await api(reader.token, "post", "/api/v1/messages/send", { number: "5511988887777", body: "oi", whatsappId: cid });
+      assert(denied.status === 403 && denied.data.error === "ERR_API_TOKEN_SCOPE", `read-only token sent a message: ${denied.status} ${JSON.stringify(denied.data)}`);
+      assert((await api(reader.token, "post", "/api/v1/leads", { name: "X", phone: "5511977776666" })).status === 403, "read-only token created a lead");
+      assert((await api(reader.token, "get", "/api/v1/contacts")).status === 403, "a leads token read the contacts");
+      assert((await api(reader.token, "get", "/api/v1/leads")).status === 200, "read-only token cannot read leads");
+
+      // a token of polo A does not see the leads of polo B, and the answer has only the fields of the integration
+      const poloA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('APA', 'Polo API A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const poloB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('APB', 'Polo API B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      sql(`INSERT INTO Leads (name, phone, cpf, source, stageId, poloId, isHistorical, createdAt, updatedAt) VALUES ('APIPOLO A', '5569911110001', '86421357946', 'API', ${open}, ${poloA}, false, NOW(), NOW()), ('APIPOLO B', '5569911110002', NULL, 'API', ${open}, ${poloB}, false, NOW(), NOW())`);
+      const ofA = await mk({ name: "polo A", scopes: ["leads:read", "messages:send"], poloIds: [Number(poloA)] });
+      const seen = (await api(ofA.token, "get", "/api/v1/leads?limit=200")).data;
+      assert(seen.some(l => l.name === "APIPOLO A") && !seen.some(l => l.name === "APIPOLO B"), `token of polo A: ${JSON.stringify(seen.map(l => l.name))}`);
+      assert(seen.every(l => Number(l.poloId) === Number(poloA)), "token of polo A read a lead of another polo");
+      assert(seen.every(l => !("cpf" in l) && !("notes" in l)), `the API answered personal fields: ${Object.keys(seen[0] || {}).join(",")}`);
+      const all = (await api(reader.token, "get", "/api/v1/leads?limit=200")).data;
+      assert(all.some(l => l.name === "APIPOLO A") && all.some(l => l.name === "APIPOLO B"), "a token of every polo misses a polo");
+      // and it writes only to people of its polos
+      assert((await api(ofA.token, "post", "/api/v1/messages/send", { number: "5569911110002", body: "oi", whatsappId: cid })).status === 403, "token of polo A wrote to a lead of polo B");
+      // a token of polo A writes only in polo A: a new lead stays in A (never in B), a lead of B is not touched, stage and owner of its scope
+      const writerA = await mk({ name: "escrita A", scopes: ["leads:write", "contacts:write"], poloIds: [Number(poloA)] });
+      assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", poloId: Number(poloB) })).status === 403, "token of polo A created a lead in polo B");
+      // a token of some polos gets the same answer for a new person, one of its polos and one of another polo (it never learns who exists)
+      const ACCEPTED = JSON.stringify({ aceito: true });
+      // the city of the new person is served by polo B
+      assert((await http.put(`/polos/${poloB}/coverage`, { cities: ["Cidade Do Polo B - RO"] }, auth())).status === 200, "coverage of polo B");
+      const fresh = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade Do Polo B", state: "RO" });
+      assert(fresh.status === 202 && JSON.stringify(fresh.data) === ACCEPTED, `new lead of the token of polo A: ${fresh.status} ${JSON.stringify(fresh.data)}`);
+      const freshId = sql(`SELECT id FROM Leads WHERE phone = '5569911110010'`);
+      // born in polo A (the city of polo B does not move it), before any notice; nobody of another polo gets it
+      assert(sql(`SELECT CONCAT(poloId, '|', poloSource, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE id = ${freshId}`) === `${poloA}|flow|none`, `new lead: ${sql(`SELECT CONCAT(poloId, '|', poloSource, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE id = ${freshId}`)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId = ${freshId} AND body LIKE 'Polo definido%'`)) === 0, "the polo was decided by the city before the token's");
+      const again = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade Do Polo B", state: "RO" });
+      assert(again.status === 202 && JSON.stringify(again.data) === ACCEPTED && sql(`SELECT poloId FROM Leads WHERE id = ${freshId}`) === String(poloA), "a lead of the token's polo answered differently or moved");
+      const leadB = sql(`SELECT id FROM Leads WHERE name = 'APIPOLO B'`);
+      const stateB = () => sql(`SELECT CONCAT(name, '|', COALESCE(notes, ''), '|', (SELECT COUNT(*) FROM LeadActivities a WHERE a.leadId = ${leadB})) FROM Leads WHERE id = ${leadB}`);
+      const beforeB = stateB();
+      const twin = await api(writerA.token, "post", "/api/v1/leads", { name: "Outro nome", phone: "5569911110002", notes: "nota da API" });
+      assert(twin.status === 202 && JSON.stringify(twin.data) === ACCEPTED, `a person of polo B answered differently: ${twin.status} ${JSON.stringify(twin.data)}`);
+      assert(stateB() === beforeB, "the lead of polo B was changed");
+      // nor by CPF: a person of polo A asked by CPF answers the same
+      assert(JSON.stringify((await api(writerA.token, "post", "/api/v1/leads", { name: "Pelo CPF", email: "cpf@x.com", cpf: "864.213.579-46" })).data) === ACCEPTED, "CPF answered differently");
+      // the administration is told about the possible duplicate (the caller never is)
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind = 'api_duplicate'`)) >= 1, "the administration was not told about the duplicate");
+      const wonStage = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
+      assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Direto matriculado", phone: "5569911110011", stageId: Number(wonStage) })).status === 422, "a polo token created a lead straight into an enrolled stage");
+      const outsider = Number(sql(`SELECT id FROM Users WHERE id NOT IN (SELECT userId FROM PoloMembers WHERE poloId = ${poloA}) ORDER BY id LIMIT 1`));
+      assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Dono de fora", phone: "5569911110012", ownerId: outsider })).status === 422, "a polo token gave a lead to someone outside its polos");
+      // with consultants in polo A, the new lead goes to one of them (ownerPool): never to a consultant of polo B, to someone outside the
+      // polos or to a member of polo A who is not a consultant (the coordination)
+      {
+        const mkU = async (name, email, role, extra = {}) => {
+          const r = await http.post("/users", { name, email, password: "senha123", role, ...extra }, auth());
+          assert(r.status === 200 && r.data.id, `user ${email} ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+          return r.data;
+        };
+        const consA = await mkU("Consultor Rodízio A", "cons-rodizio-a@x.com", "consultor");
+        const consB = await mkU("Consultor Rodízio B", "cons-rodizio-b@x.com", "consultor");
+        const coordA = await mkU("Coordenação Rodízio A", "coord-rodizio-a@x.com", "coordenacao", { coordArea: "comercial" });
+        sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${poloA}, ${consA.id}, 'comercial', NOW(), NOW()), (${poloA}, ${coordA.id}, 'coordenacao', NOW(), NOW()), (${poloB}, ${consB.id}, 'comercial', NOW(), NOW())`);
+        // (the round as it is by default: automatic, among every consultant; the settings come back as they were)
+        const setting = k => sql(`SELECT value FROM Settings WHERE key = '${k}'`);
+        const saved = { auto: setting("crm_autoassign"), ids: setting("crm_owner_ids") };
+        const put = (k, v) => (v === "" ? sql(`DELETE FROM Settings WHERE key = '${k}'`) : sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('${k}', '${v}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`));
+        put("crm_autoassign", "roundrobin");
+        put("crm_owner_ids", "[]");
+        try {
+          const owners = [];
+          for (const [i, phone] of [["1", "5569911110013"], ["2", "5569911110014"]]) {
+            const r = await api(writerA.token, "post", "/api/v1/leads", { name: `Rodízio API A ${i}`, phone });
+            assert(r.status === 202 && JSON.stringify(r.data) === ACCEPTED, `lead of the round ${i}: ${r.status} ${JSON.stringify(r.data)}`);
+            owners.push(sql(`SELECT CONCAT(poloId, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE phone = '${phone}'`));
+          }
+          assert(owners.every(o => o === `${poloA}|${consA.id}`), `the new leads of polo A did not go to the consultant of polo A (${consA.id}): ${owners.join(", ")}`);
+        } finally {
+          put("crm_autoassign", saved.auto);
+          put("crm_owner_ids", saved.ids);
+          sql(`UPDATE Leads SET ownerId = NULL WHERE phone IN ('5569911110013', '5569911110014')`);
+          sql(`DELETE FROM PoloMembers WHERE userId IN (${consA.id}, ${consB.id}, ${coordA.id})`);
+          // (the users of this check only: the list of users stays as the other tests expect it)
+          for (const u of [consA, consB, coordA]) await http.delete(`/users/${u.id}`, auth());
+        }
+      }
+      // contacts: the contact of a lead of polo B, or one that is not a lead of polo A, is not changed; a new contact is
+      const contactB = sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato do B', '5569911110002', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`UPDATE Leads SET contactId = ${contactB} WHERE id = ${leadB}`);
+      const contactOfB = await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110002" });
+      assert(contactOfB.status === 202 && JSON.stringify(contactOfB.data) === ACCEPTED, `the contact of polo B answered differently: ${contactOfB.status}`);
+      sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato solto', '5569911110020', '', false, NOW(), NOW())`);
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110020" })).status === 202, "a contact that is not of its polos answered differently");
+      assert(sql(`SELECT string_agg(name, ',' ORDER BY id) FROM Contacts WHERE number IN ('5569911110002', '5569911110020')`) === "Contato do B,Contato solto", "a contact was renamed");
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Contato novo", number: "5569911110021" })).status === 202, "token of polo A cannot create a new contact");
+      assert(sql(`SELECT name FROM Contacts WHERE number = '5569911110021'`) === "Contato novo", "the new contact was not created");
+      // what each token is used for (only method and route): the integration that depends on it
+      const usage = JSON.parse(sql(`SELECT usage FROM ApiTokens WHERE id = ${writerA.id}`) || "{}");
+      assert(usage.routes && usage.routes["POST /api/v1/leads"] && usage.routes["POST /api/v1/leads"].count >= 1, `usage of the token: ${JSON.stringify(usage)}`);
+      assert(!JSON.stringify(usage).includes("5569911110"), "the usage kept a phone number");
+
+      // a token that expired is refused
+      const old = await mk({ name: "vencido", scopes: ["leads:read"], expiresInDays: 1 });
+      sql(`UPDATE ApiTokens SET expiresAt = NOW() - INTERVAL '1 minute' WHERE id = ${old.id}`);
+      const expired = await api(old.token, "get", "/api/v1/leads");
+      assert(expired.status === 401 && expired.data.error === "ERR_API_TOKEN_EXPIRED", `expired token: ${expired.status} ${JSON.stringify(expired.data)}`);
+
+      // the token is never in the database: only its SHA-256 and the prefix; the list never shows it
+      const sha = t => crypto.createHash("sha256").update(t).digest("hex");
+      assert(sql(`SELECT tokenHash FROM ApiTokens WHERE id = ${reader.id}`) === sha(reader.token), "the hash is not the SHA-256 of the token");
+      assert(Number(sql(`SELECT COUNT(*) FROM ApiTokens WHERE token IS NOT NULL`)) === 0, "a token is kept in plain text");
+      for (const t of [reader.token, ofA.token]) assert(!sql(`SELECT string_agg(CONCAT_WS('|', name, tokenHash, tokenPrefix, scopes, poloIds), ';') FROM ApiTokens`).includes(t), "the token is in the database");
+      const listed = JSON.stringify((await http.get("/api-tokens", auth())).data);
+      assert(!listed.includes(reader.token) && !listed.includes(sha(reader.token)) && listed.includes(reader.token.slice(0, 9)), "the list shows the token or its hash");
+
+      // a token made before the scopes (plain text): the migration turns it into a hash, with full access, marked legacy
+      const plain = `wt_${crypto.randomBytes(24).toString("hex")}`;
+      sql(`INSERT INTO ApiTokens (name, token, createdAt, updatedAt) VALUES ('integração antiga', '${plain}', NOW(), NOW())`);
+      execFileSync(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; (async()=>{ await require("./dist/database/migrations/20270101000102-hash-api-tokens").up(db.getQueryInterface()); })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 25000 });
+      assert(sql(`SELECT CONCAT(COALESCE(token, 'null'), '|', tokenHash, '|', scopes, '|', CAST(legacy AS INTEGER)) FROM ApiTokens WHERE name = 'integração antiga'`) === `null|${sha(plain)}|["*"]|1`, "the legacy token was not turned into a hash with full access");
+      assert((await api(plain, "get", "/api/v1/leads")).status === 200 && (await api(plain, "get", "/api/v1/connections")).status === 200, "the legacy token lost its access");
+      assert((await http.get("/api-tokens", auth())).data.some(t => t.name === "integração antiga" && t.legacy === true), "the screen does not mark the legacy token");
+
+      // the old single token of Configurações: on by default, the administrator turns it off (and only the administrator)
+      const settingsToken = sql(`SELECT value FROM Settings WHERE key = 'userApiToken'`);
+      assert(settingsToken, "no token in Configurações");
+      assert((await http.get("/api-tokens/legacy", auth())).data.enabled === true, "the old token is not on by default");
+      assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token of Configurações stopped");
+      assert((await http.put("/api-tokens/legacy", { enabled: "não" }, auth())).status === 400, "an invalid value was saved");
+      assert((await http.put("/api-tokens/legacy", { enabled: false }, auth())).data.enabled === false, "the old token was not turned off");
+      assert((await api(settingsToken, "get", "/api/v1/connections")).status === 401, "the old token works while off");
+      assert((await http.put("/api-tokens/legacy", { enabled: true }, auth())).data.enabled === true, "the old token was not turned on again");
+      assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token does not come back");
+      const legacyUse = (await http.get("/api-tokens/legacy", auth())).data.usage;
+      assert(legacyUse && legacyUse.routes && legacyUse.routes["GET /api/v1/connections"], `the routes of the old token are not shown: ${JSON.stringify(legacyUse)}`);
+    });
+
+    // GET /api/v1/indicadores (docs/API-V1.md): totals and codes only, never a name, phone, e-mail, CPF or text; the scope and the polos of
+    // the token are respected, the period is at most 93 days, and the numbers are the ones of the screens for the same period.
+    await test("API indicators: only totals and codes, scope and polos of the token, the same numbers of the screens", async () => {
+      const api = (t, url) => http.get(url, { headers: { Authorization: `Bearer ${t}` } });
+      const mkTok = async body => (await http.post("/api-tokens", body, auth())).data;
+      const today = (await http.get("/enrollments", auth())).data.to;
+      const poloA = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('IDA', 'Polo Indicadores A', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const poloB = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('IDB', 'Polo Indicadores B', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const won = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
+      const consultant = Number(sql(`SELECT id FROM Users ORDER BY id LIMIT 1`));
+      const ins = (name, phone, email, cpf, polo, extra = "") => sql(`INSERT INTO Leads (name, phone, email, cpf, source, stageId, poloId, isHistorical, firstContactAt, ${extra ? "nextFollowUpAt, " : ""}createdAt, updatedAt) VALUES ('${name}', '${phone}', '${email}', ${cpf ? `'${cpf}'` : "NULL"}, 'Instagram', ${open}, ${polo}, false, NOW() + INTERVAL '30 minutes', ${extra ? "NOW() - INTERVAL '1 day', " : ""}NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const la = ins("Indicadora Joana Pessoal", "5569933330001", "joana.indicadores@x.com", "29537914852", poloA, "follow");
+      ins("Indicador Pedro Pessoal", "5569933330002", "pedro.indicadores@x.com", null, poloB);
+      const lw = sql(`INSERT INTO Leads (name, phone, email, source, stageId, poloId, isHistorical, wonAt, enrolledAt, rgm, createdAt, updatedAt) VALUES ('Matriculada Rita Pessoal', '5569933330003', 'rita.indicadores@x.com', 'Google', ${won}, ${poloA}, false, NOW(), NOW(), '7999001', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO LeadTasks (leadId, userId, title, type, dueAt, createdAt, updatedAt) VALUES (${la}, ${consultant}, 'Ligar para Joana Pessoal', 'ligacao', NOW() - INTERVAL '2 hours', NOW(), NOW())`);
+      sql(`INSERT INTO ConsultantReviews (userId, ticketId, leadId, day, objections, difficulties, skipped, note, model, tokens, createdAt, updatedAt) VALUES (${consultant}, ${sql(`SELECT id FROM Tickets ORDER BY id LIMIT 1`).split("\n")[0]}, ${la}, '${today}', '[{"type":"preco","handled":true},{"type":"tempo","handled":false}]', '["entry"]', '["grade"]', 'Joana Pessoal falou do preço', 'test', 0, NOW(), NOW())`);
+
+      // scope: a token without indicators:read is refused; the period and the polo are checked
+      const leadsOnly = await mkTok({ name: "leads", scopes: ["leads:read"] });
+      assert((await api(leadsOnly.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).status === 403, "a token without indicators:read read the indicators");
+      const all = await mkTok({ name: "indicadores", scopes: ["indicators:read"] });
+      assert((await api(all.token, `/api/v1/indicadores?de=2026-01-01&ate=2026-12-31`)).status === 400, "a period of a year was accepted");
+      assert((await api(all.token, `/api/v1/indicadores?de=${today}`)).status === 400, "a period without the end was accepted");
+      assert((await api(all.token, `/api/v1/indicadores?de=2026-02-31&ate=2026-03-02`)).status === 400, "an impossible day (31/02) was accepted");
+      const r = await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}`);
+      assert(r.status === 200 && Array.isArray(r.data.polos) && Array.isArray(r.data.conexoes), `indicators ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+
+      // no personal data: no field that carries it, and no name, phone, e-mail or CPF of any person of the base anywhere in the answer
+      const text = JSON.stringify(r.data);
+      const keys = new Set();
+      const codes = new Set();
+      const walk = v => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => { keys.add(k.toLowerCase()); walk(x); }); else if (typeof v === "string") codes.add(v.toLowerCase()); };
+      walk(r.data);
+      for (const k of ["name", "nome", "phone", "telefone", "number", "email", "cpf", "rgm", "body", "note", "comment", "lastmessage", "contact", "lead", "aluno"]) assert(!keys.has(k), `the indicators carry the field ${k}`);
+      const people = sql(`SELECT name FROM Leads WHERE LENGTH(name) >= 6 UNION SELECT phone FROM Leads WHERE LENGTH(phone) >= 8 UNION SELECT email FROM Leads WHERE LENGTH(email) >= 6 UNION SELECT cpf FROM Leads WHERE cpf IS NOT NULL UNION SELECT rgm FROM Leads WHERE LENGTH(rgm) >= 5 UNION SELECT name FROM Contacts WHERE LENGTH(name) >= 6 UNION SELECT number FROM Contacts WHERE LENGTH(number) >= 8 UNION SELECT name FROM Users WHERE LENGTH(name) >= 6 UNION SELECT email FROM Users WHERE LENGTH(email) >= 6 UNION SELECT name FROM Whatsapps WHERE LENGTH(name) >= 6`).split("\n").map(x => x.trim()).filter(Boolean);
+      assert(people.length > 20, "the base has no people to compare");
+      // (a value that is itself one of the codes of the answer, like the origin "Instagram" or the channel "instagram", is a code, not a person)
+      const leak = people.filter(p => !codes.has(p.toLowerCase())).find(p => text.toLowerCase().includes(p.toLowerCase()));
+      assert(!leak, `the indicators carry personal data: ${leak}`);
+      // (the seeded people one by one: "pessoal" alone is a code of the answer, the function of a personal number)
+      for (const v of ["Joana Pessoal", "Pedro Pessoal", "Rita Pessoal", "joana.indicadores", "pedro.indicadores", "rita.indicadores", "29537914852", "5569933330001", "5569933330002", "5569933330003", "7999001", "falou do preço"]) assert(!text.toLowerCase().includes(v.toLowerCase()), `the indicators carry the data of a seeded person: ${v}`);
+
+      // the content: polo A has the follow-up, the task, the enrollment and the review of the consultant, by codes
+      const a = r.data.polos.find(p => p.poloId === Number(poloA));
+      assert(a && a.codigo === "IDA" && a.leads.total === 2 && a.leads.porOrigem.some(o => o.origem === "Instagram" && o.total === 1) && a.leads.porOrigem.some(o => o.origem === "Google" && o.matriculados === 1), `polo A leads ${JSON.stringify(a && a.leads)}`);
+      assert(a.followUps.vencidos === 1 && a.followUps.tarefasVencidas === 1 && a.matriculasRealizadas.total === 1 && a.primeiraResposta.leadsRespondidos === 1, `polo A ${JSON.stringify(a)}`);
+      // the consultant is an opaque code of this token, never the user id
+      assert(a.revisaoConsultores.length === 1 && /^c_[0-9a-f]{10}$/.test(a.revisaoConsultores[0].consultor) && a.revisaoConsultores[0].consultor !== consultant && !a.revisaoConsultores.some(c => c.consultor === Number(consultant) || String(c.consultor) === String(consultant)), `consultant code ${JSON.stringify(a.revisaoConsultores.map(c => c.consultor))}`);
+      const rv = a.revisaoConsultores[0];
+      assert(rv && rv.conversasLidas === 1 && rv.objecoes.some(o => o.tipo === "preco" && o.levantadas === 1 && o.tratadas === 1) && rv.objecoes.some(o => o.tipo === "tempo" && o.tratadas === 0) && rv.etapasComDificuldade[0].etapa === "entry" && rv.etapasPuladas[0].etapa === "grade", `review ${JSON.stringify(a.revisaoConsultores)}`);
+      assert(r.data.conexoes.every(c => Number.isInteger(c.id) && typeof c.conectado === "boolean" && c.funcao), `connections ${JSON.stringify(r.data.conexoes).slice(0, 300)}`);
+
+      // the same numbers of the screens for the same period: Captação/Painel do CRM (origins, stages, overdue tasks) and Matrículas realizadas
+      const metrics = (await http.get(`/crm/metrics?from=${today}&to=${today}`, auth())).data;
+      const sumBy = (list, k, v) => list.reduce((m, x) => ({ ...m, [x[k]]: (m[x[k]] || 0) + x[v] }), {});
+      const apiSources = sumBy(r.data.polos.flatMap(p => p.leads.porOrigem), "origem", "total");
+      const screenSources = sumBy(metrics.bySource, "name", "leads");
+      assert(JSON.stringify(Object.entries(apiSources).sort()) === JSON.stringify(Object.entries(screenSources).sort()), `origins API ${JSON.stringify(apiSources)} screen ${JSON.stringify(screenSources)}`);
+      const apiStages = sumBy(r.data.polos.flatMap(p => p.leads.porEtapa), "etapaId", "total");
+      const screenStages = sumBy(metrics.funnel.filter(f => f.total > 0), "id", "total");
+      assert(JSON.stringify(Object.entries(apiStages).sort()) === JSON.stringify(Object.entries(screenStages).sort()), `stages API ${JSON.stringify(apiStages)} screen ${JSON.stringify(screenStages)}`);
+      const now = (await http.get(`/crm/metrics?now=1`, auth())).data;
+      const apiTasks = r.data.polos.reduce((t, p) => t + p.followUps.tarefasVencidas, 0);
+      assert(apiTasks === now.attention.overdueTasks, `overdue tasks API ${apiTasks} screen ${now.attention.overdueTasks}`);
+      const screenEnr = (await http.get(`/enrollments?from=${today}&to=${today}`, auth())).data;
+      const apiEnr = r.data.polos.reduce((t, p) => t + p.matriculasRealizadas.total, 0);
+      assert(apiEnr === screenEnr.total, `enrollments API ${apiEnr} screen ${screenEnr.total}`);
+
+      // the polos of the token: polo A only, and polo B is refused
+      const ofA = await mkTok({ name: "indicadores A", scopes: ["indicators:read"], poloIds: [Number(poloA)] });
+      const onlyA = (await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).data;
+      assert(onlyA.polos.length === 1 && onlyA.polos[0].poloId === Number(poloA), `token of polo A: ${JSON.stringify(onlyA.polos.map(p => p.poloId))}`);
+      assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).status === 403, "token of polo A read polo B");
+      const askedB = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).data;
+      assert(askedB.polos.length === 1 && askedB.polos[0].leads.total === 1 && askedB.polos[0].matriculasRealizadas.total === 0, `polo B asked: ${JSON.stringify(askedB.polos)}`);
+      // the code of the same consultant is the same for this token and another for another token (two integrations cannot join by it)
+      const codeOf = d => (d.polos.find(p => p.poloId === Number(poloA)) || { revisaoConsultores: [] }).revisaoConsultores.map(c => c.consultor)[0];
+      const allAgain = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).data;
+      assert(codeOf(allAgain) === codeOf(r.data) && codeOf(onlyA) && codeOf(onlyA) !== codeOf(r.data), `codes: ${codeOf(r.data)} ${codeOf(allAgain)} ${codeOf(onlyA)}`);
+      // the same question of the same token within a minute is answered from the cache (the same instant of generation)
+      assert(allAgain.geradoEm === r.data.geradoEm, "the second identical call was computed again");
+      // a token of polo A never receives the answer cached for a token of every polo
+      assert(onlyA.polos.length === 1 && onlyA.geradoEm !== undefined, "token of polo A got another token's answer");
+      // per token limit: 20 indicator calls a minute, then 429 with Retry-After (another token is not affected)
+      const busy = await mkTok({ name: "indicadores limite", scopes: ["indicators:read"] });
+      let last;
+      for (let i = 0; i < 21; i += 1) last = await api(busy.token, `/api/v1/indicadores?de=${today}&ate=${today}`);
+      assert(last.status === 429 && last.headers["retry-after"], `the 21st call in a minute: ${last.status}`);
+      assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).status === 200, "the limit of one token blocked another");
+      void lw;
     });
 
     // -------------------------------------------------------------------- CRM
@@ -1027,7 +1272,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT CONCAT(source,'|',utmSource,'|',utmCampaign,'|',CAST(consentAt IS NOT NULL AS INTEGER)) FROM Leads WHERE email='pedro@x.com'`) === "Site / formulário|instagram|vestibular|1", "form fields");
     });
     await test("API v1 creates leads (deduplicated) and lists them", async () => {
-      const t = (await http.post("/api-tokens", { name: "crm" }, auth())).data.token;
+      const t = (await http.post("/api-tokens", { name: "crm", scopes: ["leads:write", "leads:read"] }, auth())).data.token;
       const h = { headers: { Authorization: `Bearer ${t}` } };
       const a = await http.post("/api/v1/leads", { name: "Lead API", phone: "21 99999-1111", source: "Google" }, h);
       assert(a.status === 201, `status ${a.status}`);
@@ -1044,7 +1289,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(m.bySource.length >= 4, "bySource");
     });
     await test("backfill registers people who have a conversation, never an imported address book", async () => {
-      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "bf" }, auth())).data.token}` } };
+      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "bf", scopes: ["contacts:write"] }, auth())).data.token}` } };
       await http.post("/api/v1/contacts", { name: "Contato antigo", number: "5531977770000" }, headers);
       await http.post("/api/v1/contacts", { name: "So agenda", number: "5531977771111" }, headers);
       assert(!leadOf("5531977770000") && !leadOf("5531977771111"), "lead existed before backfill");
@@ -1114,6 +1359,28 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT status FROM LeadDocuments WHERE leadId=${leadId} AND name='RG ou CNH'`) === "received", "the ID did not count as delivered");
       const staff = (await http.get(`/leads/${leadId}/enrollment-form`, auth())).data;
       assert(staff.progress === 100 && staff.data.cpf === "74682489070" && staff.consentAt && staff.submittedAt, `staff view ${JSON.stringify(staff).slice(0, 200)}`);
+      // the form sent by a lead not enrolled yet: the consultant gets the task of checking it and confirming the enrollment
+      const ownerOfForm = sql(`SELECT COALESCE(ownerId::text,'') FROM Leads WHERE id=${leadId}`);
+      if (ownerOfForm) assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId} AND automationKey='enroll-after-form:${leadId}' AND doneAt IS NULL`) === "1", "the received form did not create the task of confirming the enrollment");
+      // an enrolled student also gets the form, fills it and sends it; the tutor is told along with the consultant
+      const tutorF = (await http.post("/users", { name: "Tutora Ficha", email: "ficha-tutora@x.com", password: "senha123", role: "tutor" }, auth())).data;
+      sql(`UPDATE Leads SET enrolledAt=NOW(), onboardingTutorId=${tutorF.id} WHERE id=${leadId}`);
+      const again = await http.post(`/leads/${leadId}/enrollment-form/send`, {}, auth());
+      assert(again.status === 200, `an enrolled lead did not get the form ${again.status} ${JSON.stringify(again.data).slice(0, 160)}`);
+      const view = await http.get(`/ficha-publica/${token}`);
+      assert(view.status === 200 && view.data.locked === false, `the enrolled student's form is locked ${JSON.stringify(view.data).slice(0, 160)}`);
+      assert((await http.put(`/ficha-publica/${token}`, { data: { cidade: "Campinas" } })).status === 200, "an enrolled student could not change the form");
+      const resent = await http.post(`/ficha-publica/${token}/submit`);
+      assert(resent.status === 200 && sql(`SELECT city FROM Leads WHERE id=${leadId}`) === "Campinas", `an enrolled student could not send the form ${resent.status}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${tutorF.id} AND kind='enrollment_form'`)) === 1, "the tutor was not told about the form");
+      // taking an enrolled student back to an open column asks first, then undoes the enrollment
+      const openStage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
+      const asked = await http.put(`/leads/${leadId}/stage`, { stageId: Number(openStage) }, auth());
+      assert(asked.status === 409 && asked.data.error === "ERR_ENROLL_UNDO_CONFIRM", `an enrolled lead went back without asking ${asked.status}`);
+      assert(sql(`SELECT enrolledAt IS NOT NULL FROM Leads WHERE id=${leadId}`) === "1", "the enrollment was undone without the confirmation");
+      const undone = await http.put(`/leads/${leadId}/stage`, { stageId: Number(openStage), undoEnroll: true }, auth());
+      assert(undone.status === 200 && sql(`SELECT COALESCE(enrolledAt::text,'') FROM Leads WHERE id=${leadId}`) === "", `undo the enrollment ${undone.status}`);
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Matrícula desfeita%'`) === "1", "the undoing is not in the history");
       // erasing on request of the person (LGPD): only the management, and the pictures go
       assert((await http.delete(`/leads/${leadId}/enrollment-form`, asUser(other))).status === 403, "a consultant erased the form");
       assert((await http.delete(`/leads/${leadId}/enrollment-form`, auth())).status === 200, "erase");
@@ -1121,7 +1388,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get(`/ficha-publica/${token}`)).status === 410, "the erased form still opens");
     });
     await test("a conversation the team opened, with no message yet, is nobody waiting in Responder agora", async () => {
-      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn" }, auth())).data.token}` } };
+      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "rn", scopes: ["contacts:write"] }, auth())).data.token}` } };
       await http.post("/api/v1/contacts", { name: "So salvei", number: "5531977773333" }, headers);
       const savedId = Number(sql(`SELECT id FROM Contacts WHERE number='5531977773333'`));
       const adminUserId = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
@@ -1165,7 +1432,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put("/operations/config", { outbound_allow_templates: "true" }, auth())).status === 200, "admin template authorization");
       const list = (await http.post("/contact-lists", { name: "Vestibular" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Souza", number: "5511966665555" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Vestibular 2027", message: "Olá {{name}}, inscrições abertas!", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", templateLanguage: "pt_BR", intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Vestibular 2027", message: "Olá {{name}}, inscrições abertas!", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", templateLanguage: "pt_BR", intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       const before = graph.sent.length;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       const s = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "template"), 15000, "template send");
@@ -1188,13 +1455,13 @@ const postMeta = (id, payload, secret, badSig) => {
         { body: "Abrimos as inscrições do vestibular.", delaySec: 3 },
         { body: "Posso te explicar as bolsas?", delaySec: 3 }
       ];
-      const bad = await http.post("/campaigns", { name: "Sem texto", contactListId: list.id, steps: [{ body: "" }] }, auth());
+      const bad = await http.post("/campaigns", { objective: "Teste de envio", name: "Sem texto", contactListId: list.id, steps: [{ body: "" }] }, auth());
       assert(bad.status === 400, `empty step should be refused, got ${bad.status}`);
-      const six = await http.post("/campaigns", { name: "Seis", contactListId: list.id, steps: Array.from({ length: 6 }, () => ({ body: "x" })) }, auth());
+      const six = await http.post("/campaigns", { objective: "Teste de envio", name: "Seis", contactListId: list.id, steps: Array.from({ length: 6 }, () => ({ body: "x" })) }, auth());
       assert(six.status === 400, `6 steps should be refused, got ${six.status}`);
-      const tpl = await http.post("/campaigns", { name: "Modelo + sequência", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", steps }, auth());
+      const tpl = await http.post("/campaigns", { objective: "Teste de envio", name: "Modelo + sequência", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", steps }, auth());
       assert(tpl.status === 400, `template + several steps should be refused, got ${tpl.status}`);
-      const c = (await http.post("/campaigns", { name: "Sequência", steps, contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Sequência", steps, contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert(c.message.startsWith("Oi {{name}}") && !c.templateName, "first step should mirror message");
       const before = graph.sent.length;
       const sequenceTexts = () => graph.sent.slice(before).filter(x => x.body?.type === "text" && x.body.to === "5511955554444").map(x => x.body.text.body).filter(t => /^Oi Paula Dias!/.test(t) || steps.slice(1).some(step => step.body === t));
@@ -1217,7 +1484,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => ticketOf("5511955557777"), 8000, "buttons customer request");
       const list = (await http.post("/contact-lists", { name: "Botões" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Botões", number: "5511955557777" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Com botões", steps: [{ body: "Oi {{primeiro_nome}}, quer a sua bolsa?", buttons: ["Quero", "Agora não"], delaySec: 0 }], contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Com botões", steps: [{ body: "Oi {{primeiro_nome}}, quer a sua bolsa?", buttons: ["Quero", "Agora não"], delaySec: 0 }], contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert(Array.isArray(c.steps) && c.steps[0].buttons.join("|") === "Quero|Agora não", `steps saved ${JSON.stringify(c.steps)}`);
       const before = graph.sent.length;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
@@ -1245,7 +1512,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(items.length === 1 && items[0].number === "5511955551111", `the country code was not added: ${JSON.stringify(items)}`);
       const again = (await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Repetido", number: "11955551111" }] }, auth())).data;
       assert(again.imported === 0 && again.duplicated === 1, `the same number typed another way came twice ${JSON.stringify(again)}`);
-      const c = (await http.post("/campaigns", { name: "Nomes", message: "Oi {{name}} ({{primeiro_nome}})", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Nomes", message: "Oi {{name}} ({{primeiro_nome}})", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       const before = graph.sent.length;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       const sent = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "text" && x.body.to === "5511955551111"), 15000, "the message");
@@ -1262,9 +1529,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const list = await mk("Agenda", ["5521955552001"]);
       const empty = (await http.post("/contact-lists", { name: "Agenda vazia" }, auth())).data;
 
-      assert((await http.post("/campaigns", { ...base, name: "Passada", message: "x", contactListId: list.id, scheduledAt: new Date(Date.now() - 3600000).toISOString() }, auth())).status === 400, "a start date in the past was accepted");
-      assert((await http.post("/campaigns", { ...base, name: "Sem ninguém", message: "x", contactListId: empty.id, scheduledAt: future() }, auth())).status === 400, "scheduled with an empty list");
-      const made = await http.post("/campaigns", { ...base, name: "Agendada", message: "Oi {{name}}", contactListId: list.id, scheduledAt: future() }, auth());
+      assert((await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Passada", message: "x", contactListId: list.id, scheduledAt: new Date(Date.now() - 3600000).toISOString() }, auth())).status === 400, "a start date in the past was accepted");
+      assert((await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Sem ninguém", message: "x", contactListId: empty.id, scheduledAt: future() }, auth())).status === 400, "scheduled with an empty list");
+      const made = await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Agendada", message: "Oi {{name}}", contactListId: list.id, scheduledAt: future() }, auth());
       assert(made.status === 201 && made.data.status === "scheduled", `saving with a date should schedule: ${made.status} ${made.data.status}`);
       const id = made.data.id;
       assert((await http.put(`/campaigns/${id}`, { scheduledAt: "" }, auth())).data.status === "draft", "clearing the date should make it a draft");
@@ -1278,7 +1545,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // the time comes: it starts by itself and copies the recipients then
       const l2 = await mk("Agenda dois", ["5521955552002"]);
-      const c2 = (await http.post("/campaigns", { ...base, name: "Sozinha", message: "Oi", contactListId: l2.id, scheduledAt: future() }, auth())).data;
+      const c2 = (await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Sozinha", message: "Oi", contactListId: l2.id, scheduledAt: future() }, auth())).data;
       assert(sql(`SELECT COUNT(*) FROM CampaignShippings WHERE campaignId=${c2.id}`) === "0", "recipients copied too early");
       const before2 = graph.sent.length;
       sql(`UPDATE Campaigns SET scheduledAt = NOW() - INTERVAL '10 seconds' WHERE id=${c2.id}`);
@@ -1287,7 +1554,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // hours late (the system was off): a person decides
       const l3 = await mk("Agenda tres", ["5521955552003"]);
-      const c3 = (await http.post("/campaigns", { ...base, name: "Atrasada", message: "Oi", contactListId: l3.id, scheduledAt: future() }, auth())).data;
+      const c3 = (await http.post("/campaigns", { objective: "Teste de envio", ...base, name: "Atrasada", message: "Oi", contactListId: l3.id, scheduledAt: future() }, auth())).data;
       const before3 = graph.sent.length;
       sql(`UPDATE Campaigns SET scheduledAt = NOW() - INTERVAL '8 hours' WHERE id=${c3.id}`);
       await waitFor(() => sql(`SELECT status FROM Campaigns WHERE id=${c3.id}`) === "paused", 15000, "late campaign paused");
@@ -1296,7 +1563,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // pause, resume, cancel
       const l4 = await mk("Ritmo", ["5521955552004", "5521955552005"]);
-      const c4 = (await http.post("/campaigns", { ...base, intervalMin: 600, intervalMax: 600, name: "Devagar", message: "Oi", contactListId: l4.id }, auth())).data;
+      const c4 = (await http.post("/campaigns", { objective: "Teste de envio", ...base, intervalMin: 600, intervalMax: 600, name: "Devagar", message: "Oi", contactListId: l4.id }, auth())).data;
       const before4 = graph.sent.length;
       assert((await http.post(`/campaigns/${c4.id}/start`, {}, auth())).data.status === "running", "start");
       await waitFor(() => graph.sent.slice(before4).some(x => x.body && x.body.to === "5521955552004"), 15000, "first message");
@@ -1314,7 +1581,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("campanhas: reenviar falhas, relatório com motivo em português e em planilha, duplicar, lista em uso e conexão fora do ar", async () => {
       const list = (await http.post("/contact-lists", { name: "Falhas" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Falha Um", number: "5521955553001" }, { name: "Falha Dois", number: "5521955553002" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Com falhas", message: "Oi {{name}}", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Com falhas", message: "Oi {{name}}", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert((await http.post(`/campaigns/${c.id}/retry-failed`, {}, auth())).status === 400, "retry on a campaign that never started");
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       await waitFor(() => sql(`SELECT status FROM Campaigns WHERE id=${c.id}`) === "finished", 20000, "finished");
@@ -1348,7 +1615,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // the connection goes down: the campaign says it is waiting and goes on when it is back
       const l2 = (await http.post("/contact-lists", { name: "Conexão cai" }, auth())).data;
       await http.post(`/contact-lists/${l2.id}/import`, { items: [{ name: "Espera", number: "5521955553003" }], consent: true }, auth());
-      const c2 = (await http.post("/campaigns", { name: "Espera a conexão", message: "Oi", contactListId: l2.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c2 = (await http.post("/campaigns", { objective: "Teste de envio", name: "Espera a conexão", message: "Oi", contactListId: l2.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       sql(`UPDATE Whatsapps SET status='DISCONNECTED' WHERE id=${cid}`);
       const before2 = graph.sent.length;
       try {
@@ -1371,7 +1638,7 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('pre-known-1', ${t}, 'oi', false, true, 'chat', 0, NOW(), NOW())`);
       const list = (await http.post("/contact-lists", { name: "Conferência" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Conhecida", number: "5569999993333" }, { name: "Desconhecida", number: "5569988884444" }, { name: "Saiu", number: "5569977775555" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Conferência", message: "Oi", contactListId: list.id, whatsappId: wa.id }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Conferência", message: "Oi", contactListId: list.id, whatsappId: wa.id }, auth())).data;
       const pre = await http.get(`/campaigns/${c.id}/preflight`, auth());
       assert(pre.status === 200 && pre.data.total === 3 && pre.data.blocked.optedOut === 1 && pre.data.blocked.cold === 1 && pre.data.blocked.noConsent === 0 && pre.data.canReceive === 1, `preflight ${JSON.stringify(pre.data).slice(0, 300)}`);
       assert(pre.data.connection.riskMode === "strict" && pre.data.warnings.length >= 2 && typeof pre.data.estimatedSeconds === "number", "connection, warnings and duration");
@@ -1383,7 +1650,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(draft.status === 200 && draft.data.total === 3 && draft.data.canReceive === 2 && draft.data.messagesPerPerson === 2, `draft preflight ${draft.status} ${JSON.stringify(draft.data).slice(0, 200)}`);
       assert((await http.post("/campaigns/preflight", { whatsappId: wa.id }, auth())).status === 400, "draft preflight without a list");
       const noList = (await http.post("/contact-lists", { name: "Vazia conferência" }, auth())).data;
-      const empty = (await http.post("/campaigns", { name: "Vazia", message: "Oi", contactListId: noList.id, whatsappId: wa.id }, auth())).data;
+      const empty = (await http.post("/campaigns", { objective: "Teste de envio", name: "Vazia", message: "Oi", contactListId: noList.id, whatsappId: wa.id }, auth())).data;
       const e = (await http.get(`/campaigns/${empty.id}/preflight`, auth())).data;
       assert(e.total === 0 && e.canReceive === 0 && e.warnings.some(w => /vazia/.test(w)), "empty list preflight");
       assert((await http.post(`/campaigns/${empty.id}/start`, {}, auth())).status === 400, "an empty list started");
@@ -1456,6 +1723,98 @@ const postMeta = (id, payload, secret, badSig) => {
       const bad = p => http.post("/proposals/preview", { leadId: plead.id, params: p }, auth());
       assert((await bad({ gross: 0, firstMonthly: 100 })).status === 400, "zero gross accepted");
       assert((await bad({ gross: 500, firstMonthly: 900 })).status === 400, "first monthly above gross accepted");
+      assert((await bad({ gross: 500, monthly: 200, firstMonthly: -1 })).data.error === "ERR_PROPOSAL_FIRST_PAYMENT", "a negative 1st installment accepted");
+    });
+    await test("the 1st installment: the same as the others by default, its own value, or waived (R$ 0) without touching the rest", async () => {
+      const prev = p => http.post("/proposals/preview", { leadId: plead.id, params: { gross: 954.8, monthly: 220, enrollmentFee: 99, semesters: 8, startYear: 2027, startSemester: 1, firstDueDate: "2027-02-01", ...p } }, auth());
+      const same = await prev({});
+      assert(same.status === 200 && same.data.result.tiers.onTime === 220 && /Primeira Mensalidade:<\/b> R\$\s?220,00/.test(same.data.html), `default 1st ${same.status} ${JSON.stringify(same.data).slice(0, 200)}`);
+      const exempt = await prev({ firstExempt: true });
+      assert(exempt.status === 200, `exempt ${exempt.status} ${JSON.stringify(exempt.data).slice(0, 200)}`);
+      assert(exempt.data.result.tiers.onTime === 220 && exempt.data.result.bolsaApplied === same.data.result.bolsaApplied, "the waived 1st changed the others");
+      assert(/isenta \(R\$\s?0,00\)/.test(exempt.data.html) && /vencimento 01\/02\/2027/.test(exempt.data.html) && /Valor total do pedido<\/span><span>R\$\s?0,00/.test(exempt.data.html), "the PDF of a waived 1st installment");
+      const zero = await prev({ firstMonthly: 0 });
+      assert(zero.status === 200 && /isenta \(R\$\s?0,00\)/.test(zero.data.html), "R$ 0 typed should mean waived");
+      const own = await prev({ firstMonthly: 150 });
+      assert(own.status === 200 && /Primeira Mensalidade:<\/b> R\$\s?150,00/.test(own.data.html) && own.data.result.tiers.onTime === 220, "a 1st installment with its own value");
+      // the brand's logo on a Cruzeiro do Sul university without an uploaded logo
+      assert(/<img src="data:image\/svg\+xml;base64,/.test(same.data.html) || !/cruzeiro do sul/i.test(same.data.html), "the proposal of a Cruzeiro do Sul university has no logo");
+    });
+    await test("proposal models: an inactive one is not offered, the default stays active, a copy is a new model", async () => {
+      const made = await http.post("/proposal-templates", { name: "Modelo Inativo Teste", enrollmentFee: 50, dueDay: 10, installments: 6, bolsaFirst: 30, bolsaNext: 30, active: true }, auth());
+      assert(made.status === 201 && made.data.active === true, `template ${made.status}`);
+      const off = await http.put(`/proposal-templates/${made.data.id}`, { active: false }, auth());
+      assert(off.status === 200 && off.data.active === false, "deactivate a model");
+      const def = (await http.get("/proposal-templates", auth())).data;
+      const list = Array.isArray(def) ? def : def.rows || def.items || [];
+      const dflt = list.find(t => t.isDefault);
+      if (dflt) {
+        const refused = await http.put(`/proposal-templates/${dflt.id}`, { active: false }, auth());
+        assert(refused.status === 400 && refused.data.error === "ERR_PROPOSAL_TEMPLATE_DEFAULT_ACTIVE", `the default model was deactivated ${refused.status}`);
+        // the default is the one picked when the inactive model would otherwise come first
+        const d = await http.get(`/proposals/defaults?leadId=${plead.id}`, auth());
+        assert(d.status !== 200 || d.data.templateId !== made.data.id, "an inactive model was offered");
+      }
+      // turning it on again
+      assert((await http.put(`/proposal-templates/${made.data.id}`, { active: true }, auth())).data.active === true, "reactivate");
+      await http.delete(`/proposal-templates/${made.data.id}`, auth());
+    });
+    await test("a model saves with an empty number field (the 'Graduação FAMAR' error), creating and editing", async () => {
+      const made = await http.post("/proposal-templates", { name: "Modelo Campo Vazio Teste", enrollmentFee: "", dueDay: 10, installments: "", installmentsFixed: "", bolsaFirst: 30, bolsaNext: 30 }, auth());
+      assert(made.status === 201, `create with empty fields ${made.status} ${JSON.stringify(made.data)}`);
+      const edited = await http.put(`/proposal-templates/${made.data.id}`, { installments: "", cardRatePct: "", observation: "ok" }, auth());
+      assert(edited.status === 200 && edited.data.observation === "ok", `edit with empty fields ${edited.status} ${JSON.stringify(edited.data)}`);
+      await http.delete(`/proposal-templates/${made.data.id}`, auth());
+    });
+    await test("installment proposals (SESTED and Cruzeiro pós): installments by duration, fees, single payment with Pix and card", async () => {
+      const tpl = await http.post("/proposal-templates", {
+        name: "Pós Parcelada Teste", planType: "parcelado", installments: "", installmentsByDuration: "6=12\n9=15\n12=18", enrollmentFee: 0, dueDay: 10,
+        bolsaFirst: 0, bolsaNext: 0, chargeCertification: true, certificationFee: 150, pixDiscountPct: 10, cardMaxInstallments: 10, cardRatePct: 1.99, cardPassInterest: true,
+        courseLevels: ["Pós-graduação"]
+      }, auth());
+      assert(tpl.status === 201 && tpl.data.planType === "parcelado", `template ${tpl.status} ${JSON.stringify(tpl.data).slice(0, 300)}`);
+      const imp = await http.post("/courses/import", { items: [
+        { name: "Pós Gestão Parcelada Teste", category: "Pós-graduação", level: "Pós-graduação", modality: "EAD", monthlyFee: "300,00", durationMonths: "9", enrollmentFee: "80,00", certificationFee: "150,00" },
+        { name: "Profissionalizante Teste", category: "Profissionalizante", level: "Profissionalizante", modality: "EAD", monthlyFee: "1.200,00", durationMonths: "3", installmentsTotal: "1", singlePayment: "Sim" },
+        { name: "Pós Duração Errada Teste", category: "Pós-graduação", modality: "EAD", monthlyFee: "300", durationMonths: "abc" },
+        { name: "Graduação Nível Teste", category: "Graduação", level: "Bacharelado", modality: "EAD", monthlyFee: "900", semesters: "8" }] }, auth());
+      assert(imp.data.created === 3 && imp.data.errors === 1, `import ${JSON.stringify(imp.data)}`);
+      assert(sql("SELECT durationMonths||'/'||enrollmentFee||'/'||certificationFee FROM Courses WHERE name='Pós Gestão Parcelada Teste'") === "9/80.00/150.00", "the new columns of the spreadsheet");
+      assert(sql("SELECT singlePayment FROM Courses WHERE name='Profissionalizante Teste'") === "1", "single payment column");
+      const pos = Number(sql("SELECT id FROM Courses WHERE name='Pós Gestão Parcelada Teste'"));
+      const lead = (await http.post("/leads", { name: "Lead Pós Teste", phone: "11 95555-0091", source: "Indicação", courseId: pos }, auth())).data.lead;
+      const d = await http.get(`/proposals/defaults?leadId=${lead.id}&templateId=${tpl.data.id}`, auth());
+      assert(d.status === 200 && d.data.params.planType === "parcelado" && d.data.params.installmentsTotal === 15, `9 months should be 15 installments: ${JSON.stringify(d.data.params || d.data).slice(0, 300)}`);
+      assert(d.data.params.enrollmentFee === 80 && d.data.params.certification === "charge" && d.data.params.certificationFee === 150, "the fees of the course");
+      // the automatic choice: a graduate course gets a model of its level; a graduation course never gets it
+      const auto = await http.get(`/proposals/defaults?leadId=${lead.id}`, auth());
+      assert(auto.status === 200 && auto.data.params.planType === "parcelado", `a graduate course got a graduation model: ${auto.data.templateId}`);
+      const grad = Number(sql("SELECT id FROM Courses WHERE name='Graduação Nível Teste'"));
+      const gLead = (await http.post("/leads", { name: "Lead Graduação Nível Teste", phone: "11 95555-0092", source: "Indicação", courseId: grad }, auth())).data.lead;
+      const g = await http.get(`/proposals/defaults?leadId=${gLead.id}`, auth());
+      assert(g.status === 200 && g.data.params.planType !== "parcelado" && g.data.templateId !== tpl.data.id, `a graduation course got the graduate model ${g.data.templateId}`);
+      const prev = p => http.post("/proposals/preview", { leadId: lead.id, templateId: tpl.data.id, params: { ...d.data.params, ...p } }, auth());
+      const plain = await prev({});
+      assert(plain.status === 200 && plain.data.result.plan.installments === 15 && plain.data.result.plan.total === 4500, `plan ${plain.status} ${JSON.stringify(plain.data.result || plain.data).slice(0, 300)}`);
+      assert(/Parcelas:<\/b> 15 de R\$\s?300,00/.test(plain.data.html) && /Taxa de certificação:<\/b> R\$\s?150,00/.test(plain.data.html) && !plain.data.html.includes("Projeção por semestre"), "the PDF of an installment proposal");
+      assert(/15 de R\$\s?300,00/.test(plain.data.messages.map(m => m.text).join("\n")), "the WhatsApp summary");
+      const exempt = await prev({ certification: "exempt", enrollmentExempt: true, firstExempt: true, firstMonthly: 0 });
+      assert(exempt.status === 200 && /Taxa de certificação:<\/b> isenta/.test(exempt.data.html) && /Taxa de matrícula:<\/b> isenta/.test(exempt.data.html), "waived fees");
+      assert(exempt.data.result.plan.total === 4200, `waived 1st: ${exempt.data.result.plan.total}`);
+      const edited = await prev({ certificationFee: 200, monthly: 280, installmentsTotal: 12 });
+      assert(edited.status === 200 && /Taxa de certificação:<\/b> R\$\s?200,00/.test(edited.data.html) && edited.data.result.plan.installments === 12, "edited certification and installments");
+      const single = await prev({ singlePayment: true, singleValue: 1000, pixDiscountPct: 10, cardInstallments: 10, cardRatePct: 1.99, cardPassInterest: true });
+      const s = single.data.result.plan.single;
+      assert(single.status === 200 && s.value === 1000 && s.pix === 900 && Math.abs(s.card.installment - 111.25) < 0.1, `single payment ${JSON.stringify(s)}`);
+      const noPass = (await prev({ singlePayment: true, singleValue: 1000, cardInstallments: 10, cardRatePct: 1.99, cardPassInterest: false })).data.result.plan.single;
+      assert(noPass.card.installment === 100 && noPass.card.total === 1000, `card without passing interest ${JSON.stringify(noPass.card)}`);
+      assert(/Pix:<\/b> R\$\s?900,00/.test(single.data.html) && /Cartão de crédito:<\/b> 10x de R\$/.test(single.data.html), "payment methods in the PDF");
+      // the graduation reference is untouched by the new model
+      const ref = await previewFor(REF1);
+      assert(ref.result.rows.length === REF1.rows.length && !ref.result.plan, "graduation turned into an installment proposal");
+      await http.delete(`/proposal-templates/${tpl.data.id}`, auth());
+      // out of the catalog, so the AI scenarios further on do not see them
+      sql("UPDATE Courses SET active=false WHERE name IN ('Pós Gestão Parcelada Teste','Profissionalizante Teste','Graduação Nível Teste')");
     });
     let prop, propCourse;
     await test("a draft saves without the base data, but the PDF and the sending ask for the admission, the course and the deadline", async () => {
@@ -1493,7 +1852,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const doc = graph.sent.slice(before).find(x => x.body && x.body.type === "document");
       assert(doc && doc.body.document.filename && doc.body.document.filename.endsWith(".pdf"), "document message payload");
       assert(sql(`SELECT status FROM Proposals WHERE id=${prop.id}`) === "sent", "status");
-      assert(/proposta/i.test(stageName(lid)), `stage ${stageName(lid)}`);
+      // the column of the proposal itself, never "Pronto para proposta"
+      assert(/proposta/i.test(stageName(lid)) && !/pronto/i.test(stageName(lid)), `stage ${stageName(lid)}`);
       assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lid} AND body LIKE 'Proposta #${prop.id} enviada%'`) === "1", "activity");
       const pub = await http.get(`/p/${prop.token}`);
       assert(pub.status === 200 && String(pub.data).includes("Projeção por semestre"), "public link");
@@ -1687,6 +2047,24 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: pay.txid }] });
       await sleep(1500);
       assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${paying.id} AND body LIKE 'Taxa de matrícula paga%'`) === "1", "duplicate activity");
+    });
+    await test("a paid fee never enrolls by itself: with the setting pointing to Matriculado the lead stays and the consultant gets the task", async () => {
+      const won = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`);
+      await http.put("/payments/efi/settings", { moveStageId: Number(won) }, auth());
+      const me = sql(`SELECT id FROM Users WHERE email='admin@whaticket.com'`);
+      const l = await mkLead("Aluno Taxa Sem Matricula", "5511955550011");
+      await http.put(`/leads/${l.id}`, { cpf: "529.982.247-25" }, auth());
+      sql(`UPDATE Leads SET ownerId=${me} WHERE id=${l.id}`);
+      const p = (await http.post(`/leads/${l.id}/payments`, { amount: "99,00", method: "pix" }, auth())).data;
+      efi.charges[p.txid].status = "CONCLUIDA";
+      efi.charges[p.txid].pix = [{ endToEndId: "E2026WON", txid: p.txid, valor: "99.00", horario: new Date().toISOString() }];
+      const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
+      await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: p.txid }] });
+      await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${p.id}`) === "paid", 8000, "payment paid");
+      await http.put("/payments/efi/settings", { moveStageId: null }, auth());
+      assert(sql(`SELECT COALESCE(enrolledAt::text,'') FROM Leads WHERE id=${l.id}`) === "", "a payment enrolled the lead");
+      assert(sql(`SELECT s.type FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.id=${l.id}`) === "open", `a payment moved the lead to ${stageName(l.id)}`);
+      await waitFor(() => sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${l.id} AND automationKey='enroll-after-fee:${l.id}' AND doneAt IS NULL`) === "1", 8000, "the task of confirming the enrollment");
     });
     await test("without a webhook (localhost) the poller still detects the payment", async () => {
       const l = await mkLead("Aluno Poller", "5511955550002");
@@ -1964,7 +2342,7 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${wa.id}`);
       const list = (await http.post("/contact-lists", { name: "Frios" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Frio Um", number: "5511977770001" }], consent: true }, auth());
-      const c = (await http.post("/campaigns", { name: "Frios", message: "Oi {{name}}", contactListId: list.id, whatsappId: wa.id, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Frios", message: "Oi {{name}}", contactListId: list.id, whatsappId: wa.id, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       try {
         await waitFor(() => {
@@ -2139,7 +2517,9 @@ const postMeta = (id, payload, secret, badSig) => {
       try {
         const decode = raw => raw.replace(/=\r?\n/g, "").replace(/=3D/g, "=").replace(/=C3=A7/g, "ç").replace(/=C3=A3/g, "ã");
         // the administrators that exist (creating another one would change what other tests assume about the last administrator)
-        const admins = sql(`SELECT email FROM Users WHERE (profile='admin' OR role IN ('admin','coordenacao')) AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
+        // (this referral has no polo: only the administration hears of it, never the coordination; see the test of the notices by polo)
+        const admins = sql(`SELECT email FROM Users WHERE (profile='admin' OR role='admin') AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
+        const coordEmails = sql(`SELECT email FROM Users WHERE role='coordenacao' AND COALESCE(profile, '') <> 'admin' AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
         assert(admins.length >= 1, "no administrator with an e-mail");
         await http.post("/users", { name: "Cons Indicações", email: "cons-ind@x.com", password: "senha123", role: "consultor" }, auth());
         await new Promise(r => setTimeout(r, 800));
@@ -2166,6 +2546,7 @@ const postMeta = (id, payload, secret, badSig) => {
         const mailA = decode(got(admins[0])[0].raw);
         assert(mailA.includes("administra o sistema") && !mailA.includes("esperando o seu primeiro"), "the administration got the consultant's text");
         assert(new Set(inbox.map(m => m.to)).size === inbox.length, "someone got the same notice twice");
+        assert(!inbox.some(m => coordEmails.includes(m.to)), "the coordination got the e-mail of a referral with no polo");
 
         // the same person again: the CRM keeps one, and the consultant is told it was already there
         const before = inbox.length;
@@ -2371,6 +2752,52 @@ const postMeta = (id, payload, secret, badSig) => {
       // forgot password: same answer for everyone
       assert((await http.post("/portal/forgot", { login: "123456" })).data.ok === true && (await http.post("/portal/forgot", { login: "nao-existe" })).data.ok === true, "forgot answers differently");
     });
+    await test("an analysis goes into the record of the person and their tutor (or consultant) is told; the management sets the tutor when sending it", async () => {
+      const up = (route, bytes, fields = {}, who = token, name = "doc.pdf") => {
+        const f = new FormData();
+        f.append("file", bytes, { filename: name, contentType: "application/pdf" });
+        Object.entries(fields).forEach(([k, v]) => f.append(k, String(v)));
+        return http.post(route, f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${who}` } });
+      };
+      await http.post("/users", { name: "Tutora Registro", email: "tutora-registro@x.com", password: "senha123", role: "tutor" }, auth());
+      await http.post("/users", { name: "Consultor Registro", email: "consultor-registro@x.com", password: "senha123", role: "consultor" }, auth());
+      const tutorId = Number(sql(`SELECT id FROM Users WHERE email='tutora-registro@x.com'`));
+      const consId = Number(sql(`SELECT id FROM Users WHERE email='consultor-registro@x.com'`));
+      const tutorTk = (await http.post("/auth/login", { email: "tutora-registro@x.com", password: "senha123" })).data.token;
+      const notices = (uid, kind = "analysis_done") => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${uid} AND kind='${kind}'`));
+
+      // academic: a portal student of a lead, without a tutor; the admin sends the analysis and chooses the tutor on the way
+      const lead = (await http.post("/leads", { name: "Aluna Registro Teste", phone: "11 95555-0777", source: "WhatsApp", ownerId: consId }, auth())).data.lead;
+      const st = (await http.post("/students", { rgm: "770077", name: "Aluna Registro Teste", email: "aluna.registro@x.com", courseName: "Administracao" }, auth())).data;
+      sql(`UPDATE Students SET leadId=${lead.id}, responsibleUserId=NULL WHERE id=${st.id}`);
+      const before = notices(tutorId);
+      const made = await up("/analysis/academic", academicPdfJs("770077", "A CURSAR", "", "Aluna Registro Teste"), { studentId: st.id, tutorId });
+      assert(made.status === 201, `academic ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      assert(Number(sql(`SELECT responsibleUserId FROM Students WHERE id=${st.id}`)) === tutorId, "the tutor chosen while sending was not set");
+      assert(notices(tutorId) === before + 1, "the tutor was not told about the analysis");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lead.id} AND body LIKE 'Análise acadêmica registrada%'`)) === 1, "the analysis is not in the history of the lead");
+      assert(Number(sql(`SELECT leadId FROM AcademicAnalyses WHERE id=${made.data.id}`)) === lead.id, "the analysis was not tied to the lead");
+      const rec = (await http.get(`/leads/${lead.id}/analyses`, auth())).data;
+      assert(Array.isArray(rec) && rec.some(a => a.kind === "academic" && a.id === made.data.id), `the record does not list the analysis: ${JSON.stringify(rec).slice(0, 200)}`);
+      // the tutor opens it from the notice
+      assert((await http.get(`/analysis/academic/${made.data.id}`, asUser(tutorTk))).status === 200, "the tutor told about it cannot open it");
+
+      // curricular: the admin ties it to a lead that is still a candidate: the consultant who owns it is told and can read it, not change it
+      const polo = (await http.post("/polos", { name: "Polo do Registro", code: "REG1", state: "RO" }, auth())).data;
+      const consTk = (await http.post("/auth/login", { email: "consultor-registro@x.com", password: "senha123" })).data.token;
+      const beforeCons = notices(consId);
+      const cur = await up("/analysis/curricular", fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf")), { candidateName: "Aluna Registro Teste", poloId: polo.id, leadId: lead.id });
+      assert(cur.status === 201, `curricular ${cur.status} ${JSON.stringify(cur.data).slice(0, 200)}`);
+      assert(notices(consId) === beforeCons + 1, "the consultant of the candidate was not told");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lead.id} AND body LIKE 'Análise curricular registrada%'`)) === 1, "the curricular analysis is not in the history");
+      assert((await http.get(`/analysis/curricular/${cur.data.id}`, asUser(consTk))).status === 200, "the consultant told about it cannot open it");
+      assert((await http.delete(`/analysis/curricular/${cur.data.id}`, asUser(consTk))).status === 403, "the consultant who only reads it deleted it");
+      const both = (await http.get(`/leads/${lead.id}/analyses`, auth())).data;
+      assert(both.some(a => a.kind === "curricular") && both.some(a => a.kind === "academic"), "the record does not list both analyses");
+      // who did it is not told about their own analysis
+      const mine = notices(Number(sql(`SELECT id FROM Users WHERE email='admin@whaticket.com'`)));
+      assert(mine === 0, "the author was told about their own analysis");
+    });
     await test("academic analysis: a cancelled enrollment cannot add subjects nor graduate, and the period is only suggested when the checks disagree", async () => {
       const tk = (await http.post("/auth/login", { email: "tutora-portal@x.com", password: "senha123" })).data.token;
       const f = new FormData();
@@ -2432,13 +2859,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const mgrDue = (await http.get("/analysis/curricular?due=1", auth())).data;
       assert(mgrDue.some(x => x.id === a.id && x.requesterName === "Outro Consultor"), `manager filter ${JSON.stringify(mgrDue).slice(0, 200)}`);
 
-      // still unanswered after two business days: the coordination is told, once (the polo's coordinators, or every coordinator when the polo has none)
+      // still unanswered after two business days: the management of the polo is told, once (the administration and only the coordination of
+      // the analysis' polo; a coordinator of no polo is not told: see the test of the notices by polo below)
       const coordUser = (await http.post("/users", { name: "Coordenadora do Polo", email: "coord-an@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth())).data;
       assert(coordUser && coordUser.id, "the coordinator of the escalation was not created");
       sql(`UPDATE CurricularAnalyses SET createdAt = now() - interval '9 days', followUpDueAt = now() - interval '6 days' WHERE id = ${a.id}`);
       const runDb = code => execFileSync(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ ${code} })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 25000 }).toString();
       const esc1 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:00:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
-      assert(esc1.analyses >= 1 && esc1.coordinators >= 1, `escalation: ${JSON.stringify(esc1)}`);
+      assert(esc1.analyses >= 1 && esc1.managers >= 1, `escalation: ${JSON.stringify(esc1)}`);
       assert(sql(`SELECT CASE WHEN followUpEscalatedAt IS NULL THEN 0 ELSE 1 END FROM CurricularAnalyses WHERE id = ${a.id}`) === "1", "the escalation was not recorded");
       const esc2 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:05:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
       assert(esc2.analyses === 0, `the coordination was told twice: ${JSON.stringify(esc2)}`);
@@ -2481,6 +2909,140 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: tgContact }, asUser(owner))).status === 403, "another consultant sent someone else's proposal");
       // the polos of the later scenarios start as before
       assert((await http.delete(`/polos/${sql("SELECT id FROM Polos WHERE code='ANL1'")}`, auth())).status < 300, "the analysis polo was not removed");
+    });
+
+    await test("notices with a lead's data reach only the management of the lead's polo: affiliate referral (e-mail), late onboarding (bell) and the escalated curricular return (e-mail); a lead with no polo, only the administration", async () => {
+      const net = require("net");
+      const { execFile } = require("child_process");
+      const mk = async (name, email, role, extra = {}) => {
+        const r = await http.post("/users", { name, email, password: "senha123", role, ...extra }, auth());
+        assert(r.status === 200 && r.data.id, `user ${email} ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+        return r.data;
+      };
+      const poloA = (await http.post("/polos", { name: "Polo Avisos A", code: "AVSA", state: "RO" }, auth())).data;
+      const poloB = (await http.post("/polos", { name: "Polo Avisos B", code: "AVSB", state: "RO" }, auth())).data;
+      assert(poloA.id && poloB.id, "the polos of the notices were not created");
+      const coordA = await mk("Coordenação Avisos A", "coord-avisos-a@x.com", "coordenacao", { coordArea: "comercial" });
+      const coordB = await mk("Coordenação Avisos B", "coord-avisos-b@x.com", "coordenacao", { coordArea: "comercial" });
+      const consB = await mk("Consultor Avisos B", "cons-avisos-b@x.com", "consultor");
+      const consN = await mk("Consultor Avisos Sem Polo", "cons-avisos-n@x.com", "consultor");
+      assert((await http.put(`/polos/${poloA.id}/members`, { members: [{ userId: coordA.id, role: "coordenacao" }] }, auth())).status === 200, "members of polo A");
+      assert((await http.put(`/polos/${poloB.id}/members`, { members: [{ userId: coordB.id, role: "coordenacao" }, { userId: consB.id, role: "comercial" }] }, auth())).status === 200, "members of polo B");
+      const adminIds = sql(`SELECT id FROM Users WHERE profile='admin' OR role='admin'`).split("\n").map(Number).filter(Boolean).sort((x, y) => x - y);
+      const adminEmails = sql(`SELECT email FROM Users WHERE (profile='admin' OR role='admin') AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim().toLowerCase()).filter(Boolean);
+      assert(adminIds.length >= 1 && adminEmails.length >= 1, "no administrator with an e-mail");
+      const leads = [];
+      const affs = [];
+
+      // a tiny SMTP server that keeps who each e-mail went to
+      const inbox = [];
+      const smtp = net.createServer(sock => {
+        let mode = "cmd", buf = "", rec = { to: [], raw: "" };
+        sock.write("220 mock ESMTP\r\n");
+        sock.on("data", chunk => {
+          buf += chunk.toString();
+          if (mode === "data") {
+            if (buf.endsWith("\r\n.\r\n")) { rec.raw = buf.replace(/=\r?\n/g, ""); inbox.push(rec); rec = { to: [], raw: "" }; buf = ""; mode = "cmd"; sock.write("250 queued\r\n"); }
+            return;
+          }
+          const lines = buf.split("\r\n"); buf = lines.pop();
+          for (const line of lines) {
+            if (/^EHLO|^HELO/i.test(line)) sock.write("250-mock\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n");
+            else if (/^AUTH PLAIN/i.test(line)) sock.write("235 ok\r\n");
+            else if (/^RCPT TO/i.test(line)) { rec.to.push(((line.match(/<([^>]+)>/) || [])[1] || "").toLowerCase()); sock.write("250 ok\r\n"); }
+            else if (/^DATA/i.test(line)) { mode = "data"; sock.write("354 go\r\n"); }
+            else if (/^QUIT/i.test(line)) { sock.write("221 bye\r\n"); sock.end(); }
+            else sock.write("250 ok\r\n");
+          }
+        });
+        sock.on("error", () => {});
+      });
+      // (the welcome e-mails of the new accounts are not part of this check)
+      await sleep(800);
+      await new Promise(r => smtp.listen(SMTP_PORT, "127.0.0.1", r));
+      const got = (email, text) => inbox.filter(m => m.to.includes(email) && (!text || m.raw.includes(text)));
+      try {
+        // 1. affiliate referral: the e-mail with the name, the number and the course
+        const mkAff = async (owner, name, phone) => {
+          const a = (await http.post("/affiliates", { name, phone, ownerId: owner.id }, auth())).data;
+          assert(a && a.id && a.portalToken, `affiliate ${JSON.stringify(a).slice(0, 160)}`);
+          affs.push(a.id);
+          return a;
+        };
+        const affB = await mkAff(consB, "Afiliada Avisos B", "(69) 97000-7101");
+        const affN = await mkAff(consN, "Afiliada Avisos Sem Polo", "(69) 97000-7102");
+        inbox.length = 0;
+        const refB = await http.post(`/affiliate-portal/${affB.portalToken}/referrals`, { name: "Indicada Avisos B", phone: "(69) 98111-7201", consent: true });
+        assert(refB.status === 201, `referral B ${refB.status}`);
+        const leadB = Number(sql(`SELECT id FROM Leads WHERE name='Indicada Avisos B'`));
+        leads.push(leadB);
+        assert(sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id=${leadB}`) === String(poloB.id), "the referral of the consultant of polo B is not in polo B");
+        await waitFor(() => got("cons-avisos-b@x.com", "Indicada Avisos B").length === 1 && got("coord-avisos-b@x.com", "Indicada Avisos B").length === 1 && adminEmails.every(e => got(e, "Indicada Avisos B").length === 1), 10000, "the referral e-mails of polo B");
+        const refN = await http.post(`/affiliate-portal/${affN.portalToken}/referrals`, { name: "Indicada Avisos Sem Polo", phone: "(69) 98111-7202", consent: true });
+        assert(refN.status === 201, `referral with no polo ${refN.status}`);
+        const leadN = Number(sql(`SELECT id FROM Leads WHERE name='Indicada Avisos Sem Polo'`));
+        leads.push(leadN);
+        assert(sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id=${leadN}`) === "", "the referral of a consultant with no polo got a polo");
+        await waitFor(() => got("cons-avisos-n@x.com", "Indicada Avisos Sem Polo").length === 1 && adminEmails.every(e => got(e, "Indicada Avisos Sem Polo").length === 1), 10000, "the referral e-mails with no polo");
+        await sleep(800);
+        assert(got("coord-avisos-a@x.com", "Indicada Avisos").length === 0, "the coordination of polo A got a referral of another polo or with no polo");
+        assert(got("coord-avisos-b@x.com", "Indicada Avisos Sem Polo").length === 0, "the coordination of polo B got a referral with no polo");
+
+        // 2. late onboarding: the notice in the bell with the student's name
+        const stage = sql(`SELECT id FROM LeadStages ORDER BY position LIMIT 1`).split("\n")[0];
+        const lateLead = (name, polo) => Number(sql(`INSERT INTO Leads (name, source, stageId, poloId, isHistorical, onboardingStatus, enrolledAt, createdAt, updatedAt) VALUES ('${name}', 'Teste', ${stage}, ${polo || "NULL"}, false, 'pending', NOW() - INTERVAL '3 days', NOW(), NOW()) RETURNING id`).split("\n")[0]);
+        const lateB = lateLead("Aluno Atrasado Avisos B", poloB.id);
+        const lateN = lateLead("Aluno Atrasado Avisos Sem Polo", null);
+        leads.push(lateB, lateN);
+        const bell = id => sql(`SELECT string_agg(userId::text, ',' ORDER BY userId) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${id}'`).split(",").map(Number).filter(Boolean);
+        const expectB = [...adminIds, coordB.id].sort((x, y) => x - y);
+        await waitFor(() => bell(lateB).length === expectB.length && bell(lateN).length === adminIds.length, 20000, "the late onboarding notices");
+        await sleep(500);
+        assert(JSON.stringify(bell(lateB)) === JSON.stringify(expectB), `late onboarding of polo B went to ${bell(lateB)} (expected ${expectB})`);
+        assert(JSON.stringify(bell(lateN)) === JSON.stringify(adminIds), `late onboarding with no polo went to ${bell(lateN)} (expected only the administration ${adminIds})`);
+        const coordATok = (await http.post("/auth/login", { email: "coord-avisos-a@x.com", password: "senha123" })).data.token;
+        assert(coordATok, "login of the coordination of polo A");
+        assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE userId=${coordA.id} AND kind='onboarding_late'`)) === 0, "the coordination of polo A got the late onboarding of another polo or with no polo");
+
+        // 3. the curricular return escalated after two business days: the e-mail with the candidates' names
+        const sample = fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf"));
+        const analysis = async name => {
+          const f = new FormData();
+          f.append("file", sample, { filename: "analise.pdf", contentType: "application/pdf" });
+          // (with the entry period the analysis is ready at once: COMPLETED, with the 24-hour return)
+          f.append("entryPeriod", "2");
+          f.append("startTerm", "2026.2");
+          f.append("candidateName", name);
+          f.append("poloId", String(poloB.id));
+          const r = await http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${token}` } });
+          assert(r.status === 201, `analysis ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+          return r.data.id;
+        };
+        const anB = await analysis("Candidata Escala Avisos B");
+        const anN = await analysis("Candidata Escala Avisos Sem Polo");
+        await waitFor(() => sql(`SELECT COUNT(*) FROM CurricularAnalyses WHERE id IN (${anB}, ${anN}) AND status='COMPLETED'`) === "2", 15000, "the analyses completed");
+        sql(`UPDATE CurricularAnalyses SET poloId = NULL WHERE id = ${anN}`);
+        sql(`UPDATE CurricularAnalyses SET createdAt = now() - interval '9 days', followUpDueAt = now() - interval '6 days', followUpEscalatedAt = NULL WHERE id IN (${anB}, ${anN})`);
+        inbox.length = 0;
+        // (another process, without blocking this one: the e-mails go to the SMTP server above before the process ends)
+        const out = await new Promise((resolve, reject) => execFile(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:00:00Z")))); await new Promise(r=>setTimeout(r,4000)); })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 30000 }, (err, stdout, stderr) => (err ? reject(new Error(`${err.message} ${stderr}`)) : resolve(stdout))));
+        const esc = JSON.parse(String(out).split("\n").filter(l => l.startsWith("{")).pop());
+        assert(esc.analyses >= 2 && esc.managers >= 2, `escalation ${JSON.stringify(esc)}`);
+        assert(sql(`SELECT COUNT(*) FROM CurricularAnalyses WHERE id IN (${anB}, ${anN}) AND followUpEscalatedAt IS NOT NULL`) === "2", "the escalation was not recorded");
+        await waitFor(() => got("coord-avisos-b@x.com", "Candidata Escala Avisos B").length === 1 && adminEmails.every(e => got(e, "Candidata Escala Avisos B").length === 1 && got(e, "Candidata Escala Avisos Sem Polo").length === 1), 10000, "the escalation e-mails");
+        assert(got("coord-avisos-a@x.com", "Escala Avisos").length === 0, "the coordination of polo A got the escalation of another polo or with no polo");
+        assert(got("coord-avisos-b@x.com", "Candidata Escala Avisos Sem Polo").length === 0, "the coordination of polo B got the escalation of an analysis with no polo");
+        sql(`UPDATE CurricularAnalyses SET enrollmentStatus = 'ENROLLED', followUpDueAt = NULL WHERE id IN (${anB}, ${anN})`);
+      } finally {
+        smtp.close();
+        // the users, polos and leads of the later scenarios stay as before
+        for (const id of leads) await http.delete(`/leads/${id}`, auth()).catch(() => undefined);
+        for (const id of affs) await http.delete(`/affiliates/${id}`, auth()).catch(() => undefined);
+        sql(`UPDATE Leads SET poloId = NULL WHERE poloId IN (${poloA.id}, ${poloB.id})`);
+        sql(`UPDATE CurricularAnalyses SET poloId = NULL WHERE poloId IN (${poloA.id}, ${poloB.id})`);
+        for (const u of [coordA, coordB, consB, consN]) await http.delete(`/users/${u.id}`, auth()).catch(() => undefined);
+        for (const p of [poloA, poloB]) assert((await http.delete(`/polos/${p.id}`, auth())).status < 300, "a polo of the notices was not removed");
+      }
     });
 
     await test("no route answers 500 to a malformed or unknown id (each route with a :param, three bad values, as the administrator)", async () => {
@@ -2555,7 +3117,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sent.status === 200, `send ${sent.status} ${JSON.stringify(sent.data)}`);
       const out = tg.sent.slice(before);
       // one message: the PDF with the summary as its description (as when a document is attached with a caption)
-      assert(out.length === 1 && out[0].method === "sendDocument" && /Cst em Marketing/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
+      // the course is the name of the file; the caption starts with the duration and does not repeat the course
+      assert(out.length === 1 && out[0].method === "sendDocument" && !/Matriz curricular:/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
       assert((await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket), summary: false, pdf: false }, auth())).status === 400, "nothing to send accepted");
       // the contact can be chosen instead of a conversation: its open conversation is used
       const tgTicketData = (await http.get(`/tickets/${tgTicket}`, auth())).data;
@@ -2663,11 +3226,13 @@ const postMeta = (id, payload, secret, badSig) => {
       const a = await mkUser("Lista A", "lista-a@x.com");
       const b = await mkUser("Lista B", "lista-b@x.com");
       const ta = (await http.post("/auth/login", { email: "lista-a@x.com", password: "senha123" })).data.token;
-      const cA = sql(`SELECT id FROM Contacts WHERE number='tg_5551'`), cB = sql(`SELECT id FROM Contacts WHERE number='tg_5552'`);
+      // people of their own (one live conversation per person and per number: the tutoring one of A is on another line)
+      const mkc = num => sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Lista ${num}', '${num}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const cA = mkc("tg_lista_a"), cB = mkc("tg_lista_b"), cT = mkc("tg_lista_t");
       const mkTicket = (contactId, userId, status, segment) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('${status}', ${contactId}, ${tgId}, ${q.id}, ${userId === null ? "NULL" : userId}, 0, false, '${segment}', NOW(), NOW()) RETURNING id`).split("\n")[0];
       const mine = mkTicket(cA, a.id, "open", "sales");
       const colleagues = mkTicket(cB, b.id, "open", "sales");
-      const tutoring = mkTicket(cA, null, "pending", "onboarding");
+      const tutoring = mkTicket(cT, null, "pending", "onboarding");
       const list = async (token, params = {}) => (await http.get("/tickets", { params: { showAll: "true", queueIds: JSON.stringify([q.id]), ...params }, ...asUser(token) })).data.tickets.map(t => String(t.id));
       const got = await list(ta);
       assert(got.includes(String(mine)), "own conversation missing from the list");
@@ -2698,6 +3263,17 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!leads.includes("Conversa antiga"), "a historical lead is in the funnel list");
       const all = (await http.get("/leads", { params: { limit: 500, historical: "1" }, ...auth() })).data.leads.map(l => l.name);
       assert(all.includes("Conversa antiga"), "the historical lead should still be reachable on request");
+    });
+    await test("leads of a period (the \"Ver leads\" of the Painel do CRM): from/to filter the list by the day the lead came", async () => {
+      const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
+      sql(`INSERT INTO Leads (name, stageId, isHistorical, createdAt, updatedAt) VALUES ('Periodo Antigo', ${stage}, false, '2025-03-10 12:00:00', NOW()), ('Periodo Dentro', ${stage}, false, '2025-04-15 12:00:00', NOW())`);
+      const names = async (params) => (await http.get("/leads", { params: { limit: 500, ...params }, ...auth() })).data.leads.map(l => l.name);
+      const april = await names({ from: "2025-04-01", to: "2025-04-30" });
+      assert(april.includes("Periodo Dentro") && !april.includes("Periodo Antigo"), `period filter: ${april.filter(n => n.startsWith("Periodo")).join(",")}`);
+      const all = await names({ search: "Periodo" });
+      assert(all.includes("Periodo Dentro") && all.includes("Periodo Antigo"), "without a period both should be listed");
+      // a broken date is ignored, never a server error
+      assert((await http.get("/leads", { params: { from: "abc" }, ...auth() })).status === 200, "a broken date broke the list");
     });
     await test("working hours: answer time counts only business time, settings and alert threshold are saved", async () => {
       const { businessMinutes, normalizeBusiness } = require("../dist/helpers/BusinessTime");
@@ -2853,7 +3429,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.delete(`/payments/efi/wallets/${cb.id}`, auth())).data.informed === false, "admin wallet removal");
       assert((await http.put("/payments/efi/wallets/999999", { payeeCode: "ZZZZ1111YYYY2222" }, auth())).status === 404, "wallet of a missing user");
     });
-    await test("coordinator: manages every polo and sees every lead, creates the team but never administrators, no access to payment credentials", async () => {
+    await test("coordinator: manages the team and sees the leads of its polos only, never administrators, no access to payment credentials", async () => {
       const made = await http.post("/users", { name: "Coord Comercial", email: "coord-c@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
       assert(made.status === 200 && made.data.role === "coordenacao" && made.data.coordArea === "comercial", `create coordinator ${made.status} ${JSON.stringify(made.data).slice(0, 160)}`);
       const academic = (await http.post("/users", { name: "Coord Acadêmica", email: "coord-a@x.com", password: "senha123", role: "coordenacao", coordArea: "academica" }, auth())).data;
@@ -2878,17 +3454,29 @@ const postMeta = (id, payload, secret, badSig) => {
       assert([200, 204].includes((await http.delete(`/users/${throwaway.id}`, as)).status), "coordinator cannot remove a member of the team");
       assert((await http.delete(`/users/${adminId}`, as)).status === 403, "coordinator removed an administrator");
 
-      // every polo and every lead, whatever the polo
+      // the leads of its polos only (middleware/scope): a lead with no polo (or of another polo) stays with the administration
       const lead = (await http.post("/leads", { name: "Lead sem dono", phone: "5569988887771", source: "Site" }, auth())).data.lead;
-      assert((await http.get(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot open any lead");
+      assert((await http.get(`/leads/${lead.id}`, as)).status === 403, "coordinator opened a lead outside its polos");
       assert((await http.get("/polos", as)).status === 200, "polos list");
-      assert((await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as)).status === 201, "coordinator creating a polo");
+      const coordPolo = await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as);
+      assert(coordPolo.status === 201, "coordinator creating a polo");
+      // it does not put itself in a polo it is not part of; the administration does
+      assert((await http.post(`/polos/${coordPolo.data.id}/members/${made.data.id}`, { role: "coordenacao" }, as)).status === 403, "coordinator joined a polo by itself");
+      assert((await http.post(`/polos/${coordPolo.data.id}/members/${made.data.id}`, { role: "coordenacao" }, auth())).status === 200, "administration cannot put the coordinator in the polo");
+      sql(`UPDATE Leads SET poloId = ${Number(coordPolo.data.id)} WHERE id = ${Number(lead.id)}`);
+      assert((await http.get(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot open a lead of its polo");
 
-      // the coordination has the same powers as the administrator (decided by the company): credentials, keys, tokens...
-      assert((await http.get("/payments/efi/settings", as)).status === 200, "coordinator cannot reach the payment credentials");
-      assert((await http.get("/api-tokens", as)).status === 200, "coordinator cannot reach API tokens");
-      assert((await http.get("/ai-settings", as)).status === 200, "coordinator cannot reach AI keys");
-      assert((await http.put("/ai-settings", {}, as)).status === 200, "coordinator cannot save AI keys");
+      // the credentials and integration secrets are the administrator's alone (not coordination): payment gateway,
+      // API tokens, webhook secrets, AI keys and e-mail/SMTP
+      assert((await http.get("/payments/efi/settings", as)).status === 403, "coordinator reached the payment credentials");
+      assert((await http.get("/payments/efi/wallets", as)).status === 403, "coordinator reached the payment wallets");
+      assert((await http.get("/api-tokens", as)).status === 403, "coordinator reached API tokens");
+      assert((await http.post("/api-tokens", { name: "x" }, as)).status === 403, "coordinator created an API token");
+      assert((await http.get("/ai-settings", as)).status === 403, "coordinator reached AI keys");
+      assert((await http.put("/ai-settings", {}, as)).status === 403, "coordinator saved AI keys");
+      assert((await http.get("/webhooks-config", as)).status === 403, "coordinator reached webhook secrets");
+      assert((await http.get("/mail/settings", as)).status === 403, "coordinator reached the mail/SMTP settings");
+      // but keeps the rest of the management: the general settings (not secrets), the team and the polos
       const allSettings = await http.get("/settings", as);
       assert(allSettings.status === 200 && allSettings.data.length > 0, "coordinator cannot read every setting");
       assert((await http.put("/settings/appTimezone", { value: "America/Porto_Velho" }, as)).status === 200, "coordinator cannot change a setting");
@@ -2901,6 +3489,69 @@ const postMeta = (id, payload, secret, badSig) => {
       const cons = (await http.post("/auth/login", { email: "do-coord@x.com", password: "senha123" })).data.token;
       assert((await http.post("/users", { name: "X", email: "x-x@x.com", password: "senha123", role: "consultor" }, asUser(cons))).status === 403, "consultant created a user");
       assert((await http.get("/commissions", as)).data.scope === "all", "coordinator does not see everyone's commissions");
+    });
+    await test("a non-manager role reaches only what is theirs: no staff contact details, no hand-off of leads, no other number's state", async () => {
+      const owner = (await http.post("/users", { name: "Dona Lead", email: "dona-lead@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const other = (await http.post("/users", { name: "Outro Consultor", email: "outro-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const myTok = (await http.post("/auth/login", { email: "dona-lead@x.com", password: "senha123" })).data.token;
+      const me = asUser(myTok);
+      // the staff directory: a consultant sees who exists (for the selectors) but not their e-mail/phone
+      const seenByConsultant = (await http.get("/users", { ...me, params: { searchParam: "outro-cons@x.com" } })).data.users.find(u => u.id === other.id);
+      assert(seenByConsultant && seenByConsultant.name && seenByConsultant.email === undefined && seenByConsultant.phone === undefined, `consultant saw staff contact details: ${JSON.stringify(seenByConsultant)}`);
+      assert((await http.get(`/users/${other.id}`, me)).data.email === undefined, "consultant read a colleague's e-mail on the detail");
+      // the management still sees the contact details
+      assert(typeof (await http.get(`/users/${other.id}`, auth())).data.email === "string", "management lost the staff e-mail");
+      // a lead of the consultant: they keep it or drop it, but cannot hand it to someone else
+      const mine = (await http.post("/leads", { name: "Lead Proprio", phone: "5569977710001", source: "Site", ownerId: owner.id }, auth())).data.lead;
+      assert((await http.put(`/leads/${mine.id}`, { notes: "nota minha" }, me)).status === 200, "consultant cannot edit own lead");
+      assert((await http.put(`/leads/${mine.id}`, { ownerId: other.id }, me)).status === 403, "consultant handed a lead to someone else");
+      assert((await http.post("/leads", { name: "Para Outro", phone: "5569977710002", source: "Site", ownerId: other.id }, me)).status === 403, "consultant created a lead in another's name");
+      assert(Number(sql(`SELECT ownerId FROM Leads WHERE id=${mine.id}`)) === owner.id, "the lead changed hands");
+      // the management may reassign
+      assert((await http.put(`/leads/${mine.id}`, { ownerId: other.id }, auth())).status === 200, "management cannot reassign a lead");
+      // the health/telemetry of a connection is the management's (or its owner's), not any authenticated user's
+      const anyWa = Number(sql("SELECT id FROM Whatsapps ORDER BY id LIMIT 1"));
+      if (anyWa) assert((await http.get(`/channels/${anyWa}/safety`, me)).status === 403, "consultant read another number's safety state");
+    });
+    await test("editing a person: an empty password keeps the current one, a partial change keeps sectors and number, only a new password or role signs them out", async () => {
+      const q = (await http.post("/queue", { name: "Fila da edicao", color: "#335577" }, auth())).data;
+      const wa = Number(sql("SELECT id FROM Whatsapps ORDER BY id LIMIT 1"));
+      const made = (await http.post("/users", { name: "Pessoa Editada", email: "editada@x.com", password: "senha123", role: "consultor", queueIds: [q.id], whatsappId: wa }, auth())).data;
+      assert(made && made.id, `create ${JSON.stringify(made).slice(0, 120)}`);
+      const tok = (await http.post("/auth/login", { email: "editada@x.com", password: "senha123" })).data.token;
+      const stillIn = async () => (await http.get("/users", asUser(tok))).status === 200;
+      const sectors = () => Number(sql(`SELECT COUNT(*) FROM UserQueues WHERE userId=${made.id}`));
+      // the edit form always sends the password field, empty when it is not being changed: that is "keep", never an error
+      const ed = await http.put(`/users/${made.id}`, { name: "Pessoa Editada", email: "editada@x.com", password: "", role: "consultor", queueIds: [q.id], whatsappId: wa, phone: "" }, auth());
+      assert(ed.status === 200, `edit with the password field empty: ${ed.status} ${JSON.stringify(ed.data)}`);
+      assert((await http.post("/auth/login", { email: "editada@x.com", password: "senha123" })).status === 200, "the empty field changed the password");
+      assert(await stillIn(), "changing only the sectors signed the person out");
+      // a partial change (only the name) keeps the sectors and the default number
+      assert((await http.put(`/users/${made.id}`, { name: "Pessoa Renomeada" }, auth())).status === 200, "partial edit");
+      assert(sectors() === 1 && Number(sql(`SELECT whatsappId FROM Users WHERE id=${made.id}`)) === wa, "a partial edit wiped the sectors or the number");
+      assert(await stillIn(), "a new name signed the person out");
+      // a short password is refused with the Portuguese code; a missing one when creating too
+      const short = await http.put(`/users/${made.id}`, { password: "abc" }, auth());
+      assert(short.status === 400 && short.data.error === "ERR_PASSWORD_SHORT", `short password: ${short.status} ${JSON.stringify(short.data)}`);
+      const noPass = await http.post("/users", { name: "Sem Senha", email: "sem-senha@x.com", role: "consultor" }, auth());
+      assert(noPass.status === 400 && noPass.data.error === "ERR_PASSWORD_REQUIRED", `create without a password: ${noPass.status} ${JSON.stringify(noPass.data)}`);
+      const badMail = await http.post("/users", { name: "Mail Ruim", email: "nao-e-email", password: "senha123", role: "consultor" }, auth());
+      assert(badMail.status === 400 && badMail.data.error === "ERR_INVALID_EMAIL", `invalid e-mail: ${badMail.status} ${JSON.stringify(badMail.data)}`);
+      // the person's own profile ("Perfil" in the menu): name and phone change, the role, sectors and e-mail of the login do not;
+      // nobody else's profile can be changed; their own e-mail is visible to them
+      const own = await http.put(`/users/${made.id}`, { name: "Nome Proprio", phone: "69 99999-0000", role: "admin", queueIds: [], email: "outro@x.com", password: "" }, asUser(tok));
+      assert(own.status === 200, `own profile: ${own.status} ${JSON.stringify(own.data)}`);
+      const row = sql(`SELECT name, role, email, profile FROM Users WHERE id=${made.id}`);
+      assert(row === "Nome Proprio|consultor|editada@x.com|user", `own profile changed more than name/phone: ${row}`);
+      assert(sectors() === 1, "own profile wiped the sectors");
+      assert(await stillIn(), "editing the own name signed the person out");
+      assert((await http.get(`/users/${made.id}`, asUser(tok))).data.email === "editada@x.com", "the person cannot see their own e-mail");
+      const adminId = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
+      assert((await http.put(`/users/${adminId}`, { name: "Invadido" }, asUser(tok))).status === 403, "a consultant edited someone else");
+      // a new password ends the old sessions, and the new one works
+      assert((await http.put(`/users/${made.id}`, { password: "outra-senha-9" }, auth())).status === 200, "password change");
+      assert(!(await stillIn()), "the old session survived a password change");
+      assert((await http.post("/auth/login", { email: "editada@x.com", password: "outra-senha-9" })).status === 200, "the new password does not work");
     });
     await test("team goals: automatic count from the CRM, manual adjustment, shared line, repeat the period, managers only", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
@@ -2980,11 +3631,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const empty = await http.put("/affiliate-rules", { faq: [] }, auth());
       assert(empty.data.faq.length >= 3, "default FAQ not restored");
     });
-    await test("managers see every conversation of every attendant in one place, filter by attendant and connection; others do not", async () => {
+    await test("managers see every conversation of their polos in one place, filter by attendant and connection; others do not", async () => {
       const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const a1 = await mk("Atendente Um", "att1@x.com", "consultor"), a2 = await mk("Atendente Dois", "att2@x.com", "consultor");
-      await mk("Coord Central", "coord-central@x.com", "coordenacao");
-      const q = (await http.get("/queue", auth())).data[0];
+      const cc = await mk("Coord Central", "coord-central@x.com", "coordenacao");
+      // the coordination sees the conversations of its polos (helpers/TicketPoloScope): a queue of the polo, and the coordinator in it
+      const polo = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('CENT', 'Polo Central', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const q = { id: sql(`INSERT INTO Queues (name, color, poloId, createdAt, updatedAt) VALUES ('Comercial Central', '#0a0b0c', ${polo}, NOW(), NOW()) RETURNING id`).split("\n")[0] };
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${polo}, ${cc.id}, 'coordenacao', NOW(), NOW())`);
       const mkTicket = (name, number, user) => {
         const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
         return sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, queueId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${c}, ${tgId}, ${user}, ${q.id}, 2, false, 'sales', false, 'oi', 'cent-${number}', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
@@ -3102,11 +3756,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${cid}`) === "1", "a second conversation was opened for the same person");
       assert(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${tid} AND body LIKE 'oi de novo%'`) === "1", "message not in the same thread");
 
-      // a duplicate that already exists: reopening answers with the open one instead of failing
-      const dup = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('closed', ${cid}, ${tgId}, 0, false, 'sales', false, NOW(), NOW() - INTERVAL '9 days') RETURNING id`).split("\n")[0];
-      const r = await http.put(`/tickets/${dup}`, { status: "open" }, auth());
-      assert(r.status === 400 && r.data.error === "ERR_OTHER_OPEN_TICKET" && r.data.data && Number(r.data.data.ticketId) === Number(tid), `reopen response ${r.status} ${JSON.stringify(r.data)}`);
-      sql(`DELETE FROM Tickets WHERE id=${dup}`);
+      // a second live conversation of the same person on the same number cannot exist: the database itself refuses it
+      let refused = "";
+      try {
+        sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('closed', ${cid}, ${tgId}, 0, false, 'sales', false, NOW(), NOW() - INTERVAL '9 days') RETURNING id`);
+      } catch (e) { refused = String(e.message); }
+      assert(refused.includes("tickets_one_live_per_number"), `a duplicate conversation was accepted ${refused.slice(0, 120)}`);
 
       // a new conversation started by the team reopens the closed one too
       sql(`UPDATE Tickets SET status='closed', closedAt=NOW() WHERE id=${tid}`);
@@ -3218,7 +3873,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await kind("docs")).some(m => m.id === "dr-doc-1"), "docs tab");
       const links = await kind("links");
       assert(links.length === 1 && links[0].url === "https://cruzeirodosulvirtual.com.br/cursos", `links tab ${JSON.stringify(links)}`);
-      assert((await kind("starred")).map(m => m.id).join() === "dr-star-1", "starred tab");
+      // the person's one conversation may hold stars from before: the new star is there, and only starred messages are
+      const starred = (await kind("starred")).map(m => m.id);
+      assert(starred.includes("dr-star-1") && !["dr-img-1", "dr-doc-1", "dr-link-1"].some(id => starred.includes(id)), `starred tab ${starred.join()}`);
       await http.post("/users", { name: "Tutor Gaveta", email: "gaveta-tutor@x.com", password: "senha123", role: "tutor" }, auth());
       const tutorLogin = await http.post("/auth/login", { email: "gaveta-tutor@x.com", password: "senha123" });
       const tutorRead = await http.get(`/messages/${t}/list`, { params: { kind: "media" }, ...asUser(tutorLogin.data.token) });
@@ -3290,6 +3947,50 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT monthlyFee FROM Courses WHERE name='Administração' AND modality='EAD'`) === "1073.80", "force did not restore the price");
       const cid = (await http.post("/auth/login", { email: "admin@whaticket.com", password: "admin" })).data.token;
       assert((await http.post("/courses/load-default", {}, { headers: { Authorization: `Bearer ${cid}` } })).status === 200, "admin load");
+    });
+    await test("a consultant or tutor connects their own WhatsApp by QR Code: one per person, theirs only, strict protection", async () => {
+      const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const c = await mk("Carla Própria", "qr-propria@x.com", "consultor");
+      await mk("Tito Tutor", "qr-tutor@x.com", "tutor");
+      const tc = (await http.post("/auth/login", { email: "qr-propria@x.com", password: "senha123" })).data.token;
+      const tt = (await http.post("/auth/login", { email: "qr-tutor@x.com", password: "senha123" })).data.token;
+      const qrs = Number(sql("SELECT COUNT(*) FROM Whatsapps WHERE channel='whatsapp'"));
+      const mine = await http.post("/whatsapp/mine", {}, asUser(tc));
+      assert(mine.status === 200 && mine.data.channel === "whatsapp" && mine.data.ownerId === c.id && mine.data.isDefault === false, `own QR ${mine.status} ${JSON.stringify(mine.data).slice(0, 200)} (QR numbers before: ${qrs})`);
+      assert(/^WhatsApp de Carla/.test(mine.data.name), `name ${mine.data.name}`);
+      assert(sql(`SELECT riskMode FROM Whatsapps WHERE id=${mine.data.id}`) === "strict", "the own number starts in strict protection");
+      assert(sql(`SELECT whatsappId FROM Users WHERE id=${c.id}`) === String(mine.data.id), "the own number becomes the person's sending number");
+      const again = await http.post("/whatsapp/mine", {}, asUser(tc));
+      assert(again.status === 409 && again.data.error === "ERR_QR_ALREADY_HAS", `a second own number ${again.status}`);
+      // the owner keeps it connected; another person cannot touch it
+      assert((await http.post(`/whatsappsession/${mine.data.id}`, {}, asUser(tc))).status === 200, "the owner cannot start the session");
+      assert((await http.post(`/whatsappsession/${mine.data.id}`, {}, asUser(tt))).status === 403, "someone else started it");
+      assert(!(await http.get("/whatsapp", asUser(tt))).data.some(w => w.id === mine.data.id), "someone else lists it");
+      const tutors = await http.post("/whatsapp/mine", {}, asUser(tt));
+      assert(tutors.status === 200 && /^WhatsApp de Tito/.test(tutors.data.name), `the tutor's own number ${tutors.status}`);
+      // the management still adds any connection through the usual route; a consultant still cannot
+      assert((await http.post("/whatsapp", { name: "x" }, asUser(tc))).status === 403, "a consultant used the management's route");
+      for (const id of [mine.data.id, tutors.data.id]) await http.delete(`/whatsapp/${id}`, auth());
+    });
+    await test("chats copied from the phone of a person's own QR number: the recent ones in Atendendo with the owner, in nobody else's list", async () => {
+      const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
+      const u1 = await mk("Copia Uma", "copia1@x.com"), u2 = await mk("Copia Dois", "copia2@x.com");
+      const t1 = (await http.post("/auth/login", { email: "copia1@x.com", password: "senha123" })).data.token;
+      const t2 = (await http.post("/auth/login", { email: "copia2@x.com", password: "senha123" })).data.token;
+      const made = (await http.post("/whatsapp", { name: "WhatsApp da Copia", channel: "whatsapp", ownerId: u1.id }, auth())).data;
+      const contact = (name, number) => sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const copied = (cid, status, userId, ago) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageAt, waChatTimestamp, closedAt, createdAt, updatedAt) VALUES ('${status}', ${cid}, ${made.id}, ${userId}, 2, false, 'sales', true, 'oi', 'copia-${cid}', NOW() - INTERVAL '${ago}', NOW() - INTERVAL '${ago}', ${status === "closed" ? "NOW()" : "NULL"}, NOW() - INTERVAL '${ago}', NOW() - INTERVAL '${ago}') RETURNING id`).split("\n")[0];
+      const recent = copied(contact("Amiga do celular", "5569977770001"), "open", u1.id, "1 day");
+      const old = copied(contact("Antiga do celular", "5569977770002"), "closed", u1.id, "90 days");
+      const ids = async (params, token) => (await http.get("/tickets", { params: { status: "open", queueIds: "[]", ...params }, ...asUser(token) })).data.tickets.map(t => String(t.id));
+      const mine = await ids({}, t1);
+      assert(mine.includes(String(recent)), "the recent copied chat is not in the owner's Atendendo");
+      assert(!mine.includes(String(old)), "an old copied chat is in Atendendo");
+      assert(!(await ids({ showAll: "true" }, t2)).includes(String(recent)), "another person sees the owner's copied chat");
+      // the history view still has both, for the owner only
+      const all = (await http.get("/tickets", { params: { historical: "all", queueIds: "[]" }, ...asUser(t1) })).data.tickets.map(t => String(t.id));
+      assert(all.includes(String(recent)) && all.includes(String(old)), "the owner's history view lost a copied chat");
+      await http.delete(`/whatsapp/${made.id}`, auth());
     });
     await test("a QR Code number given to a person by the management: only its owner sees it in Conexões, reads its QR Code and picks its groups", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
@@ -4139,6 +4840,35 @@ const postMeta = (id, payload, secret, badSig) => {
       out = await say(D, "wamid.com-d5", "oi, voltei", t => t.some(x => /falar com você de novo/.test(x)), "the return");
       assert(/Direito/.test(out.join(" ")) && !/Qual curso/.test(out.join(" ")) && anthropic.requests.length === llm, `the return should remember the course and not ask it again: ${out}`);
       await waitFor(() => runOf(D) === "waiting|orientar", 8000, "back to the guidance, not to the start");
+      // who comes back is asked, once, whether the interest is still that course (nothing of the script goes on before the answer)
+      assert(/continua com interesse nesse curso ou quer ver outro\?/.test(out.join(" ")) && (out.join(" ").match(/\?/g) || []).length === 1, `the return should confirm the interest with one question: ${out}`);
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(D)}`)).resumeConfirm === true, "the confirmation of the interest was not marked");
+      // ...and names another course by its short form ("RH"): the catalogue knows it as "Cst Em Gestão De Recursos Humanos". The course changes at
+      // once, the answer is about the new course only (the old one is not pushed, even when the model does it), with one question
+      if (sql(`SELECT COUNT(*) FROM Courses WHERE name='Cst Em Gestão De Recursos Humanos'`) === "0") await http.post("/courses", { name: "Cst Em Gestão De Recursos Humanos", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
+      out = await say(D, "wamid.com-d6", "na verdade agora quero saber de RH", t => t.some(x => /Recursos Humanos/.test(x)), "another course by its short form");
+      assert(!/Direito/.test(out.join(" ")) && !/não está entre/.test(out.join(" ")), `the old course was pushed or the new one denied: ${out}`);
+      assert((out.join(" ").match(/\?/g) || []).length <= 1, `more than one question in the answer: ${out}`);
+      const slD = JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(D)}`));
+      assert(slD.courseName === "Cst Em Gestão De Recursos Humanos" && Number(slD.courseId) === Number(sql(`SELECT id FROM Courses WHERE name='Cst Em Gestão De Recursos Humanos'`)) && !slD.resumeConfirm, `the course of the lead did not change as one (id and name): ${slD.courseName} / ${slD.courseId}`);
+      assert(sql(`SELECT c.name FROM Leads l JOIN Courses c ON c.id=l.courseId WHERE l.id=${leadId(D)}`) === "Cst Em Gestão De Recursos Humanos", "the course of the lead in the CRM did not follow the conversation");
+
+      // Graduação 2.0: a second degree only for who has the degree it asks for. Asked without the degree known: who may take it, and the
+      // question; "não": the regular course. A licensed teacher of the plain course hears about the 2.0 once; "sim": the course becomes the 2.0.
+      for (const name of ["Educação Física", "Educação Física 2.0"]) if (sql(`SELECT COUNT(*) FROM Courses WHERE name='${name}'`) === "0") await http.post("/courses", { name, modality: "Semipresencial", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 400, active: true }, auth());
+      const G1 = "5511920000290";
+      await say(G1, "wamid.com-g1a", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of G1");
+      llm = anthropic.requests.length;
+      out = await say(G1, "wamid.com-g1b", "quero saber da educação física 2.0", t => t.some(x => /Você já tem essa formação\?/.test(x)), "a 2.0 course asked for");
+      assert(/segunda graduação para quem já é formado em Licenciatura em Educação Física/.test(out.join(" ")) && anthropic.requests.length === llm, `the 2.0 was not explained by the system: ${out}`);
+      out = await say(G1, "wamid.com-g1c", "não", t => t.some(x => /curso regular de \*Educação Física\*/.test(x)), "no degree: the regular course");
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(G1)}`)).courseName === "Educação Física", "the course did not go back to the regular one");
+      const G2 = "5511920000291";
+      await say(G2, "wamid.com-g2a", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of G2");
+      out = await say(G2, "wamid.com-g2b", "sou licenciado em educação física e quero fazer o bacharelado", t => t.some(x => /Quer seguir pela Graduação 2\.0\?/.test(x)), "the 2.0 offered to who may take it");
+      out = await say(G2, "wamid.com-g2c", "sim", t => t.some(x => /seguimos pela \*Educação Física 2\.0\*/.test(x)), "the course becomes the 2.0");
+      const slG2 = JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(G2)}`));
+      assert(slG2.courseName === "Educação Física 2.0" && slG2.entryType === "second_degree", `the 2.0 was not kept: ${slG2.courseName} / ${slG2.entryType}`);
 
       // E) transfer: the transcript is asked; without it the column and the task wait; the task is not repeated
       const E = "5511920000205";
@@ -4324,7 +5054,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // "Quero me matricular hoje": straight to the consultant, even with nothing else known
       const Q3 = "5511920000242";
       // "Quero me matricular hoje": the agent first asks the course to present it; insisting goes to the consultant
-      out = await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor do seu polo/.test(x)), "enrollment worked first");
+      // (the answer comes in more than one balloon: the bridge to the consultant first, then the question of the course; both are waited for)
+      out = await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor do seu polo/.test(x)) && /curso/i.test(t.join(" ")), "enrollment worked first");
       assert(/curso/i.test(out.join(" ")) && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "1", `the course was not asked: ${out}`);
       await say(Q3, "wamid.qs-3b", "Quero me matricular agora mesmo", t => t.some(x => /consultor/.test(x)), "enrollment handed over");
       await waitFor(() => handoffOf(Q3) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "0", 15000, "the AI is out after the handoff");
@@ -4459,7 +5190,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const llmMa2 = anthropic.requests.length;
       out = await say(MA, "wamid.ma-5", "Sim, pode continuar", t => t.some(x => /Você tem alguma dúvida sobre o curso ou o formato\?/.test(x)), "MA grade, tutoring and internship");
       const ma5 = out.join("\n");
-      assert(/\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
+      // with the PDF the file carries the course's name and the caption does not repeat it; without the PDF the summary has the title
+      const maDoc = graph.sent.filter(x => x.body && x.body.type === "document" && String(x.body.to || "").endsWith(MA.slice(-8))).pop();
+      if (maDoc) assert(/^Biomedicina/.test(maDoc.body.document.filename) && !/Matriz curricular:/.test(maDoc.body.document.caption || ""), `MA grade file: ${JSON.stringify(maDoc.body.document).slice(0, 200)}`);
+      assert((maDoc || /\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5)) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
       assert(/Sobre a tutoria, esse é um diferencial importante/.test(ma5) && /começa no 6º semestre e soma 640 horas/.test(ma5) && /convênios com órgãos públicos/.test(ma5), `MA tutoring and internship: ${ma5}`);
       assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
       out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /simular as bolsas disponíveis para você, pode me informar o seu nome completo e CPF/.test(x)), "MA name and CPF asked");
@@ -4467,6 +5201,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/^\W*Para o consultor do seu polo simular as bolsas/.test(out[out.length - 1]), `MA bolsa: ${out}`);
       // the copilot follows the conversation: the name and the CPF were just asked, so it does not suggest asking again; it says it waits and
       // offers a short reminder (never the same message, never "Caso não tenha" out of place)
+      // the agent of this course does not speak of the faculty: before it, the step "Corpo docente" is the next one; the consultant marks it
+      const beforeFaculty = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
+      assert(beforeFaculty.current === "docentes", `the faculty step: ${beforeFaculty.current}`);
+      await http.put(`/tickets/${ticketOf(MA)}/copilot/progress`, { key: "docentes", done: true }, auth());
       const copWait = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(copWait.current === "bolsa" && copWait.suggestion.kind === "waiting" && /Você já pediu o nome completo e o CPF/.test(copWait.suggestion.note), `copilot while waiting: ${JSON.stringify(copWait.suggestion)}`);
       assert(/conseguiu ver a minha mensagem/.test(copWait.suggestion.text) && !/Caso não tenha/.test(copWait.suggestion.text), `copilot reminder: ${copWait.suggestion.text}`);
@@ -4478,7 +5216,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // the copilot of the consultant reads the same conversation: everything up to the name and CPF is done, the proposal is next, with no model call
       const cop = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(cop.hasLead && cop.current === "proposal", `copilot step: ${JSON.stringify(cop.steps)}`);
-      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,grade,doubts,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
+      // the simple process (11 steps): the tutoring and the faculty count when the agent told them
+      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,tutoria,grade,docentes,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
       assert(cop.suggestion && cop.suggestion.action === "proposal" && /proposta da sua bolsa/.test(cop.suggestion.text) && !emoji.test(cop.suggestion.text), `copilot text: ${JSON.stringify(cop.suggestion)}`);
       assert(anthropic.requests.length === llmMa2, "the copilot called the model");
       assert(cop.course && cop.course.semPratica === false && /Semipresencial: 30% de prática presencial/.test(cop.course.resumo), `copilot course rule: ${JSON.stringify(cop.course)}`);
@@ -4490,21 +5229,28 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/tickets/${tMA}/take`, {}, auth())).status === 200, "the consultant takes the conversation");
       const copNow = async () => (await http.get(`/tickets/${tMA}/copilot`, auth())).data;
       const consultantSays = async text => { const r = await http.post(`/messages/${tMA}`, { body: text }, auth()); assert(r.status === 200, `consultant message ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`); };
-      assert((await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.some(x => x.key === "objective" && x.optional), "the objective is an optional step");
+      const simple = (await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.map(x => x.key).join(",");
+      assert(simple === "course,entry,city,format,tutoria,grade,docentes,bolsa,proposal,ficha,enroll", `the simple process of 11 steps: ${simple}`);
       await consultantSays("Maira, segue a proposta da sua bolsa para o curso de Biomedicina.");
       let cp = await copNow();
+      // the sentence alone is not a proposal: the step waits for a proposal really sent (the PDF)
+      assert(cp.current === "proposal", `a sentence counted as the proposal: ${cp.current}`);
+      const maLead = sql(`SELECT l.id FROM Leads l JOIN Tickets t ON t.contactId=l.contactId WHERE t.id=${tMA} LIMIT 1`);
+      sql(`INSERT INTO Proposals (leadId, token, status, courseName, grossFee, firstMonthly, bolsaPct, params, sentAt, createdAt, updatedAt) VALUES (${maLead}, 'tok-ma-${Date.now()}', 'sent', 'Biomedicina', 500, 250, 50, '{}', NOW(), NOW(), NOW())`);
+      cp = await copNow();
       // the form goes as the lead's personal link (the lead fills it in on the phone, with the picture of the ID)
       assert(cp.current === "ficha" && /ficha de matrícula/.test(cp.suggestion.text) && /\/ficha\/[a-f0-9]{48}/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `after the proposal: ${cp.current} ${JSON.stringify(cp.suggestion)}`);
       await consultantSays(cp.suggestion.text);
       cp = await copNow();
-      assert(cp.current === "taxa" && /boleto da taxa de matrícula/.test(cp.suggestion.text) && /comprovante/.test(cp.suggestion.text), `after the form: ${cp.current}`);
-      await consultantSays(cp.suggestion.text);
-      cp = await copNow();
-      assert(cp.current === "comprovante", `after the fee: ${cp.current}`);
-      await inboundCloud(MA, "wamid.ma-pix", "Pix feito, segue o comprovante");
-      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the proof of payment moved the process to the enrollment");
+      // asked is not sent: the step waits for the form (by the link) or the documents in the conversation, with a reminder meanwhile
+      assert(cp.current === "ficha" && cp.suggestion.kind === "waiting", `the form counted as sent when it was only asked: ${cp.current} ${cp.suggestion && cp.suggestion.kind}`);
+      await inboundCloud(MA, "wamid.ma-ficha", "Segue o meu RG e o nome da mãe é Maria");
+      // the fee and its proof are part of the enrollment step (no steps of their own any more)
+      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the documents in the conversation completed the form step");
       cp = await copNow();
       assert(cp.suggestion.action === "enroll" && /matrícula/.test(cp.suggestion.text) && /Biomedicina/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `enrollment step: ${JSON.stringify(cp.suggestion)}`);
+      // before it is registered in the CRM, the lead is never told the enrollment is confirmed
+      assert(!/foi confirmada|confirmada com sucesso|parab[eé]ns/i.test(cp.suggestion.text), `the copilot congratulated an enrollment not registered: ${cp.suggestion.text}`);
       assert(anthropic.requests.length === llmMa2, "the steps after the proposal called the model");
       // EA) a course the Portaria does not restrict (a tecnólogo of management) is EAD with no practical classes: the agent says the duration and the format, as the team does
       if (sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
@@ -5258,7 +6004,11 @@ const postMeta = (id, payload, secret, badSig) => {
       const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const tutorR = await mkUser("Tutora Retencao", "tutorr@ret.test", "tutor");
       const poloR = (await http.post("/polos", { name: "Polo Retencao", code: "RET1", state: "RO" }, auth())).data;
-      await http.put(`/polos/${poloR.id}/members`, { members: [{ userId: tutorR.id, role: "tutoria" }] }, auth());
+      // the academic coordinator sees the students of the polos it belongs to (middleware/scope): it is in the team of this polo
+      const coordAcId = Number(sql(`SELECT id FROM Users WHERE email = 'coord-a@x.com'`));
+      await http.put(`/polos/${poloR.id}/members`, { members: [{ userId: tutorR.id, role: "tutoria" }, { userId: coordAcId, role: "coordenacao" }] }, auth());
+      await mkUser("Coord Acadêmica sem polo", "coord-a-np@ret.test", "coordenacao");
+      sql(`UPDATE Users SET coordArea = 'academica' WHERE email = 'coord-a-np@ret.test'`);
       const tutorTok = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;
       const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const coordCom = (await http.post("/auth/login", { email: "coord-c@x.com", password: "senha123" })).data.token;
@@ -5339,6 +6089,11 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(rc && rc.days >= 45 && rc.level === "attention" && risk.riskDays === 30, `risk ${JSON.stringify(rc)}`);
       assert(!risk.students.some(x => x.id === ana.leadId), "a student with recent news is at risk");
       assert((await http.get("/retention/risk", asUser(coordAc))).data.students.some(x => x.id === carla.leadId), "the academic coordinator does not see the student at risk");
+      // an academic coordinator outside the polo of the student does not see it, nor acts on it
+      const coordNp = (await http.post("/auth/login", { email: "coord-a-np@ret.test", password: "senha123" })).data.token;
+      const npRisk = await http.get("/retention/risk", asUser(coordNp));
+      assert(npRisk.status === 200 && !npRisk.data.students.some(x => x.id === carla.leadId), "an academic coordinator outside the polo saw the student at risk");
+      assert((await http.post(`/retention/nps/send/${carla.leadId}`, {}, asUser(coordNp))).status === 403, "an academic coordinator outside the polo sent a survey to the student");
       await http.post("/retention/run", {}, auth());
       assert(/Risco de evasão/.test(labelsOf(carla.leadId)), "no risk label");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${carla.leadId} AND title LIKE 'Retenção:%'`)) === 1, "no retention task");
@@ -5761,9 +6516,10 @@ const postMeta = (id, payload, secret, badSig) => {
       // and none of them ever closed) and a notice in the bell of every manager, once
       sql(`UPDATE Leads SET onboardingStatus='pending', onboardingAlertAt=NULL, enrolledAt=NOW() - INTERVAL '2 days' WHERE id=${lead.id}`);
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the management");
-      const admins = Number(sql(`SELECT COUNT(*) FROM Users WHERE profile='admin' OR role IN ('admin','coordenacao')`));
+      // (the bell: the administration and only the coordination of the student's polo; see the test of the notices by polo)
+      const managersOfLead = Number(sql(`SELECT COUNT(*) FROM Users u WHERE u.profile='admin' OR u.role='admin' OR (u.role='coordenacao' AND u.id IN (SELECT pm.userId FROM PoloMembers pm JOIN Leads l ON l.poloId=pm.poloId WHERE l.id=${lead.id}))`));
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%' AND userId IS NULL AND kind='onboarding_late' AND priority='high'`)) === 1, "one task without a person expected");
-      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${lead.id}'`)) === admins, 8000, "a notice for every manager");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${lead.id}'`)) === managersOfLead, 8000, "a notice for the management of the student's polo");
     });
     await test("grades: reading them again rewrites the WhatsApp text of every matrix and lists only real internships", async () => {
       const r = await http.post("/grades/refresh", {}, auth());
@@ -5906,8 +6662,11 @@ const postMeta = (id, payload, secret, badSig) => {
       assert([tA.id, tB.id].includes(tutorId), "tutor not from the polo");
       assert(stageName(lead.id) === "Matriculado", `stage ${stageName(lead.id)}`);
       assert(sql(`SELECT onboardingStatus FROM Leads WHERE id=${lead.id}`) === "pending", "status");
-      assert(sql(`SELECT status FROM Tickets WHERE id=${salesTicket}`) === "closed", "sales conversation still open");
       const ob = r.data.ticketId;
+      // the same number for both sides (no tutoring number here): the person's one conversation on it goes to the tutor, never a
+      // second one beside it (that showed two cards of the same person, one of them "Sem mensagens")
+      assert(Number(ob) === Number(salesTicket), `a second conversation on the same number: ${ob} beside ${salesTicket}`);
+      assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${ob}) AND whatsappId=${cid} AND isHistorical=false`) === "1", "two live conversations on the same number");
       assert(sql(`SELECT CONCAT(segment,'|',status,'|',userId) FROM Tickets WHERE id=${ob}`) === `onboarding|open|${tutorId}`, "onboarding ticket");
       assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND userId=${tutorId} AND title LIKE 'Ambientar%'`) === "1", "tutor task");
       // nothing is sent to the student by the system: the tutor decides if and when to greet
@@ -5963,7 +6722,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const answer = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data.text;
       assert(answer.startsWith(`Olá, Aluna, que bom que você chamou!\n\nEu sou ${tutorName}, tutor(a) da `) && answer.includes("no curso de Pedagogia Abordagem Teste"), `the approach after the student wrote: ${answer}`);
       // someone with no enrollment writes to the tutoring: no greeting of a new student, only who the tutor is and the RGM
-      const obTok = (await http.post("/api-tokens", { name: "ob-unknown" }, auth())).data.token;
+      const obTok = (await http.post("/api-tokens", { name: "ob-unknown", scopes: ["contacts:write"] }, auth())).data.token;
       await http.post("/api/v1/contacts", { name: "Pessoa Sem Matricula", number: "5511955552777" }, { headers: { Authorization: `Bearer ${obTok}` } });
       const strangerId = sql(`SELECT id FROM Contacts WHERE number='5511955552777'`);
       assert(strangerId && !sql(`SELECT id FROM Leads WHERE contactId=${strangerId}`), "the contact with no enrollment already had a lead");
@@ -6151,7 +6910,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => sql(`SELECT consentSource FROM Contacts WHERE number='5511955558803'`) === "inbound", 8000, "consent of who wrote first");
       const list = (await http.post("/contact-lists", { name: "Consentimento" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Escreveu", number: "5511955558803" }, { name: "Nunca falou", number: "5511955558804" }] }, auth());
-      const c = (await http.post("/campaigns", { name: "Consentimento", message: "Oi", contactListId: list.id, whatsappId: Number(cid) }, auth())).data;
+      const c = (await http.post("/campaigns", { objective: "Teste de envio", name: "Consentimento", message: "Oi", contactListId: list.id, whatsappId: Number(cid) }, auth())).data;
       const pre = (await http.get(`/campaigns/${c.id}/preflight`, auth())).data;
       assert(pre.noConsent === 1 && pre.blocked.noConsent === 1 && pre.canReceive === 1 && pre.warnings.some(w => /consentimento/.test(w)), `preflight consent ${JSON.stringify({ noConsent: pre.noConsent, blocked: pre.blocked, canReceive: pre.canReceive, warnings: pre.warnings })}`);
       const removed = await http.post(`/campaigns/${c.id}/remove-no-consent`, {}, auth());
@@ -6464,12 +7223,17 @@ const postMeta = (id, payload, secret, badSig) => {
       const consId = sql(`SELECT id FROM Users WHERE email = 'do-coord@x.com'`);
       const tgContactId = (await http.get(`/tickets/${tgTicket}`, auth())).data.contactId;
       sql(`UPDATE Whatsapps SET ownerId = ${consId} WHERE id = ${tgId}`);
+      // (the coordination writes only to people of its polos: this contact is a lead of the coordinator's polo here)
+      const coordPoloId = sql(`SELECT poloId FROM PoloMembers WHERE userId = (SELECT id FROM Users WHERE email = 'coord-c@x.com') ORDER BY id LIMIT 1`);
+      const openStage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const scopedLead = sql(`INSERT INTO Leads (name, source, stageId, poloId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Lead do polo da coordenação', 'Teste', ${openStage}, ${coordPoloId}, ${tgContactId}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const when = new Date(Date.now() + 3600000).toISOString();
       const own = await http.post("/schedules", { body: "lembrete", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, as);
       assert(own.status === 200 || own.status === 201, `coordinator cannot use someone else's number ${own.status} ${JSON.stringify(own.data).slice(0, 120)}`);
       const other = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
       assert((await http.post("/schedules", { body: "x", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, asUser(other))).status === 403, "a consultant used another person's number");
       sql(`UPDATE Whatsapps SET ownerId = NULL WHERE id = ${tgId}`);
+      sql(`DELETE FROM Leads WHERE id = ${scopedLead}`);
 
       // a scheduled message can be a short sequence: the worker sends one, waits, then the next, and marks it sent at the end
       const seqBefore = tg.sent.length;
@@ -6557,6 +7321,36 @@ const postMeta = (id, payload, secret, badSig) => {
       // the team goals list does not show the polo semester
       assert(!(await http.get("/goals", auth())).data.some(g => g.id === goal.id), "polo goal leaked into the team goals");
     });
+    await test("goals per polo: an enrollment counts in the semester of the student's entry term, and the screen opens on the semester that started last", async () => {
+      const iso = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho" }).format(new Date(Date.now() + n * 86400000));
+      const polo = (await http.post("/polos", { name: "Polo do Período", code: "9002", state: "RO" }, auth())).data;
+      // the old semester ended yesterday, the new one is in course; both contain the last month
+      const old = (await http.post("/goals", { kind: "polo", title: "Graduação 2º semestre de 2091", startsOn: iso(-120), endsOn: iso(5), members: [] }, auth())).data;
+      const neu = (await http.post("/goals", { kind: "polo", title: "Graduação 1º semestre de 2092", startsOn: iso(-3), endsOn: iso(100), members: [] }, auth())).data;
+      assert(old.id && neu.id, "semesters not created");
+      assert(sql(`SELECT entryTerm FROM Goals WHERE id=${old.id}`) === "2091/2" && sql(`SELECT entryTerm FROM Goals WHERE id=${neu.id}`) === "2092/1", "the entry term did not come from the title");
+      const mk = async (phone, term) => {
+        const lead = (await http.post("/leads", { name: "Aluno do Período", phone, source: "Site" }, auth())).data.lead;
+        sql(`UPDATE Leads SET wonAt=NOW(), poloId=${polo.id}, entryTerm=${term ? `'${term}'` : "NULL"} WHERE id=${lead.id}`);
+        return lead.id;
+      };
+      const late = await mk("5569955520001", "2091/2"); // a student of the old semester enrolled today
+      await mk("5569955520002", "2092/1");
+      await mk("5569955520003", null); // without a term: by the day, so it counts in both (both contain today)
+      const rowOf = async (gid) => (await http.get("/goals/polos", { params: { goalId: gid }, ...auth() })).data.rows.find(r => r.poloId === polo.id);
+      const a = await rowOf(old.id), b = await rowOf(neu.id);
+      assert(a && a.auto === 2 && b && b.auto === 2, `by the entry term ${JSON.stringify([a && a.auto, b && b.auto])}`);
+      assert(a.months.reduce((t, m) => t + m.done, 0) === a.auto, `the months do not add up to the total ${JSON.stringify(a.months.map(m => m.done))}`);
+      // the screen opens on the semester that started last, not the longest
+      const dflt = (await http.get("/goals/polos", auth())).data;
+      assert(dflt.goal && dflt.goal.id === neu.id && dflt.goal.entryTerm === "2092/1", `default semester ${dflt.goal && dflt.goal.id}`);
+      // the term can be changed on the semester; the lead's term moves it with the enrollment
+      assert((await http.put(`/goals/${old.id}`, { entryTerm: "2091.2" }, auth())).status === 200 && sql(`SELECT entryTerm FROM Goals WHERE id=${old.id}`) === "2091/2", "entry term edit");
+      sql(`UPDATE Leads SET entryTerm='2092/1' WHERE id=${late}`);
+      assert((await rowOf(old.id)).auto === 1 && (await rowOf(neu.id)).auto === 3, "changing the lead's term did not move the enrollment");
+      sql(`UPDATE Leads SET wonAt=NULL, poloId=NULL WHERE poloId=${polo.id}`);
+      for (const g of [old, neu]) assert((await http.delete(`/goals/${g.id}`, auth())).status < 300, "the test semester was not removed");
+    });
     await test("a confirmed enrollment can be edited: step back, swap the tutor, no message goes out", async () => {
       const row = sql(`SELECT id||'|'||poloId||'|'||COALESCE(onboardingTutorId,0) FROM Leads WHERE onboardingStatus='pending' AND poloId IS NOT NULL ORDER BY id DESC LIMIT 1`);
       assert(row, "no enrolled lead to edit");
@@ -6622,7 +7416,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const tutorX = await mkUser("Tutor Envios", "tutorx@env.test", "tutor");
       const poloX = (await http.post("/polos", { name: "Polo Envios", code: "ENV1", state: "RO" }, auth())).data;
-      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }] }, auth());
+      // the academic coordinator is in the team of this polo: it sees its students (middleware/scope)
+      const coordAcId = Number(sql(`SELECT id FROM Users WHERE email = 'coord-a@x.com'`));
+      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }, { userId: coordAcId, role: "coordenacao" }] }, auth());
       const tutorTok = (await http.post("/auth/login", { email: "tutorx@env.test", password: "senha123" })).data.token;
       const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
@@ -6924,6 +7720,14 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(team.status === 200, `team user ${team.status} ${JSON.stringify(team.data).slice(0, 160)}`);
       assert(sql(`SELECT COUNT(*) FROM UserQueues uq JOIN Queues q ON q.id=uq.queueId WHERE uq.userId=${team.data.id} AND q.role='relacionamento'`) === "1", "the new member is not in the queue");
       const anaTok = (await http.post("/auth/login", { email: "ana@rel.test", password: "senha123" })).data.token;
+      // the relationship team follows the students of its polos (helpers/TicketPoloScope): with no polo, none; in Rita's polo, hers
+      assert((await http.get(`/tickets/${ritaTicket}`, asUser(anaTok))).status === 403, "the relationship team with no polo opened a student's conversation");
+      let ritaPolo = sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id=${rita.leadId}`);
+      if (!ritaPolo) {
+        ritaPolo = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('RELR', 'Polo da Rita', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+        sql(`UPDATE Leads SET poloId=${ritaPolo} WHERE id=${rita.leadId}`);
+      }
+      sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${ritaPolo}, ${team.data.id}, 'relacionamento', NOW(), NOW())`);
       assert((await http.get(`/tickets/${ritaTicket}`, asUser(anaTok))).status === 200, "the team cannot open its own conversation");
       assert((await http.get(`/tickets/${ticketOf(rita.from) === String(ritaTicket) ? 1 : ticketOf(rita.from)}`, asUser(anaTok))).status === 403, "the team opened a conversation of another department");
       assert((await http.get("/retention/summary", asUser(anaTok))).status === 403, "the relationship team opened the retention area (it only attends the conversations)");
@@ -6978,6 +7782,12 @@ const postMeta = (id, payload, secret, badSig) => {
       const adminNps = (await http.get("/retention/nps", auth())).data;
       assert(adminNps.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the management does not see the answer");
       assert((await http.get("/retention/nps", asUser(tutor))).status === 403 && (await http.get("/retention/nps.csv", asUser(tutor))).status === 403, "a tutor read the satisfaction answers");
+      // the academic coordinator sees the answers of the students of its polos only: outside them, nothing
+      const coordNp = (await http.post("/auth/login", { email: "coord-a-np@ret.test", password: "senha123" })).data.token;
+      assert(!(await http.get("/retention/nps", asUser(coordNp))).data.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "an academic coordinator outside the polo read the answer");
+      const otherPolo = sql(`SELECT COALESCE(poloId::text, '') FROM Leads WHERE id = ${other}`);
+      if (otherPolo) sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) SELECT ${otherPolo}, id, 'coordenacao', NOW(), NOW() FROM Users WHERE email = 'coord-a@x.com' AND NOT EXISTS (SELECT 1 FROM PoloMembers pm WHERE pm.poloId = ${otherPolo} AND pm.userId = Users.id)`);
+      else sql(`UPDATE Leads SET poloId = (SELECT id FROM Polos WHERE code = 'RET1') WHERE id = ${other}`);
       assert((await http.get("/retention/nps", asUser(coordAc))).data.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the academic coordinator does not see the answers");
       assert(Array.isArray(adminNps.series) && adminNps.series.length >= 1 && adminNps.series[0].week && typeof adminNps.commentsTotal === "number", "series by week");
       adminNps.byKind.forEach(k => assert(Object.prototype.hasOwnProperty.call(k, "nps"), "byKind without nps"));
@@ -7341,7 +8151,7 @@ const postMeta = (id, payload, secret, badSig) => {
       { const off = (await http.get("/copilot/settings", auth())).data; off.aiEnabled = false; await http.put("/copilot/settings", off, auth()); }
       const before = anthropic.requests.length;
       let view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
-      assert(view.enabled && !view.hasLead && view.steps.length === 15 && view.current === "course", "no process for unlinked contact");
+      assert(view.enabled && !view.hasLead && view.steps.length === 11 && view.current === "course", "no process for unlinked contact");
       assert(!view.aiAvailable && anthropic.requests.length === before, "process used paid generation");
       assert((await http.post(`/tickets/${tid}/suggest-reply`, {}, auth())).status === 403, "AI opt-in ignored");
       assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"course",done:true}, auth())).data.current === "entry", "step not saved");
@@ -7496,7 +8306,7 @@ const postMeta = (id, payload, secret, badSig) => {
     });
     await test("deleting a conversation preserves its delivery and budget ledger", async () => {
       inDb(`const Ticket=require("./dist/models/Ticket").default,Delivery=require("./dist/models/OutboundDelivery").default;
-        const original=await Ticket.findByPk(${tgTicket});const temporary=await Ticket.create({contactId:original.contactId,whatsappId:original.whatsappId,status:"closed",unreadMessages:0,isGroup:false});
+        const original=await Ticket.findByPk(${tgTicket});const temporary=await Ticket.create({contactId:original.contactId,whatsappId:original.whatsappId,status:"closed",unreadMessages:0,isGroup:false,isHistorical:true});
         const delivery=await Delivery.create({key:"test:retained-charge",ticketId:temporary.id,contactId:original.contactId,whatsappId:original.whatsappId,channel:"telegram",status:"sent",estimatedUsd:0});
         await temporary.destroy();await delivery.reload();assert.equal(delivery.ticketId,null);assert.equal(delivery.status,"sent");`);
     });
@@ -7537,6 +8347,69 @@ const postMeta = (id, payload, secret, badSig) => {
         sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
       }
     });
+    await test("sends per person: the monthly quota blocks the tutor, the request reaches the management, an approval frees the notice, and each Meta message and AI call is recorded under who caused it", async () => {
+      const team = sql(`SELECT team FROM Whatsapps WHERE id=${cid}`);
+      sql(`UPDATE Whatsapps SET team='tutoria' WHERE id=${cid}`);
+      try {
+        const tutorTok = (await http.post("/auth/login", { email: "tutora-oficial@polo.test", password: "senha123" })).data.token;
+        const tutorId = Number(sql(`SELECT id FROM Users WHERE email='tutora-oficial@polo.test'`));
+        const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
+        // the notice of the scenario before went out: its Meta messages are the tutor's
+        const noticeId = Number(sql(`SELECT id FROM Campaigns WHERE createdById=${tutorId} AND name LIKE 'Aviso da tutoria:%' ORDER BY id DESC LIMIT 1`));
+        assert(noticeId, "no notice of the tutor");
+        assert(sql(`SELECT COUNT(*) FROM OutboundDeliveries WHERE key LIKE 'campaign:${noticeId}:%' AND (userId IS NULL OR userId<>${tutorId})`) === "0" && Number(sql(`SELECT COUNT(*) FROM OutboundDeliveries WHERE key LIKE 'campaign:${noticeId}:%' AND userId=${tutorId}`)) >= 1, "the notice's Meta messages are not the tutor's");
+        assert(/atividades do mês/.test(sql(`SELECT objective FROM Campaigns WHERE id=${noticeId}`)), "the notice has no objective");
+        // the quota of the month: 1 message, already used by that notice
+        assert((await http.put("/operations/config", { send_quota_monthly: "1" }, asUser(consTok))).status === 403, "a consultant changed the quota");
+        assert((await http.put("/operations/config", { send_quota_monthly: "1" }, auth())).status === 200, "quota not saved");
+        const mine = (await http.get("/send-quota/me", asUser(tutorTok))).data;
+        assert(mine.limited && mine.quota === 1 && mine.used >= 1 && mine.left === 0, `quota ${JSON.stringify(mine)}`);
+        assert((await http.get("/send-quota/me", auth())).data.limited === false, "the management has a quota");
+        const date = new Date(Date.now() + 12 * 864e5).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+        const body = { kind: "atividades", date, note: "entregue a atividade" };
+        const blocked = (await http.post("/tutoria/notices/preview", body, asUser(tutorTok))).data;
+        assert(blocked.blockers.includes("ERR_SEND_QUOTA") && blocked.quota.left === 0, `quota not shown ${JSON.stringify([blocked.blockers, blocked.quota])}`);
+        const refused = await http.post("/tutoria/notices", { ...body, confirm: true }, asUser(tutorTok));
+        assert(refused.status === 409 && refused.data.error === "ERR_SEND_QUOTA", `a notice passed the quota ${refused.status} ${JSON.stringify(refused.data)}`);
+        // the request for more: one at a time, with a reason; the management is told
+        assert((await http.post("/send-releases", { requested: 5, reason: "" }, asUser(tutorTok))).status === 400, "a request without a reason");
+        const asked = await http.post("/send-releases", { requested: 5, reason: "Aviso das atividades da semana", context: { type: "aviso", name: "Atividades do mês", recipients: blocked.canReceive } }, asUser(tutorTok));
+        assert(asked.status === 201 && asked.data.pending && asked.data.pending.requested === 5, `request ${asked.status} ${JSON.stringify(asked.data)}`);
+        assert((await http.post("/send-releases", { requested: 5, reason: "De novo, por favor" }, asUser(tutorTok))).status === 409, "a second request while one waits");
+        assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='send_release' AND link='/estatisticas?aba=disparos'`)) >= 1, "the management was not told");
+        assert((await http.get("/send-releases", asUser(consTok))).status === 403 && (await http.get("/send-releases", asUser(tutorTok))).status === 403, "a non-manager read the requests");
+        const list = (await http.get("/send-releases", { params: { status: "pending" }, ...auth() })).data;
+        const req = list.rows.find(r => r.userId === tutorId);
+        assert(list.pending >= 1 && req && req.reason === "Aviso das atividades da semana" && req.context.type === "aviso" && req.usage.quota === 1, `requests ${JSON.stringify(list)}`);
+        assert((await http.put(`/send-releases/${req.id}`, { action: "approve" }, asUser(consTok))).status === 403, "a consultant approved");
+        const ok = await http.put(`/send-releases/${req.id}`, { action: "approve", granted: 50, note: "Liberado para esta semana" }, auth());
+        assert(ok.status === 200 && ok.data.status === "approved" && ok.data.granted === 50, `approve ${ok.status} ${JSON.stringify(ok.data)}`);
+        assert((await http.put(`/send-releases/${req.id}`, { action: "deny" }, auth())).status === 409, "decided twice");
+        assert(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='send_release' AND userId=${tutorId}`) === "1", "the tutor was not told");
+        const freed = (await http.post("/tutoria/notices/preview", body, asUser(tutorTok))).data;
+        assert(!freed.blockers.includes("ERR_SEND_QUOTA") && freed.quota.extra === 50, `the release did not free the notice ${JSON.stringify([freed.blockers, freed.quota])}`);
+        // a new campaign says what it is for
+        const listId = sql(`SELECT id FROM ContactLists ORDER BY id LIMIT 1`);
+        const noObjective = await http.post("/campaigns", { name: "Sem objetivo", contactListId: Number(listId), message: "Olá" }, auth());
+        assert(noObjective.status === 400 && noObjective.data.error === "ERR_CAMPAIGN_OBJECTIVE", `a campaign without objective ${noObjective.status}`);
+        // what each person sent and spent: the tutor's Meta messages, and the AI calls under who asked for them
+        inDb(`const {withActor}=require("./dist/helpers/Actor"),{logUsage}=require("./dist/services/AiServices/Usage"),AiUsage=require("./dist/models/AiUsage").default;
+          await withActor(${tutorId},()=>logUsage({model:"gpt-4o-mini",kind:"copilot",usage:{input_tokens:1000,output_tokens:100}}));
+          await logUsage({model:"gpt-4o-mini",kind:"reply",usage:{input_tokens:10,output_tokens:1}});
+          const last=await AiUsage.findAll({order:[["id","DESC"]],limit:2});
+          assert.equal(last[0].userId,null);assert.equal(last[1].userId,${tutorId});`);
+        assert((await http.get("/operations/costs-by-user", asUser(consTok))).status === 403, "a consultant read the costs");
+        const costs = (await http.get("/operations/costs-by-user", auth())).data;
+        const row = costs.rows.find(r => r.userId === tutorId);
+        assert(row && row.meta.messages >= 1 && row.meta.usd > 0 && row.ai.calls >= 1 && row.ai.usd > 0 && row.campaigns >= 1 && row.quota && row.quota.extra === 50, `costs ${JSON.stringify(row)}`);
+        assert(costs.rows.some(r => r.automation) && costs.rows[costs.rows.length - 1].automation, "the automation line is missing or not the last");
+        const sends = (await http.get(`/operations/costs-by-user/${tutorId}/sends`, auth())).data;
+        assert(sends.some(c => c.id === noticeId && c.objective && c.recipients >= 1), `sends of the tutor ${JSON.stringify(sends)}`);
+      } finally {
+        await http.put("/operations/config", { send_quota_monthly: "200" }, auth());
+        sql(`UPDATE Whatsapps SET team=${team ? `'${team}'` : "NULL"} WHERE id=${cid}`);
+      }
+    });
     await test("one tutoring conversation per student: the empty one opened by the enrollment on another number is folded into the one where the student writes, and the agent of every number stays out of the tutoring", async () => {
       inDb(`const Ticket=require("./dist/models/Ticket").default,Contact=require("./dist/models/Contact").default,Whatsapp=require("./dist/models/Whatsapp").default,TicketEvent=require("./dist/models/TicketEvent").default,TicketTag=require("./dist/models/TicketTag").default,Tag=require("./dist/models/Tag").default,Message=require("./dist/models/Message").default,AiAgent=require("./dist/models/AiAgent").default;
         const FindOrCreate=require("./dist/services/TicketServices/FindOrCreateTicketService").default,{findAgentForTicket}=require("./dist/services/AiServices/RunAiAgent"),{connectionsOf}=require("./dist/helpers/AgentConnections");
@@ -7560,8 +8433,8 @@ const postMeta = (id, payload, secret, badSig) => {
           assert.equal(await TicketTag.count({where:{ticketId:t.id,tagId:tag.id}}),1);
           const fresh=await Ticket.findByPk(t.id);
           assert.equal(fresh.userId,1,"the tutor of the enrollment did not keep the student");
-          // a conversation with messages is never folded
-          const real=await Ticket.create({contactId:contact.id,whatsappId:${cid},status:"open",userId:1,segment:"onboarding",isGroup:false,unreadMessages:0});
+          // a conversation with messages is never folded (the same one of the person on that number, open again and with a message)
+          const real=empty;await real.update({status:"open",userId:1,segment:"onboarding",closedAt:null});
           await Message.create({id:"gemeo-"+real.id,ticketId:real.id,contactId:contact.id,body:"oi",fromMe:false,read:true,mediaType:"chat",ack:0});
           await FindOrCreate(contact,tutoring.id,1);
           await real.reload();assert.equal(real.status,"open");
@@ -7583,7 +8456,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${tutorUser.id}, 0, false, 'onboarding', NOW(), NOW()) RETURNING id`).split("\n")[0];
       const say = (id, fromMe, body, minutesAgo) => sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticketId}, ${contactId}, '${body}', ${fromMe}, true, 'chat', 1, NOW() - INTERVAL '${minutesAgo} minutes', NOW())`);
       say(`aud-${ticketId}-1`, false, "Não consigo entrar na plataforma, meu RGM 12345678", 120);
-      say(`aud-${ticketId}-2`, true, "Abri um chamado no CAA, protocolo 2026112400123, e te dou retorno", 100);
+      say(`aud-${ticketId}-2`, true, "Abri um chamado no CAA e te dou retorno assim que tiver o número", 100);
       sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-2', lastMessageFromMe=true, lastMessageAt=NOW() - INTERVAL '100 minutes' WHERE id=${ticketId}`);
       // the AI does not qualify nor sell on the tutoring
       assert((await http.post(`/tickets/${ticketId}/ai`, { active: true }, auth())).data.error === "ERR_AI_NOT_ON_TUTORING", "the AI was handed a tutoring conversation");
@@ -7625,9 +8498,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketId} AND type='protocol'`)) === 1, "the protocol is not in the history of the conversation");
       assert((await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.some(i => i.id === issue.id && i.protocolName === "Acesso ao AVA"), "the management does not see the protocol of the tutor");
       // a protocol of a commercial conversation is refused
-      const sales = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${tutorUser.id}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      // a commercial conversation of someone else (one live conversation per person and per number)
+      const salesContact = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Lead Comercial Auditoria', '5569944443334', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const sales = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${salesContact}, ${cid}, ${tutorUser.id}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
       assert((await http.post("/tutoria/protocols", { ticketId: sales, protocolNumber: "9", protocolName: "y" }, asUser(tutorTok))).status === 400, "a protocol was written on a commercial conversation");
       sql(`DELETE FROM Tickets WHERE id=${sales}`);
+      sql(`DELETE FROM Contacts WHERE id=${salesContact}`);
       // the student says it was solved: the next reading closes it
       say(`aud-${ticketId}-3`, false, "Já foi liberado, resolveu, obrigada", 60);
       say(`aud-${ticketId}-4`, true, "Que bom! Qualquer coisa me chama", 59);
@@ -7635,6 +8511,41 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post("/tutoria/audit/run", {}, auth());
       const after = (await http.get("/tutoria/issues", { params: { status: "resolvida" }, ...auth() })).data.items.find(i => i.id === issue.id);
       assert(after && after.status === "resolvida" && after.protocolNumber === "2026112400123", `resolved ${JSON.stringify(after)}`);
+      // a protocol number written in the conversation is registered by itself: found in code (the model never sees it), no notice
+      // (a registered protocol needs nothing now), and the tutor sees it in their list
+      const noticesBefore = Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='tutoring_issue'`));
+      say(`aud-${ticketId}-5`, true, "Abri outra solicitação no CAA, protocolo 2026112400777, sobre a nota da prova", 58);
+      sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-5', lastMessageAt=NOW() - INTERVAL '58 minutes' WHERE id=${ticketId}`);
+      const freeRun = (await http.post("/tutoria/audit/run", {}, auth())).data;
+      const auto = (await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.find(i => i.protocolNumber === "2026112400777");
+      assert(auto && auto.source === "ia" && auto.ticketId === Number(ticketId), `protocol found in the conversation ${JSON.stringify(auto)} run ${JSON.stringify(freeRun)} ticket ${sql(`SELECT CONCAT(lastMessageId,'|',tutoringAuditedMessageId,'|',lastMessageAt) FROM Tickets WHERE id=${ticketId}`)}`);
+      // the free part does not depend on the daily limit of the AI: with no reading left today, a number written is still registered
+      sql(`UPDATE Settings SET value='0' WHERE key='tutoring_audit_count'`);
+      const limit = await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 1 }, auth());
+      assert(limit.status === 200, `audit settings ${limit.status}`);
+      sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('tutoring_audit_count', '1', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value='1'`);
+      sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('tutoring_audit_day', '${new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" })}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
+      say(`aud-${ticketId}-6`, true, "Abri o requerimento 7788990011 para a segunda chamada", 57);
+      sql(`UPDATE Tickets SET lastMessageId='aud-${ticketId}-6', lastMessageAt=NOW() - INTERVAL '57 minutes' WHERE id=${ticketId}`);
+      const capped = (await http.post("/tutoria/audit/run", {}, auth())).data;
+      assert(capped.reason === "daily_limit" && capped.read === 0, `the AI read past its daily limit ${JSON.stringify(capped)}`);
+      assert((await http.get("/tutoria/issues", { params: { status: "registrada" }, ...auth() })).data.items.some(i => i.protocolNumber === "7788990011"), "the free part stopped at the daily limit of the AI");
+      await http.put("/tutoria/audit/settings", { enabled: true, maxPerDay: 40 }, auth());
+      sql(`UPDATE Settings SET value='0' WHERE key='tutoring_audit_count'`);
+      assert(!JSON.stringify(anthropic.requests.slice(-5).concat((anthropic.openai || []).slice(-5))).includes("2026112400777"), "the protocol number went to the model");
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='tutoring_issue'`)) === noticesBefore, "a protocol registered by itself notified the management");
+      assert((await http.get("/tutoria/protocols", asUser(tutorTok))).data.items.some(i => i.protocolNumber === "2026112400777" && i.status === "registrada"), "the tutor does not see the protocol found");
+      // a new protocol from the list (Meus alunos > Protocolos), for a student of the tutor who never wrote to the tutoring
+      const quiet = sql(`INSERT INTO Leads (name, stageId, enrolledAt, onboardingTutorId, isHistorical, createdAt, updatedAt) VALUES ('Aluno Sem Conversa', (SELECT id FROM LeadStages ORDER BY id LIMIT 1), NOW(), ${tutorUser.id}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const byHand = await http.post("/tutoria/protocols", { leadId: Number(quiet), protocolNumber: "55667788", protocolName: "Revisão de nota", notifyStudent: true }, asUser(tutorTok));
+      assert(byHand.status === 201 && /ainda não tem conversa/.test(byHand.data.warning || ""), `protocol by student ${byHand.status} ${JSON.stringify(byHand.data)}`);
+      const listed = (await http.get("/tutoria/protocols", asUser(tutorTok))).data.items.find(i => i.protocolNumber === "55667788");
+      assert(listed && listed.student === "Aluno Sem Conversa" && listed.status === "registrada", `the protocol by hand ${JSON.stringify(listed)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${quiet} AND body LIKE '%55667788%'`)) === 1, "the protocol is not in the student's history");
+      assert((await http.post("/tutoria/protocols", { leadId: Number(quiet), protocolNumber: "55667788", protocolName: "De novo" }, asUser(tutorTok))).status === 409, "the same protocol was registered twice");
+      assert((await http.post("/tutoria/protocols", { leadId: Number(quiet), protocolNumber: "1", protocolName: "x" }, asUser(otherTok))).status === 403, "another tutor wrote a protocol for someone else's student");
+      assert((await http.post("/tutoria/protocols", { protocolNumber: "1", protocolName: "x" }, asUser(tutorTok))).data.error === "ERR_PROTOCOL_STUDENT", "a protocol without a student was accepted");
+      assert((await http.post(`/tutoria/protocols/${listed.id}/resolve`, {}, asUser(tutorTok))).status === 200, "a protocol without a conversation cannot be resolved");
       // a case written by hand, and the switch
       const manual = await http.post("/tutoria/issues", { kind: "documento", summary: "Histórico do ensino médio pedido ao aluno" }, auth());
       assert(manual.status === 201 && manual.data.status === "aberta", "manual issue");
@@ -7649,6 +8560,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${u.id}, 0, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const lines = [[false, "Oi, quero fazer Direito mas achei caro. Meu CPF 123.456.789-09"], [true, "Oi Pedro, o valor é esse mesmo"], [false, "Me liga no 69 99999-1234"], [true, "Certo, vou mandar a proposta"]];
       lines.forEach(([fromMe, body], i) => sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('rev-${ticketId}-${i}', ${ticketId}, ${contactId}, '${body}', ${fromMe}, true, 'chat', 1, NOW() - INTERVAL '${10 - i} minutes', NOW())`));
+      // voice notes: the one with a transcript is read as its text (with the same removal of personal data), the other one is a marker
+      sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, mediaUrl, transcript, ack, createdAt, updatedAt) VALUES ('rev-${ticketId}-a1', ${ticketId}, ${contactId}, 'rev-a1.ogg', false, true, 'audio', 'rev-a1.ogg', 'Pedro de novo, também queria saber da bolsa, meu email pedro@exemplo.com', 1, NOW() - INTERVAL '5 minutes', NOW())`);
+      sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, mediaUrl, ack, createdAt, updatedAt) VALUES ('rev-${ticketId}-a2', ${ticketId}, ${contactId}, 'rev-a2.ogg', false, true, 'audio', 'rev-a2.ogg', 1, NOW() - INTERVAL '4 minutes', NOW())`);
       sql(`INSERT INTO OutboundMessages (ticketId, userId, clientKey, payload, status, attempts, sentAt, providerMsgId, createdAt, updatedAt) VALUES (${ticketId}, ${u.id}, 'rev-${ticketId}', '{}', 'sent', 1, NOW(), 'rev-${ticketId}-1', NOW(), NOW())`);
       // without an OpenAI agent nothing is read and nothing is spent
       const none = await http.post("/analytics/coaching/run", {}, auth());
@@ -7662,7 +8576,8 @@ const postMeta = (id, payload, secret, badSig) => {
         assert(run.status === 200 && run.data.reviewed >= 1, `run ${run.status} ${JSON.stringify(run.data)}`);
         const sent = (anthropic.openai || []).map(b => JSON.stringify(b.messages)).find(m => /valor/.test(m) && /proposta/.test(m));
         assert(sent, "the conversation did not reach the model");
-        assert(!/123\.456|99999|Pedro|Revisada/.test(sent), `personal data went to the model: ${sent.slice(0, 300)}`);
+        assert(!/123\.456|99999|Pedro|Revisada|pedro@exemplo|rev-a1\.ogg/.test(sent), `personal data went to the model: ${sent.slice(0, 300)}`);
+        assert(/\[áudio\] \[NOME\] de novo, também queria saber da bolsa/.test(sent) && /\[áudio sem transcrição\]/.test(sent), `the voice notes did not reach the review: ${sent.slice(0, 600)}`);
         const kept = sql(`SELECT objections::text || '|' || skipped::text || '|' || COALESCE(note, '') FROM ConsultantReviews WHERE ticketId=${ticketId}`);
         assert(/"preco"/.test(kept) && /false/.test(kept) && /grade/.test(kept), `review kept ${kept}`);
         // a second run the same day reads nothing again (and spends nothing)

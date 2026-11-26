@@ -4,7 +4,7 @@ import Whatsapp from "../models/Whatsapp";
 import Ticket from "../models/Ticket";
 import Contact from "../models/Contact";
 import Lead from "../models/Lead";
-import { assertLead } from "./scope";
+import { assertLead, seesEveryPolo } from "./scope";
 import { assertTicketAccess } from "./canAccessTicket";
 import { isManagerRole } from "../helpers/Roles";
 
@@ -19,7 +19,8 @@ export const assertConnectionUse = async (req: Request, id: number): Promise<voi
 };
 
 export const assertContactAccess = async (req: Request, contactId: number): Promise<void> => {
-  if (isManagerRole(req.user.role)) return;
+  // the administration reaches anyone; the coordination, like everybody else, the leads it sees (its polos) or the conversations it reads
+  if (seesEveryPolo(req)) return;
   const lead = await Lead.findOne({ where: { contactId }, attributes: ["id"] });
   if (lead) {
     try { await assertLead(req, lead.id); return; } catch (_) { /* a ticket may independently grant access */ }

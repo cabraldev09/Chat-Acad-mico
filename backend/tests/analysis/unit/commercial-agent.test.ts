@@ -352,3 +352,28 @@ describe("who asks the price is worked before the consultant", () => {
     [VALUE_BRIDGE, VALUE_BRIDGE_SHORT].forEach(t => { expect(t).not.toMatch(/R\$|\d/); expect(t).toMatch(/consultor do seu polo/); });
   });
 });
+
+describe("the course is the one the person asked for last", () => {
+  it("changes the course as one (id and name) and starts its explanation over", async () => {
+    const ports = fakePorts({ courseId: 8, courseName: "Biomedicina", offerId: 8, city: "Porto Velho", entryType: "first_degree", modalityExplained: true, gradeSent: true, courseExplained: true });
+    ports.detect = async () => ({ courseId: 89, courseName: "Educação Física" });
+    await commercialTurn(ports, { userText: "agora quero saber de educação física", intent: "other", tools: [], hadText: true, replied: true });
+    expect(ports.state.slots).toMatchObject({ courseId: 89, courseName: "Educação Física", offerId: 89, modalityExplained: false, gradeSent: false, courseExplained: false });
+  });
+  it("a course the person already has is not the one they want, unless they say they want it now", async () => {
+    const had = fakePorts({ courseId: 8, courseName: "Biomedicina", offerId: 8 });
+    had.detect = async () => ({ courseId: 89, courseName: "Educação Física" });
+    await commercialTurn(had, { userText: "já sou formado em educação física", intent: "other", tools: [], hadText: true, replied: true });
+    expect(had.state.slots).toMatchObject({ courseId: 8, courseName: "Biomedicina", previousCourse: "Educação Física" });
+    const wants = fakePorts({ courseId: 8, courseName: "Biomedicina", offerId: 8 });
+    wants.detect = async () => ({ courseId: 89, courseName: "Educação Física", courseWished: true });
+    await commercialTurn(wants, { userText: "já fiz biomedicina, agora quero saber de educação física", intent: "other", tools: [], hadText: true, replied: true });
+    expect(wants.state.slots).toMatchObject({ courseId: 89, courseName: "Educação Física" });
+    expect(wants.state.slots.courseWished).toBeUndefined();
+  });
+  it("keeps the mark that the interest of who came back is waiting for an answer", async () => {
+    const ports = fakePorts({ courseId: 8, courseName: "Biomedicina" });
+    await commercialTurn(ports, { userText: "oi", intent: "greeting", tools: [], hadText: true, replied: true, patch: { resumeConfirm: true } });
+    expect(ports.state.slots.resumeConfirm).toBe(true);
+  });
+});

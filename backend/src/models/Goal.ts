@@ -43,6 +43,10 @@ class Goal extends Model<Goal> {
   @Column
   createdBy: number;
 
+  // polo goals: the entry term of the students it counts ("2026/2"), see helpers/EntryTerm
+  @Column
+  entryTerm: string;
+
   @HasMany(() => GoalMember)
   members: GoalMember[];
 

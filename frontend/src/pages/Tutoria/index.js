@@ -2,7 +2,8 @@ import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory, useLocation } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import { Button, CircularProgress, MenuItem, TextField } from "@material-ui/core";
-import { MessageSquare, MonitorCheck, RefreshCw, Upload, Megaphone, BellRing } from "lucide-react";
+import { MessageSquare, MonitorCheck, RefreshCw, Upload, Megaphone, BellRing, UserCog } from "lucide-react";
+import TutorDialog from "../../components/TutorPicker";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -77,6 +78,7 @@ export default function Tutoria() {
   const tab = asked === "ambientacao" ? "ambientacao" : asked === "pendencias" && audits ? "pendencias" : asked === "protocolos" && !audits ? "protocolos" : "alunos";
   const setTab = (t) => history.replace(t === "alunos" ? "/meus-alunos" : `/meus-alunos?aba=${t}`);
   const [issuesOpen, setIssuesOpen] = useState(null);
+  const [tutorFor, setTutorFor] = useState(null);
   useEffect(() => {
     if (!audits) return;
     api.get("/tutoria/issues/count").then(({ data: d }) => setIssuesOpen(d.open)).catch(() => undefined);
@@ -212,6 +214,7 @@ export default function Tutoria() {
                     <div className={c.actions}>
                       <Button size="small" variant="outlined" className={c.button} disabled={busy === s.leadId} startIcon={<MessageSquare size={13} />} onClick={() => open(s)}>Abrir conversa</Button>
                       <Button size="small" className={c.button} startIcon={<MonitorCheck size={13} />} onClick={() => setTab("ambientacao")}>Ambientação</Button>
+                      {manager && <Button size="small" className={c.button} startIcon={<UserCog size={13} />} onClick={() => setTutorFor({ id: s.leadId, name: s.name, poloId: s.poloId, tutorId: s.tutorId })}>{s.tutorId ? "Trocar tutor" : "Atribuir tutor"}</Button>}
                     </div>
                   </td>
                 </tr>
@@ -220,6 +223,7 @@ export default function Tutoria() {
         </div>
       </>}
       </div>}
+      <TutorDialog open={!!tutorFor} lead={tutorFor} onClose={() => setTutorFor(null)} onDone={load} />
     </MainContainer>
   );
 }

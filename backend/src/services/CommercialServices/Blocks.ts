@@ -38,7 +38,8 @@ const hardCut = (text: string, limit: number): string[] => {
   return out;
 };
 
-export const splitIntoBlocks = (raw: string): string[] => {
+// (max: an answer to a question of the person goes in fewer bubbles than a presentation of the team)
+export const splitIntoBlocks = (raw: string, max = BLOCKS_MAX): string[] => {
   const text = toWhatsapp(String(raw || "")).replace(/\r/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   if (!text) return [];
   if (text.length <= BLOCK_SOFT && !text.includes("\n\n")) return [text];
@@ -60,7 +61,7 @@ export const splitIntoBlocks = (raw: string): string[] => {
 
   // 3) short neighbours share a bubble (a greeting and the first sentence), but a question stays alone at the end when it fits
   const question = parts.length > 1 && /\?\s*$/.test(parts[parts.length - 1]) && parts[parts.length - 1].length <= BLOCK_SOFT ? parts.pop()! : null;
-  const room = BLOCKS_MAX - (question ? 1 : 0);
+  const room = Math.max(1, Math.min(max, BLOCKS_MAX) - (question ? 1 : 0));
   // 4) too many bubbles: neighbours are joined with a little more room each time (up to what WhatsApp shows without "Ler mais")
   let limit = BLOCK_SOFT;
   let packed = pack(parts, limit, "\n\n");

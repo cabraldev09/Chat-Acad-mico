@@ -8,8 +8,8 @@
 --
 
 
--- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped from database version 16.15 (Homebrew)
+-- Dumped by pg_dump version 16.15 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -676,7 +676,8 @@ CREATE TABLE public."AiUsage" (
     "nodeId" character varying(40),
     "latencyMs" integer,
     "leadId" integer,
-    "estimatedUsd" numeric(14,8)
+    "estimatedUsd" numeric(14,8),
+    "userId" integer
 );
 
 
@@ -745,10 +746,18 @@ ALTER SEQUENCE public."AnalysisEvents_id_seq" OWNED BY public."AnalysisEvents".i
 CREATE TABLE public."ApiTokens" (
     id integer NOT NULL,
     name character varying(255) NOT NULL,
-    token character varying(255) NOT NULL,
+    token character varying(255),
     "lastUsedAt" timestamp with time zone,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "tokenHash" character varying(64),
+    "tokenPrefix" character varying(16),
+    scopes text,
+    "poloIds" text,
+    "expiresAt" timestamp with time zone,
+    legacy boolean DEFAULT false NOT NULL,
+    "createdById" integer,
+    usage text
 );
 
 
@@ -912,7 +921,8 @@ CREATE TABLE public."Campaigns" (
     "templateParams" text,
     "templateBody" text,
     "createdById" integer,
-    "institutionId" integer
+    "institutionId" integer,
+    objective text
 );
 
 
@@ -1655,7 +1665,13 @@ CREATE TABLE public."Courses" (
     "updatedAt" timestamp with time zone NOT NULL,
     "institutionId" integer,
     category character varying(255),
-    semesters integer DEFAULT 8 NOT NULL
+    semesters integer DEFAULT 8 NOT NULL,
+    aliases text,
+    "durationMonths" integer,
+    "installmentsTotal" integer,
+    "enrollmentFee" numeric(10,2),
+    "certificationFee" numeric(10,2),
+    "singlePayment" boolean DEFAULT false NOT NULL
 );
 
 
@@ -1740,6 +1756,49 @@ CREATE SEQUENCE public."CurricularAnalyses_id_seq"
 --
 
 ALTER SEQUENCE public."CurricularAnalyses_id_seq" OWNED BY public."CurricularAnalyses".id;
+
+
+--
+-- Name: DataPurgeRuns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."DataPurgeRuns" (
+    id integer NOT NULL,
+    mode character varying(20) NOT NULL,
+    "audioDays" integer DEFAULT 0 NOT NULL,
+    "conversationDays" integer DEFAULT 0 NOT NULL,
+    "audioFiles" integer DEFAULT 0 NOT NULL,
+    conversations integer DEFAULT 0 NOT NULL,
+    "conversationMessages" integer DEFAULT 0 NOT NULL,
+    "filesDeleted" integer DEFAULT 0 NOT NULL,
+    details text,
+    error text,
+    "actorId" integer,
+    "startedAt" timestamp with time zone NOT NULL,
+    "finishedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: DataPurgeRuns_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."DataPurgeRuns_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: DataPurgeRuns_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."DataPurgeRuns_id_seq" OWNED BY public."DataPurgeRuns".id;
 
 
 --
@@ -1956,7 +2015,8 @@ CREATE TABLE public."Goals" (
     "updatedAt" timestamp with time zone NOT NULL,
     "workDays" integer DEFAULT 5 NOT NULL,
     kind character varying(255) DEFAULT 'team'::character varying NOT NULL,
-    "extraHolidays" text
+    "extraHolidays" text,
+    "entryTerm" character varying(7)
 );
 
 
@@ -2544,7 +2604,10 @@ CREATE TABLE public."Messages" (
     reactions text,
     "isEdited" boolean DEFAULT false NOT NULL,
     "isGif" boolean DEFAULT false NOT NULL,
-    transcript text
+    transcript text,
+    "mediaPurgedAt" timestamp with time zone,
+    "bodyPurgedAt" timestamp with time zone,
+    "transcribeTriedAt" timestamp with time zone
 );
 
 
@@ -2685,7 +2748,8 @@ CREATE TABLE public."OutboundDeliveries" (
     "estimatedUsd" numeric(14,8),
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
-    category character varying(20)
+    category character varying(20),
+    "userId" integer
 );
 
 
@@ -3033,7 +3097,17 @@ CREATE TABLE public."ProposalTemplates" (
     "fixedUntilEnd" boolean DEFAULT false NOT NULL,
     "firstExempt" boolean DEFAULT false NOT NULL,
     "waIntro" text,
-    "waClosing" text
+    "waClosing" text,
+    active boolean DEFAULT true NOT NULL,
+    "planType" character varying(20) DEFAULT 'semestral'::character varying NOT NULL,
+    "installmentsByDuration" text,
+    "certificationFee" numeric(10,2) DEFAULT 0 NOT NULL,
+    "chargeCertification" boolean DEFAULT false NOT NULL,
+    "pixDiscountPct" numeric(5,2) DEFAULT 0 NOT NULL,
+    "cardMaxInstallments" integer DEFAULT 12 NOT NULL,
+    "cardRatePct" numeric(5,2) DEFAULT 0 NOT NULL,
+    "cardPassInterest" boolean DEFAULT true NOT NULL,
+    "courseLevels" text
 );
 
 
@@ -3337,6 +3411,47 @@ CREATE SEQUENCE public."Schedules_id_seq"
 --
 
 ALTER SEQUENCE public."Schedules_id_seq" OWNED BY public."Schedules".id;
+
+
+--
+-- Name: SendReleases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."SendReleases" (
+    id integer NOT NULL,
+    "userId" integer NOT NULL,
+    month character varying(7) NOT NULL,
+    requested integer NOT NULL,
+    reason text NOT NULL,
+    context jsonb,
+    status character varying(10) DEFAULT 'pending'::character varying NOT NULL,
+    granted integer,
+    "decidedBy" integer,
+    "decidedAt" timestamp with time zone,
+    "decisionNote" character varying(300),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: SendReleases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."SendReleases_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: SendReleases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."SendReleases_id_seq" OWNED BY public."SendReleases".id;
 
 
 --
@@ -4177,6 +4292,13 @@ ALTER TABLE ONLY public."CurricularAnalyses" ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: DataPurgeRuns id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."DataPurgeRuns" ALTER COLUMN id SET DEFAULT nextval('public."DataPurgeRuns_id_seq"'::regclass);
+
+
+--
 -- Name: EnrollmentForms id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4436,6 +4558,13 @@ ALTER TABLE ONLY public."Schedules" ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: SendReleases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SendReleases" ALTER COLUMN id SET DEFAULT nextval('public."SendReleases_id_seq"'::regclass);
+
+
+--
 -- Name: StudentTokens id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4681,6 +4810,14 @@ ALTER TABLE ONLY public."ApiTokens"
 
 
 --
+-- Name: ApiTokens ApiTokens_tokenHash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ApiTokens"
+    ADD CONSTRAINT "ApiTokens_tokenHash_key" UNIQUE ("tokenHash");
+
+
+--
 -- Name: ApiTokens ApiTokens_token_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4902,6 +5039,14 @@ ALTER TABLE ONLY public."Courses"
 
 ALTER TABLE ONLY public."CurricularAnalyses"
     ADD CONSTRAINT "CurricularAnalyses_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: DataPurgeRuns DataPurgeRuns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."DataPurgeRuns"
+    ADD CONSTRAINT "DataPurgeRuns_pkey" PRIMARY KEY (id);
 
 
 --
@@ -5313,6 +5458,14 @@ ALTER TABLE ONLY public."Schedules"
 
 
 --
+-- Name: SendReleases SendReleases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SendReleases"
+    ADD CONSTRAINT "SendReleases_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: SequelizeMeta SequelizeMeta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5634,6 +5787,13 @@ CREATE INDEX ai_usage_created_at ON public."AiUsage" USING btree ("createdAt");
 
 
 --
+-- Name: ai_usage_user_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_usage_user_created ON public."AiUsage" USING btree ("userId", "createdAt");
+
+
+--
 -- Name: aiagents_institution_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5750,6 +5910,13 @@ CREATE UNIQUE INDEX commercial_grades_content_hash ON public."CommercialGrades" 
 --
 
 CREATE INDEX commercial_grades_course_name ON public."CommercialGrades" USING btree ("courseName");
+
+
+--
+-- Name: consultant_reviews_day_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX consultant_reviews_day_idx ON public."ConsultantReviews" USING btree (day);
 
 
 --
@@ -5897,6 +6064,13 @@ CREATE INDEX curricular_analyses_user_id_created_at ON public."CurricularAnalyse
 --
 
 CREATE INDEX curricular_followup_due_idx ON public."CurricularAnalyses" USING btree ("followUpDueAt") WHERE ("followUpDueAt" IS NOT NULL);
+
+
+--
+-- Name: data_purge_runs_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX data_purge_runs_created ON public."DataPurgeRuns" USING btree ("createdAt");
 
 
 --
@@ -6320,6 +6494,13 @@ CREATE INDEX outbound_deliveries_status_updated ON public."OutboundDeliveries" U
 
 
 --
+-- Name: outbound_deliveries_user_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX outbound_deliveries_user_created ON public."OutboundDeliveries" USING btree ("userId", "createdAt");
+
+
+--
 -- Name: outbound_messages_status_next; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6432,6 +6613,20 @@ CREATE INDEX schedules_status_send ON public."Schedules" USING btree (status, "s
 
 
 --
+-- Name: send_releases_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX send_releases_status ON public."SendReleases" USING btree (status);
+
+
+--
+-- Name: send_releases_user_month; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX send_releases_user_month ON public."SendReleases" USING btree ("userId", month);
+
+
+--
 -- Name: student_tokens_token_hash; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6492,6 +6687,13 @@ CREATE INDEX tickets_last_message_at_idx ON public."Tickets" USING btree ("lastM
 --
 
 CREATE INDEX tickets_lead_id ON public."Tickets" USING btree ("leadId");
+
+
+--
+-- Name: tickets_one_live_per_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX tickets_one_live_per_number ON public."Tickets" USING btree ("contactId", "whatsappId") WHERE (("isGroup" = false) AND ("isHistorical" = false));
 
 
 --
@@ -7468,6 +7670,22 @@ ALTER TABLE ONLY public."Schedules"
 
 
 --
+-- Name: SendReleases SendReleases_decidedBy_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SendReleases"
+    ADD CONSTRAINT "SendReleases_decidedBy_fkey" FOREIGN KEY ("decidedBy") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: SendReleases SendReleases_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SendReleases"
+    ADD CONSTRAINT "SendReleases_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: StudentTokens StudentTokens_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8060,6 +8278,21 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261225000001-outbound-category.js'
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261226000001-enrollment-forms.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000001-ticket-reply-dismissed.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261227000002-tutoring-issues.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261228000001-one-conversation-per-number.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-course-aliases.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261229000001-goal-entry-term.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261230000001-send-quota-and-costs.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261231000001-fix-buritis-entry-term.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-content-retention.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000001-proposal-template-active.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000101-api-token-scopes.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000102-hash-api-tokens.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000103-consultant-reviews-day-idx.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000104-api-token-usage.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270101000201-message-transcribe-tried.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000001-installment-plans.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000002-installment-plan-models.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20270102000003-proposal-template-levels.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

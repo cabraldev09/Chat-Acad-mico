@@ -29,8 +29,6 @@
 .pk[data-tone="brand"] { --pk-accent: var(--c-brand); }
 button.pk, a.pk { font: inherit; text-align: left; cursor: pointer; text-decoration: none; width: 100%; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
 button.pk:hover, a.pk:hover { border-color: #b8c0cc; box-shadow: 0 2px 4px rgba(16, 24, 40, 0.06), 0 8px 16px -8px rgba(16, 24, 40, 0.12); }
-button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent); outline-offset: 2px; }
-
 /* the title of a section of a page: a navy bar, the title and one sentence */
 .pk-section { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; margin: 0 0 12px; min-width: 0; }
 .pk-section h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; color: var(--text-1); }
@@ -258,7 +256,6 @@ button.pk-stat:hover, button.pk-count:hover { border-color: rgba(255, 255, 255, 
 .gv-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .gv-btn { align-self: center; min-height: 40px; padding: 0 22px; border: 0; border-radius: 8px; background: var(--c-brand); color: #fff; font: inherit; font-size: 13.5px; font-weight: 650; cursor: pointer; transition: background-color .15s ease; }
 .gv-btn:hover { background: color-mix(in srgb, var(--c-brand) 86%, #000); }
-.gv-btn:focus-visible, .gv-switch button:focus-visible, .gv-frow:focus-visible, .gv-bars-scroll:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 2px; }
 :root[data-theme="dark"] .gv-btn { color: #0b1a2e; }
 :root[data-theme="dark"] .gv-delta[data-good="1"] { color: #4ade80; }
 :root[data-theme="dark"] .gv-delta[data-good="0"] { color: #f87171; }
@@ -343,7 +340,6 @@ button.gv-frow:hover .gv-fbar { background: color-mix(in srgb, var(--c-brand) 86
 .gv-seg button:hover:not(:disabled) { color: var(--text-1); }
 .gv-seg button[aria-pressed="true"] { background: var(--surface); color: var(--c-brand); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12); }
 .gv-seg button:disabled { opacity: 0.45; cursor: not-allowed; }
-.gv-seg button:focus-visible, .gv-prio-row:focus-visible, .gv-fun-row:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
 .gv-dates { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
 .gv-dates input { min-height: 38px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--text-1); font: inherit; font-size: 13px; }
 .gv-head .gv-seg { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.18); }
@@ -362,9 +358,8 @@ button.gv-frow:hover .gv-fbar { background: color-mix(in srgb, var(--c-brand) 86
 .gv-step { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--text-1); cursor: pointer; }
 .gv-step:hover:not(:disabled) { background: var(--surface); }
 .gv-step:disabled { opacity: 0.35; cursor: default; }
-.gv-step:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
 /* a list shows its focus on itself (a soft ring of shadow), never a second frame around it (the screen sweep checks it) */
-.gv-which-select:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--c-leads); }
+.gv-which-select:focus-visible { outline: none; }
 .gv-head .gv-which { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.18); }
 .gv-head .gv-which-text, .gv-head .gv-step { color: #fff; }
 .gv-head .gv-step:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
@@ -432,7 +427,6 @@ button.gv-prio-row { cursor: pointer; }
 .gv-prio-dismissable .gv-prio-row { padding-right: 44px; }
 .gv-prio-x { position: absolute; top: 6px; right: 6px; z-index: 1; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer; }
 .gv-prio-x:hover { background: var(--surface-2); color: var(--text-1); }
-.gv-prio-x:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
 /* a row of a list with its own actions beside it ("Já resolvido", "Concluir", "Limpar"): the row opens, the buttons act */
 .gv-act-row { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); min-width: 0; }
 .gv-rowlist > .gv-act-row:first-child { border-top: 0; }
@@ -441,7 +435,6 @@ button.gv-prio-row { cursor: pointer; }
 .gv-act { min-height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--text-1); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
 .gv-act:hover { border-color: var(--c-leads); color: var(--c-brand); }
 .gv-act:disabled { opacity: .5; cursor: default; }
-.gv-act:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
 @media (max-width: 520px) {
   .gv-act-row { flex-wrap: wrap; padding-bottom: 8px; }
   .gv-act-row > .gv-item-btn { flex-basis: 100%; }
@@ -499,7 +492,6 @@ button.gv-prio-row:hover { border-color: var(--tone); background: color-mix(in s
 .pp-pct { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; color: #fff; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.28); }
 .pp-card { display: flex; flex-direction: column; padding: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; transition: border-color .15s ease, box-shadow .15s ease; }
 .pp-card:hover { border-color: var(--c-brand); box-shadow: 0 6px 16px -10px rgba(11, 66, 121, 0.5); }
-.pp-card:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 2px; }
 .pp-card[data-mine="1"] { border-color: var(--c-brand); }
 .pp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; color: #fff; background: linear-gradient(100deg, #1b4f9a 0%, #0b4279 45%, #0a2f5c 100%); }
 .pp-name { font-size: 13.5px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; min-width: 0; }
@@ -512,7 +504,6 @@ button.gv-prio-row:hover { border-color: var(--tone); background: color-mix(in s
 .gv-item-btn { width: 100%; border-left: 0; border-right: 0; border-bottom: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; flex-wrap: nowrap; border-radius: 0; transition: background-color .15s ease; }
 .gv-rowlist > .gv-item-btn { padding-left: 6px; padding-right: 6px; }
 .gv-item-btn:hover { background: var(--surface-2); }
-.gv-item-btn:focus-visible { outline: 2px solid var(--c-leads); outline-offset: -2px; }
 .gv-item-btn .gv-item-main { min-width: 0; }
 .gv-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gv-notes { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13.5px; line-height: 1.5; }
@@ -555,7 +546,6 @@ button.gv-prio-row:hover { border-color: var(--tone); background: color-mix(in s
 .mx-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--mx-row, transparent); min-height: 44px; font: inherit; color: inherit; text-align: left; width: 100%; transition: background .15s ease, border-color .15s ease; }
 button.mx-item { cursor: pointer; }
 button.mx-item:hover { background: var(--accent-soft, rgba(6, 147, 227, .06)); border-color: var(--c-leads, #0693e3); }
-button.mx-item:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
 .mx-item .mx-ico { width: 30px; height: 30px; border-radius: 50%; }
 .mx-text { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.45; color: var(--text-1); }
 .mx-text small { display: block; font-size: 12px; color: var(--text-2); margin-top: 1px; }
@@ -574,7 +564,6 @@ button.mx-item:focus-visible { outline: 2px solid var(--c-leads); outline-offset
 .mx-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
 .mx-tile { display: grid; gap: 6px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; min-height: 44px; transition: background .15s ease, border-color .15s ease; }
 .mx-tile:hover { border-color: var(--mx-ink, var(--c-leads)); background: var(--mx-soft, rgba(6, 147, 227, .06)); }
-.mx-tile:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 1px; }
 .mx-tile .mx-ico { width: 28px; height: 28px; border-radius: 8px; }
 .mx-tile b { font-size: 24px; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--text-1); }
 .mx-tile span { font-size: 12px; color: var(--text-2); }
@@ -610,7 +599,6 @@ button.mx-item:focus-visible { outline: 2px solid var(--c-leads); outline-offset
 .mx-tab:hover { background: rgba(6, 147, 227, .05); }
 .mx-tab[aria-pressed="true"] { background: rgba(6, 147, 227, .08); }
 .mx-tab[aria-pressed="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--c-brand); }
-.mx-tab:focus-visible { outline: 2px solid var(--c-leads); outline-offset: -2px; }
 .mx-tab-title { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
 .mx-tab b { font-size: 26px; line-height: 1.1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--text-1); }
 .mx-tab[aria-pressed="true"] b { color: var(--c-brand); }
@@ -633,3 +621,15 @@ button.mx-item:focus-visible { outline: 2px solid var(--c-leads); outline-offset
   .mx-chart-plot { height: 200px; }
 }
 @media (prefers-reduced-motion: reduce) { .mx-tab { transition: none; } }
+
+/* the semester and the month: a button in the look of the period buttons that opens a list (no native list drawn over the bar) */
+.gv-which-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; max-width: 100%; min-width: 0; padding: 0 10px; border: 0; border-radius: 7px;
+  background: var(--surface); color: var(--text-1); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.gv-which-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gv-which-btn:hover { filter: brightness(0.97); }
+.gv-head .gv-which-btn { background: #fff; color: #0b4279; }
+.gv-which-menu { border-radius: 12px !important; max-height: min(420px, 70vh); min-width: 240px; }
+.gv-which-menu .MuiMenuItem-root { gap: 8px; font-size: 14px; align-items: flex-start; white-space: normal; }
+.gv-which-mark { width: 16px; flex: none; display: inline-flex; padding-top: 2px; color: var(--accent, #0b4279); }
+.gv-which-item { display: grid; gap: 1px; }
+.gv-which-item small { font-size: 12px; color: var(--text-2, #64748b); }

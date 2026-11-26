@@ -24,6 +24,8 @@ const useStyles = makeStyles((theme) => ({
   facts: { display: "flex", flexWrap: "wrap", gap: 6, margin: theme.spacing(0.25, 0, 1) },
   fact: { fontSize: 12.5, fontWeight: 500, padding: "2px 10px", borderRadius: 999, background: theme.palette.action.selected },
   note: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
+  firstBox: { marginTop: 10, padding: "8px 12px", borderRadius: 10, border: `1px solid ${theme.palette.divider}`, display: "flex", flexDirection: "column" },
+  firstHead: { fontSize: 12.5, fontWeight: 700, color: theme.palette.text.secondary, textTransform: "uppercase", letterSpacing: ".04em" },
   adv: { cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, userSelect: "none", border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", width: "100%", padding: 0 },
   stage: { overflow: "auto", padding: theme.spacing(2.5), background: theme.palette.type === "dark" ? "#050a12" : "#e9eef5", display: "flex", flexDirection: "column", alignItems: "center", gap: theme.spacing(1.5) },
   chips: { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" },
@@ -45,7 +47,8 @@ const useStyles = makeStyles((theme) => ({
 
 const ERR = {
   ERR_PROPOSAL_NO_GROSS: "Escolha o curso: a mensalidade bruta vem do catálogo.",
-  ERR_PROPOSAL_FIRST_MONTHLY: "A primeira mensalidade precisa ser maior que zero e não pode passar da mensalidade bruta.",
+  ERR_PROPOSAL_FIRST_MONTHLY: "A mensalidade com bolsa precisa ser maior que zero e não pode passar da mensalidade bruta.",
+  ERR_PROPOSAL_FIRST_PAYMENT: "A 1ª mensalidade não pode ser negativa nem passar da mensalidade bruta. Para não cobrar, marque Isenta.",
   ERR_NO_PROPOSAL_TEMPLATE: "Cadastre um modelo de proposta em Configurar CRM.",
   ERR_PROPOSAL_COURSE_NO_PRICE: "Este curso não tem mensalidade cadastrada. Peça à gestão para cadastrar em Cursos.",
 };
@@ -70,20 +73,32 @@ const keyOf = (calendar, p) => {
 const missingOf = (f, courseId) => {
   const out = [];
   if (!courseId) out.push("curso");
-  if (!f.admissionType) out.push("forma de ingresso");
-  if (!(f.firstExempt ? f.secondDueDate || f.firstDueDate : f.firstDueDate)) out.push("turma ou 1º vencimento");
+  if (!f.admissionType && f.planType !== "parcelado") out.push("forma de ingresso");
+  if (!(f.firstExempt ? f.secondDueDate || f.firstDueDate : f.firstDueDate)) out.push("vencimento da 1ª mensalidade");
   return out;
 };
 
-const toNum = (v) => { const n = Number(String(v ?? "").replace(/\./g, "").replace(",", ".")); return Number.isNaN(n) ? 0 : n; };
+// "1.200,50" and "1200,50" are R$ 1.200,50; without a comma, a dot is a decimal point unless 3 digits follow it ("1.99" = 1,99; "1.200" = 1200)
+const toNum = (v) => {
+  const s = String(v ?? "").trim();
+  const t = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/\.(?=\d{3}(\D|$))/g, "");
+  const n = Number(t);
+  return Number.isNaN(n) ? 0 : n;
+};
 const money = (n) => (n === null || n === undefined ? "" : Number(n).toFixed(2).replace(".", ","));
 const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+// the monthly fee with the scholarship (proposals made before it had its own field kept it in firstMonthly)
+const baseOf = (p) => (Number(p.monthly) > 0 ? Number(p.monthly) : Number(p.firstMonthly) || 0);
+
 // backend params -> text inputs
 const toForm = (p, calendar) => ({
   turma: keyOf(calendar, p), entryTurma: p.entryTurma || "", releaseDate: p.releaseDate || "", grossUnlocked: !!p.grossUnlocked,
-  gross: money(p.gross), first: money(p.firstMonthly), bolsa: p.gross ? money(r2((1 - p.firstMonthly / p.gross) * 100)) : "",
+  gross: money(p.gross), first: money(baseOf(p)), bolsa: p.gross ? money(r2((1 - baseOf(p) / p.gross) * 100)) : "",
+  // the 1st installment: by default the same as the others; its own value or waived (R$ 0)
+  firstSame: !p.firstExempt && (!(Number(p.firstMonthly) > 0) || Math.abs(Number(p.firstMonthly) - baseOf(p)) < 0.01),
+  firstPay: money(p.firstExempt ? 0 : Number(p.firstMonthly) || baseOf(p)),
   enrollmentFee: money(p.enrollmentFee), dueDay: String(p.dueDay), installments: String(p.installments), firstDueDate: p.firstDueDate || "",
   entryTerm: `${p.startYear}/${p.startSemester}`, entrySemester: p.entrySemester || 1, courseSemesters: p.courseSemesters || p.semesters, admissionType: p.admissionType || "",
   attend: String(p.semesters), attendAuto: true,
@@ -93,13 +108,19 @@ const toForm = (p, calendar) => ({
   schedule: (p.semestralSchedule || []).map((s) => ({ from: String(s.from), pct: money(s.pct) })),
   hasRegression: p.hasRegression !== false, hasAdjustment: p.hasAdjustment !== false, fixedUntilEnd: !!p.fixedUntilEnd,
   installmentsFixed: p.installmentsFixed ? String(p.installmentsFixed) : "", firstExempt: !!p.firstExempt, secondDueDate: p.secondDueDate || "",
+  // a proposal in installments (post-graduate, technical, short courses)
+  planType: p.planType || "semestral", installmentsTotal: p.installmentsTotal ? String(p.installmentsTotal) : "",
+  enrollmentExempt: !!p.enrollmentExempt, certification: p.certification || "none", certificationFee: money(p.certificationFee || 0),
+  singlePayment: !!p.singlePayment, singleValue: p.singleValue ? money(p.singleValue) : "",
+  pixDiscountPct: money(p.pixDiscountPct || 0), pixTyping: null,
+  cardInstallments: String(p.cardInstallments || 1), cardRatePct: money(p.cardRatePct || 0), cardPassInterest: p.cardPassInterest !== false,
 });
 
 // text inputs -> backend params
 const toParams = (f) => {
   const [y, s] = String(f.entryTerm).split("/").map(Number);
   return {
-    gross: toNum(f.gross), firstMonthly: toNum(f.first), enrollmentFee: toNum(f.enrollmentFee), dueDay: toNum(f.dueDay), installments: toNum(f.installments),
+    gross: toNum(f.gross), monthly: toNum(f.first), firstMonthly: f.firstExempt ? 0 : f.firstSame ? toNum(f.first) : toNum(f.firstPay), enrollmentFee: toNum(f.enrollmentFee), dueDay: toNum(f.dueDay), installments: toNum(f.installments),
     firstDueDate: f.firstDueDate || null, startYear: y, startSemester: s === 1 ? 1 : 2,
     courseSemesters: Number(f.courseSemesters), entrySemester: Number(f.entrySemester) || 1, admissionType: f.admissionType || null,
     attendSemesters: toNum(f.attend) || null,
@@ -107,6 +128,9 @@ const toParams = (f) => {
     annualMin: toNum(f.annualMin), annualMax: toNum(f.annualMax), semestralSchedule: f.schedule.map((x) => ({ from: toNum(x.from), pct: toNum(x.pct) })),
     hasRegression: !!f.hasRegression, hasAdjustment: !!f.hasAdjustment, fixedUntilEnd: !!f.fixedUntilEnd,
     installmentsFixed: toNum(f.installmentsFixed) || null, firstExempt: !!f.firstExempt, secondDueDate: f.secondDueDate || null,
+    installmentsTotal: toNum(f.installmentsTotal) || null, enrollmentExempt: !!f.enrollmentExempt, certification: f.certification || "none",
+    certificationFee: toNum(f.certificationFee), singlePayment: !!f.singlePayment, singleValue: toNum(f.singleValue) || null,
+    pixDiscountPct: toNum(f.pixDiscountPct), cardInstallments: toNum(f.cardInstallments) || 1, cardRatePct: toNum(f.cardRatePct), cardPassInterest: !!f.cardPassInterest,
     entryTurma: f.entryTurma || null, releaseDate: f.releaseDate || null, grossUnlocked: !!f.grossUnlocked,
   };
 };
@@ -171,7 +195,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
           next.first = money(r2(data.params.gross * (1 - toNum(prev.bolsa) / 100)));
           next.bolsa = prev.bolsa;
         }
-        ["entryTerm", "admissionType", "firstDueDate", "secondDueDate", "turma", "entryTurma", "releaseDate", "installments"].forEach((k) => { next[k] = prev[k]; });
+        ["entryTerm", "admissionType", "firstDueDate", "secondDueDate", "turma", "entryTurma", "releaseDate", "installments", "firstExempt", "firstSame", "firstPay"].forEach((k) => { next[k] = prev[k]; });
         next.entrySemester = Math.min(prev.entrySemester, next.courseSemesters);
         if (!prev.attendAuto) { next.attend = prev.attend; next.attendAuto = false; }
       }
@@ -233,6 +257,61 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     <TextField fullWidth variant="outlined" margin="dense" label={label} value={f[k]} onChange={set(k)} {...extra} />
   );
   const setBolsa = (e) => { const v = e.target.value; setF((p) => ({ ...p, bolsa: v, first: money(r2(toNum(p.gross) * (1 - toNum(v) / 100))) })); };
+  // a proposal in installments: the installments, the fees (charge, waive or change) and, paid at once, the ways of paying it
+  const sw = (k, label, extra = {}) => (
+    <FormControlLabel control={<Switch color="primary" checked={!!f[k]} disabled={!!locked} onChange={(e) => { const on = e.target.checked; setF((p) => ({ ...p, [k]: on })); }} />} label={label} {...extra} />
+  );
+  const plan = result && result.plan;
+  const singleBase = () => (toNum(f.singleValue) > 0 ? toNum(f.singleValue) : plan && plan.single ? plan.single.value : plan ? plan.total : 0);
+  const setPixValue = (e) => {
+    const v = e.target.value;
+    const base = singleBase();
+    setF((p) => ({ ...p, pixTyping: v, pixDiscountPct: base > 0 ? money(r2(Math.min(100, Math.max(0, (1 - toNum(v) / base) * 100)))) : p.pixDiscountPct }));
+  };
+  const parcelado = () => (
+    <>
+      <div className={classes.grid2}>
+        {field("installmentsTotal", "Parcelas", { disabled: !!locked || f.singlePayment, type: "number", inputProps: { min: 1, max: 120 }, helperText: "Vem do curso ou da duração; pode mudar" })}
+        <div style={{ display: "flex", alignItems: "center" }}>{sw("singlePayment", "Parcela única")}</div>
+      </div>
+      {f.singlePayment && (
+        <div className={classes.firstBox}>
+          <div className={classes.firstHead}>Formas de pagamento</div>
+          {field("singleValue", "Valor do curso à vista (R$)", { disabled: !!locked, placeholder: plan ? money(plan.total) : "", helperText: "Vazio = parcelas somadas" })}
+          <div className={classes.grid2}>
+            {field("pixDiscountPct", "Desconto no Pix (%)", { disabled: !!locked, onChange: (e) => { const v = e.target.value; setF((p) => ({ ...p, pixDiscountPct: v, pixTyping: null })); } })}
+            <TextField fullWidth variant="outlined" margin="dense" label="Valor no Pix (R$)" disabled={!!locked}
+              value={f.pixTyping !== null && f.pixTyping !== undefined ? f.pixTyping : plan && plan.single ? money(plan.single.pix) : ""}
+              onChange={setPixValue} onBlur={() => setF((p) => ({ ...p, pixTyping: null }))} helperText="Digite o valor ou a %: o outro se ajusta" />
+          </div>
+          <div className={classes.grid2}>
+            {field("cardInstallments", "Cartão: em quantas vezes", { disabled: !!locked, type: "number", inputProps: { min: 1, max: 48 } })}
+            {field("cardRatePct", "Juros ao mês (%)", { disabled: !!locked, helperText: "Taxa da maquininha" })}
+          </div>
+          {sw("cardPassInterest", "Repassar os juros ao aluno")}
+          {plan && plan.single && plan.single.card && (
+            <div className={classes.note}>
+              Boleto {brl(plan.single.value)} · Pix {brl(plan.single.pix)} · Cartão {plan.single.card.installments}x de {brl(plan.single.card.installment)} (total {brl(plan.single.card.total)}{plan.single.card.passInterest && plan.single.card.ratePct > 0 ? ", com juros" : ", sem juros"})
+            </div>
+          )}
+        </div>
+      )}
+      <div className={classes.firstBox}>
+        <div className={classes.firstHead}>Taxas</div>
+        {sw("enrollmentExempt", "Taxa de matrícula isenta")}
+        <TextField select fullWidth variant="outlined" margin="dense" label="Taxa de certificação (ao concluir)" value={f.certification} disabled={!!locked}
+          onChange={(e) => { const v = e.target.value; setF((p) => ({ ...p, certification: v })); }}>
+          <MenuItem value="charge">Cobrar</MenuItem>
+          <MenuItem value="exempt">Isenta</MenuItem>
+          <MenuItem value="none">O curso não tem</MenuItem>
+        </TextField>
+        {f.certification === "charge" && field("certificationFee", "Valor da taxa de certificação (R$)", { disabled: !!locked })}
+      </div>
+      {plan && !f.singlePayment && (
+        <div className={classes.note}>{plan.installments} parcelas de {brl(plan.monthly)}{Math.abs(plan.first - plan.monthly) >= 0.01 ? ` (1ª: ${plan.first === 0 ? "isenta" : brl(plan.first)})` : ""} · total {brl(plan.total)}</div>
+      )}
+    </>
+  );
   const setFirst = (e) => { const v = e.target.value; setF((p) => ({ ...p, first: v, bolsa: toNum(p.gross) ? money(r2((1 - toNum(v) / toNum(p.gross)) * 100)) : "" })); };
   const setGross = (e) => { const v = e.target.value; setF((p) => ({ ...p, gross: v, first: money(r2(toNum(v) * (1 - toNum(p.bolsa) / 100))) })); };
   const setDueDay = (e) => {
@@ -352,7 +431,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
               {course && (
                 <div className={classes.facts}>
                   {course.modality && <span className={classes.fact}>{course.modality}</span>}
-                  <span className={classes.fact}>{course.semesters} semestres</span>
+                  {f.planType === "parcelado" ? (course.durationMonths ? <span className={classes.fact}>{course.durationMonths} meses</span> : null) : <span className={classes.fact}>{course.semesters} semestres</span>}
                   {course.category && <span className={classes.fact}>{course.category}</span>}
                 </div>
               )}
@@ -360,35 +439,36 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                 helperText="Cada instituição pode ter modelos com regras diferentes (parcelas, regressão, reajuste)."
                 onChange={(e) => loadDefaults(courseId, e.target.value, true)}>
                 {templates
+                  .filter((t) => t.active !== false || t.id === templateId)
                   .filter((t) => !snapshot || !snapshot.institutionId || !(t.institutions || []).length || t.institutions.some((i) => i.id === snapshot.institutionId) || t.id === templateId)
                   .map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
               </TextField>
               <div className={classes.grid2}>
-                <TextField select fullWidth required variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
+                {f.planType !== "parcelado" && <TextField select fullWidth required variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
                   error={!locked && !f.admissionType} helperText={!locked && !f.admissionType ? "Obrigatório para gerar" : " "}
                   onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => {
                     const entry = (options.admissionNeedsSemester || []).includes(e.target.value) ? p.entrySemester : 1;
                     return { ...p, admissionType: e.target.value, entrySemester: entry, ...(p.attendAuto ? { attend: String(p.courseSemesters - entry + 1) } : {}) };
                   })); }}>
                   {(options.admissionTypes || []).map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
-                </TextField>
+                </TextField>}
                 <TextField select fullWidth variant="outlined" margin="dense" label="Período de ingresso" value={f.entryTerm} onChange={set("entryTerm")} disabled={!!locked || !!turma}
                   helperText={turma ? "Vem da turma" : " "}>
                   {terms.map((t) => (<MenuItem key={t} value={t}>{termLabel(t)}</MenuItem>))}
                 </TextField>
               </div>
-              {needsSemester && (
+              {f.planType !== "parcelado" && needsSemester && (
                 <TextField select fullWidth variant="outlined" margin="dense" label="Semestre do curso em que ingressa" value={f.entrySemester} disabled={!!locked}
                   onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, entrySemester: Number(e.target.value), ...(p.attendAuto ? { attend: String(p.courseSemesters - Number(e.target.value) + 1) } : {}) }))); }}>
                   {Array.from({ length: f.courseSemesters }, (_, i) => (<MenuItem key={i + 1} value={i + 1}>{i + 1}º semestre{i === 0 ? " (início do curso)" : ""}</MenuItem>))}
                 </TextField>
               )}
-              <TextField fullWidth variant="outlined" margin="dense" label="Semestres a cursar" value={f.attend} disabled={!!locked} type="number"
+              {f.planType !== "parcelado" && <TextField fullWidth variant="outlined" margin="dense" label="Semestres a cursar" value={f.attend} disabled={!!locked} type="number"
                 inputProps={{ min: 1, max: 20 }} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, attend: e.target.value, attendAuto: false }))); }}
                 helperText={extra > 0
                   ? `Currículo restante: ${remaining}. Inclui ${extra} semestre${extra > 1 ? "s" : ""} de adaptação além do que falta no curso.`
-                  : attend < remaining ? `Menos que os ${remaining} restantes (aproveitamento de estudos).` : `Todos os ${remaining} semestres que faltam no currículo.`} />
-              {!f.attendAuto && (
+                  : attend < remaining ? `Menos que os ${remaining} restantes (aproveitamento de estudos).` : `Todos os ${remaining} semestres que faltam no currículo.`} />}
+              {f.planType !== "parcelado" && !f.attendAuto && (
                 <Button size="small" style={{ marginTop: 4 }} disabled={!!locked} onClick={() => setF((p) => ({ ...p, attend: String(p.courseSemesters - p.entrySemester + 1), attendAuto: true }))}>Voltar ao cálculo automático</Button>
               )}
             </div>
@@ -413,16 +493,17 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                   <div className={classes.deadline}>
                     <div className={`${classes.dl} ${classes.dlMain}`}><div className={classes.dlLabel}>Prazo do boleto</div><div className={classes.dlValue}>{fmtDay(turma.boletoDeadline)}</div></div>
                     <div className={classes.dl}><div className={classes.dlLabel}>AVA liberado até</div><div className={classes.dlValue}>{turma.releaseDate ? fmtDay(turma.releaseDate) : "—"}</div></div>
-                    <div className={classes.dl}><div className={classes.dlLabel}>Parcelas</div><div className={classes.dlValue}>{turma.installments}</div></div>
+                    {f.planType !== "parcelado" && <div className={classes.dl}><div className={classes.dlLabel}>Parcelas</div><div className={classes.dlValue}>{turma.installments}</div></div>}
                   </div>
                   <div className={classes.note} style={{ marginTop: 8 }}>
-                    Matrículas de {fmtDay(turma.from)} a {fmtDay(turma.to)}{turma.veteranosFrom ? ` · veteranos a partir de ${fmtDay(turma.veteranosFrom)}` : ""}. A 1ª mensalidade vence no prazo do boleto; as demais, todo dia {f.dueDay || "—"}.
+                    Matrículas de {fmtDay(turma.from)} a {fmtDay(turma.to)}{turma.veteranosFrom ? ` · veteranos a partir de ${fmtDay(turma.veteranosFrom)}` : ""}. A 1ª mensalidade vence no prazo do boleto (você pode mudar a data abaixo); as demais, todo dia {f.dueDay || "—"}.
                   </div>
+                  {field("firstDueDate", f.firstExempt ? "1ª mensalidade (isenta) vence em" : "1ª mensalidade vence em", { type: "date", required: true, InputLabelProps: { shrink: true }, disabled: !!locked, error: !locked && !f.firstDueDate })}
                 </>
               ) : (
                 <div className={classes.grid2}>
-                  {field("firstDueDate", f.firstExempt ? "1ª (isenta) vence em" : "1ª mensalidade vence em", { type: "date", required: true, InputLabelProps: { shrink: true }, disabled: !!locked, error: !locked && !f.firstDueDate })}
-                  {field("installments", "Parcelas deste semestre", { disabled: !!locked })}
+                  {field("firstDueDate", f.firstExempt ? "1ª mensalidade (isenta) vence em" : "1ª mensalidade vence em", { type: "date", required: true, InputLabelProps: { shrink: true }, disabled: !!locked, error: !locked && !f.firstDueDate })}
+                  {f.planType !== "parcelado" && field("installments", "Parcelas deste semestre", { disabled: !!locked })}
                 </div>
               )}
               {f.firstExempt && field("secondDueDate", "2ª mensalidade vence em", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
@@ -433,9 +514,9 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
               <div className={classes.grid2}>
                 {field("gross", "Mensalidade bruta (R$)", { onChange: setGross, disabled: !!locked || grossLocked, helperText: grossLocked ? "Valor do curso" : f.grossUnlocked ? "Destravado pela gestão" : " " })}
                 {field("bolsa", "Bolsa aplicada (%)", { onChange: setBolsa, disabled: !!locked })}
-                {field("first", "Primeira mensalidade (R$)", { onChange: setFirst, disabled: !!locked })}
-                {field("enrollmentFee", "Taxa de matrícula (R$)", { disabled: !!locked })}
-                {field("dueDay", "Dia de vencimento das demais", { onChange: setDueDay, disabled: !!locked })}
+                {field("first", f.planType === "parcelado" ? "Mensalidade (R$)" : "Mensalidade com bolsa (R$)", { onChange: setFirst, disabled: !!locked || (f.planType === "parcelado" && f.singlePayment), helperText: "Valor das demais mensalidades" })}
+                {field("enrollmentFee", "Taxa de matrícula (R$)", { disabled: !!locked || (f.planType === "parcelado" && f.enrollmentExempt) })}
+                {!(f.planType === "parcelado" && f.singlePayment) && field("dueDay", "Dia de vencimento das demais", { onChange: setDueDay, disabled: !!locked })}
               </div>
               {(canUnlock && (coursePrice || f.grossUnlocked)) ? (
                 <div className={classes.lockRow}>
@@ -447,11 +528,22 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                 <div className={classes.missing} style={{ marginTop: 4 }}><AlertTriangle size={14} /> Este curso não tem mensalidade cadastrada. {canUnlock ? "Destrave e informe o valor, ou cadastre em Cursos." : "Peça à gestão para cadastrar em Cursos."}</div>
               )}
               {canUnlock && course && !coursePrice && !f.grossUnlocked && <Button size="small" onClick={toggleGross}>Destravar e informar o valor</Button>}
-              <div className={classes.note}>Mude a primeira mensalidade ou a bolsa: o outro valor se ajusta.</div>
-              <FormControlLabel
-                control={<Switch color="primary" checked={!!f.firstExempt} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, firstExempt: e.target.checked }))); }} />}
-                label="1ª mensalidade isenta"
-              />
+              <div className={classes.note}>Mude a mensalidade com bolsa ou a bolsa: o outro valor se ajusta.</div>
+              {!(f.planType === "parcelado" && f.singlePayment) && <div className={classes.firstBox}>
+                <div className={classes.firstHead}>1ª mensalidade</div>
+                <FormControlLabel
+                  control={<Switch color="primary" checked={!!f.firstExempt} disabled={!!locked} onChange={(e) => { const on = e.target.checked; setF((p) => ({ ...p, firstExempt: on, ...(on ? {} : { firstSame: true, firstPay: p.first }) })); }} />}
+                  label="Isenta (R$ 0,00)"
+                />
+                {!f.firstExempt && (
+                  <FormControlLabel
+                    control={<Switch color="primary" checked={!!f.firstSame} disabled={!!locked} onChange={(e) => { const on = e.target.checked; setF((p) => ({ ...p, firstSame: on, firstPay: on ? p.first : p.firstPay || p.first })); }} />}
+                    label={`Igual às demais (${brl(toNum(f.first))})`}
+                  />
+                )}
+                {!f.firstExempt && !f.firstSame && field("firstPay", "Valor da 1ª mensalidade (R$)", { disabled: !!locked })}
+              </div>}
+              {f.planType === "parcelado" ? parcelado() : (<>
               {field("installmentsFixed", "Total de parcelas do curso (vazio = até o fim do curso)", { disabled: !!locked, type: "number", inputProps: { min: 1, max: 120 } })}
               <FormControlLabel
                 control={<Switch color="primary" checked={!!f.fixedUntilEnd} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, fixedUntilEnd: e.target.checked }))); }} />}
@@ -469,6 +561,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                   />
                 </>
               )}
+              </>)}
             </div>
 
             <div className={classes.card}>
@@ -520,7 +613,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                   <Button size="small" startIcon={<Plus size={14} />} disabled={!!locked} onClick={() => setF((p) => ({ ...p, schedule: [...p.schedule, { from: "", pct: "" }] }))}>Adicionar degrau</Button>
                   <div className={classes.grid2} style={{ marginTop: 8 }}>
                     <TextField select fullWidth variant="outlined" margin="dense" label="Modelo" value={templateId || ""} disabled={!!locked} onChange={(e) => loadDefaults(courseId, e.target.value, true)}>
-                      {templates.map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
+                      {templates.filter((t) => t.active !== false || t.id === templateId).map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
                     </TextField>
                     <TextField select fullWidth variant="outlined" margin="dense" label="Instituição" disabled={!!locked}
                       value={(snapshot && snapshot.institutionId) || ""} onChange={(e) => setSnapshot({ ...snapshot, institutionId: e.target.value || null })}>
@@ -551,7 +644,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
             {result && (
               <div className={classes.chips}>
                 <span className={classes.chip}>Bolsa <b>{result.bolsaApplied.toFixed(2).replace(".", ",")}%</b></span>
-                <span className={classes.chip}>1ª mensalidade <b>{brl(toNum(f.first))}</b></span>
+                <span className={classes.chip}>1ª mensalidade <b>{f.firstExempt ? "isenta" : brl(f.firstSame ? toNum(f.first) : toNum(f.firstPay))}</b></span>
                 <span className={classes.chip}>Até o dia {f.dueDay}: <b>{brl(result.tiers.onTime)}</b></span>
                 {result.rows.length > 0 && <span className={classes.chip}>Última parcela (cenário teto): <b>{brl(result.rows[result.rows.length - 1].monthlyMax)}</b></span>}
               </div>

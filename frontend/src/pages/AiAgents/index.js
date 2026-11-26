@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, Menu, MenuItem, Switch, Tooltip, makeStyles } from "@material-ui/core";
@@ -18,6 +18,8 @@ import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper"
 import Title from "../../components/Title";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isStrictAdmin } from "../../utils/access";
 
 const useStyles = makeStyles((theme) => ({
   wrap: { display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, gap: theme.spacing(2), paddingBottom: theme.spacing(3) },
@@ -42,6 +44,9 @@ const KINDS = { commercial: { label: "Comercial", icon: GraduationCap }, service
 const AiAgents = () => {
   const classes = useStyles();
   const history = useHistory();
+  // the AI provider key is a credential: only the administrator sees and changes it
+  const { user } = useContext(AuthContext);
+  const keyOwner = isStrictAdmin(user);
   const [agents, setAgents] = useState(null);
   const [flows, setFlows] = useState([]);
   const [editing, setEditing] = useState(undefined); // undefined = closed, null = new agent (form)
@@ -86,7 +91,7 @@ const AiAgents = () => {
       <FunnelDialog open={dialog === "funil"} onClose={() => setDialog(null)} />
       <RegulationsDialog open={dialog === "mec"} onClose={() => setDialog(null)} />
       <HandoffDialog open={dialog === "assume"} onClose={() => setDialog(null)} />
-      <KeysDialog open={dialog === "chave"} onClose={() => setDialog(null)} />
+      {keyOwner && <KeysDialog open={dialog === "chave"} onClose={() => setDialog(null)} />}
       <ConfirmationModal title="Remover este agente?" open={!!removing} onClose={() => setRemoving(null)}
         onConfirm={async () => { try { await api.delete(`/ai-agents/${removing.id}`); load(); } catch (e) { toastError(e); } setRemoving(null); }}>
         O que ele sabe e o roteiro da conversa também serão apagados.
@@ -100,7 +105,7 @@ const AiAgents = () => {
             <MenuItem onClick={() => open("assume")}><UserCheck size={16} style={{ marginRight: 10 }} />Quem assume a conversa</MenuItem>
             <MenuItem onClick={() => open("funil")}><Filter size={16} style={{ marginRight: 10 }} />Etapas do CRM</MenuItem>
             <MenuItem onClick={() => open("mec")}><Scale size={16} style={{ marginRight: 10 }} />Regras do MEC</MenuItem>
-            <MenuItem onClick={() => open("chave")}><Key size={16} style={{ marginRight: 10 }} />Chave de IA</MenuItem>
+            {keyOwner && <MenuItem onClick={() => open("chave")}><Key size={16} style={{ marginRight: 10 }} />Chave de IA</MenuItem>}
           </Menu>
           <Button variant="contained" color="primary" disableElevation startIcon={<Plus size={16} />} onClick={() => setCreating(true)} style={{ borderRadius: 12 }}>Novo agente</Button>
         </MainHeaderButtonsWrapper>
