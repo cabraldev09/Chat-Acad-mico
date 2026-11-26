@@ -66,15 +66,18 @@ describe("logo da proposta", () => {
     expect(html).toContain("Outra Universidade");
   });
 
-  it("a taxa de matrícula entra em Produtos ou serviços e no valor total; isenta aparece como isenta e não soma", () => {
+  it("o pedido é só a taxa de matrícula: a mensalidade é paga à instituição e não entra no total; isenta não soma", () => {
     const charged = render(params({ firstExempt: true, firstMonthly: 0 }));
-    expect(charged).toMatch(/<td><b>Taxa de matrícula<\/b><div class="muted">no ato da inscrição<\/div><\/td>\s*<td>R\$ 99,00<\/td><td>-<\/td><td class="r">R\$ 99,00<\/td>/);
+    expect(charged).toMatch(/<td><b>Taxa de matrícula<\/b>[\s\S]*?<td>R\$ 99,00<\/td><td>-<\/td><td class="r">R\$ 99,00<\/td>/);
     expect(charged).toMatch(/Valor total do pedido<\/span><span>R\$ 99,00/);
+    // a 1st monthly fee that is charged is the institution's: the order stays the enrollment fee only
     const both = render(params());
-    expect(both).toMatch(/Valor total do pedido<\/span><span>R\$ 319,00/);
+    expect(both).toMatch(/Valor total do pedido<\/span><span>R\$ 99,00/);
+    expect(both).not.toMatch(/1ª mensalidade<\/div><\/td>/);
+    expect(both).toContain("As mensalidades são pagas diretamente à instituição");
     const exempt = render(params({ enrollmentExempt: true }));
     expect(exempt).toMatch(/Taxa de matrícula:<\/b> isenta/);
     expect(exempt).toMatch(/<td><b>Taxa de matrícula<\/b>[\s\S]*?Isenta<\/td><td class="r">R\$ 0,00/);
-    expect(exempt).toMatch(/Valor total do pedido<\/span><span>R\$ 220,00/);
+    expect(exempt).toMatch(/Valor total do pedido<\/span><span>R\$ 0,00/);
   });
 });

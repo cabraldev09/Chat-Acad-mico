@@ -83,10 +83,10 @@ export const renderProposalHtml = (i: RenderInput): string => {
   // the color of the university's brand on the titles of the table (only a valid #RRGGBB reaches the page)
   const brand = /^#[0-9a-fA-F]{6}$/.test(String(i.institution?.brandColor || "")) ? String(i.institution?.brandColor) : null;
   const first = firstPayment(p);
-  // the enrollment fee is charged at the act of the enrollment: it is in the order (and its total) unless the proposal waives it
+  // the order is only the enrollment fee, charged at the act of the enrollment (the monthly fees are paid to the institution, they are
+  // not part of the order); waived by the proposal, it shows as "Isenta"
   const fee = Number(p.enrollmentFee) || 0;
   const feeCharged = !p.enrollmentExempt && fee > 0;
-  const firstDiscount = p.gross > 0 ? Math.max(0, (1 - first / p.gross) * 100) : 0;
   const firstDue = p.firstDueDate ? new Date(`${p.firstDueDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
   const secondDue = p.secondDueDate ? new Date(`${p.secondDueDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
   const release = p.releaseDate ? new Date(`${p.releaseDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
@@ -135,11 +135,10 @@ ${i.texts.disclaimer ? `<div class="note">${esc(i.texts.disclaimer)}</div>` : ""
 
 <h2>Produtos ou serviços</h2>
 <table class="prod"><thead><tr><th>Produto</th><th>Preço</th><th>Desconto</th><th class="r">Sub-total</th></tr></thead>
-<tbody><tr><td><b>${esc(i.title)}</b>${i.modalityLabel ? `<div class="muted">${esc(i.modalityLabel)}</div>` : ""}<div class="muted">${p.firstExempt ? "1ª mensalidade isenta" : "1ª mensalidade"}</div></td>
-<td>${brl(p.gross)}</td><td>${p.firstExempt ? "Isenta" : pct2(firstDiscount)}</td><td class="r">${brl(first)}</td></tr>
-<tr><td><b>Taxa de matrícula</b><div class="muted">no ato da inscrição</div></td>
+<tbody><tr><td><b>Taxa de matrícula</b><div class="muted">${esc(i.title)}${i.modalityLabel ? ` · ${esc(i.modalityLabel)}` : ""}</div><div class="muted">no ato da inscrição</div></td>
 <td>${feeCharged ? brl(fee) : "-"}</td><td>${feeCharged ? "-" : "Isenta"}</td><td class="r">${brl(feeCharged ? fee : 0)}</td></tr></tbody></table>
-<div class="total"><span>Valor total do pedido</span><span>${brl(first + (feeCharged ? fee : 0))}</span></div>
+<div class="total"><span>Valor total do pedido</span><span>${brl(feeCharged ? fee : 0)}</span></div>
+<div class="muted" style="margin-top:6px">As mensalidades são pagas diretamente à instituição, nas condições acima.</div>
 
 `;
 
