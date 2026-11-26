@@ -715,6 +715,7 @@ const messages = {
         ERR_API_TOKEN_EXPIRED: "O token da API venceu. Crie um novo em API e webhooks.",
         ERR_API_TOKEN_SCOPE: "Este token não tem permissão para esta ação.",
         ERR_API_PERIOD_TOO_LONG: "O período dos indicadores vai até 93 dias.",
+        ERR_API_PSEUDONYM_SECRET_MISSING: "Os indicadores estão indisponíveis: o servidor está sem o segredo dos códigos dos consultores (API_PSEUDONYM_SECRET ou JWT_SECRET).",
         ERR_API_TOKEN_POLO_REQUIRED: "Este token é de mais de um polo: informe o poloId do lead.",
         ERR_API_STAGE_NOT_ALLOWED: "Um lead criado pela API entra numa etapa aberta do funil.",
         ERR_API_OWNER_NOT_ALLOWED: "O responsável informado não é de um dos polos do token.",

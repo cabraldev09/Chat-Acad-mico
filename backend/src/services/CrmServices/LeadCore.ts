@@ -78,9 +78,11 @@ export const rescore = async (lead: Lead): Promise<void> => {
   if (score !== lead.score) await lead.update({ score });
 };
 
-// Round robin among all users (or the configured subset)
-export const pickOwner = async (): Promise<number | null> => {
+// Round robin among all users (or the configured subset). `pool` limits the round to these people (a lead created by an API token of some
+// polos goes to someone of those polos, never to a consultant of another polo); an empty pool = nobody (the management distributes it).
+export const pickOwner = async (pool?: number[]): Promise<number | null> => {
   if ((await getSetting("crm_autoassign", "roundrobin")) === "none") return null;
+  if (pool && !pool.length) return null;
   let ids: number[] = [];
   try {
     ids = JSON.parse(await getSetting("crm_owner_ids", "[]"));
@@ -88,7 +90,7 @@ export const pickOwner = async (): Promise<number | null> => {
     ids = [];
   }
   let users = await User.findAll({
-    where: ids.length ? { id: { [Op.in]: ids } } : {},
+    where: { [Op.and]: [ids.length ? { id: { [Op.in]: ids } } : {}, pool ? { id: { [Op.in]: pool } } : {}] } as any,
     attributes: ["id"],
     order: [["id", "ASC"]]
   });
@@ -109,6 +111,11 @@ export const pickOwner = async (): Promise<number | null> => {
 export interface LeadInput {
   // the university the person came for (a form of one university); else the one of the conversation, else the default
   institutionId?: number | null;
+  // the polo decided by who creates the lead (an API token of some polos): it is set at creation, before any notice, socket event,
+  // webhook or flow goes out, and the city never moves it (nor the city of an existing lead completed by this call)
+  pinPolo?: number | null;
+  // the people the round robin may give the new lead to (the consultants of the token's polos)
+  ownerPool?: number[];
   name?: string;
   phone?: string | null;
   email?: string | null;
@@ -230,8 +237,8 @@ const upsertLeadCore = async (
     });
     if (!existing.contactId && contactId) patch.contactId = contactId;
     if (Object.keys(patch).length) await existing.update(patch);
-    // the city came now: the polo is decided by it
-    if (patch.city || patch.state) await settlePoloOf(existing, true);
+    // the city came now: the polo is decided by it (not when the caller decides the polo)
+    if ((patch.city || patch.state) && !input.pinPolo) await settlePoloOf(existing, true);
     await addActivity(
       existing.id,
       actorId,
@@ -252,7 +259,7 @@ const upsertLeadCore = async (
     (await LeadStage.findOne({ where: { type: "open", ...(lane ? { id: { [Op.ne]: lane } } : {}) }, order: [["position", "ASC"]] }));
   if (!stage) throw new Error("ERR_NO_LEAD_STAGES");
 
-  const ownerId = input.ownerId === undefined ? await pickOwner() : input.ownerId;
+  const ownerId = input.ownerId === undefined ? await pickOwner(input.ownerPool) : input.ownerId;
 
   const created = await Lead.create({
     ...(input.institutionId ? { institutionId: input.institutionId } : {}),
@@ -283,7 +290,8 @@ const upsertLeadCore = async (
     affiliateId: input.affiliateId || null,
     stageId: stage.id,
     ownerId,
-    contactId
+    contactId,
+    ...(input.pinPolo ? { poloId: input.pinPolo, poloSource: "flow" } : {})
   } as any);
 
   if (input.tagIds?.length) await (created as any).$set("tags", input.tagIds);
@@ -292,7 +300,7 @@ const upsertLeadCore = async (
     await addActivity(created.id, actorId, "system", "Indicação de afiliado: a produção dele é contada a partir desta matrícula");
     await tagAffiliateLead(created);
   }
-  await settlePoloOf(created, false);
+  if (!input.pinPolo) await settlePoloOf(created, false);
   await rescore(created);
   // every lead that enters counts once, whether or not the AI agent ever talked to it (the base to read the conversion against)
   await AgentMetricEvent.create({ leadId: created.id, agentId: null, event: "lead_created", once: true, meta: JSON.stringify({ source: input.source || null }) } as any).catch(() => undefined);
@@ -307,6 +315,8 @@ const upsertLeadCore = async (
 
 export const leadPayload = (lead: Lead) => ({
   id: lead.id,
+  // the polo the lead is in when the event goes out (a receiver can route it to the right team)
+  poloId: lead.poloId ?? null,
   name: lead.name,
   phone: lead.phone,
   email: lead.email,

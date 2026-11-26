@@ -50,6 +50,12 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 // API v1 tokens (docs/API-V1.md): each one with the scopes it needs, optionally limited to some polos, with a validity. The token is shown
+// what a token was used for (the routes it called, most used first): which integration depends on it, before replacing an old one
+export const usageText = (usage) => {
+  const routes = usage && usage.routes ? Object.entries(usage.routes) : [];
+  return routes.sort((a, b) => b[1].count - a[1].count).slice(0, 4).map(([route, u]) => `${route} (${u.count}×)`).join(", ");
+};
+
 // once, when created; afterwards only its first characters. The ones made before the scopes existed keep full access and say "antigo".
 const EXPIRY_OPTIONS = [30, 90, 180, 365];
 const day = (d) => (d ? format(parseISO(d), "dd/MM/yy") : "—");
@@ -170,7 +176,10 @@ const ApiTokens = () => {
               <TableCell>{(t.scopes || []).map(labelOf).join(", ") || "—"}</TableCell>
               <TableCell>{Array.isArray(t.poloIds) ? t.poloIds.map(poloName).join(", ") : "Todos"}</TableCell>
               <TableCell>{t.expiresAt ? (t.expired ? <span style={{ color: "#b91c1c" }}>Venceu em {day(t.expiresAt)}</span> : day(t.expiresAt)) : "Sem validade"}</TableCell>
-              <TableCell>{t.lastUsedAt ? format(parseISO(t.lastUsedAt), "dd/MM/yy HH:mm") : "—"}</TableCell>
+              <TableCell>
+                {t.lastUsedAt ? format(parseISO(t.lastUsedAt), "dd/MM/yy HH:mm") : "—"}
+                {usageText(t.usage) && <div style={{ fontSize: 12, opacity: 0.75, maxWidth: 260, overflowWrap: "anywhere" }} title="As rotas que este token chamou: mostram qual integração depende dele.">Usado em: {usageText(t.usage)}</div>}
+              </TableCell>
               <TableCell align="right">
                 <IconButton aria-label="Excluir" size="small" onClick={() => remove(t.id)}><DeleteOutline /></IconButton>
               </TableCell>

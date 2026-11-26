@@ -992,26 +992,81 @@ const postMeta = (id, payload, secret, badSig) => {
       // a token of polo A writes only in polo A: a new lead stays in A (never in B), a lead of B is not touched, stage and owner of its scope
       const writerA = await mk({ name: "escrita A", scopes: ["leads:write", "contacts:write"], poloIds: [Number(poloA)] });
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", poloId: Number(poloB) })).status === 403, "token of polo A created a lead in polo B");
-      const fresh = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade de outro polo" });
-      assert(fresh.status === 201 && Number(fresh.data.lead.poloId) === Number(poloA) && Number(sql(`SELECT poloId FROM Leads WHERE id = ${fresh.data.lead.id}`)) === Number(poloA), `new lead of the token of polo A: ${fresh.status} ${JSON.stringify(fresh.data)}`);
+      // a token of some polos gets the same answer for a new person, one of its polos and one of another polo (it never learns who exists)
+      const ACCEPTED = JSON.stringify({ aceito: true });
+      // the city of the new person is served by polo B
+      assert((await http.put(`/polos/${poloB}/coverage`, { cities: ["Cidade Do Polo B - RO"] }, auth())).status === 200, "coverage of polo B");
+      const fresh = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade Do Polo B", state: "RO" });
+      assert(fresh.status === 202 && JSON.stringify(fresh.data) === ACCEPTED, `new lead of the token of polo A: ${fresh.status} ${JSON.stringify(fresh.data)}`);
+      const freshId = sql(`SELECT id FROM Leads WHERE phone = '5569911110010'`);
+      // born in polo A (the city of polo B does not move it), before any notice; nobody of another polo gets it
+      assert(sql(`SELECT CONCAT(poloId, '|', poloSource, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE id = ${freshId}`) === `${poloA}|flow|none`, `new lead: ${sql(`SELECT CONCAT(poloId, '|', poloSource, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE id = ${freshId}`)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId = ${freshId} AND body LIKE 'Polo definido%'`)) === 0, "the polo was decided by the city before the token's");
+      const again = await api(writerA.token, "post", "/api/v1/leads", { name: "Novo API A", phone: "5569911110010", city: "Cidade Do Polo B", state: "RO" });
+      assert(again.status === 202 && JSON.stringify(again.data) === ACCEPTED && sql(`SELECT poloId FROM Leads WHERE id = ${freshId}`) === String(poloA), "a lead of the token's polo answered differently or moved");
       const leadB = sql(`SELECT id FROM Leads WHERE name = 'APIPOLO B'`);
       const stateB = () => sql(`SELECT CONCAT(name, '|', COALESCE(notes, ''), '|', (SELECT COUNT(*) FROM LeadActivities a WHERE a.leadId = ${leadB})) FROM Leads WHERE id = ${leadB}`);
       const beforeB = stateB();
       const twin = await api(writerA.token, "post", "/api/v1/leads", { name: "Outro nome", phone: "5569911110002", notes: "nota da API" });
-      assert(twin.status === 403 && !JSON.stringify(twin.data).includes(leadB), `token of polo A reached a lead of polo B: ${twin.status} ${JSON.stringify(twin.data)}`);
+      assert(twin.status === 202 && JSON.stringify(twin.data) === ACCEPTED, `a person of polo B answered differently: ${twin.status} ${JSON.stringify(twin.data)}`);
       assert(stateB() === beforeB, "the lead of polo B was changed");
+      // nor by CPF: a person of polo A asked by CPF answers the same
+      assert(JSON.stringify((await api(writerA.token, "post", "/api/v1/leads", { name: "Pelo CPF", email: "cpf@x.com", cpf: "864.213.579-46" })).data) === ACCEPTED, "CPF answered differently");
+      // the administration is told about the possible duplicate (the caller never is)
+      assert(Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind = 'api_duplicate'`)) >= 1, "the administration was not told about the duplicate");
       const wonStage = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`).split("\n")[0];
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Direto matriculado", phone: "5569911110011", stageId: Number(wonStage) })).status === 422, "a polo token created a lead straight into an enrolled stage");
       const outsider = Number(sql(`SELECT id FROM Users WHERE id NOT IN (SELECT userId FROM PoloMembers WHERE poloId = ${poloA}) ORDER BY id LIMIT 1`));
       assert((await api(writerA.token, "post", "/api/v1/leads", { name: "Dono de fora", phone: "5569911110012", ownerId: outsider })).status === 422, "a polo token gave a lead to someone outside its polos");
+      // with consultants in polo A, the new lead goes to one of them (ownerPool): never to a consultant of polo B, to someone outside the
+      // polos or to a member of polo A who is not a consultant (the coordination)
+      {
+        const mkU = async (name, email, role, extra = {}) => {
+          const r = await http.post("/users", { name, email, password: "senha123", role, ...extra }, auth());
+          assert(r.status === 200 && r.data.id, `user ${email} ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+          return r.data;
+        };
+        const consA = await mkU("Consultor Rodízio A", "cons-rodizio-a@x.com", "consultor");
+        const consB = await mkU("Consultor Rodízio B", "cons-rodizio-b@x.com", "consultor");
+        const coordA = await mkU("Coordenação Rodízio A", "coord-rodizio-a@x.com", "coordenacao", { coordArea: "comercial" });
+        sql(`INSERT INTO PoloMembers (poloId, userId, role, createdAt, updatedAt) VALUES (${poloA}, ${consA.id}, 'comercial', NOW(), NOW()), (${poloA}, ${coordA.id}, 'coordenacao', NOW(), NOW()), (${poloB}, ${consB.id}, 'comercial', NOW(), NOW())`);
+        // (the round as it is by default: automatic, among every consultant; the settings come back as they were)
+        const setting = k => sql(`SELECT value FROM Settings WHERE key = '${k}'`);
+        const saved = { auto: setting("crm_autoassign"), ids: setting("crm_owner_ids") };
+        const put = (k, v) => (v === "" ? sql(`DELETE FROM Settings WHERE key = '${k}'`) : sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('${k}', '${v}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`));
+        put("crm_autoassign", "roundrobin");
+        put("crm_owner_ids", "[]");
+        try {
+          const owners = [];
+          for (const [i, phone] of [["1", "5569911110013"], ["2", "5569911110014"]]) {
+            const r = await api(writerA.token, "post", "/api/v1/leads", { name: `Rodízio API A ${i}`, phone });
+            assert(r.status === 202 && JSON.stringify(r.data) === ACCEPTED, `lead of the round ${i}: ${r.status} ${JSON.stringify(r.data)}`);
+            owners.push(sql(`SELECT CONCAT(poloId, '|', COALESCE(ownerId::text, 'none')) FROM Leads WHERE phone = '${phone}'`));
+          }
+          assert(owners.every(o => o === `${poloA}|${consA.id}`), `the new leads of polo A did not go to the consultant of polo A (${consA.id}): ${owners.join(", ")}`);
+        } finally {
+          put("crm_autoassign", saved.auto);
+          put("crm_owner_ids", saved.ids);
+          sql(`UPDATE Leads SET ownerId = NULL WHERE phone IN ('5569911110013', '5569911110014')`);
+          sql(`DELETE FROM PoloMembers WHERE userId IN (${consA.id}, ${consB.id}, ${coordA.id})`);
+          // (the users of this check only: the list of users stays as the other tests expect it)
+          for (const u of [consA, consB, coordA]) await http.delete(`/users/${u.id}`, auth());
+        }
+      }
       // contacts: the contact of a lead of polo B, or one that is not a lead of polo A, is not changed; a new contact is
       const contactB = sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato do B', '5569911110002', '', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`UPDATE Leads SET contactId = ${contactB} WHERE id = ${leadB}`);
-      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110002" })).status === 403, "token of polo A changed the contact of a lead of polo B");
+      const contactOfB = await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110002" });
+      assert(contactOfB.status === 202 && JSON.stringify(contactOfB.data) === ACCEPTED, `the contact of polo B answered differently: ${contactOfB.status}`);
       sql(`INSERT INTO Contacts (name, number, email, isGroup, createdAt, updatedAt) VALUES ('Contato solto', '5569911110020', '', false, NOW(), NOW())`);
-      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110020" })).status === 403, "token of polo A changed a contact that is not of its polos");
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Trocado", number: "5569911110020" })).status === 202, "a contact that is not of its polos answered differently");
       assert(sql(`SELECT string_agg(name, ',' ORDER BY id) FROM Contacts WHERE number IN ('5569911110002', '5569911110020')`) === "Contato do B,Contato solto", "a contact was renamed");
-      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Contato novo", number: "5569911110021" })).status === 201, "token of polo A cannot create a new contact");
+      assert((await api(writerA.token, "post", "/api/v1/contacts", { name: "Contato novo", number: "5569911110021" })).status === 202, "token of polo A cannot create a new contact");
+      assert(sql(`SELECT name FROM Contacts WHERE number = '5569911110021'`) === "Contato novo", "the new contact was not created");
+      // what each token is used for (only method and route): the integration that depends on it
+      const usage = JSON.parse(sql(`SELECT usage FROM ApiTokens WHERE id = ${writerA.id}`) || "{}");
+      assert(usage.routes && usage.routes["POST /api/v1/leads"] && usage.routes["POST /api/v1/leads"].count >= 1, `usage of the token: ${JSON.stringify(usage)}`);
+      assert(!JSON.stringify(usage).includes("5569911110"), "the usage kept a phone number");
 
       // a token that expired is refused
       const old = await mk({ name: "vencido", scopes: ["leads:read"], expiresInDays: 1 });
@@ -1045,6 +1100,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await api(settingsToken, "get", "/api/v1/connections")).status === 401, "the old token works while off");
       assert((await http.put("/api-tokens/legacy", { enabled: true }, auth())).data.enabled === true, "the old token was not turned on again");
       assert((await api(settingsToken, "get", "/api/v1/connections")).status === 200, "the old token does not come back");
+      const legacyUse = (await http.get("/api-tokens/legacy", auth())).data.usage;
+      assert(legacyUse && legacyUse.routes && legacyUse.routes["GET /api/v1/connections"], `the routes of the old token are not shown: ${JSON.stringify(legacyUse)}`);
     });
 
     // GET /api/v1/indicadores (docs/API-V1.md): totals and codes only, never a name, phone, e-mail, CPF or text; the scope and the polos of
@@ -1094,7 +1151,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const a = r.data.polos.find(p => p.poloId === Number(poloA));
       assert(a && a.codigo === "IDA" && a.leads.total === 2 && a.leads.porOrigem.some(o => o.origem === "Instagram" && o.total === 1) && a.leads.porOrigem.some(o => o.origem === "Google" && o.matriculados === 1), `polo A leads ${JSON.stringify(a && a.leads)}`);
       assert(a.followUps.vencidos === 1 && a.followUps.tarefasVencidas === 1 && a.matriculasRealizadas.total === 1 && a.primeiraResposta.leadsRespondidos === 1, `polo A ${JSON.stringify(a)}`);
-      const rv = a.revisaoConsultores.find(c => c.consultor === consultant);
+      // the consultant is an opaque code of this token, never the user id
+      assert(a.revisaoConsultores.length === 1 && /^c_[0-9a-f]{10}$/.test(a.revisaoConsultores[0].consultor) && a.revisaoConsultores[0].consultor !== consultant && !a.revisaoConsultores.some(c => c.consultor === Number(consultant) || String(c.consultor) === String(consultant)), `consultant code ${JSON.stringify(a.revisaoConsultores.map(c => c.consultor))}`);
+      const rv = a.revisaoConsultores[0];
       assert(rv && rv.conversasLidas === 1 && rv.objecoes.some(o => o.tipo === "preco" && o.levantadas === 1 && o.tratadas === 1) && rv.objecoes.some(o => o.tipo === "tempo" && o.tratadas === 0) && rv.etapasComDificuldade[0].etapa === "entry" && rv.etapasPuladas[0].etapa === "grade", `review ${JSON.stringify(a.revisaoConsultores)}`);
       assert(r.data.conexoes.every(c => Number.isInteger(c.id) && typeof c.conectado === "boolean" && c.funcao), `connections ${JSON.stringify(r.data.conexoes).slice(0, 300)}`);
 
@@ -1121,6 +1180,20 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).status === 403, "token of polo A read polo B");
       const askedB = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}&polo=${poloB}`)).data;
       assert(askedB.polos.length === 1 && askedB.polos[0].leads.total === 1 && askedB.polos[0].matriculasRealizadas.total === 0, `polo B asked: ${JSON.stringify(askedB.polos)}`);
+      // the code of the same consultant is the same for this token and another for another token (two integrations cannot join by it)
+      const codeOf = d => (d.polos.find(p => p.poloId === Number(poloA)) || { revisaoConsultores: [] }).revisaoConsultores.map(c => c.consultor)[0];
+      const allAgain = (await api(all.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).data;
+      assert(codeOf(allAgain) === codeOf(r.data) && codeOf(onlyA) && codeOf(onlyA) !== codeOf(r.data), `codes: ${codeOf(r.data)} ${codeOf(allAgain)} ${codeOf(onlyA)}`);
+      // the same question of the same token within a minute is answered from the cache (the same instant of generation)
+      assert(allAgain.geradoEm === r.data.geradoEm, "the second identical call was computed again");
+      // a token of polo A never receives the answer cached for a token of every polo
+      assert(onlyA.polos.length === 1 && onlyA.geradoEm !== undefined, "token of polo A got another token's answer");
+      // per token limit: 20 indicator calls a minute, then 429 with Retry-After (another token is not affected)
+      const busy = await mkTok({ name: "indicadores limite", scopes: ["indicators:read"] });
+      let last;
+      for (let i = 0; i < 21; i += 1) last = await api(busy.token, `/api/v1/indicadores?de=${today}&ate=${today}`);
+      assert(last.status === 429 && last.headers["retry-after"], `the 21st call in a minute: ${last.status}`);
+      assert((await api(ofA.token, `/api/v1/indicadores?de=${today}&ate=${today}`)).status === 200, "the limit of one token blocked another");
       void lw;
     });
 

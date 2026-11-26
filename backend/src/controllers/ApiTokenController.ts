@@ -1,3 +1,4 @@
+import { parseUsage } from "../helpers/ApiUsage";
 import { Request, Response } from "express";
 import { Op } from "sequelize";
 
@@ -47,7 +48,12 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
 
 // the old single token of Configurações: on or off, and when it was last used (Decision: on by default, the screen recommends turning it off)
 export const legacyShow = async (_req: Request, res: Response): Promise<Response> =>
-  res.json({ enabled: await legacyTokenEnabled(), lastUsedAt: (await getSetting("api_legacy_token_used_at", "")) || null });
+  res.json({
+    enabled: await legacyTokenEnabled(),
+    lastUsedAt: (await getSetting("api_legacy_token_used_at", "")) || null,
+    // the routes it was used for (helpers/ApiUsage): which integration still depends on it
+    usage: parseUsage(await getSetting("api_legacy_token_usage", ""))
+  });
 
 export const legacySave = async (req: Request, res: Response): Promise<Response> => {
   if (typeof req.body?.enabled !== "boolean") throw new AppError("ERR_INVALID_SETTING", 400);
