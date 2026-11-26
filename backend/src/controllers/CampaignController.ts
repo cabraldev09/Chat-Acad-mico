@@ -61,6 +61,7 @@ const crud = makeCrud(Campaign, {
   fields: [
     "name",
     "objective",
+    "flowId",
     "message",
     "mediaUrl",
     "steps",
@@ -94,6 +95,15 @@ const crud = makeCrud(Campaign, {
     if (data.objective !== undefined) data.objective = String(data.objective || "").replace(/\s+/g, " ").trim().slice(0, 300);
     if (!existing && !data.objective) throw new AppError("ERR_CAMPAIGN_OBJECTIVE", 400);
     if (existing && data.objective === "" && existing.objective) throw new AppError("ERR_CAMPAIGN_OBJECTIVE", 400);
+    // the bot for who answers: a published flow (empty = none)
+    if (data.flowId !== undefined) {
+      data.flowId = Number(data.flowId) > 0 ? Number(data.flowId) : null;
+      if (data.flowId) {
+        const { default: ChatFlow } = await import("../models/ChatFlow");
+        const flow = await ChatFlow.findByPk(data.flowId, { attributes: ["id", "status", "kind"] });
+        if (!flow || flow.status !== "published") throw new AppError("ERR_CAMPAIGN_FLOW", 400);
+      }
+    }
     if (tutorIdOf(_req)) {
       data.whatsappId = await tutoriaConnectionId();
       await assertOwnList(_req, data.contactListId !== undefined ? data.contactListId : existing?.contactListId);
@@ -336,6 +346,7 @@ export const duplicate = async (req: Request, res: Response): Promise<Response> 
   const copy = await Campaign.create({
     name: `${c.name} (cópia)`.slice(0, 250),
     objective: c.objective,
+    flowId: c.flowId,
     message: c.message,
     mediaUrl: c.mediaUrl,
     steps: c.steps,

@@ -19,6 +19,7 @@ import { runAgentGraph } from "../FlowServices/Runner";
 import { noteAutomation } from "./AutomationTrace";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { runFlowForTicket } from "../FlowServices/Runner";
+import { runCampaignFlow } from "../FlowServices/CampaignFlow";
 import { TUTORIA_SEGMENTS } from "../ChannelServices/ConnectionTeam";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
 import { applyToLead } from "../AiServices/Tools";
@@ -485,6 +486,11 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
       return;
     }
     if (ticket.botReminderAt) await ticket.update({ botReminderAt: null });
+    // the answer to a campaign with a bot: that bot qualifies the person (at any hour, ahead of the agent of the number)
+    if (await runCampaignFlow(ticket)) {
+      trace(ticket, "a pessoa respondeu a uma campanha com bot: o bot da campanha começou");
+      return;
+    }
 
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
 
