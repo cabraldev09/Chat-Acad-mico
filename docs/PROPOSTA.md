@@ -121,3 +121,13 @@ cadastrado em Universidades.
 - `tests/analysis/unit/proposal-installments.test.ts`: parcelas pela duração, proposta parcelada, Pix e cartão.
 - `scripts/channels-e2e.js`, seção "proposals": obrigatórios, troca de curso, calendário, valor travado, balões salvos e duas
   propostas no mesmo lead.
+
+## Proposta avulsa (sem lead)
+
+Para quem não é lead seu: um colega envia ao lead dele, ou uma simulação para alguém fora do CRM.
+
+- **Onde:** Funil de captação → **Proposta avulsa**. Basta o nome de quem vai receber; o curso, o modelo e os valores são os mesmos da proposta normal.
+- **Nada muda no CRM:** não cria lead, não muda etapa, não entra no histórico de ninguém (`Proposals.leadId` vazio e `recipientName` com o nome).
+- **Gerar link:** fecha a proposta como está e copia o link público (`/p/<código>`), para enviar por qualquer canal. O PDF sai pelo mesmo botão de sempre.
+- **Quem vê:** quem fez; a gestão vê todas. Quando a pessoa abre o link, quem fez recebe um aviso.
+- **Conversa sem lead:** em "Dados do contato", **Gerar proposta** cria o lead na hora (com quem gera como responsável) e abre a proposta, que vai pela conversa como sempre.
