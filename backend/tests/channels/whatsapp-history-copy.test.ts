@@ -11,7 +11,7 @@ vi.mock("../../src/libs/socket", () => ({ getIO: () => ({ emit: () => undefined 
 vi.mock("../../src/helpers/Fire", () => ({ fire: () => undefined }));
 
 import { chatBehind, eachLimited, isTransientState, settledChats, stateToWrite } from "../../src/providers/WhatsApp/Implementations/chatSync";
-import { placeOf, RECENT_DAYS } from "../../src/services/WbotServices/ImportHistoryService";
+import { placeOf, RECENT_DAYS, reportText } from "../../src/services/WbotServices/ImportHistoryService";
 import { betterNameOf } from "../../src/services/ContactServices/CreateOrUpdateContactService";
 import { chatIdOfContact } from "../../src/services/WbotServices/ChatHistoryFromPhone";
 
@@ -102,5 +102,14 @@ describe("cópia das conversas do WhatsApp por QR Code", () => {
     expect(stateToWrite("OPENING", null, false)).toBe("OPENING");
     // na primeira sincronização a página ocupada demora: quem decide é a checagem de vida
     expect(stateToWrite("OPENING", null, true)).toBe(null);
+  });
+});
+
+describe("relatório da cópia ao ler o QR Code", () => {
+  it("diz se todas as conversas do celular vieram e, se não, quantas faltaram e por quê", () => {
+    const base = { pinned: 0, newConversations: 0, messages: 0 };
+    expect(reportText({ ...base, chats: 312, considered: 312, empty: 0, failed: 0 })).toBe("Trazidas 312 de 312 conversas do celular");
+    expect(reportText({ ...base, chats: 300, considered: 312, empty: 10, failed: 2 })).toBe("Trazidas 300 de 312 conversas do celular: 10 sem mensagem, 2 com erro");
+    expect(reportText({ ...base, chats: 5 })).toBe("5 conversas copiadas");
   });
 });

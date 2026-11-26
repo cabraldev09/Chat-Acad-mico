@@ -1,4 +1,8 @@
 import { Request, Response } from "express";
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import { publicFile } from "../helpers/PublicFile";
 import { noteSuggestionSent } from "../services/CopilotServices/Feedback";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
@@ -64,6 +68,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const medias = req.files as Express.Multer.File[] | undefined;
   // one caption per file (the form sends "body" once per media, in order)
   const captions: string[] = ([] as string[]).concat(req.body.body || []);
+  // how each file goes ("gif" for a short video sent as a GIF; anything else by its type), in the order of the files
+  const kinds: string[] = ([] as string[]).concat(req.body.kind || []);
 
   const { row, duplicate } = await enqueueOutbound({
     ticketId: Number(ticketId),
@@ -72,7 +78,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     body: medias ? undefined : body,
     quotedMsgId: quotedMsg?.id,
     medias: medias
-      ? medias.map((m, i) => ({ path: m.path, filename: m.filename, originalname: m.originalname, mimetype: m.mimetype, size: m.size, caption: (captions[i] || "").trim() }))
+      ? medias.map((m, i) => ({ path: m.path, filename: m.filename, originalname: m.originalname, mimetype: m.mimetype, size: m.size, caption: (captions[i] || "").trim(), ...(kinds[i] === "gif" && m.mimetype.startsWith("video/") ? { kind: "gif" as const } : {}) }))
       : undefined
   });
 
@@ -162,7 +168,8 @@ export const listByKind = async (req: Request, res: Response): Promise<Response>
       ? { ...base, mediaType: "document" }
       : kind === "starred"
       ? { ...base, starred: true }
-      : { ...base, mediaType: { [Op.in]: ["image", "video"] } };
+      // stickers are kept as images (a .webp file) but they are not "media" of the conversation, as in WhatsApp
+      : { ...base, mediaType: { [Op.in]: ["image", "video"] }, [Op.and]: [{ [Op.or]: [{ mediaUrl: { [Op.is]: null } }, { mediaUrl: { [Op.notILike]: "%.webp" } }] }] };
   const rows = await Message.findAll({ where, attributes, order: [["createdAt", "DESC"]], limit: 200 });
   return res.json(rows);
 };
@@ -222,4 +229,53 @@ export const sendContact = async (req: Request, res: Response): Promise<Response
   });
   await ticket.update({ lastMessage: previewOf(card, "vcard") });
   return res.status(201).json(message);
+};
+
+// THE STICKERS OF THE NUMBER: the ones already received and sent in its conversations (WhatsApp Web does not give the "favorites" of the
+// phone), newest first and without repeating the same sticker. The composer shows them in a grid; a tap sends one (sendSticker).
+export const stickers = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await ShowTicketService(Number(req.params.ticketId));
+  const rows = await Message.findAll({
+    where: { mediaType: "image", isDeleted: false, mediaUrl: { [Op.iLike]: "%.webp" } } as any,
+    include: [{ association: "ticket", attributes: [], where: { whatsappId: ticket.whatsappId }, required: true }] as any,
+    attributes: ["id", "mediaUrl", "createdAt"],
+    order: [["createdAt", "DESC"]],
+    limit: 300
+  });
+  const seen = new Set<string>();
+  const out: Array<{ id: string; url: string }> = [];
+  for (const m of rows) {
+    const raw = m.getDataValue("mediaUrl");
+    let file: string;
+    try { file = publicFile(raw); } catch (_) { continue; }
+    // the same sticker arrives under many names: it is the same when the bytes are the same
+    const hash = crypto.createHash("md5").update(fs.readFileSync(file)).digest("hex");
+    if (seen.has(hash)) continue;
+    seen.add(hash);
+    out.push({ id: m.id, url: m.mediaUrl || "" });
+    if (out.length >= 60) break;
+  }
+  return res.json(out);
+};
+
+// Sends one of those stickers as a WhatsApp sticker (a copy of the file goes: the send removes the file it was given)
+export const sendSticker = async (req: Request, res: Response): Promise<Response> => {
+  const ticketId = Number(req.params.ticketId);
+  const ticket = await ShowTicketService(ticketId);
+  const source = await Message.findByPk(String(req.body?.messageId || ""), { include: [{ association: "ticket", attributes: ["whatsappId"] }] as any });
+  const raw = source ? source.getDataValue("mediaUrl") : null;
+  if (!source || source.isDeleted || !raw || !/\.webp$/i.test(raw) || (source as any).ticket?.whatsappId !== ticket.whatsappId) throw new AppError("ERR_MEDIA_NOT_FOUND", 404);
+  const from = publicFile(raw);
+  const filename = `sticker-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.webp`;
+  const to = path.join(path.dirname(from), filename);
+  fs.copyFileSync(from, to);
+  const { row, duplicate } = await enqueueOutbound({
+    ticketId,
+    userId: Number(req.user.id),
+    clientKey: req.body?.clientKey,
+    medias: [{ path: to, filename, originalname: "figurinha.webp", mimetype: "image/webp", size: fs.statSync(to).size, caption: "", kind: "sticker" }]
+  });
+  if (!duplicate) await processOutbound(row.id).catch(err => logger.error(`Outbound ${row.id}: ${err}`));
+  await row.reload();
+  return res.status(row.status === "sent" ? 200 : 202).json({ id: row.id, clientKey: row.clientKey, status: row.status, duplicate });
 };

@@ -128,7 +128,7 @@ const TicketsManager = () => {
   const [searchText, setSearchText] = useState("");
   const location = useLocation();
   const asked = new URLSearchParams(location.search).get("filtro");
-  const [filter, setFilter] = useState(["open", "pending", "unread", "everything", "groups", "communities", "closed", "archived"].includes(asked) ? asked : "open");
+  const [filter, setFilter] = useState(["open", "pending", "unread", "everything", "groups", "communities", "closed", "archived"].includes(asked) ? asked : "everything");
   const [moreEl, setMoreEl] = useState(null);
   const [newTicketModalOpen, setNewTicketModalOpen] = useState(false);
   const [showAllTickets, setShowAllTickets] = useState(false);
@@ -369,6 +369,8 @@ const TicketsManager = () => {
 
       {!searching && (
         <div className={classes.chips}>
+          {/* every conversation first (the default), like the phone; then the ones the person is attending */}
+          {chip("everything", "Todas", 0)}
           {chip("open", "Atendendo", openCount)}
           {filter === "open" && isAdmin && (
             <button type="button" className={clsx(classes.chip, showAllTickets && classes.chipOn)} aria-pressed={showAllTickets} onClick={() => setShowAllTickets((v) => !v)} title="Mostrar também as conversas da equipe">
@@ -380,7 +382,6 @@ const TicketsManager = () => {
           {chip("unread", "Não lidas", dmUnread)}
           {chip("groups", "Grupos", groupUnread)}
           {((communities || []).length > 0 || filter === "communities") && chip("communities", "Comunidades", communityUnread)}
-          {chip("everything", "Todas", 0)}
           <button
             type="button"
             className={clsx(classes.chip, (filter === "closed" || filter === "archived") && !searching && classes.chipOn)}
