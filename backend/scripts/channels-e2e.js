@@ -9403,6 +9403,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const run = (await http.post("/readings/run", {}, auth())).data;
       assert(run.read >= 6, `the copied conversations stopped at the daily count ${JSON.stringify(run)}`);
       assert(sql(`SELECT value FROM Settings WHERE key='readings_count'`) === "300", "the copied conversations counted in the daily count");
+      // the other readings (the outcome of a sale, the review of the day) keep the daily count: back to a fresh day for the rest of the test
+      sql(`DELETE FROM Settings WHERE key IN ('readings_day', 'readings_count')`);
       // what went to the model is masked: no name, no RGM, no phone
       const sent = (anthropic.readingTexts || []).join(" ");
       assert(!/7654321|Bia Matriculada|Dani Desistiu|5569955550/.test(sent), "personal data went to the model");
