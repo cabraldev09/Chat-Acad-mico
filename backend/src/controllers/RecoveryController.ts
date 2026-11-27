@@ -3,6 +3,7 @@ import { QueryTypes } from "sequelize";
 
 import AppError from "../errors/AppError";
 import { portable } from "../helpers/sqlDialect";
+import { publicPicUrl } from "../helpers/PicUrl";
 import { isManagerRole } from "../helpers/Roles";
 import Lead from "../models/Lead";
 import LeadStage from "../models/LeadStage";
@@ -100,9 +101,12 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     SELECT l.id, l.name, l.phone, l.ownerId, u.name AS ownerName, c.name AS courseName, l.lastContactAt, l.lostAt, l.recoveryAt,
       COALESCE(l.recoveryReason, l.lostReason) AS reason, l.recoveryObjection AS objection, l.lostReason, s.name AS stageName, s.type AS stageType,
       lc.summary, l.recoveryState, l.recoveryStage, l.recoveryPending, l.serviceTip, l.rgmSuggested, l.enrolledAtSuggested, l.poloId, p.name AS poloName,
+      ct.profilePicUrl AS picture,
+      (SELECT w.name FROM Tickets t JOIN Whatsapps w ON w.id = t.whatsappId WHERE t.contactId = l.contactId ORDER BY t.updatedAt DESC LIMIT 1) AS connectionName,
+      (SELECT w.channel FROM Tickets t JOIN Whatsapps w ON w.id = t.whatsappId WHERE t.contactId = l.contactId ORDER BY t.updatedAt DESC LIMIT 1) AS connectionChannel,
       CASE WHEN s.name = :confirm THEN 'confirmar' WHEN l.recoveryReason = :stalled THEN 'parados' ELSE 'desistiram' END AS tab
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId LEFT JOIN Users u ON u.id = l.ownerId LEFT JOIN Courses c ON c.id = l.courseId
-      LEFT JOIN LeadCommercials lc ON lc.leadId = l.id LEFT JOIN Polos p ON p.id = l.poloId
+      LEFT JOIN LeadCommercials lc ON lc.leadId = l.id LEFT JOIN Polos p ON p.id = l.poloId LEFT JOIN Contacts ct ON ct.id = l.contactId
     WHERE l.isHistorical = false AND l.enrolledAt IS NULL
       AND ((s.name <> :confirm AND (l.recoveryState = 'aberta' OR (l.recoveryState IS NULL AND s.type = 'lost' AND l.lostAt > :since)))
         OR (s.name = :confirm AND s.type = 'open'))
@@ -110,7 +114,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     ORDER BY COALESCE(l.lastContactAt, l.recoveryAt, l.lostAt, l.createdAt) ASC LIMIT 800`),
     { replacements: { ownerId, since: new Date(Date.now() - 90 * 864e5), confirm: CONFIRM_STAGE, stalled: STALLED }, type: QueryTypes.SELECT }
   )) as any[];
-  const all = rows.map(r => ({ ...r, objectionLabel: r.objection ? OBJECTION_LABEL[r.objection] || r.objection : null }));
+  // the picture of the contact like on WhatsApp (the address the browser opens) and the number the conversation came through
+  const all = rows.map(({ picture, ...r }) => ({ ...r, profilePicUrl: publicPicUrl(picture), objectionLabel: r.objection ? OBJECTION_LABEL[r.objection] || r.objection : null }));
   const toRecover = all.filter(r => r.tab !== "confirmar");
   // the counts by reason are of the whole list (the filters only narrow the rows shown)
   const byReason = new Map<string, number>();

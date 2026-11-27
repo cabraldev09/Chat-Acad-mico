@@ -172,6 +172,10 @@ const Recovery = () => {
     budget: "parada até amanhã: chegou ao limite de gasto da leitura do dia",
   };
   const day = (v) => (v ? new Date(v).toLocaleDateString("pt-BR") : null);
+  // the day and the hour of the last message, like the list of WhatsApp ("24/11/2026 às 14:32"), next to "há 3 dias"
+  const when = (v) => { const d = new Date(v); return `${d.toLocaleDateString("pt-BR")} às ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`; };
+  // the number the conversation came through: "pelo WhatsApp João Vitor"
+  const viaOf = (l) => (l.connectionName ? `pelo ${l.connectionChannel && l.connectionChannel !== "whatsapp" ? "" : /whatsapp/i.test(l.connectionName) ? "" : "WhatsApp "}${l.connectionName}` : null);
   return (
     <MainContainer>
       <BoardHead title="Recuperação" sub="Leads parados há 7 dias ou mais, os que desistiram e as matrículas que a leitura achou, com o que ficou pendente.">
@@ -258,7 +262,7 @@ const Recovery = () => {
                   {manager && tab !== "confirmar" && (
                     <Checkbox className={classes.check} size="small" color="primary" checked={picked.includes(l.id)} onChange={() => togglePick(l.id)} inputProps={{ "aria-label": `Selecionar ${l.name}` }} />
                   )}
-                  <Person name={l.name} />
+                  <Person name={l.name} src={l.profilePicUrl} />
                   <div className="gv-item-main">
                     <b>
                       {l.name}
@@ -266,7 +270,7 @@ const Recovery = () => {
                       {l.tab !== "confirmar" && l.objectionLabel && <span className="gv-tag">Objeção: {l.objectionLabel}</span>}
                     </b>
                     <small>
-                      {[l.courseName, manager ? l.ownerName : null, l.lastContactAt ? `último contato ${ago(l.lastContactAt)}` : null].filter(Boolean).join(" · ")}
+                      {[l.courseName, manager ? l.ownerName : null, viaOf(l), l.lastContactAt ? `último contato ${when(l.lastContactAt)} (${ago(l.lastContactAt)})` : null].filter(Boolean).join(" · ")}
                       {l.summary && <span className={classes.summary}>{l.summary}</span>}
                       {l.tab === "confirmar" && (
                         <span className={classes.detail}>

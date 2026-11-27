@@ -9435,6 +9435,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const rec = (await http.get("/crm/recovery", asUser(uTok))).data;
       const item = rec.items.find(i => String(i.id) === d[0]);
       assert(item && item.reason === "Achou a mensalidade alta" && item.objection === "preco" && rec.reasons.length >= 1, `recovery ${JSON.stringify(rec).slice(0, 400)}`);
+      // like on WhatsApp: the number the conversation came through and the picture of the contact (null when it has none)
+      assert(item.connectionName === sql(`SELECT w.name FROM Tickets t JOIN Whatsapps w ON w.id=t.whatsappId WHERE t.contactId=${D.c} ORDER BY t.updatedAt DESC LIMIT 1`) && "profilePicUrl" in item && !("picture" in item), `the connection or the picture of Dani ${JSON.stringify(item)}`);
       assert(item.tab === "desistiram" && item.serviceTip === "Apresentar a bolsa antes do valor cheio" && item.recoveryStage === "Depois de saber o valor" && /Mostrar a bolsa/.test(item.recoveryPending), `the fields of the reading ${JSON.stringify(item)}`);
       const fabi = rec.items.find(i => i.name === "Fabi Parada Leitura");
       assert(fabi && fabi.tab === "parados" && fabi.reason === "Parou de responder" && fabi.recoveryPending, `Fabi is not in Parados ${JSON.stringify(fabi)}`);
