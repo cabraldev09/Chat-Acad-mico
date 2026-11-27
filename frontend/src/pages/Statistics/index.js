@@ -15,6 +15,7 @@ import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, OpenbotInsights, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
 import { Leads, mins } from "../CommercialCenter/ProcessTab";
 import Sends from "./Sends";
+import { TeamReadingCoaching } from "../../components/analytics/ReadingCoaching";
 
 // Estatísticas: one panel with the real numbers of the system, in tabs. The management sees the whole team; a consultant sees only their
 // own numbers (the server decides, whatever is asked); a tutor sees the tutoring. Every block handles loading, empty and error.
@@ -510,7 +511,7 @@ const LEADS = {
   geral: "O resultado do período, o que acontece agora, as metas dos polos, o atendimento e o comercial.",
   consultores: "Cada consultor no período: conversas, matrículas, resposta, o processo e o que cada um vende.",
   polos: "As metas do semestre, os números de cada polo e os horários e metas diárias da equipe.",
-  treinamento: "O que a revisão diária da IA encontrou repetindo nas conversas de cada consultor.",
+  treinamento: "Como cada consultor atende, pela leitura das conversas do WhatsApp, e o que a revisão diária da IA encontrou repetindo.",
   disparos: "Os pedidos de liberação de disparos e o que cada pessoa enviou e gastou com a Meta e a IA no período.",
 };
 
@@ -534,7 +535,7 @@ export default function Statistics() {
   if (tutor) return <Redirect to="/estatisticas/tutoria" />;
   // a consultant has their own place (Meu desempenho); the statistics of the team are the management's
   if (!manager) return <Redirect to="/meu-desempenho" />;
-  const view = { geral: <Overview params={params} period={period} />, consultores: <Consultants params={params} />, polos: <PolosAndGoals params={params} period={period} />, treinamento: <Training params={params} />, disparos: <Sends params={params} /> };
+  const view = { geral: <Overview params={params} period={period} />, consultores: <Consultants params={params} />, polos: <PolosAndGoals params={params} period={period} />, treinamento: <><TeamReadingCoaching params={params} /><Training params={params} /></>, disparos: <Sends params={params} /> };
   return (
     <div className={`${c.page} dash-scope gv-plain`}>
       <StatsHubBar />

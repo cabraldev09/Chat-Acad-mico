@@ -8,6 +8,7 @@ import { clearFollowUp, closeTicket, dismissInsight, dismissReply, finishTask } 
 import { PeriodPicker, fmt, minutesText, num, periodParams, useAnalytics, useKit } from "../../components/analytics/kit";
 import { BoardHead, CompareStat, CountStat, EmptyNote, Funnel, GlowPanel, GlowStat, Person, PriorityList, SectionTitle, rangeText } from "../../components/peak";
 import { PaceRing } from "../../components/analytics/PoloProgress";
+import { MyReadingCoaching } from "../../components/analytics/ReadingCoaching";
 import "../../styles/dash.css";
 
 // Meu desempenho: the consultant's own place. Only their numbers (the server reads who is logged in, never a choice of the screen):
@@ -251,6 +252,9 @@ const MyPerformance = () => {
           </GlowPanel>
         </div>
       </Section>
+
+      {/* 8. how the person attends, from the reading of the conversations copied from their WhatsApp (its own period: 90 days by default) */}
+      <MyReadingCoaching params={params} />
     </div>
   );
 };

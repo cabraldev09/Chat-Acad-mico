@@ -42,6 +42,66 @@ const oneOf = <T extends string>(v: any, list: readonly T[], fallback: T | null 
 const codes = (v: any, allowed: string[], max = 6): string[] => [...new Set((Array.isArray(v) ? v : []).map(String).filter(k => allowed.includes(k)))].slice(0, max);
 
 // ------------------------------------------------------------------------------------------------ importacao
+// what a consultant can do better in a conversation (the "melhorar" of the evaluation): the code, what the screen says and how to do it
+export const IMPROVE: Record<string, { label: string; how: string }> = {
+  responder_rapido: { label: "Responder mais rápido", how: "Responda em poucos minutos no horário de trabalho: quem espera esfria e procura outra faculdade." },
+  uma_pergunta_por_vez: { label: "Uma pergunta por vez", how: "Faça uma pergunta e espere a resposta antes da próxima; várias juntas confundem e ficam sem resposta." },
+  descobrir_necessidade: { label: "Entender a pessoa antes de oferecer", how: "Pergunte o objetivo, a rotina e o que pesa na escolha antes de falar de curso e valor." },
+  personalizar: { label: "Personalizar o atendimento", how: "Use o que a pessoa contou (objetivo, rotina, cidade) em vez de mensagens prontas." },
+  enviar_grade: { label: "Enviar a grade do curso", how: "Mande a grade logo que a pessoa escolher o curso e destaque duas ou três disciplinas que combinam com ela." },
+  mostrar_beneficios: { label: "Mostrar o valor do curso", how: "Fale do que a pessoa ganha (diploma reconhecido, flexibilidade do EAD, carreira) antes do preço." },
+  apresentar_bolsa: { label: "Apresentar a bolsa e o valor final", how: "Mostre a bolsa e o valor que a pessoa vai pagar, como estão na proposta, antes que ela pergunte." },
+  enviar_proposta: { label: "Enviar a proposta", how: "Envie a proposta no mesmo dia em que a pessoa demonstrar interesse." },
+  tratar_objecao: { label: "Tratar a objeção", how: "Quando a pessoa disser que está caro ou sem tempo, pergunte o motivo e responda com uma solução, sem desistir na primeira." },
+  criar_urgencia: { label: "Mostrar o prazo da turma", how: "Diga a data real de início da turma e até quando vale a condição, sem inventar prazo." },
+  fechar_proximo_passo: { label: "Combinar o próximo passo", how: "Termine cada conversa com um passo marcado: dia do retorno, envio de documento ou matrícula." },
+  followup: { label: "Fazer o retorno", how: "Se a pessoa parar de responder, volte a chamar em 1, 3 e 7 dias com algo novo, não só um oi." },
+  ortografia: { label: "Cuidar da escrita", how: "Revise antes de enviar: palavras completas, acentos e frases curtas passam confiança." },
+  apresentar_previsao: { label: "Apresentar a previsão de conclusão", how: "Na transferência ou segunda graduação, diga em quantos semestres a pessoa se forma com o aproveitamento." },
+  apresentar_disciplinas: { label: "Apresentar as disciplinas aproveitadas", how: "Mostre quais disciplinas ela aproveita e quais ainda faltam, com a análise curricular." }
+};
+export const NOTE_KEYS = ["tecnica", "persuasao", "negociacao", "ortografia", "agilidade"] as const;
+export type NoteKey = typeof NOTE_KEYS[number];
+
+export interface Evaluation {
+  whyNot: string;
+  notes: Record<NoteKey, number | null>;
+  sentGrade: boolean | null;
+  sentProposal: boolean | null;
+  followUp: boolean | null;
+  transfer: boolean | null;
+  showedCompletion: boolean | null;
+  showedSubjects: boolean | null;
+  improve: string[];
+}
+
+// a note is an integer from 0 to 10 (outside, clamped); anything that is not a number is "no evidence"
+const note = (v: any): number | null => {
+  if (v === null || v === undefined || v === "" || typeof v === "boolean") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(10, Math.max(0, Math.round(n))) : null;
+};
+const yesNo = (v: any): boolean | null => (v === true || v === false ? v : null);
+
+// strict: every field optional; codes outside the list are dropped; a transfer item only exists in a transfer; nothing of it in an enrollment
+export const parseEvaluation = (v: any, enrolled: boolean): Evaluation | null => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const transfer = yesNo(v.transferencia);
+  const allowed = Object.keys(IMPROVE).filter(k => transfer === true || !["apresentar_previsao", "apresentar_disciplinas"].includes(k));
+  const improve = codes(v.melhorar, allowed, 3);
+  return {
+    whyNot: enrolled ? "" : clean(v.por_que_nao_converteu, 160),
+    notes: Object.fromEntries(NOTE_KEYS.map(k => [k, note(v[k])])) as Record<NoteKey, number | null>,
+    sentGrade: yesNo(v.enviou_grade),
+    sentProposal: yesNo(v.apresentou_proposta),
+    followUp: yesNo(v.fez_followup),
+    transfer,
+    showedCompletion: transfer === true ? yesNo(v.apresentou_previsao_conclusao) : null,
+    showedSubjects: transfer === true ? yesNo(v.apresentou_disciplinas) : null,
+    improve
+  };
+};
+
 export const IMPORT_SYSTEM = [
   "Você lê, para a equipe comercial de uma faculdade EAD, uma conversa antiga de WhatsApp entre um consultor e uma pessoa.",
   "Dados pessoais e números foram trocados por marcadores como [NOME] e [NUM]. Não invente nada que não esteja na conversa.",
@@ -53,13 +113,24 @@ export const IMPORT_SYSTEM = [
   `etapa (só para em_andamento): ${OPEN_STAGES.join(", ")}.`,
   `objecao: ${OBJECTION_TYPES.join(", ")} ou nenhuma.`,
   "Responda só com JSON válido, sem markdown, exatamente no formato",
-  "{\"e_lead\":boolean,\"contato_tipo\":string,\"situacao\":string,\"curso\":string,\"etapa\":string,\"objecao\":string,\"motivo\":string,\"resumo\":string,\"proximo_passo\":string,\"parou_em\":string,\"pendente\":string,\"melhorar\":string,\"polo\":string}.",
+  "{\"e_lead\":boolean,\"contato_tipo\":string,\"situacao\":string,\"curso\":string,\"etapa\":string,\"objecao\":string,\"motivo\":string,\"resumo\":string,\"proximo_passo\":string,\"parou_em\":string,\"pendente\":string,\"melhorar\":string,\"polo\":string,",
+  "\"avaliacao\":{\"por_que_nao_converteu\":string,\"tecnica\":number|null,\"persuasao\":number|null,\"negociacao\":number|null,\"ortografia\":number|null,\"agilidade\":number|null,",
+  "\"enviou_grade\":boolean|null,\"apresentou_proposta\":boolean|null,\"fez_followup\":boolean|null,\"transferencia\":boolean|null,\"apresentou_previsao_conclusao\":boolean|null,\"apresentou_disciplinas\":boolean|null,\"melhorar\":string[]}}.",
   "curso: o nome do curso de interesse ou vazio. motivo: até 140 caracteres, por que não avançou (vazio se avançou).",
   "resumo: até 300 caracteres, o que a pessoa quer e em que ponto parou, para o consultor retomar a venda. proximo_passo: até 140 caracteres.",
   "parou_em: até 80 caracteres, a etapa em que a conversa parou (ex.: esperando a proposta, enviando documentos, decidindo o curso).",
   "pendente: até 140 caracteres, o que ficou combinado e não foi feito, por quem (consultor ou interessado), ou vazio.",
   "melhorar: até 140 caracteres, o que o consultor poderia ter feito melhor no atendimento (ex.: responder mais rápido, mandar a grade, fazer uma pergunta por vez), ou vazio.",
-  "polo: o nome do polo ou da cidade de estudo citado na conversa, ou vazio. Nunca escreva valores, bolsas ou prazos que não estejam na conversa."
+  "polo: o nome do polo ou da cidade de estudo citado na conversa, ou vazio. Nunca escreva valores, bolsas ou prazos que não estejam na conversa.",
+  // the evaluation of the consultant in the same answer (no second call): notes, yes/no and codes, never a name or a number of the person
+  "avaliacao (só se for lead; senão null): como o consultor atendeu nesta conversa. Notas inteiras de 0 a 10 (5 = mediano, 10 = exemplar), ou null quando a conversa não mostra:",
+  "tecnica (cria vínculo, pergunta para entender a pessoa, uma pergunta por vez, conduz ao próximo passo), persuasao (mostra o valor do curso, benefícios, prova e o prazo real da turma),",
+  "negociacao (bolsa, resposta à objeção, proposta, fechamento), ortografia (escrita correta e clara, sem abreviações), agilidade (rapidez nas respostas e no retorno, pelo que a conversa mostra).",
+  "enviou_grade (mandou a grade do curso), apresentou_proposta, fez_followup (voltou a chamar quando a pessoa sumiu): true, false ou null.",
+  "transferencia: true quando é transferência, segunda graduação ou aproveitamento de disciplinas; aí apresentou_previsao_conclusao (disse quando a pessoa se forma) e",
+  "apresentou_disciplinas (disse quais disciplinas ela aproveita) são true ou false; senão transferencia false e os dois null.",
+  "por_que_nao_converteu: até 160 caracteres, a causa principal de não ter feito a matrícula (vazio se matriculou).",
+  `avaliacao.melhorar: lista de até 3 códigos (não é a frase de "melhorar" acima), do mais importante ao menos, entre ${Object.keys(IMPROVE).join(", ")}.`
 ].join(" ");
 
 export const CONTACT_TYPES = ["lead", "equipe", "parceiro", "outro"] as const;
@@ -78,6 +149,8 @@ export interface ImportAnswer {
   pending: string;
   improve: string;
   polo: string;
+  // how the consultant did (null: not a lead, or a reading made before the evaluation existed)
+  evaluation: Evaluation | null;
 }
 
 export const parseImportAnswer = (text: string): ImportAnswer => {
@@ -99,7 +172,8 @@ export const parseImportAnswer = (text: string): ImportAnswer => {
     stalledAt: clean(p.parou_em, 80),
     pending: clean(p.pendente, 140),
     improve: clean(p.melhorar, 140),
-    polo: clean(p.polo, 80)
+    polo: clean(p.polo, 80),
+    evaluation: isLead ? parseEvaluation(p.avaliacao, situation === "matriculado") : null
   };
 };
 
