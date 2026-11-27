@@ -614,7 +614,7 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   const file = `proposta-${p.id}-${Date.now()}.pdf`;
   fs.writeFileSync(path.join(PUBLIC_DIR, file), buf);
 
-  const { contact, whatsapp } = await resolveLeadTarget(lead, uid(req), req.body.whatsappId);
+  const { contact, whatsapp } = await resolveLeadTarget(lead, uid(req), req.body.whatsappId, { commercial: true });
   // the consultant may have edited the blocks; the legacy single "message" still works
   const edited: string[] = Array.isArray(req.body.messages)
     ? req.body.messages.map((m: any) => String(m || "").trim())

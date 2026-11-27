@@ -559,7 +559,8 @@ export const hookHumanReply = async (contactId: number, userId: number): Promise
 export const resolveLeadTarget = async (
   lead: Lead,
   userId: number,
-  whatsappId?: number | null
+  whatsappId?: number | null,
+  options: { commercial?: boolean } = {}
 ): Promise<{ contact: Contact; whatsapp: Whatsapp }> => {
   const { default: Ticket } = await import("../../models/Ticket");
   const { default: GetDefaultWhatsApp } = await import("../../helpers/GetDefaultWhatsApp");
@@ -580,24 +581,31 @@ export const resolveLeadTarget = async (
     if (contact) await lead.update({ contactId: contact.id });
   }
   if (contact && !whatsapp) {
-    // A real history wins over a newly created empty thread. Never select a colleague's personal number or the tutoring side.
-    const legacy = await legacyInstitutionId();
-    const institutionId = lead.institutionId ?? legacy;
-    const t = await Ticket.findOne({
-      where: {
-        contactId: contact.id, isGroup: false,
-        [Op.and]: [
-          { [Op.or]: [{ segment: { [Op.in]: ["sales", "postsale"] } }, { segment: null }] },
-          ...(institutionId ? [{ [Op.or]: [{ institutionId }, ...(institutionId === legacy ? [{ institutionId: null }] : [])] }] : [])
+    let t: Ticket | null;
+    if (!options.commercial) {
+      // Retention, documents and the other teams continue on their own latest conversation.
+      t = await Ticket.findOne({ where: { contactId: contact.id }, order: [["updatedAt", "DESC"]] });
+    } else {
+      // A real history wins over a newly created empty thread. Never select a colleague's personal number or the tutoring side.
+      const legacy = await legacyInstitutionId();
+      const institutionId = lead.institutionId ?? legacy;
+      t = await Ticket.findOne({
+        where: {
+          contactId: contact.id, isGroup: false,
+          [Op.and]: [
+            { [Op.or]: [{ segment: { [Op.in]: ["sales", "postsale"] } }, { segment: null }] },
+            ...(institutionId ? [{ [Op.or]: [{ institutionId }, ...(institutionId === legacy ? [{ institutionId: null }] : [])] }] : [])
+          ]
+        } as any,
+        include: [{ model: Whatsapp, as: "whatsapp", attributes: [], required: true, where: { [Op.or]: [{ ownerId: null }, { ownerId: userId }] } }],
+        order: [
+          [literal('CASE WHEN EXISTS (SELECT 1 FROM "Messages" m WHERE m."ticketId" = "Ticket"."id" AND m."isDeleted" = false AND m."fromMe" = false) THEN 0 ELSE 1 END'), "ASC"],
+          [literal('CASE WHEN EXISTS (SELECT 1 FROM "Messages" m WHERE m."ticketId" = "Ticket"."id" AND m."isDeleted" = false) THEN 0 ELSE 1 END'), "ASC"],
+          [literal(`CASE WHEN "whatsapp"."ownerId" = ${Number(userId) || 0} THEN 0 ELSE 1 END`), "ASC"],
+          ["updatedAt", "DESC"], ["id", "DESC"]
         ]
-      } as any,
-      include: [{ model: Whatsapp, as: "whatsapp", attributes: [], required: true, where: { [Op.or]: [{ ownerId: null }, { ownerId: userId }] } }],
-      order: [
-        [literal('CASE WHEN EXISTS (SELECT 1 FROM "Messages" m WHERE m."ticketId" = "Ticket"."id" AND m."isDeleted" = false) THEN 0 ELSE 1 END'), "ASC"],
-        [literal(`CASE WHEN "whatsapp"."ownerId" = ${Number(userId) || 0} THEN 0 ELSE 1 END`), "ASC"],
-        ["updatedAt", "DESC"], ["id", "DESC"]
-      ]
-    });
+      });
+    }
     if (t) whatsapp = await Whatsapp.findByPk(t.whatsappId);
   }
   if (!whatsapp) whatsapp = await GetDefaultWhatsApp(userId);

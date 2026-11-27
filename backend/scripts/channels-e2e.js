@@ -1359,14 +1359,15 @@ const postMeta = (id, payload, secret, badSig) => {
         for (const id of ids) await http.delete(`/leads/${id}`, auth());
       }
     });
-    await test("a lead with only a phone opens its existing QR history instead of an empty official conversation", async () => {
+    await test("a lead with only a phone opens its existing QR history instead of a new official conversation with only an outgoing greeting", async () => {
       const admin = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
-      const qr = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, ownerId, createdAt, updatedAt) VALUES ('QR histórico de teste', 'DISCONNECTED', 'whatsapp', false, ${admin}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const qr = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, ownerId, createdAt, updatedAt) VALUES ('QR histórico de teste', 'DISCONNECTED', 'whatsapp', false, NULL, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const official = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('Oficial vazio de teste', 'DISCONNECTED', 'whatsapp_cloud', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const c = { id: Number(sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Contato com histórico', '5569999112277', '', false, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0]) };
       const tk = sql(`INSERT INTO Tickets (status, userId, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${admin}, ${c.id}, ${qr}, 0, false, 'sales', false, NOW(), NOW()-INTERVAL '1 day') RETURNING id`).split("\n")[0];
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('lead-history-test', ${tk}, 'histórico de teste', false, true, 'chat', 0, NOW()-INTERVAL '1 day', NOW())`);
       const empty = sql(`INSERT INTO Tickets (status, userId, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${admin}, ${c.id}, ${official}, 0, false, 'sales', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('lead-history-greeting', ${empty}, 'oi', true, true, 'chat', 0, NOW(), NOW())`);
       const lead = (await http.post("/leads", { name: "Lead por telefone", phone: "(69) 99911-2277" }, auth())).data.lead;
       // Keep the same state as an avulsa created before it knew this contact.
       sql(`UPDATE Leads SET contactId=NULL WHERE id=${lead.id}`);

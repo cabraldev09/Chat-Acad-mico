@@ -554,7 +554,7 @@ export const openTicket = async (req: Request, res: Response): Promise<Response>
     if (!chosen) throw new AppError("ERR_NO_WAPP_FOUND", 404);
     if (chosen.ownerId && Number(chosen.ownerId) !== uid(req)) throw new AppError("ERR_NO_PERMISSION", 403);
   }
-  const { contact, whatsapp } = await resolveLeadTarget(lead, uid(req), wanted);
+  const { contact, whatsapp } = await resolveLeadTarget(lead, uid(req), wanted, { commercial: true });
 
   const ticket = await FindOrCreateTicketService(contact, whatsapp.id, 0);
   if (ticket.status === "pending" || ticket.status === "closed" || (wanted && ticket.userId !== uid(req))) {
