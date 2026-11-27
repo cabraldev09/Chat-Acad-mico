@@ -155,6 +155,10 @@ As regras da operação ficam no grupo de cada assunto em Configurações:
 
 - **Horário e atendimento:** prazos de resposta, escalonamento, fila de fallback, tarefas comerciais e a capacidade de cada atendente. Administração e coordenação alteram.
 - **Custos → Limites de gasto:** limites diários da IA e da Meta e o consumo de hoje. Só a administração altera.
+- **Leitura das conversas copiadas do WhatsApp do consultor:** a mesma chamada que classifica a conversa também avalia o atendimento (técnica,
+  persuasão, negociação, escrita, agilidade, grade, proposta, retorno, previsão de conclusão e disciplinas na transferência, o que melhorar e
+  por que não converteu). Custa uns US$ 0,0002 a mais por conversa com o modelo mais barato (limite da resposta: 900 tokens). Os campos, as telas
+  e as regras de quem vê estão em `docs/WHATSAPP-NUMEROS.md`, "A avaliação do consultor".
 - **Modelos da Meta:** a autorização de envio com modelos. Só a administração altera.
 - **Entregas e arquivos:** as entregas a conferir e a revogação de links de arquivos.
 

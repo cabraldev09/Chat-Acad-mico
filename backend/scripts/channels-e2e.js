@@ -149,9 +149,13 @@ const readingAnswer = (system, text) => {
   if (/churrasco/i.test(t)) return { e_lead: false, situacao: "em_andamento" };
   // the hint of the system (a job of the team in the saved name, a record of someone else's data): a colleague, never a lead
   if (/cargo da equipe/i.test(t)) return { e_lead: true, contato_tipo: "equipe", situacao: "matriculado", curso: "Letras", resumo: "Colega passou os dados de uma aluna." };
-  if (/fiz a matr[ií]cula|j[aá] me matriculei/i.test(t)) return { e_lead: true, situacao: "matriculado", curso: "Pedagogia", etapa: "", objecao: "nenhuma", motivo: "", resumo: "Já fez a matrícula em Pedagogia.", proximo_passo: "Confirmar o RGM" };
-  if (/muito caro/i.test(t)) return { e_lead: true, situacao: "desistiu", curso: "Pedagogia", etapa: "", objecao: "preco", motivo: "Achou a mensalidade alta", resumo: "Queria Pedagogia, desistiu pelo valor.", proximo_passo: "Oferecer uma bolsa", parou_em: "Depois de saber o valor", pendente: "Mostrar a bolsa", melhorar: "Apresentar a bolsa antes do valor cheio" };
-  if (/vou ver com meu marido/i.test(t)) return { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Ia conversar em casa.", proximo_passo: "Perguntar se decidiu", parou_em: "Proposta enviada", pendente: "Saber se decidiu", melhorar: "Marcar um dia para o retorno" };
+  // with the evaluation of the consultant (the default answer below has none: a reading made before it existed)
+  if (/fiz a matr[ií]cula|j[aá] me matriculei/i.test(t)) return { e_lead: true, situacao: "matriculado", curso: "Pedagogia", etapa: "", objecao: "nenhuma", motivo: "", resumo: "Já fez a matrícula em Pedagogia.", proximo_passo: "Confirmar o RGM",
+    avaliacao: { por_que_nao_converteu: "", tecnica: 8, persuasao: 7, negociacao: 8, ortografia: 9, agilidade: 8, enviou_grade: true, apresentou_proposta: true, fez_followup: true, transferencia: false, apresentou_previsao_conclusao: null, apresentou_disciplinas: null, melhorar: ["followup"] } };
+  if (/muito caro/i.test(t)) return { e_lead: true, situacao: "desistiu", curso: "Pedagogia", etapa: "", objecao: "preco", motivo: "Achou a mensalidade alta", resumo: "Queria Pedagogia, desistiu pelo valor.", proximo_passo: "Oferecer uma bolsa", parou_em: "Depois de saber o valor", pendente: "Mostrar a bolsa", melhorar: "Apresentar a bolsa antes do valor cheio",
+    avaliacao: { por_que_nao_converteu: "Achou a mensalidade alta e a bolsa não foi apresentada", tecnica: 5, persuasao: 4, negociacao: 3, ortografia: 8, agilidade: 6, enviou_grade: false, apresentou_proposta: false, fez_followup: false, transferencia: true, apresentou_previsao_conclusao: false, apresentou_disciplinas: false, melhorar: ["apresentar_bolsa", "tratar_objecao", "apresentar_previsao", "codigo_inventado"] } };
+  if (/vou ver com meu marido/i.test(t)) return { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Ia conversar em casa.", proximo_passo: "Perguntar se decidiu", parou_em: "Proposta enviada", pendente: "Saber se decidiu", melhorar: "Marcar um dia para o retorno",
+    avaliacao: { por_que_nao_converteu: "Ficou de decidir em casa e não houve retorno marcado", tecnica: 7, persuasao: 6, negociacao: 5, ortografia: 7, agilidade: 4, enviou_grade: false, apresentou_proposta: true, fez_followup: false, transferencia: false, melhorar: ["fechar_proximo_passo", "followup"] } };
   return { e_lead: true, situacao: "em_andamento", curso: "Pedagogia", etapa: "proposal", objecao: "nenhuma", motivo: "", resumo: "Quer Pedagogia e pediu a proposta.", proximo_passo: "Enviar a proposta" };
 };
 const isReading = (system) => /Você lê, para a equipe comercial|por que as vendas acontecem/.test(String(system || ""));
@@ -9454,6 +9458,37 @@ const postMeta = (id, payload, secret, badSig) => {
       const otherTok = (await http.post("/auth/login", { email: "leitura2@x.com", password: "senha123" })).data.token;
       assert(!(await http.get("/crm/recovery", asUser(otherTok))).data.items.some(i => String(i.id) === d[0]), "another consultant sees the recovery of someone else");
       assert((await http.post(`/leads/${d[0]}/recovery`, { action: "voltar" }, asUser(otherTok))).status === 403, "another consultant acted on the lead");
+      // "Como você atende": the evaluation each reading wrote, added up per consultant. Ana was read without it (as before this existed):
+      // 5 leads read, 4 evaluated, 2 enrolled (Bia and Caio). The consultant sees only themself, whatever userId says.
+      const coachMine = (await http.get("/analytics/reading-coaching", { params: { userId: 1 }, ...asUser(uTok) })).data;
+      assert(coachMine.scope === "mine" && coachMine.team === null && coachMine.consultants.length === 1 && coachMine.consultants[0].userId === u.id, `the consultant saw someone else ${JSON.stringify(coachMine).slice(0, 300)}`);
+      const cm = coachMine.consultants[0];
+      assert(cm.read === 5 && cm.evaluated === 4 && cm.enrolled === 2 && cm.conversion === 40, `the counts of the evaluation ${JSON.stringify(cm).slice(0, 400)}`);
+      assert(cm.notes.tecnica.avg === 7 && cm.notes.persuasao.avg === 6 && cm.notes.negociacao.avg === 6 && cm.notes.ortografia.avg === 8.3 && cm.notes.agilidade.avg === 6.5, `the notes ${JSON.stringify(cm.notes)}`);
+      assert(cm.sentGrade.pct === 50 && cm.sentProposal.pct === 75 && cm.followUp.pct === 50, `the rates ${JSON.stringify([cm.sentGrade, cm.sentProposal, cm.followUp])}`);
+      assert(cm.transfers === 1 && cm.showedCompletion.pct === 0 && cm.showedSubjects.pct === 0, `the transfers ${JSON.stringify([cm.transfers, cm.showedCompletion, cm.showedSubjects])}`);
+      assert(cm.improve[0].code === "followup" && cm.improve[0].n === 3 && cm.improve[0].label && cm.improve[0].how && !cm.improve.some(i => i.code === "codigo_inventado"), `the points to improve ${JSON.stringify(cm.improve)}`);
+      const negotiating = cm.whyNot.find(w => w.reason === "Ainda em negociação");
+      const price = cm.whyNot.find(w => w.reason === "Preço / mensalidade");
+      assert(negotiating && negotiating.n === 2 && price && price.n === 1 && price.leadIds[0] === Number(d[0]) && /mensalidade alta/.test(price.examples[0]), `why it did not convert ${JSON.stringify(cm.whyNot)}`);
+      assert(!/Dani|5569955550/.test(JSON.stringify(coachMine)), "personal data in the evaluation");
+      // another consultant reads only themself (nothing of the first), even asking for them
+      const coachOther = (await http.get("/analytics/reading-coaching", { params: { userId: u.id }, ...asUser(otherTok) })).data;
+      assert(coachOther.consultants.length === 1 && coachOther.consultants[0].userId !== u.id && coachOther.consultants[0].read === 0, `another consultant saw the evaluation ${JSON.stringify(coachOther).slice(0, 300)}`);
+      // the management: every consultant, the same numbers, and one of them on request; a coordination with no polo sees nobody
+      const coachAll = (await http.get("/analytics/reading-coaching", auth())).data;
+      const fromAll = coachAll.consultants.find(x => x.userId === u.id);
+      assert(coachAll.scope === "team" && coachAll.team && coachAll.consultants.length >= 2 && fromAll && JSON.stringify(fromAll) === JSON.stringify(cm), `the management view ${JSON.stringify(coachAll).slice(0, 300)}`);
+      const coachOne = (await http.get("/analytics/reading-coaching", { params: { userId: u.id }, ...auth() })).data;
+      assert(coachOne.consultants.length === 1 && coachOne.consultants[0].userId === u.id, `one consultant for the management ${coachOne.consultants.length}`);
+      await http.post("/users", { name: "Coordenação Avaliação", email: "coord-avaliacao@x.com", password: "senha123", role: "coordenacao" }, auth());
+      const coordEvalTok = (await http.post("/auth/login", { email: "coord-avaliacao@x.com", password: "senha123" })).data.token;
+      const coachCoord = (await http.get("/analytics/reading-coaching", asUser(coordEvalTok))).data;
+      assert(coachCoord.consultants.length === 0, `a coordination without polo saw consultants ${coachCoord.consultants.length}`);
+      assert((await http.get("/analytics/reading-coaching", { params: { userId: u.id }, ...asUser(coordEvalTok) })).status === 403, "a coordination without polo opened a consultant");
+      // Recuperação: the points to improve of Dani as small labels (the unknown code dropped)
+      const dani = (await http.get("/crm/recovery", asUser(uTok))).data.items.find(i => String(i.id) === d[0]);
+      assert(dani && JSON.stringify(dani.improveLabels) === JSON.stringify(["Apresentar a bolsa e o valor final", "Tratar a objeção", "Apresentar a previsão de conclusão"]), `the labels in Recuperação ${JSON.stringify(dani && dani.improveLabels)}`);
       // nothing is read twice; the sale that ended (Dani) is read for "por que perdemos"
       sql(`DELETE FROM Settings WHERE key='readings_outcome_day'`);
       const readsBefore = anthropic.readings;

@@ -223,6 +223,29 @@ export const coachingText = async (req: Request, res: Response): Promise<Respons
   }));
 };
 
+// "Como você atende": the evaluation the reading of the conversations copied from the consultant's phone wrote (notes, grade, proposal,
+// follow-up, transfers, what to improve, why it did not convert). A consultant only ever reads their own (userId is ignored); the
+// management reads the consultants it may see (the coordination, those of its polos), or one of them. The last 90 days by default.
+export const READING_COACHING_DAYS = 90;
+export const readingCoaching = async (req: Request, res: Response): Promise<Response> => {
+  const { todayInAppTz, dayBounds, shiftDays, getAppTz } = await import("../helpers/AppTime");
+  const today = todayInAppTz();
+  const day = (v: any) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : "");
+  const to = day(req.query.to) || today;
+  const from = day(req.query.from) || shiftDays(dayBounds(to).start, -(READING_COACHING_DAYS - 1)).toLocaleDateString("en-CA", { timeZone: getAppTz() });
+  const p = resolvePeriod({ range: "custom", from, to });
+  const manager = isManagerRole(roleOf(req.user));
+  const users = await commercialUsers(req);
+  const { readingCoaching: summarize } = await import("../services/ReadingServices/Coaching");
+  const out = await summarize(users, p.start, p.end);
+  return res.json({
+    period: { from: p.from, to: p.to },
+    scope: manager ? "team" : "mine",
+    consultants: out.consultants,
+    team: manager ? out.team : null
+  });
+};
+
 // an administrator reads the conversations of a day now (the same reading the night does), e.g. to see the result right after turning it on
 export const coachingRun = async (req: Request, res: Response): Promise<Response> => {
   const { todayInAppTz } = await import("../helpers/AppTime");

@@ -167,7 +167,7 @@ Em Integrações, "Leituras das conversas", a administração escolhe quem lê a
 OpenBot pela API. Com o OpenBot, a IA do sistema lê só o que ficar esperando mais do que as horas escolhidas (padrão 6).
 
 As leituras são de três tipos:
-- `importacao`: uma conversa copiada do celular de um consultor (WhatsApp por QR Code). Diz se é lead, se já se matriculou, se parou ou desistiu e por quê.
+- `importacao`: uma conversa copiada do celular de um consultor (WhatsApp por QR Code). Diz se é lead, se já se matriculou, se parou ou desistiu e por quê. Na mesma resposta, `avaliacao` traz como o consultor atendeu (notas de 0 a 10, grade, proposta, retorno, transferência e até 3 códigos do que melhorar), no formato que as `instrucoes` pedem; sem `avaliacao`, a leitura vale igual e só não conta como avaliada (veja `docs/WHATSAPP-NUMEROS.md`).
 - `resultado`: a conversa de um lead que se matriculou ou se perdeu. Diz o motivo, as objeções, o que ajudou e o que faltou.
 - `revisao`: a revisão diária da conversa de um consultor. Diz as objeções e as etapas com dificuldade ou puladas.
 
