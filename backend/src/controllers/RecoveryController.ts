@@ -56,8 +56,35 @@ const readingStatus = async (sequelize: any): Promise<any> => {
   return {
     done: by("feita"), queued: by("pendente") + by("reservada"), failed: by("falhou"),
     numbers: Number(qr?.total || 0), numbersWithoutOwner: Number(qr?.noOwner || 0),
-    stopped
+    stopped, readingAll: readingAllNow
   };
+};
+
+// "Ler tudo agora" (only the administrator): every copied conversation waiting is read now, past the daily limit; the spending caps of the
+// AI still stop it. It runs in the background (hundreds of conversations take minutes); the status above says while it reads.
+let readingAllNow = false;
+export const readAll = async (_req: Request, res: Response): Promise<Response> => {
+  if (readingAllNow) return res.json({ started: false, running: true });
+  const { readingSettings, runLocalReadings } = await import("../services/ReadingServices/Queue");
+  if (!(await readingSettings()).enabled) throw new AppError("ERR_READINGS_DISABLED", 409);
+  readingAllNow = true;
+  setImmediate(async () => {
+    try {
+      const { enqueueImported } = await import("../services/ReadingServices/ImportedLeads");
+      await enqueueImported();
+      const run = await runLocalReadings({ only: "importacao", ignoreDailyLimit: true });
+      const { markStalled } = await import("../services/ReadingServices/Stalled");
+      await markStalled();
+      const { logger } = await import("../utils/logger");
+      logger.info(`Ler tudo agora: ${run.read} lidas, ${run.failed} falhas${run.reason ? ` (${run.reason})` : ""}`);
+    } catch (err) {
+      const { logger } = await import("../utils/logger");
+      logger.warn(`Ler tudo agora falhou: ${(err as Error).message}`);
+    } finally {
+      readingAllNow = false;
+    }
+  });
+  return res.json({ started: true, running: true });
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {

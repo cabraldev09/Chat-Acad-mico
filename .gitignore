@@ -9,3 +9,4 @@ logs/
 deploy/vps/.env
 
 deploy/vps/.backup.env
+.claude/worktrees/

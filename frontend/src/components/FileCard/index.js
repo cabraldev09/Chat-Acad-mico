@@ -7,22 +7,21 @@ import api from "../../services/api";
 
 // Card of a file in the conversation, like WhatsApp's: for a PDF, a picture of the first page on top, then the name
 // and "2 páginas · 169 KB · pdf". Other files show the same card without the picture.
-const useStyles = makeStyles(() => ({
+const useStyles = makeStyles((theme) => ({
   card: {
     display: "block",
-    // fills the bubble (a caption makes it wide); alone it stays a reasonable size, and never wider than the screen
-    width: "100%",
-    minWidth: 220,
-    maxWidth: 520,
+    // the size of a WhatsApp document card; on a narrow screen it follows the bubble (the negative margins reach its edges)
+    width: 330,
+    maxWidth: "calc(100% + 7px)",
     boxSizing: "border-box",
     margin: "-2px -3px 5px -4px",
-    borderRadius: 12,
+    borderRadius: 6,
     overflow: "hidden",
     textDecoration: "none",
     color: "inherit",
-    background: "rgba(11,20,26,.07)",
+    background: theme.palette.type === "dark" ? "rgba(255,255,255,.06)" : "rgba(11,20,26,.07)",
     transition: "background-color .15s",
-    "&:hover": { background: "rgba(11,20,26,.11)" },
+    "&:hover": { background: theme.palette.type === "dark" ? "rgba(255,255,255,.1)" : "rgba(11,20,26,.11)" },
   },
   thumb: {
     position: "relative",
