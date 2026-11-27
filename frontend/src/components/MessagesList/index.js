@@ -1,7 +1,7 @@
 import { renewMediaElement } from "../../services/media-access";
 import { looksLikeFileName, shownText } from "../../utils/mediaLabel";
 
-import React, { useState, useEffect, useReducer, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useReducer, useRef, useCallback } from "react";
 import clsx from "clsx";
 import { makeStyles, useTheme } from "@material-ui/core";
 import CircularProgress from "@material-ui/core/CircularProgress";
@@ -19,7 +19,7 @@ import Close from "@material-ui/icons/Close";
 import Forward from "@material-ui/icons/Forward";
 import StarBorder from "@material-ui/icons/StarBorder";
 import DeleteOutline from "@material-ui/icons/DeleteOutline";
-import { Check, Bot } from "lucide-react";
+import { Check, Bot, Play, Film } from "lucide-react";
 import { useTyping } from "../../utils/typingStore";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from "@material-ui/core";
 import ForwardDialog from "../chat/ForwardDialog";
@@ -29,7 +29,7 @@ import openSocket from "../../services/socket-io";
 import MarkdownWrapper from "../MarkdownWrapper";
 import VcardPreview from "../VcardPreview";
 import LocationPreview from "../LocationPreview";
-import ModalImageCors from "../ModalImageCors";
+import ModalImageCors, { imageRatio, rememberRatio } from "../ModalImageCors";
 import MediaGallery, { openGallery } from "../MediaGallery";
 import MessageOptionsMenu, { REACTIONS } from "../MessageOptionsMenu";
 import ReactionBar from "../ReactionBar";
@@ -106,9 +106,12 @@ const useStyles = makeStyles((theme) => {
       backgroundColor: c.wallpaper,
       backgroundImage: `url(${dark ? whatsBackgroundDark : whatsBackground})`,
       backgroundSize: 412,
+      // the screen keeps the reading place by itself (keepPlace below): the browser's own correction would move it twice
+      overflowAnchor: "none",
       ...theme.scrollbarStyles,
       [theme.breakpoints.up("md")]: { padding: theme.spacing(1.5, 7, 1) },
     },
+    content: { display: "flex", flexDirection: "column", flex: "none" },
     row: { display: "flex", marginTop: 2 },
     rowIn: { justifyContent: "flex-start" },
     rowOut: { justifyContent: "flex-end" },
@@ -225,20 +228,52 @@ const useStyles = makeStyles((theme) => {
       color: c.time,
       userSelect: "none",
     },
+    // the time over a picture or a video without caption: bottom right, on a dark shade (as on WhatsApp)
     metaOnMedia: {
       position: "absolute",
-      right: 10,
-      bottom: 12,
+      right: 7,
+      bottom: 5,
       margin: 0,
       float: "none",
-      color: "#fff",
-      textShadow: "0 0 3px rgba(0,0,0,.7)",
-      zIndex: 1,
+      color: "#fff !important",
+      textShadow: "0 0 2px rgba(0,0,0,.5)",
+      zIndex: 2,
+      pointerEvents: "none",
+      "& $ack": { color: "#fff !important" },
+      "& $ackRead": { color: "#53bdeb !important" },
+    },
+    mediaShade: {
+      position: "absolute", left: 0, right: 0, bottom: 0, height: 34, pointerEvents: "none", zIndex: 1,
+      background: "linear-gradient(to bottom, transparent, rgba(0,0,0,.42))",
+    },
+    // a picture, a video or a map fills the bubble edge to edge: 3 px of the bubble around it, up to 330 px wide
+    mediaBubble: {
+      padding: 3,
+      width: 336,
+      boxSizing: "border-box",
+      "& > $sender, & > $forwarded": { margin: "2px 6px 3px" },
+      "& > $quote": { margin: "0 0 3px" },
+      "& $media": { margin: 0 },
+      "& $text": { padding: "5px 6px 6px 7px" },
+    },
+    // the menu arrow over a picture: white on a soft shade, not a patch of the bubble color
+    chevronOnMedia: {
+      top: 6, right: 6, color: "#fff", background: "radial-gradient(rgba(0,0,0,.38), rgba(0,0,0,0) 72%) !important",
     },
     ack: { fontSize: 16, color: c.time, marginLeft: 1 },
     ackRead: { fontSize: 16, color: c.tick },
     media: { margin: "-2px -3px 4px -4px", position: "relative", borderRadius: 6, overflow: "hidden", lineHeight: 0 },
-    video: { display: "block", maxWidth: "100%", width: 320, height: "auto", maxHeight: 420, borderRadius: 6, background: "#000" },
+    videoBox: { position: "relative", width: "100%", borderRadius: 6, overflow: "hidden", background: "#000", cursor: "pointer" },
+    video: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block", background: "#000" },
+    videoPlay: {
+      position: "absolute", left: "50%", top: "50%", width: 52, height: 52, margin: "-26px 0 0 -26px", borderRadius: "50%", border: 0, padding: 0,
+      display: "grid", placeItems: "center", color: "#fff", background: "rgba(11,20,26,.55)", cursor: "pointer", zIndex: 1,
+      "&:focus-visible": { outline: "2px solid #fff" },
+    },
+    videoLen: {
+      position: "absolute", left: 8, bottom: 5, zIndex: 2, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, lineHeight: "15px",
+      color: "#fff", textShadow: "0 0 2px rgba(0,0,0,.5)", pointerEvents: "none", fontVariantNumeric: "tabular-nums",
+    },
     doc: {
       display: "flex",
       alignItems: "center",
@@ -428,6 +463,41 @@ export const senderName = (contact) => {
   return phoneLabel(contact.number || name) || "Participante";
 };
 
+const lengthOf = (s) => {
+  if (!Number.isFinite(s) || s <= 0) return "";
+  const t = Math.round(s);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+};
+
+// A video in the bubble, as on WhatsApp: the first frame fills the bubble (its space is kept while it loads), a play button in the
+// middle and the length at the bottom left; a click opens it in the gallery. GIFs loop silently in place.
+const VideoThumb = ({ m, classes, overlay, onOpen }) => {
+  const [ratio, setRatio] = useState(() => imageRatio(m.mediaUrl));
+  const [length, setLength] = useState("");
+  const src = m.mediaUrl && !m.isGif && !m.mediaUrl.includes("#") ? `${m.mediaUrl}#t=0.1` : m.mediaUrl;
+  const onMeta = (e) => {
+    const el = e.currentTarget;
+    setRatio(rememberRatio(m.mediaUrl, el.videoWidth, el.videoHeight));
+    setLength(lengthOf(el.duration));
+  };
+  return (
+    <div className={classes.videoBox} style={{ aspectRatio: String(ratio || 4 / 3) }} onClick={m.isGif ? undefined : onOpen}>
+      {m.isGif ? (
+        <video onError={renewMediaElement} onLoadedMetadata={onMeta} className={classes.video} src={src} autoPlay loop muted playsInline />
+      ) : (
+        <>
+          <video onError={renewMediaElement} onLoadedMetadata={onMeta} className={classes.video} src={src} preload="metadata" muted playsInline />
+          <button type="button" className={classes.videoPlay} aria-label="Assistir ao vídeo" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+            <Play size={26} weight="fill" />
+          </button>
+          {length && <span className={classes.videoLen}><Film size={14} aria-hidden="true" />{length}</span>}
+        </>
+      )}
+      {overlay}
+    </div>
+  );
+};
+
 const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches, live = false }) => {
   const classes = useStyles();
   const dark = useTheme().palette.type === "dark";
@@ -479,9 +549,51 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   const atBottomRef = useRef(true);
   const bubbleRefs = useRef({});
 
+  const contentRef = useRef();
+  // the message at the top of what the person is reading, and how far from the top of the list it is: when something above it
+  // changes height (an older page arrives, a picture loads), the list moves by the same amount and the person stays in place
+  const anchorRef = useRef(null);
+  // one older page at a time (several scroll events come before the page starts loading)
+  const pageLoading = useRef(false);
+
+  const captureAnchor = useCallback(() => {
+    const el = listRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const rows = content.querySelectorAll("[data-mid]");
+    const top = el.getBoundingClientRect().top;
+    let lo = 0;
+    let hi = rows.length - 1;
+    let found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (rows[mid].getBoundingClientRect().bottom > top) { found = mid; hi = mid - 1; } else lo = mid + 1;
+    }
+    anchorRef.current = found === -1 ? null : { node: rows[found], offset: rows[found].getBoundingClientRect().top - top };
+  }, []);
+
+  // at the end of the conversation: stay at the end; elsewhere: keep the message being read where it was
+  const keepPlace = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    if (atBottomRef.current) {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight > 1) el.scrollTop = el.scrollHeight;
+      return;
+    }
+    const a = anchorRef.current;
+    if (!a || !a.node.isConnected) return;
+    const diff = a.node.getBoundingClientRect().top - el.getBoundingClientRect().top - a.offset;
+    if (Math.abs(diff) >= 1) el.scrollTop += diff;
+  }, []);
+
+  // never an animated scroll that the person did not ask for: it would fight with their own scrolling
   const scrollToBottom = useCallback((smooth) => {
     const el = listRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    if (!el) return;
+    atBottomRef.current = true;
+    const far = el.scrollHeight - el.scrollTop - el.clientHeight > el.clientHeight * 1.5;
+    if (smooth && !far && el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    else el.scrollTop = el.scrollHeight;
   }, []);
 
   useEffect(() => {
@@ -490,6 +602,10 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     setFirstUnreadId(null);
     setUnreadTotal(0);
     setNewCount(0);
+    setAtBottom(true);
+    atBottomRef.current = true;
+    anchorRef.current = null;
+    pageLoading.current = false;
     currentTicketId.current = ticketId;
   }, [ticketId]);
 
@@ -502,6 +618,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           dispatch({ type: "LOAD_MESSAGES", payload: data.messages });
           setHasMore(data.hasMore);
           setLoading(false);
+          pageLoading.current = false;
           if (pageNumber === 1) {
             const unread = data.messages.filter((m) => !m.fromMe && m.read === false);
             if (unread.length) {
@@ -513,6 +630,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         }
       } catch (err) {
         setLoading(false);
+        pageLoading.current = false;
         toastError(err);
       }
     }, 300);
@@ -527,8 +645,8 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       try {
         const { data } = await api.get("/messages/" + ticketId, { params: { pageNumber: 1, silent: 1 } });
         if (currentTicketId.current === ticketId) {
+          // new messages at the end: keepPlace follows them only if the person is already at the end
           dispatch({ type: "LOAD_MESSAGES", payload: data.messages });
-          if (atBottomRef.current) setTimeout(() => scrollToBottom(false), 30);
         }
       } catch (e) {
         /* the next round tries again */
@@ -558,7 +676,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       const d = e.detail || {};
       if (String(d.ticketId) !== String(ticketId)) return;
       dispatch({ type: "ADD_LOCAL", payload: { id: `local-${d.key}`, body: d.body, fromMe: true, ack: 0, read: true, pending: true, isDeleted: false, mediaType: "chat", createdAt: new Date().toISOString(), quotedMsg: d.quotedMsg || null } });
-      setTimeout(() => scrollToBottom(true), 30);
+      // the person just wrote: show what they wrote (at once, no animation)
+      atBottomRef.current = true;
+      setTimeout(() => scrollToBottom(false), 0);
     };
     const onLocalDrop = (e) => dispatch({ type: "DROP_LOCAL", payload: `local-${(e.detail || {}).key}` });
     window.addEventListener("pending-message", onLocal);
@@ -572,9 +692,11 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     document.addEventListener("visibilitychange", onVisible);
     socket.on("appMessage", (data) => {
       if (data.action === "create") {
+        // at the end, the list follows the new message by itself (keepPlace); reading older messages, the place stays and the
+        // button at the bottom counts what arrived (also for messages sent by the AI agent or a colleague)
+        const known = messagesListRef.current.some((x) => x.id === data.message.id);
         dispatch({ type: "ADD_MESSAGE", payload: data.message });
-        if (data.message.fromMe || atBottomRef.current) setTimeout(() => scrollToBottom(true), 30);
-        else setNewCount((n) => n + 1);
+        if (!atBottomRef.current && !known) setNewCount((n) => n + 1);
       }
       if (data.action === "update") dispatch({ type: "UPDATE_MESSAGE", payload: data.message });
     });
@@ -590,46 +712,34 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
 
   // pictures, videos and file previews change the height AFTER the list was scrolled to the end: while the person is at
   // the end, keep them there as things load (otherwise the conversation "jumps" when it is opened)
+  // the whole conversation is one block: whatever changes its height (a picture or a video that loads, a link card, the
+  // "digitando" bubble, the box to write that grows) is corrected in the same frame, before it is painted
   useEffect(() => {
     const el = listRef.current;
-    if (!el) return undefined;
-    const keep = () => {
-      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
-    };
-    el.addEventListener("load", keep, true);
-    el.addEventListener("loadedmetadata", keep, true);
-    let observer;
-    if (typeof ResizeObserver !== "undefined") {
-      observer = new ResizeObserver(keep);
-      Array.from(el.children).forEach((child) => observer.observe(child));
-    }
-    return () => {
-      el.removeEventListener("load", keep, true);
-      el.removeEventListener("loadedmetadata", keep, true);
-      if (observer) observer.disconnect();
-    };
-    // the rows change with the messages
-  }, [messagesList.length, ticketId]);
+    const content = contentRef.current;
+    if (!el || !content || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(() => keepPlace());
+    observer.observe(content);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [keepPlace, ticketId]);
 
-  // the bubble appears under the last message: keep it in view when the person is reading the end of the conversation
-  useEffect(() => {
-    if (typing && atBottomRef.current) setTimeout(() => scrollToBottom(true), 30);
-  }, [typing, scrollToBottom]);
+  // an older page put in front, a message added or replaced: corrected before the browser paints, so nothing "jumps"
+  useLayoutEffect(() => {
+    keepPlace();
+  }, [messagesList, typing, keepPlace]);
 
   const onScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     const bottom = scrollHeight - scrollTop - clientHeight < 80;
     atBottomRef.current = bottom;
-    setAtBottom(bottom);
-    if (bottom) setNewCount(0);
-    if (hasMore && !loading && scrollTop < 60) {
-      const prevHeight = scrollHeight;
+    if (bottom !== atBottom) setAtBottom(bottom);
+    if (bottom && newCount) setNewCount(0);
+    captureAnchor();
+    // near the top: the previous page comes; the place is kept by keepPlace when it arrives
+    if (hasMore && !loading && !pageLoading.current && scrollTop < 300) {
+      pageLoading.current = true;
       setPageNumber((p) => p + 1);
-      // keep the reading position when older messages are prepended
-      setTimeout(() => {
-        const el = listRef.current;
-        if (el) el.scrollTop = el.scrollHeight - prevHeight;
-      }, 700);
     }
   };
 
@@ -661,7 +771,23 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   };
 
   // ---------------------------------------------------------------- rendering
-  const renderMedia = (m) => {
+  // every photo and video of the loaded conversation, opened at this one
+  const openMedia = (m) => {
+    const list = messagesList
+      .filter((x) => !x.isDeleted && x.mediaUrl && (x.mediaType === "image" || x.mediaType === "video"))
+      .map((x) => ({
+        url: x.mediaUrl,
+        type: x.mediaType,
+        fromMe: x.fromMe,
+        title: x.fromMe ? "Você" : x.contact && x.contact.name,
+        date: new Date(x.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),
+      }));
+    openGallery(list, Math.max(0, list.findIndex((x) => x.url === m.mediaUrl)));
+  };
+
+  // meta: the time and the ticks, for the parts that place them themselves (audio, contact, location); overlay: the same over a
+  // picture or a video without caption
+  const renderMedia = (m, { meta, overlay } = {}) => {
     // the retention policy deleted the file on purpose (Configurações > Retenção de dados): nothing to bring back from the phone
     if (!m.mediaUrl && m.mediaPurgedAt) {
       return (
@@ -674,7 +800,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     if (needsMedia(m)) return <MediaPlaceholder message={m} />;
     if (m.mediaType === "location" && (m.body || "").split("|").length >= 2) {
       const [image, link, description] = m.body.split("|");
-      return <LocationPreview image={image} link={link} description={description || null} />;
+      return <LocationPreview image={image} link={link} description={description || null} overlay={overlay} meta={meta} />;
     }
     if (m.mediaType === "vcard") {
       const numbers = [];
@@ -686,36 +812,30 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           if (v.indexOf("FN") !== -1) contact = values[i + 1];
         });
       });
-      return <VcardPreview vcard={m.body} contact={contact} numbers={numbers[0]?.number} />;
+      return <VcardPreview vcard={m.body} contact={contact} numbers={numbers[0]?.number} meta={meta} fromMe={m.fromMe} />;
     }
     if (m.mediaType === "image") {
+      const sticker = /\.webp(\?|$)/i.test(m.mediaUrl || "");
       return (
         <div className={classes.media}>
-          <ModalImageCors
-            imageUrl={m.mediaUrl}
-            sticker={/\.webp(\?|$)/i.test(m.mediaUrl || "")}
-            onOpen={() => {
-              // every photo and video of the loaded conversation, opened at this one
-              const items = messagesList
-                .filter((x) => !x.isDeleted && x.mediaUrl && (x.mediaType === "image" || x.mediaType === "video"))
-                .map((x) => ({
-                  url: x.mediaUrl,
-                  type: x.mediaType,
-                  fromMe: x.fromMe,
-                  title: x.fromMe ? "Você" : x.contact && x.contact.name,
-                  date: new Date(x.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),
-                }));
-              openGallery(items, Math.max(0, items.findIndex((x) => x.url === m.mediaUrl)));
-            }}
-          />
+          <ModalImageCors imageUrl={m.mediaUrl} sticker={sticker} onOpen={() => openMedia(m)} overlay={sticker ? null : overlay} />
         </div>
       );
     }
     // the text of the voice note (written down once by the transcription), for whoever can already read this conversation
     if (m.mediaType === "audio") {
+      const pic = !m.fromMe && m.contact && m.contact.profilePicUrl;
+      const name = !m.fromMe && m.contact ? senderName(m.contact) : "";
       return (
         <>
-          <Audio url={m.mediaUrl} />
+          <Audio
+            url={m.mediaUrl}
+            fromMe={m.fromMe}
+            avatarUrl={pic || null}
+            initials={name ? initialsOf(name) : null}
+            avatarColor={name ? colorOfSender(m, false) : null}
+            meta={meta}
+          />
           {m.transcript && (
             <div className={classes.transcript}>
               <span className={classes.transcriptLabel}>Transcrição</span>
@@ -728,12 +848,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     if (m.mediaType === "video") {
       return (
         <div className={classes.media}>
-          {m.isGif ? (
-            // GIFs loop silently, like on WhatsApp
-            <video onError={renewMediaElement} className={classes.video} src={m.mediaUrl} autoPlay loop muted playsInline />
-          ) : (
-            <video onError={renewMediaElement} className={classes.video} src={m.mediaUrl && !m.mediaUrl.includes("#") ? `${m.mediaUrl}#t=0.1` : m.mediaUrl} controls preload="metadata" playsInline />
-          )}
+          <VideoThumb m={m} classes={classes} overlay={overlay} onOpen={() => openMedia(m)} />
         </div>
       );
     }
@@ -806,6 +921,22 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     const hasMedia = m.mediaUrl || filePurged || needsMedia(m) || m.mediaType === "location" || m.mediaType === "vcard";
     const mediaOnly = hasMedia && (m.mediaType === "image" || m.mediaType === "video") && isOnlyFileName(m);
     const showText = !m.isDeleted && !m.bodyPurgedAt && !(hasMedia && (isOnlyFileName(m) || filePurged || m.mediaType === "vcard" || m.mediaType === "location" || m.mediaType === "audio"));
+    const live = !m.isDeleted && !m.bodyPurgedAt;
+    const isMap = m.mediaType === "location" && (m.body || "").split("|").length >= 2;
+    const mapText = isMap && !!(m.body.split("|")[2] || "").trim();
+    // pictures, videos and maps fill the bubble edge to edge (as on WhatsApp)
+    const visual = live && !isSticker && ((!!m.mediaUrl && (m.mediaType === "image" || m.mediaType === "video")) || isMap);
+    const header = (groupIn && newSender) || (m.isForwarded && !m.isDeleted) || !!m.quotedMsg;
+    // the time over the picture (no caption), inside the player or the card (audio, contact, map with a name), or after the content
+    const overTime = visual && (isMap ? !mapText : mediaOnly);
+    const placedTime = live && (m.mediaType === "audio" || m.mediaType === "vcard" || (isMap && mapText)) && !needsMedia(m) && !filePurged;
+    const metaEl = (extra) => (
+      <span className={clsx(classes.meta, extra)} title={fullDate(m.createdAt)}>
+        {m.starred && <Star style={{ fontSize: 12 }} />}
+        {clock(m.createdAt)}
+        {ack(m)}
+      </span>
+    );
     const rx = reactionsOf(m);
     const isMatch = matchIds.includes(m.id);
     const isActive = isMatch && matchIds[matchIndex] === m.id;
@@ -813,6 +944,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     items.push(
       <div
         key={m.id}
+        data-mid={m.id}
         className={clsx(classes.row, classes.rowHover, mine ? classes.rowOut : classes.rowIn, newSender && classes.rowFirst, picked && !m.isDeleted && classes.pickRow, picked && picked.includes(m.id) && classes.pickRowOn)}
         onClick={picked && !m.isDeleted ? (e) => togglePick(m.id, e.shiftKey) : undefined}
       >
@@ -838,6 +970,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
             newSender && !isSticker && classes.tailed,
             newSender && !isSticker && (mine ? classes.tailedOut : classes.tailedIn),
             isSticker && classes.sticker,
+            visual && classes.mediaBubble,
             rx.length > 0 && classes.withReactions,
             isMatch && classes.match,
             isActive && classes.matchActive
@@ -846,7 +979,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           {!m.isDeleted && !m.pending && (
             <IconButton aria-label="Mostrar mais"
               size="small"
-              className={classes.chevron}
+              className={clsx(classes.chevron, visual && !header && classes.chevronOnMedia)}
               onClick={(e) => {
                 setSelectedMessage(m);
                 setAnchorEl(e.currentTarget);
@@ -872,7 +1005,10 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
             </div>
           ) : (
             <>
-              {hasMedia && renderMedia(m)}
+              {hasMedia && renderMedia(m, {
+                meta: placedTime ? metaEl() : null,
+                overlay: overTime ? <><span className={classes.mediaShade} />{metaEl(classes.metaOnMedia)}</> : null,
+              })}
               {showText && (
                 <div className={classes.text}>
                   {!hasMedia && !m.isDeleted && hasLink(m.body) && <LinkCard messageId={m.id} fromMe={mine} />}
@@ -885,14 +1021,8 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
                   </span>
                 </div>
               )}
-              {!showText && (
-                <span className={clsx(classes.meta, mediaOnly && !isSticker && classes.metaOnMedia)} title={fullDate(m.createdAt)}>
-                  {m.starred && <Star style={{ fontSize: 12 }} />}
-                  {clock(m.createdAt)}
-                  {ack(m)}
-                </span>
-              )}
-              {!showText && !mediaOnly && <div style={{ clear: "both" }} />}
+              {!showText && !overTime && !placedTime && metaEl()}
+              {!showText && !overTime && !placedTime && <div style={{ clear: "both" }} />}
             </>
           )}
           {rx.length > 0 && (
@@ -956,7 +1086,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         );
       })()}
       <div ref={listRef} id="messagesList" className={clsx(classes.list, picked && classes.listPicking)} onScroll={onScroll}>
-        {messagesList.length > 0 ? items : !loading && <div className={classes.empty}>Nenhuma mensagem ainda. Diga olá!</div>}
+        {messagesList.length === 0 && !loading && <div className={classes.empty}>Nenhuma mensagem ainda. Diga olá!</div>}
+        <div ref={contentRef} className={classes.content}>
+        {messagesList.length > 0 && items}
         {rtDown && (
           <div role="status" style={{ alignSelf: "center", margin: "8px 0", padding: "4px 12px", borderRadius: 999, fontSize: 12, background: "rgba(237,108,2,.15)", color: "#b45309" }}>
             Sem conexão em tempo real. Atualizando a cada 8 segundos.
@@ -972,6 +1104,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
             </div>
           </div>
         )}
+        </div>
       </div>
       {loading && <CircularProgress size={28} className={classes.loading} />}
       {!atBottom && (

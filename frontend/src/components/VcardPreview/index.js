@@ -3,13 +3,14 @@ import { useHistory } from "react-router-dom";
 import toastError from "../../errors/toastError";
 import api from "../../services/api";
 
-import Avatar from "@material-ui/core/Avatar";
-import Typography from "@material-ui/core/Typography";
-import Grid from "@material-ui/core/Grid";
+import clsx from "clsx";
+import { makeStyles, useTheme } from "@material-ui/core/styles";
+import { ChevronRight } from "lucide-react";
+import { wa, getChatAccent } from "../chat/chatTheme";
+import { initialsOf, colorOf } from "../../utils/avatar";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 
-import { Button, Divider } from "@material-ui/core";
 
 // A Brazilian number written without the country code (DDD + number, 10 or 11 digits) gets 55; anything else stays as written
 const withCountry = (digits) => (/^\d{10,11}$/.test(digits) ? `55${digits}` : digits);
@@ -58,9 +59,52 @@ const phoneText = (digits) => {
   return d ? `+${d}` : "";
 };
 
-// A contact shared in the conversation: it shows the name and the phone of the card itself. Nothing is saved just because the card
-// is on the screen; "Conversar" finds the person (or registers them) and opens the conversation.
-const OneCard = ({ vcard, contact, numbers }) => {
+const useStyles = makeStyles((theme) => {
+  const c = wa(theme);
+  const dark = theme.palette.type === "dark";
+  return {
+    root: { width: 300, maxWidth: "100%", display: "flex", flexDirection: "column" },
+    head: {
+      display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "6px 2px 4px", border: 0, background: "transparent", font: "inherit",
+      color: "inherit", textAlign: "left", cursor: "pointer", borderRadius: 6,
+      "&:hover": { background: dark ? "rgba(255,255,255,.04)" : "rgba(11,20,26,.04)" }, "&[disabled]": { cursor: "default", background: "transparent" },
+      "&:focus-visible": { outline: `2px solid ${c.accent}` },
+    },
+    avatar: {
+      flex: "none", width: 46, height: 46, borderRadius: "50%", display: "grid", placeItems: "center", overflow: "hidden",
+      fontSize: 16, fontWeight: 700, color: "#fff",
+    },
+    info: { flex: 1, minWidth: 0 },
+    name: { fontSize: 15.5, lineHeight: "20px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    phone: { fontSize: 12.5, lineHeight: "16px", color: c.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    chev: { flex: "none", color: c.textSecondary },
+    metaRow: { display: "flex", justifyContent: "flex-end", minHeight: 15, margin: "0 0 4px", "& > *": { float: "none !important", margin: "0 !important" } },
+    // the line and the button take the whole width of the bubble, as on WhatsApp
+    action: {
+      display: "block", width: "calc(100% + 16px)", margin: "0 -7px -8px -9px", padding: "10px 8px", border: 0, borderTop: `1px solid ${dark ? "rgba(255,255,255,.1)" : "rgba(11,20,26,.1)"}`,
+      background: "transparent", font: "inherit", fontSize: 14.5, fontWeight: 600, textAlign: "center", cursor: "pointer", borderRadius: "0 0 8px 8px",
+      "&:hover": { background: dark ? "rgba(255,255,255,.04)" : "rgba(11,20,26,.04)" },
+      "&[disabled]": { opacity: 0.55, cursor: "default", background: "transparent" },
+    },
+    between: { borderTop: `1px solid ${dark ? "rgba(255,255,255,.08)" : "rgba(11,20,26,.08)"}`, margin: "4px 0" },
+    // inside a list of several contacts the button does not reach the bottom edge
+    actionInList: { margin: "0 -7px 0 -9px", borderRadius: 0 },
+  };
+});
+
+const actionColor = (theme, fromMe) => {
+  const c = wa(theme);
+  // the blue bubble of the desktop app: the button is white like the text
+  if (fromMe && getChatAccent() === "blue") return c.bubbleOutText;
+  return c.chipOnText;
+};
+
+// A contact shared in the conversation, as on WhatsApp: the picture (or the initials), the name and a ">" on top, the time, a line
+// and "Conversar" across the bubble. Nothing is saved just because the card is on the screen; "Conversar" (or a click on the
+// name) finds the person (or registers them) and opens the conversation.
+const OneCard = ({ vcard, contact, numbers, meta, fromMe, inList }) => {
+  const classes = useStyles();
+  const theme = useTheme();
   const history = useHistory();
   const { user } = useContext(AuthContext);
   const [busy, setBusy] = useState(false);
@@ -73,7 +117,7 @@ const OneCard = ({ vcard, contact, numbers }) => {
   }, [vcard, contact, numbers]);
 
   const handleNewChat = async () => {
-    if (!card.number) return;
+    if (!card.number || busy) return;
     setBusy(true);
     try {
       const { data: found } = await api.post("/contact", { name: card.name || phoneText(card.number), number: card.number, email: "" });
@@ -85,39 +129,41 @@ const OneCard = ({ vcard, contact, numbers }) => {
     setBusy(false);
   };
 
+  const label = card.name || phoneText(card.number) || "Contato";
   return (
-    <div style={{ minWidth: "min(250px, 100%)" }}>
-      <Grid container spacing={1}>
-        <Grid item xs={2}>
-          <Avatar>{(card.name || "?").charAt(0).toUpperCase()}</Avatar>
-        </Grid>
-        <Grid item xs={9}>
-          <Typography style={{ marginTop: 4, marginLeft: 10 }} variant="subtitle1" color="primary">
-            {card.name || phoneText(card.number) || "Contato"}
-          </Typography>
-          <Typography style={{ marginLeft: 10, opacity: 0.75 }} variant="body2">
-            {card.number ? phoneText(card.number) : "Contato sem telefone no cartão"}
-          </Typography>
-        </Grid>
-        <Grid item xs={12}>
-          <Divider />
-          <Button fullWidth color="primary" onClick={handleNewChat} disabled={!card.number || busy}>
-            Conversar
-          </Button>
-        </Grid>
-      </Grid>
+    <div className={classes.root}>
+      <button type="button" className={classes.head} onClick={handleNewChat} disabled={!card.number || busy} title={card.number ? `Conversar com ${label}` : undefined}>
+        <span className={classes.avatar} style={{ background: colorOf(card.number || label) }} aria-hidden="true">{initialsOf(label)}</span>
+        <span className={classes.info}>
+          <span className={classes.name} style={{ display: "block" }}>{label}</span>
+          <span className={classes.phone} style={{ display: "block" }}>{card.number ? phoneText(card.number) : "Contato sem telefone no cartão"}</span>
+        </span>
+        <ChevronRight size={20} className={classes.chev} aria-hidden="true" />
+      </button>
+      {meta && <div className={classes.metaRow}>{meta}</div>}
+      <button type="button" className={clsx(classes.action, inList && classes.actionInList)} style={{ color: actionColor(theme, fromMe) }} onClick={handleNewChat} disabled={!card.number || busy}>
+        Conversar
+      </button>
     </div>
   );
 };
 
-// one message can carry several contacts: each one with its name, phone and "Conversar"
-const VcardPreview = ({ vcard, contact, numbers }) => {
+// one message can carry several contacts: "N contatos" on top, then each one with its name and "Conversar"
+const VcardPreview = ({ vcard, contact, numbers, meta, fromMe }) => {
+  const classes = useStyles();
   const cards = useMemo(() => (vcard && (String(vcard).match(/BEGIN:VCARD/gi) || []).length > 1 ? parseVcards(vcard) : null), [vcard]);
-  if (!cards) return <OneCard vcard={vcard} contact={contact} numbers={numbers} />;
+  if (!cards) return <OneCard vcard={vcard} contact={contact} numbers={numbers} meta={meta} fromMe={fromMe} />;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className={classes.root}>
+      <div className={classes.phone} style={{ padding: "2px 2px 4px", fontWeight: 600 }}>{cards.length} contatos</div>
       {cards.map((c, i) => (
-        <OneCard key={`${c.number}-${i}`} vcard={`BEGIN:VCARD\nFN:${c.name}\nTEL;waid=${c.number}:${c.number}\nEND:VCARD`} />
+        <OneCard
+          key={`${c.number}-${i}`}
+          vcard={`BEGIN:VCARD\nFN:${c.name}\nTEL;waid=${c.number}:${c.number}\nEND:VCARD`}
+          fromMe={fromMe}
+          inList={i < cards.length - 1}
+          meta={i === cards.length - 1 ? meta : null}
+        />
       ))}
     </div>
   );
