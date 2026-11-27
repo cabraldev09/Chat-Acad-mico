@@ -9396,15 +9396,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const stage1 = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
       const leadA = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Ana Andamento Leitura', '5569955550001', ${stage1}, ${A.c}, ${u.id}, 'WhatsApp', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       assert((await http.get("/crm/triage", asUser(uTok))).data.items.some(i => String(i.id) === leadA), "the lead of the catch-up should be waiting before the reading");
-      // the daily count of readings already used up today: the conversations of a phone just copied are read all the same (only the
-      // spending caps stop them), so nobody has to press "Ler tudo agora" after connecting
-      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
-      for (const [k, v] of [["readings_day", today], ["readings_count", "300"]]) sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('${k}', '${v}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
-      const run = (await http.post("/readings/run", {}, auth())).data;
-      assert(run.read >= 6, `the copied conversations stopped at the daily count ${JSON.stringify(run)}`);
-      assert(sql(`SELECT value FROM Settings WHERE key='readings_count'`) === "300", "the copied conversations counted in the daily count");
-      // the other readings (the outcome of a sale, the review of the day) keep the daily count: back to a fresh day for the rest of the test
       sql(`DELETE FROM Settings WHERE key IN ('readings_day', 'readings_count')`);
+      const run = (await http.post("/readings/run", {}, auth())).data;
+      assert(run.read >= 6, `readings ${JSON.stringify(run)}`);
       // what went to the model is masked: no name, no RGM, no phone
       const sent = (anthropic.readingTexts || []).join(" ");
       assert(!/7654321|Bia Matriculada|Dani Desistiu|5569955550/.test(sent), "personal data went to the model");
@@ -9494,10 +9488,18 @@ const postMeta = (id, payload, secret, badSig) => {
       const nums = (await http.get("/crm/recovery/reread", asUser(uTok))).data;
       assert(nums.length === 1 && nums[0].id === qr.id, `numbers to read again ${JSON.stringify(nums)}`);
       assert((await http.post("/crm/recovery/reread", { whatsappId: qr.id }, asUser(otherTok))).status === 403, "another consultant read again a number that is not theirs");
+      // the real case of 26/11: "Ler de novo" after the daily count of readings was used up. The conversations of the phone are read all the
+      // same (only the spending caps stop them), without anyone pressing "Ler tudo agora", and they do not count in the day
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      for (const [k, v] of [["readings_day", today], ["readings_count", "300"]]) sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('${k}', '${v}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
       const reread = (await http.post("/crm/recovery/reread", { whatsappId: qr.id }, asUser(uTok))).data;
       assert(reread.queued >= 6 && sql(`SELECT COUNT(*) FROM ConversationReadings WHERE ticketId=${H.t}`) === "0", `read again ${JSON.stringify(reread)}`);
       await waitFor(() => sql(`SELECT COUNT(*) FROM ConversationReadings r JOIN Tickets t ON t.id=r.ticketId WHERE t.whatsappId=${qr.id} AND r.kind='importacao' AND r.status IN ('pendente','reservada')`) === "0", 20000, "the reading again did not finish");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${b[0]} AND automationKey='confirm-enroll-${b[0]}'`)) === 1, "reading again doubled the task of Bia");
+      assert(sql(`SELECT value FROM Settings WHERE key='readings_count'`) === "300", "the copied conversations counted in the daily count");
+      const afterReread = (await http.get("/crm/recovery", auth())).data.reading;
+      assert(afterReread && afterReread.stopped === null && afterReread.total >= afterReread.done && afterReread.total > 0, `the progress after reading again ${JSON.stringify(afterReread)}`);
+      sql(`DELETE FROM Settings WHERE key IN ('readings_day', 'readings_count')`);
       // OpenBot: with it reading, the system's AI leaves the new reading waiting; the token takes it masked and answers
       assert((await http.put("/readings/settings", { provider: "openbot", waitHours: 6 }, asUser(uTok))).status === 403, "a consultant changed who reads");
       // only the administrator, not the coordination, turns the readings on or off and runs a round (the audit of #205)
