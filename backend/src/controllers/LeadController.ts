@@ -123,9 +123,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const { rows, count } = await Lead.findAndCountAll({
     where: await withLeadReadScope(req, buildWhere(req.query)),
     include: withTag(req.query.tagId as string, req.query.ready as string),
-    // one column of the board is ordered by score first: the next page ("Carregar mais") must follow the same order,
-    // or leads repeat and others are skipped
-    order: req.query.stageId ? [["score", "DESC"], ["updatedAt", "DESC"]] : [["updatedAt", "DESC"]],
+    // The board, list and next pages share a stable newest-first order, independent of score and later edits.
+    order: [["createdAt", "DESC"], ["id", "DESC"]],
     limit,
     offset,
     distinct: true
@@ -144,10 +143,7 @@ export const board = async (req: Request, res: Response): Promise<Response> => {
       const { rows, count } = await Lead.findAndCountAll({
         where: { [Op.and]: [where, { stageId: stage.id }] },
         include,
-        order: [
-          ["score", "DESC"],
-          ["updatedAt", "DESC"]
-        ],
+        order: [["createdAt", "DESC"], ["id", "DESC"]],
         limit: perStage,
         distinct: true
       });

@@ -56,6 +56,9 @@ const useStyles = makeStyles((theme) => ({
   red: { background: "rgba(220,38,38,.12)", color: theme.palette.type === "dark" ? "#fca5a5" : "#b91c1c" },
   amber: { background: "rgba(217,119,6,.14)", color: theme.palette.type === "dark" ? "#fcd34d" : "#b45309" },
   blue: { background: "rgba(6,147,227,.12)", color: theme.palette.type === "dark" ? "#7dd3fc" : "#0369a1" },
+  green: { background: "rgba(22,163,74,.12)", color: theme.palette.type === "dark" ? "#86efac" : "#166534" },
+  rowLate: { background: "rgba(220,38,38,.05)", "& td:first-child": { borderLeft: "4px solid #dc2626" } },
+  rowDone: { "& td:first-child": { borderLeft: "4px solid #16a34a" } },
   actions: { display: "flex", gap: 4, flexWrap: "wrap" },
   button: { textTransform: "none", fontSize: 12, borderRadius: 8 },
   empty: { textAlign: "center", color: theme.palette.text.secondary, fontSize: 13, padding: theme.spacing(4, 1) },
@@ -101,7 +104,7 @@ export default function Tutoria() {
     const params = manager ? { ...(tutorId ? { tutorId } : {}), ...(poloId ? { poloId } : {}) } : {};
     api.get("/tutoria/students", { params }).then(({ data: d }) => setData(d)).catch((e) => { toastError(e); setFailed(true); });
   }, [manager, tutorId, poloId]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (tab === "alunos") load(); }, [load, tab]);
 
   // every tutor and polo comes from the server: the list does not shrink after a filter is chosen
   const [lists, setLists] = useState({ tutors: [], polos: [] });
@@ -109,15 +112,26 @@ export default function Tutoria() {
 
   const FILTERS = [
     ["all", "Alunos", "total"],
+    ["done", "Ambientados", "done"],
+    ["pending", "Ambientação pendente", "pending"],
+    ["started", "Em ambientação", "started"],
+    ["overdue", "Atrasados", "overdue"],
     ["late", "Primeiro contato atrasado", "late"],
     ["idle", `Sem contato há ${data?.rules?.idleDays || 15}+ dias`, "idle"],
     ["calls", "Chamados do comercial", "calls"],
     ["unread", "Com mensagem não lida", "unread"],
     ...(data?.rules?.official ? [["closedWindow", "Janela de 24h fechada", "closedWindow"]] : []),
   ];
-  const match = (s) => filter === "all" || (filter === "late" && s.late) || (filter === "idle" && s.idle) || (filter === "calls" && s.callPending) || (filter === "unread" && s.unread > 0) || (filter === "closedWindow" && !s.windowOpen);
+  const match = (s) => filter === "all" || (filter === "done" && s.onboardingStatus === "done") || (filter === "pending" && s.onboardingStatus === "pending") || (filter === "started" && s.onboardingStatus === "started") || (filter === "overdue" && (s.late || s.idle)) || (filter === "late" && s.late) || (filter === "idle" && s.idle) || (filter === "calls" && s.callPending) || (filter === "unread" && s.unread > 0) || (filter === "closedWindow" && !s.windowOpen);
+  const students = Array.isArray(data?.students) ? data.students : [];
+  const counters = { ...data?.counters,
+    done: students.filter(s => s.onboardingStatus === "done").length,
+    pending: students.filter(s => s.onboardingStatus === "pending").length,
+    started: students.filter(s => s.onboardingStatus === "started").length,
+    overdue: students.filter(s => s.late || s.idle).length,
+  };
   const q = search.trim().toLowerCase();
-  const rows = (data?.students || []).filter((s) => match(s) && (!q || `${s.name} ${s.phone || ""} ${s.course || ""} ${s.polo || ""}`.toLowerCase().includes(q)));
+  const rows = students.filter((s) => match(s) && (!q || `${s.name} ${s.phone || ""} ${s.course || ""} ${s.polo || ""}`.toLowerCase().includes(q)));
 
   const open = async (s) => {
     setBusy(s.leadId);
@@ -168,7 +182,7 @@ export default function Tutoria() {
           {FILTERS.map(([key, label, counter]) => (
             <button key={key} type="button" className={`${c.kpi} ${filter === key ? c.kpiOn : ""}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>
               <span className={c.kpiL}>{label}</span>
-              <span className={c.kpiN}>{data.counters?.[counter] || 0}</span>
+              <span className={c.kpiN}>{counters[counter] || 0}</span>
             </button>
           ))}
         </div>
@@ -190,13 +204,16 @@ export default function Tutoria() {
             <table className={c.table}>
               <thead><tr><th>Aluno</th><th>Ambientação</th><th>Último contato</th><th>Situação</th><th /></tr></thead>
               <tbody>{rows.map((s) => (
-                <tr key={s.leadId}>
+                <tr key={s.leadId} className={s.late || s.idle ? c.rowLate : s.onboardingStatus === "done" ? c.rowDone : ""}>
                   <td>
                     <div className={c.name}>{s.name}</div>
                     <div className={c.meta}>{[s.course, s.polo, manager && s.tutorName ? `Tutor: ${s.tutorName}` : null].filter(Boolean).join(" · ")}</div>
                   </td>
                   <td>
-                    <div>{STATUS[s.onboardingStatus] || s.onboardingStatus}</div>
+                    <span className={`${c.tag} ${s.onboardingStatus === "done" ? c.green : s.late ? c.red : s.onboardingStatus === "started" ? c.blue : c.amber}`}>
+                      {s.onboardingStatus === "done" && <MonitorCheck size={13} style={{ verticalAlign: -2, marginRight: 4 }} />}
+                      {STATUS[s.onboardingStatus] || s.onboardingStatus}
+                    </span>
                     <div className={c.meta}>Matrícula {when(s.enrolledAt)} · {s.checklist.done}/{s.checklist.total} etapas</div>
                   </td>
                   <td>
@@ -205,7 +222,7 @@ export default function Tutoria() {
                   </td>
                   <td>
                     {s.late && <span className={`${c.tag} ${c.red}`}>Primeiro contato atrasado</span>}
-                    {s.idle && <span className={`${c.tag} ${c.amber}`}>Sem contato</span>}
+                    {s.idle && <span className={`${c.tag} ${c.red}`}>Contato atrasado · há {s.daysWithoutContact} dias</span>}
                     {s.callPending && <span className={`${c.tag} ${c.blue}`} title={s.callNote || ""}>Chamado do comercial</span>}
                     {s.unread > 0 && <span className={`${c.tag} ${c.blue}`}>{s.unread} não lida{s.unread > 1 ? "s" : ""}</span>}
                     {data.rules?.official && !s.windowOpen && <span className={`${c.tag} ${c.amber}`}>24h fechada</span>}

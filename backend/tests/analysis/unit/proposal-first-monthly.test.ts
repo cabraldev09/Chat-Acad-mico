@@ -13,6 +13,18 @@ const render = (p: ProposalParams, institution: any = { name: "Universidade Cruz
   renderProposalHtml({ title: "Pedagogia", leadName: "Ana Teste", institution, params: p, result: calcProposal(p), texts: {}, generatedAt: new Date("2026-11-25T12:00:00Z") });
 
 describe("1ª mensalidade da proposta", () => {
+  it("reproduz a tabela de referência com mensalidade negociada, ingresso de 30% e demais de 20%", () => {
+    const result = calcProposal(params({ gross: 756.3, monthly: 147.35, firstMonthly: 147.35, semesters: 4,
+      startYear: 2026, startSemester: 2, bolsaFirst: 30, bolsaNext: 20 }));
+    expect(result.bolsaApplied).toBe(80.52);
+    expect(result.tiers).toEqual({ onTime: 147.35, mid: 169.45, late: 184.19 });
+    expect(result.rows.map(r => [r.period, r.bolsa, r.bolsaAdjust, r.monthlyMin, r.monthlyMax, r.diff])).toEqual([
+      ["2026.2", 30, 0, 147.35, 147.35, 0],
+      ["2027.1", 20, 10, 172.40, 181.24, 8.84],
+      ["2027.2", 20, 0, 175.85, 184.87, 9.02],
+      ["2028.1", 20, 0, 188.16, 208.90, 20.74],
+    ]);
+  });
   it("is the same as the others by default and the maths start from the monthly fee with the scholarship", () => {
     const p = params();
     expect(baseMonthly(p)).toBe(220);

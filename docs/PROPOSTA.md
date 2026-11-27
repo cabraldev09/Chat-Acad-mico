@@ -56,6 +56,16 @@ A turma e a liberação no AVA aparecem no PDF e no resumo do WhatsApp.
 - Curso sem valor cadastrado: só a gestão gera a proposta (`ERR_PROPOSAL_COURSE_NO_PRICE`).
 - A bolsa e a 1ª mensalidade continuam editáveis. Mudar uma ajusta a outra.
 
+## Bolsa de ingresso e projeção
+
+O desconto total aplicado à mensalidade e a bolsa de ingresso são campos diferentes. A mensalidade negociada de R$ 147,35,
+com bruta de R$ 756,30, corresponde a 80,52% de desconto total. Ela pode ter bolsa de ingresso de 30% no primeiro semestre
+e 20% do segundo em diante: a diferença de 10 pontos entra no ajuste da projeção, sem substituir a mensalidade negociada.
+Abrir, editar e salvar o rascunho preserva esses valores separados.
+
+Com início em 2026.2, reajuste semestral de 2% e anual de 5% a 11%, o exemplo projeta R$ 172,40 a R$ 181,24 em 2027.1,
+R$ 175,85 a R$ 184,87 em 2027.2 e R$ 188,16 a R$ 208,90 em 2028.1. As regras vêm do modelo e continuam editáveis.
+
 ## Salvar e sair
 
 - **Salvar:** grava e continua no estúdio. O rodapé mostra "Salvo às 14:32".

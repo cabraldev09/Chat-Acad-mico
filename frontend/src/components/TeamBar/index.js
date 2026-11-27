@@ -29,15 +29,20 @@ export default function TeamBar({ ticket }) {
 
   const load = useCallback(() => {
     if (!show) return;
+    let active = true;
+    setInfo(null);
     api.get(`/tickets/${ticket.id}/team-handoff`).then(({ data }) => {
+      if (!active) return;
       setInfo(data);
       // the header's menu offers "Chamar a tutoria / o consultor" to whoever holds the conversation
       window.dispatchEvent(new CustomEvent("teamHandoffInfo", { detail: { ticketId: ticket.id, canCall: ticket.userId && data ? data.canCall || null : null } }));
-    }).catch(() => setInfo(null));
+    }).catch(() => { if (active) setInfo(null); });
+    return () => { active = false; };
   }, [ticket.id, ticket.userId, show]);
   useEffect(() => {
-    load();
+    const cancel = load();
     try { setHidden(window.localStorage.getItem(seenKey(ticket.id))); } catch (e) { setHidden(null); }
+    return cancel;
   }, [load, ticket.id, ticket.userId]);
   // the copilot's summary pointed to the other side: it opens the same dialog
   useEffect(() => {
