@@ -135,7 +135,7 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 
 
 /* ---------- toasts: notifications in the style of the Mac (frosted card, icon in a rounded square, time on the right) ---------- */
-.Toastify__toast-container { width: 380px; padding: 0 12px; top: 12px; }
+.Toastify__toast-container { width: 380px; max-width: 100vw; box-sizing: border-box; padding: 0 12px; top: 12px; }
 .Toastify__toast {
   min-height: 0; margin-bottom: 8px; padding: 12px 14px; border-radius: 18px;
   background: rgba(246, 246, 248, .78); color: #111827; border: 1px solid rgba(255, 255, 255, .55);
@@ -148,13 +148,13 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
   box-shadow: 0 14px 40px -12px rgba(0, 0, 0, .7), 0 0 0 .5px rgba(0, 0, 0, .5);
 }
 .Toastify__toast::before { display: none; }
-.Toastify__toast-body { margin: 0; padding: 0; display: block; }
+.Toastify__toast-body { margin: 0; padding: 0; display: block; min-width: 0; flex: 1; max-width: 100%; }
 .Toastify__toast-body::before { display: none; }
-.mtoast { display: flex; align-items: flex-start; gap: 11px; }
+.mtoast { display: flex; align-items: flex-start; gap: 11px; width: 100%; min-width: 0; }
 .mtoast-icon { flex: none; width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.12); }
 .mtoast-text { min-width: 0; flex: 1; }
 .mtoast-head { display: flex; align-items: baseline; gap: 8px; }
-.mtoast-title { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 700; letter-spacing: -.01em; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mtoast-title { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 700; letter-spacing: -.01em; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
 .mtoast-time { flex: none; font-size: 12px; color: rgba(17, 24, 39, .5); }
 :root[data-theme="dark"] .mtoast-time { color: rgba(243, 244, 246, .5); }
 .mtoast-msg { margin-top: 1px; font-size: 13px; line-height: 1.38; color: rgba(17, 24, 39, .78); overflow-wrap: anywhere; }

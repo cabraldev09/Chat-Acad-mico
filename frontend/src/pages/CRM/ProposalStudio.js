@@ -106,6 +106,9 @@ export const problemsOf = (f) => {
   if (g > 0 && String(f.first ?? "") !== "" && !(m > 0)) out.first = "Informe um valor maior que zero";
   else if (g > 0 && m > g) out.first = `Não pode passar da mensalidade bruta (${brlText(g)})`;
   if (String(f.bolsa ?? "") !== "" && (b < 0 || b > 100)) out.bolsa = "A bolsa fica entre 0% e 100%";
+  ["bolsaFirst", "bolsaNext"].forEach(k => {
+    if (String(f[k] ?? "") !== "" && (toNum(f[k]) < 0 || toNum(f[k]) > 100)) out[k] = "A bolsa fica entre 0% e 100%";
+  });
   if (!f.firstExempt && !f.firstSame && String(f.firstPay ?? "") !== "" && g > 0 && toNum(f.firstPay) > g) out.firstPay = `Não pode passar da mensalidade bruta (${brlText(g)})`;
   return out;
 };
@@ -116,16 +119,10 @@ const percentTyping = (v) => {
   return rest.length ? `${int},${rest.join("").slice(0, 2)}` : int;
 };
 
-// backend params -> text inputs
-// one scholarship, three places: "Bolsa aplicada", "Bolsa no 1º semestre" and the fee with the scholarship are the same number. Changing
-// one changes the others; "Bolsa dos demais" follows too while it cannot be different (fee fixed until the end, or no change after the 1st)
-export const followBolsa = (p, v) => ({
-  bolsa: v,
-  bolsaFirst: v,
-  ...(p.fixedUntilEnd || !p.hasRegression ? { bolsaNext: v } : {}),
-});
+// The total discount follows the negotiated monthly fee. Entry scholarships describe only the change between semesters.
+export const followBolsa = (p, v) => ({ bolsa: v });
 
-const toForm = (p, calendar) => ({
+export const toForm = (p, calendar) => ({
   turma: keyOf(calendar, p), entryTurma: p.entryTurma || "", releaseDate: p.releaseDate || "", grossUnlocked: !!p.grossUnlocked,
   gross: money(p.gross), first: money(baseOf(p)), bolsa: p.gross ? money(r2((1 - baseOf(p) / p.gross) * 100)) : "",
   // the 1st installment: by default the same as the others; its own value or waived (R$ 0)
@@ -134,10 +131,8 @@ const toForm = (p, calendar) => ({
   enrollmentFee: money(p.enrollmentFee), dueDay: String(p.dueDay), installments: String(p.installments), firstDueDate: p.firstDueDate || "",
   entryTerm: `${p.startYear}/${p.startSemester}`, entrySemester: p.entrySemester || 1, courseSemesters: p.courseSemesters || p.semesters, admissionType: p.admissionType || "",
   attend: String(p.semesters), attendAuto: true,
-  // the scholarship of the 1st semester IS the applied one (it comes from the fee with the scholarship); with the fee fixed until the end
-  // (or no change after the 1st semester) the others have the same one
-  bolsaFirst: p.gross ? money(r2((1 - baseOf(p) / p.gross) * 100)) : money(p.bolsaFirst),
-  bolsaNext: p.gross && (p.fixedUntilEnd || p.hasRegression === false) ? money(r2((1 - baseOf(p) / p.gross) * 100)) : money(p.bolsaNext),
+  bolsaFirst: money(p.bolsaFirst),
+  bolsaNext: money(p.bolsaNext),
   punctualityPct: String(p.punctualityPct), lateFee1Pct: String(p.lateFee1Pct), lateFee2Pct: String(p.lateFee2Pct),
   annualMin: money(p.annualMin), annualMax: money(p.annualMax),
   schedule: (p.semestralSchedule || []).map((s) => ({ from: String(s.from), pct: money(s.pct) })),
@@ -152,7 +147,7 @@ const toForm = (p, calendar) => ({
 });
 
 // text inputs -> backend params
-const toParams = (f) => {
+export const toParams = (f) => {
   const [y, s] = String(f.entryTerm).split("/").map(Number);
   return {
     gross: toNum(f.gross), monthly: toNum(f.first), firstMonthly: f.firstExempt ? 0 : f.firstSame ? toNum(f.first) : toNum(f.firstPay), enrollmentFee: toNum(f.enrollmentFee), dueDay: toNum(f.dueDay), installments: toNum(f.installments),
@@ -302,14 +297,14 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
 
   const set = (k) => (e) => { const v = e.target.value; setF((p) => ({ ...p, [k]: v })); };
   const field = (k, label, extra = {}) => (
-    <TextField fullWidth variant="outlined" margin="dense" label={label} value={f[k]} onChange={set(k)} {...extra} />
+    <TextField id={`proposal-${k}`} fullWidth variant="outlined" margin="dense" label={label} value={f[k]} onChange={set(k)} {...extra} />
   );
   // the scholarship: only a value between 0% and 100% moves the monthly fee
   const setBolsa = (e) => {
     const v = percentTyping(e.target.value);
     setF((p) => {
       const b = toNum(v);
-      if (!(v !== "" && b >= 0 && b <= 100)) return { ...p, bolsa: v, bolsaFirst: v };
+      if (!(v !== "" && b >= 0 && b <= 100)) return { ...p, bolsa: v };
       return { ...p, ...followBolsa(p, v), first: money(r2(toNum(p.gross) * (1 - b / 100))) };
     });
   };
@@ -677,10 +672,10 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved, ticketId }) =
               <Collapse in={advanced}>
                 <div style={{ paddingTop: 12 }}>
                   <div className={classes.grid2}>
-                    {field("bolsaFirst", "Bolsa no 1º semestre (%)", { disabled: !!locked, onChange: setBolsa, error: !!problems.bolsa, helperText: problems.bolsa || "A mesma da bolsa aplicada", inputProps: { inputMode: "decimal" } })}
-                    {field("bolsaNext", "Bolsa dos demais (%)", f.fixedUntilEnd || !f.hasRegression
+                    {field("bolsaFirst", "Bolsa de ingresso no 1º semestre (%)", { disabled: !!locked, error: !!problems.bolsaFirst, helperText: problems.bolsaFirst || "Ex.: 30%. Usada na projeção; não altera a mensalidade negociada.", inputProps: { inputMode: "decimal" } })}
+                    {field("bolsaNext", "Bolsa do 2º semestre em diante (%)", f.fixedUntilEnd || !f.hasRegression
                       ? { disabled: true, helperText: f.fixedUntilEnd ? "Mensalidade fixa até o fim: a bolsa não muda" : "Sem regressão: a bolsa não muda" }
-                      : { disabled: !!locked, helperText: "A partir do 2º semestre", inputProps: { inputMode: "decimal" } })}
+                      : { disabled: !!locked, error: !!problems.bolsaNext, helperText: problems.bolsaNext || "Ex.: 20%. A diferença para a bolsa de ingresso entra na projeção.", inputProps: { inputMode: "decimal" } })}
                   </div>
                   <div className={classes.grid3}>
                     {field("punctualityPct", "Pontualidade (%)", { disabled: !!locked })}

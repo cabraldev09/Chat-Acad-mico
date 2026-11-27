@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../services/api", () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
-import { problemsOf, followBolsa } from "../pages/CRM/ProposalStudio";
+import { problemsOf, followBolsa, toForm, toParams } from "../pages/CRM/ProposalStudio";
 
 const base = { gross: "1073,80", first: "214,76", bolsa: "80,00", firstExempt: false, firstSame: true, firstPay: "214,76" };
 
@@ -25,12 +25,21 @@ describe("travas da proposta", () => {
   });
 });
 
-describe("uma bolsa só, em três lugares", () => {
-  it("mudar a bolsa aplicada ou a do 1º semestre muda as duas (o caso do print: 30% no 1º semestre não mexia na proposta)", () => {
-    expect(followBolsa({ hasRegression: true, fixedUntilEnd: false }, "30,00")).toEqual({ bolsa: "30,00", bolsaFirst: "30,00" });
+describe("bolsa comercial e bolsa de ingresso independentes", () => {
+  it("mudar o desconto total não muda os 30% de ingresso nem os 20% dos demais semestres", () => {
+    expect(followBolsa({ hasRegression: true, fixedUntilEnd: false }, "80,52")).toEqual({ bolsa: "80,52" });
   });
-  it("com a mensalidade fixa até o fim, ou sem regressão, a bolsa dos demais acompanha", () => {
-    expect(followBolsa({ hasRegression: true, fixedUntilEnd: true }, "30,00")).toEqual({ bolsa: "30,00", bolsaFirst: "30,00", bolsaNext: "30,00" });
-    expect(followBolsa({ hasRegression: false, fixedUntilEnd: false }, "25,00").bolsaNext).toBe("25,00");
+  it("reabrir e salvar preserva o valor negociado e as bolsas usadas na projeção", () => {
+    const f = toForm({ gross: 756.3, monthly: 147.35, firstMonthly: 147.35, bolsaFirst: 30, bolsaNext: 20,
+      hasRegression: true, startYear: 2026, startSemester: 2, semesters: 4 }, []);
+    expect(f.bolsa).toBe("80,52");
+    expect(f.bolsaFirst).toBe("30,00");
+    expect(f.bolsaNext).toBe("20,00");
+    expect(toParams(f)).toMatchObject({ monthly: 147.35, firstMonthly: 147.35, bolsaFirst: 30, bolsaNext: 20 });
+  });
+  it("as duas bolsas de projeção também precisam ficar entre zero e cem", () => {
+    expect(problemsOf({ ...base, bolsaFirst: "130", bolsaNext: "-5" })).toMatchObject({
+      bolsaFirst: "A bolsa fica entre 0% e 100%", bolsaNext: "A bolsa fica entre 0% e 100%",
+    });
   });
 });

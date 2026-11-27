@@ -1,5 +1,5 @@
 import { touchAnalytics } from "../AnalyticsServices/Realtime";
-import { Op, QueryTypes } from "sequelize";
+import { Op, QueryTypes, literal } from "sequelize";
 import sequelize from "../../database";
 
 import AgentMetricEvent from "../../models/AgentMetricEvent";
@@ -559,7 +559,8 @@ export const hookHumanReply = async (contactId: number, userId: number): Promise
 export const resolveLeadTarget = async (
   lead: Lead,
   userId: number,
-  whatsappId?: number | null
+  whatsappId?: number | null,
+  options: { commercial?: boolean } = {}
 ): Promise<{ contact: Contact; whatsapp: Whatsapp }> => {
   const { default: Ticket } = await import("../../models/Ticket");
   const { default: GetDefaultWhatsApp } = await import("../../helpers/GetDefaultWhatsApp");
@@ -569,9 +570,42 @@ export const resolveLeadTarget = async (
   let whatsapp: Whatsapp | null = whatsappId ? await Whatsapp.findByPk(whatsappId) : null;
   let contact: Contact | null = lead.contactId ? await Contact.findByPk(lead.contactId) : null;
 
+  // An avulsa/manual lead can have a phone but no contactId. Find the known person BEFORE choosing a default number, otherwise an
+  // empty conversation is created on the official number beside the existing history on the consultant's QR number.
+  if (!contact && lead.phone && (!whatsapp || ["whatsapp", "whatsapp_cloud"].includes(whatsapp.channel))) {
+    const phone = normalizePhone(lead.phone);
+    contact = phone ? await Contact.findOne({
+      where: { isGroup: false, number: { [Op.in]: brPhoneVariants(phone) }, channel: { [Op.in]: ["whatsapp", "whatsapp_cloud"] } },
+      order: [["id", "ASC"]]
+    }) : null;
+    if (contact) await lead.update({ contactId: contact.id });
+  }
   if (contact && !whatsapp) {
-    // reuse the connection of the existing conversation
-    const t = await Ticket.findOne({ where: { contactId: contact.id }, order: [["updatedAt", "DESC"]] });
+    let t: Ticket | null;
+    if (!options.commercial) {
+      // Retention, documents and the other teams continue on their own latest conversation.
+      t = await Ticket.findOne({ where: { contactId: contact.id }, order: [["updatedAt", "DESC"]] });
+    } else {
+      // A real history wins over a newly created empty thread. Never select a colleague's personal number or the tutoring side.
+      const legacy = await legacyInstitutionId();
+      const institutionId = lead.institutionId ?? legacy;
+      t = await Ticket.findOne({
+        where: {
+          contactId: contact.id, isGroup: false,
+          [Op.and]: [
+            { [Op.or]: [{ segment: { [Op.in]: ["sales", "postsale"] } }, { segment: null }] },
+            ...(institutionId ? [{ [Op.or]: [{ institutionId }, ...(institutionId === legacy ? [{ institutionId: null }] : [])] }] : [])
+          ]
+        } as any,
+        include: [{ model: Whatsapp, as: "whatsapp", attributes: [], required: true, where: { [Op.or]: [{ ownerId: null }, { ownerId: userId }] } }],
+        order: [
+          [literal('CASE WHEN EXISTS (SELECT 1 FROM "Messages" m WHERE m."ticketId" = "Ticket"."id" AND m."isDeleted" = false AND m."fromMe" = false) THEN 0 ELSE 1 END'), "ASC"],
+          [literal('CASE WHEN EXISTS (SELECT 1 FROM "Messages" m WHERE m."ticketId" = "Ticket"."id" AND m."isDeleted" = false) THEN 0 ELSE 1 END'), "ASC"],
+          [literal(`CASE WHEN "whatsapp"."ownerId" = ${Number(userId) || 0} THEN 0 ELSE 1 END`), "ASC"],
+          ["updatedAt", "DESC"], ["id", "DESC"]
+        ]
+      });
+    }
     if (t) whatsapp = await Whatsapp.findByPk(t.whatsappId);
   }
   if (!whatsapp) whatsapp = await GetDefaultWhatsApp(userId);

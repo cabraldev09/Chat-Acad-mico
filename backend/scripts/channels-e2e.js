@@ -1337,6 +1337,56 @@ const postMeta = (id, payload, secret, badSig) => {
 
     // -------------------------------------------------------------------- CRM
     console.log("\ncrm");
+    await test("CRM orders newest leads first, with the same order on the board and subsequent pages", async () => {
+      const ids = [];
+      try {
+        for (let i = 0; i < 3; i++) {
+          const r = await http.post("/leads", { name: `Ordem de teste ${i}`, email: `ordem-${i}@teste.example`, source: "regressao-ordem" }, auth());
+          assert(r.status === 201, `create lead: ${r.status}`);
+          ids.push(r.data.lead.id);
+        }
+        sql(`UPDATE Leads SET createdAt='2026-10-01', score=100 WHERE id=${ids[0]}`);
+        sql(`UPDATE Leads SET createdAt='2026-10-02', score=0 WHERE id IN (${ids.slice(1).join(",")})`);
+        const expected = [ids[2], ids[1], ids[0]];
+        const list = (await http.get("/leads?source=regressao-ordem", auth())).data.leads;
+        assert(JSON.stringify(list.map(l => l.id)) === JSON.stringify(expected), "newest first, even with lower score or equal timestamps");
+        const board = (await http.get("/crm/board?source=regressao-ordem&perStage=2", auth())).data.stages;
+        const stage = board.find(s => s.count);
+        assert(JSON.stringify(stage.leads.map(l => l.id)) === JSON.stringify(expected.slice(0, 2)), "board must have the same newest-first order");
+        const more = (await http.get(`/leads?source=regressao-ordem&stageId=${stage.id}&offset=2&limit=2`, auth())).data.leads;
+        assert(JSON.stringify(more.map(l => l.id)) === JSON.stringify(expected.slice(2)), "load more must not repeat or skip a lead");
+      } finally {
+        for (const id of ids) await http.delete(`/leads/${id}`, auth());
+      }
+    });
+    await test("a lead with only a phone opens its existing QR history instead of a new official conversation with only an outgoing greeting", async () => {
+      const admin = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
+      const qr = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, ownerId, createdAt, updatedAt) VALUES ('QR histórico de teste', 'DISCONNECTED', 'whatsapp', false, NULL, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const official = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('Oficial vazio de teste', 'DISCONNECTED', 'whatsapp_cloud', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const c = { id: Number(sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Contato com histórico', '5569999112277', '', false, 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0]) };
+      const tk = sql(`INSERT INTO Tickets (status, userId, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${admin}, ${c.id}, ${qr}, 0, false, 'sales', false, NOW(), NOW()-INTERVAL '1 day') RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('lead-history-test', ${tk}, 'histórico de teste', false, true, 'chat', 0, NOW()-INTERVAL '1 day', NOW())`);
+      const empty = sql(`INSERT INTO Tickets (status, userId, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${admin}, ${c.id}, ${official}, 0, false, 'sales', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('lead-history-greeting', ${empty}, 'oi', true, true, 'chat', 0, NOW(), NOW())`);
+      const lead = (await http.post("/leads", { name: "Lead por telefone", phone: "(69) 99911-2277" }, auth())).data.lead;
+      // Keep the same state as an avulsa created before it knew this contact.
+      sql(`UPDATE Leads SET contactId=NULL WHERE id=${lead.id}`);
+      try {
+        const opened = await http.post(`/leads/${lead.id}/open-ticket`, {}, auth());
+        assert(opened.status === 200 && opened.data.ticketId === Number(tk), `must open the existing QR history: ${opened.status} ${JSON.stringify(opened.data)}`);
+        assert(sql(`SELECT contactId FROM Leads WHERE id=${lead.id}`) === String(c.id), "lead must link to the existing contact");
+        const win = (await http.get(`/tickets/${tk}/team-handoff`, auth())).data.window;
+        assert(win.official === false && win.open === true, "QR has no official messaging window");
+        const messages = (await http.get(`/messages/${tk}`, auth())).data.messages;
+        assert(messages.some(m => m.id === "lead-history-test"), "the previous messages must remain visible");
+      } finally {
+        await http.delete(`/leads/${lead.id}`, auth());
+        sql(`DELETE FROM Messages WHERE ticketId IN (${tk},${empty})`);
+        sql(`DELETE FROM Tickets WHERE id IN (${tk},${empty})`);
+        sql(`DELETE FROM Contacts WHERE id=${c.id}`);
+        sql(`DELETE FROM Whatsapps WHERE id IN (${qr},${official})`);
+      }
+    });
     const leadOf = number => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}' LIMIT 1`);
     const stageName = lid => sql(`SELECT s.name FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.id=${lid}`);
     await test("every channel's first message registers a lead automatically", async () => {
@@ -7799,7 +7849,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT stepsDone FROM Schedules WHERE id = ${seqSched.data.id}`) === "2", "stepsDone");
       assert((await http.post("/schedules", { sendAt: when, contactId: tgContactId, steps: [{ body: "" }] }, auth())).status === 400, "an empty step was accepted");
 
-      // "Carregar mais" follows the order of the column (score first), so no lead repeats or is skipped
+      // "Carregar mais" follows the newest-first order of the column, regardless of score.
       const stage = sql(`SELECT id FROM LeadStages ORDER BY position LIMIT 1`);
       const made = [];
       for (const [i, score] of [10, 50, 30, 50, 20].entries()) {
@@ -7811,7 +7861,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const page2 = (await http.get("/leads", { ...auth(), params: { stageId: stage, limit: 3, offset: 3, search: "Paginacao" } })).data.leads;
       const seq = [...page1, ...page2].filter(l => made.includes(l.id));
       assert(seq.length === 5 && new Set(seq.map(l => l.id)).size === 5, `paging repeated or skipped leads ${JSON.stringify(seq.map(l => l.id))}`);
-      assert(seq.every((l, i) => i === 0 || Number(seq[i - 1].score) >= Number(l.score)), `paging not by score ${JSON.stringify(seq.map(l => l.score))}`);
+      assert(JSON.stringify(seq.map(l => l.id)) === JSON.stringify([...made].reverse()), `paging not newest first ${JSON.stringify(seq.map(l => l.id))}`);
 
       // renaming a contact does not depend on a connected WhatsApp (only a changed number is checked there)
       const originalName = (await http.get(`/contacts/${tgContactId}`, auth())).data.name;
