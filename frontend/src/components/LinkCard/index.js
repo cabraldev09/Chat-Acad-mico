@@ -26,14 +26,14 @@ const LinkCard = ({ messageId, fromMe }) => {
       target="_blank"
       rel="noopener noreferrer"
       style={{
-        display: "block", margin: "0 0 6px", borderRadius: 8, overflow: "hidden", textDecoration: "none", color: "inherit",
+        display: "block", margin: "-2px -3px 6px -4px", borderRadius: 6, overflow: "hidden", textDecoration: "none", color: "inherit",
         background: fromMe ? "rgba(0,0,0,.06)" : "rgba(0,0,0,.04)", maxWidth: 360,
       }}
     >
       {card.image && (
         <img src={card.image} alt="" loading="lazy" referrerPolicy="no-referrer"
           onError={(e) => { e.currentTarget.style.display = "none"; }}
-          style={{ display: "block", width: "100%", maxHeight: 190, objectFit: "cover" }} />
+          style={{ display: "block", width: "100%", aspectRatio: "1.91 / 1", objectFit: "cover", background: "rgba(0,0,0,.05)" }} />
       )}
       <div style={{ padding: "6px 10px 8px" }}>
         {card.title && <div style={{ fontWeight: 600, fontSize: 13.5, lineHeight: 1.3, overflowWrap: "anywhere" }}>{card.title}</div>}

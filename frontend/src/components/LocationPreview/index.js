@@ -1,53 +1,47 @@
-import React, { useEffect } from 'react';
-import toastError from "../../errors/toastError";
+import React, { useState } from "react";
+import { makeStyles } from "@material-ui/core/styles";
+import { MapPin } from "lucide-react";
 
-import Typography from "@material-ui/core/Typography";
-import Grid from "@material-ui/core/Grid";
+// A shared location, as on WhatsApp: the map fills the bubble (its space is kept while it loads), the name or address under it,
+// and a click opens the map. With nothing written, the time of the message goes over the map.
+const useStyles = makeStyles((theme) => {
+  const dark = theme.palette.type === "dark";
+  return {
+    root: { width: "100%" },
+    map: {
+      position: "relative", display: "block", width: "100%", aspectRatio: "2 / 1", minHeight: 0, padding: 0, border: 0, borderRadius: 6, overflow: "hidden",
+      cursor: "pointer", background: dark ? "rgba(255,255,255,.06)" : "rgba(11,20,26,.06)",
+      "&[disabled]": { cursor: "default" },
+      "& img": { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" },
+    },
+    pin: { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -100%)", color: "#e5453a", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.35))" },
+    desc: { padding: "6px 6px 0", fontSize: 14.5, lineHeight: "20px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
+  };
+});
 
-import { Button, Divider, } from "@material-ui/core";
-
-const LocationPreview = ({ image, link, description }) => {
-    useEffect(() => {}, [image, link, description]);
-
-    const handleLocation = async() => {
-        try {
-            window.open(link);
-        } catch (err) {
-            toastError(err);
-        }
-    }
-
-    return (
-		<>
-			<div style={{
-				minWidth: "min(250px, 100%)",
-			}}>
-				<div>
-					<div style={{ float: "left" }}>
-						<img src={image} onClick={handleLocation} style={{ width: "100px", maxWidth: "40%", height: "auto" }} />
-					</div>
-					{ description && (
-					<div style={{ display: "flex", flexWrap: "wrap" }}>
-						<Typography style={{ marginTop: "12px", marginLeft: "15px", marginRight: "15px", float: "left" }} variant="subtitle1" color="primary" gutterBottom>
-							<div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{String(description).replace(/\\n/g, "\n")}</div>
-						</Typography>
-					</div>
-					)}
-					<div style={{ display: "block", content: "", clear: "both" }}></div>
-					<div>
-						<Divider />
-						<Button
-							fullWidth
-							color="primary"
-							onClick={handleLocation}
-							disabled={!link}
-						>Visualizar</Button>
-					</div>
-				</div>
-			</div>
-		</>
-	);
-
+const LocationPreview = ({ image, link, description, overlay, meta }) => {
+  const classes = useStyles();
+  const [broken, setBroken] = useState(false);
+  const open = () => {
+    if (link) window.open(link, "_blank", "noopener,noreferrer");
+  };
+  const text = description ? String(description).replace(/\\n/g, "\n") : "";
+  return (
+    <div className={classes.root}>
+      <button type="button" className={classes.map} onClick={open} disabled={!link} aria-label="Abrir a localização no mapa" title="Abrir no mapa">
+        {image && !broken && <img src={image} alt="" loading="lazy" onError={() => setBroken(true)} />}
+        {(!image || broken) && <MapPin size={34} weight="fill" className={classes.pin} aria-hidden="true" />}
+        {!text && overlay}
+      </button>
+      {text && (
+        <div className={classes.desc}>
+          {text}
+          {meta}
+          <div style={{ clear: "both" }} />
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default LocationPreview;
