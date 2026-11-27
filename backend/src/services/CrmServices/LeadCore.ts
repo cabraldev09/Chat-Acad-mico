@@ -572,7 +572,7 @@ export const resolveLeadTarget = async (
 
   // An avulsa/manual lead can have a phone but no contactId. Find the known person BEFORE choosing a default number, otherwise an
   // empty conversation is created on the official number beside the existing history on the consultant's QR number.
-  if (!contact && lead.phone) {
+  if (!contact && lead.phone && (!whatsapp || ["whatsapp", "whatsapp_cloud"].includes(whatsapp.channel))) {
     const phone = normalizePhone(lead.phone);
     contact = phone ? await Contact.findOne({
       where: { isGroup: false, number: { [Op.in]: brPhoneVariants(phone) }, channel: { [Op.in]: ["whatsapp", "whatsapp_cloud"] } },

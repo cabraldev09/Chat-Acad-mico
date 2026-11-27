@@ -44,4 +44,11 @@ describe("abrir o histórico já existente do lead", () => {
     expect(Ticket.findOne).toHaveBeenCalledWith({ where: { contactId: 41 }, order: [["updatedAt", "DESC"]] });
     expect(GetDefaultWhatsApp).not.toHaveBeenCalled();
   });
+  it("um número de telefone não vira identificador do Telegram ao escolher outro canal", async () => {
+    vi.mocked(Whatsapp.findByPk).mockResolvedValue({ id: 9, channel: "telegram" } as any);
+    vi.mocked(Contact.findOne).mockResolvedValue({ id: 41, channel: "whatsapp" } as any);
+    vi.mocked(resolveOutboundContact).mockRejectedValue(new Error("channel does not support outbound campaigns"));
+    await expect(resolveLeadTarget({ phone: "5569999112233", update: vi.fn() } as any, 3, 9))
+      .rejects.toThrow("channel does not support");
+  });
 });
