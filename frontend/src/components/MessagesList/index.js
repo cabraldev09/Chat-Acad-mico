@@ -625,7 +625,8 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
               setFirstUnreadId(unread[0].id);
               setUnreadTotal(unread.length);
             }
-            setTimeout(() => scrollToBottom(false), 30);
+            // to the end once the first page is drawn, unless the person already scrolled away in the meantime
+            setTimeout(() => { if (atBottomRef.current) scrollToBottom(false); }, 30);
           }
         }
       } catch (err) {
