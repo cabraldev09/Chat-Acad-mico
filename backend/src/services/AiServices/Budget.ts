@@ -24,10 +24,11 @@ export const callWithBudget = async (agent: AiAgent, kind: "reply" | "summary" |
     const globalUsed = Number(await AiUsage.sum("inputTokens", { where: { createdAt: { [Op.gte]: since } }, transaction }) || 0) + Number(await AiUsage.sum("outputTokens", { where: { createdAt: { [Op.gte]: since } }, transaction }) || 0) + Number(await AiUsage.sum("cacheReadTokens", { where: { createdAt: { [Op.gte]: since } }, transaction }) || 0) + Number(await AiUsage.sum("cacheWriteTokens", { where: { createdAt: { [Op.gte]: since } }, transaction }) || 0);
     const reserved = Number(await Reservation.sum("tokens", { where: active, transaction }) || 0);
     if (Number(globalTokens) > 0 && globalUsed + reserved + tokens > Number(globalTokens)) throw new Error("ERR_AI_TOKEN_CAP");
-    // the readings of conversations have their own daily cap (readings_daily_tokens): they never use up the budget of the agent that talks
+    // the readings of conversations have their own daily cap (readings_daily_tokens, 10 million: a phone just connected is read whole, about
+    // 10 thousand tokens a conversation with the cheapest model): they never use up the budget of the agent that talks
     // to the leads, and the agent's cap does not count them
     const reading = (kind as string) === "reading";
-    const cap = reading ? Number(await getSetting("readings_daily_tokens", "3000000")) || 0 : agent.dailyTokenCap;
+    const cap = reading ? Number(await getSetting("readings_daily_tokens", "10000000")) || 0 : agent.dailyTokenCap;
     if (kind !== "test" && cap > 0) {
       const where = { agentId: agent.id, kind: reading ? "reading" : { [Op.notIn]: ["test", "reading"] }, createdAt: { [Op.gte]: since } };
       const used = Number(await AiUsage.sum("inputTokens", { where, transaction }) || 0) + Number(await AiUsage.sum("outputTokens", { where, transaction }) || 0) + Number(await AiUsage.sum("cacheReadTokens", { where, transaction }) || 0) + Number(await AiUsage.sum("cacheWriteTokens", { where, transaction }) || 0);

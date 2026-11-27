@@ -9438,7 +9438,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // Recuperação: the consultant sees Dani with the reason and the objection; another consultant does not
       const rec = (await http.get("/crm/recovery", asUser(uTok))).data;
       const item = rec.items.find(i => String(i.id) === d[0]);
-      assert(item && item.reason === "Achou a mensalidade alta" && item.objection === "preco" && rec.reasons.length >= 1, `recovery ${JSON.stringify(rec).slice(0, 400)}`);
+      assert(item && item.reason === "Preço / mensalidade" && item.reasonDetail === "Achou a mensalidade alta" && item.objection === "preco" && rec.reasons.length >= 1, `recovery ${JSON.stringify(rec).slice(0, 400)}`);
       // like on WhatsApp: the number the conversation came through and the picture of the contact (null when it has none)
       assert(item.connectionName === sql(`SELECT w.name FROM Tickets t JOIN Whatsapps w ON w.id=t.whatsappId WHERE t.contactId=${D.c} ORDER BY t.updatedAt DESC LIMIT 1`) && "profilePicUrl" in item && !("picture" in item), `the connection or the picture of Dani ${JSON.stringify(item)}`);
       assert(item.tab === "desistiram" && item.serviceTip === "Apresentar a bolsa antes do valor cheio" && item.recoveryStage === "Depois de saber o valor" && /Mostrar a bolsa/.test(item.recoveryPending), `the fields of the reading ${JSON.stringify(item)}`);
@@ -9449,7 +9449,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(bia && bia.tab === "confirmar" && bia.rgmSuggested === "7654321" && rec.tabs.confirmar >= 2, `Bia is not to confirm ${JSON.stringify(bia)}`);
       assert(rec.reading === null, "a consultant saw the status of the reading");
       const st = (await http.get("/crm/recovery", auth())).data.reading;
-      assert(st && st.done >= 6 && st.stopped === null, `reading status ${JSON.stringify(st)}`);
+      assert(st && st.done >= 6 && st.stopped === null && st.total >= st.done && st.readingNow === false, `reading status ${JSON.stringify(st)}`);
       // "Não é matrícula": Caio back to the funnel, the suggestion cleared
       assert((await http.post(`/leads/${c[0]}/recovery`, { action: "nao_matricula" }, asUser(uTok))).status === 200, "not an enrollment");
       assert(leadOf(C.c)[1] !== "Matrícula a confirmar" && !(await http.get("/crm/recovery", asUser(uTok))).data.items.some(i => String(i.id) === c[0]), "Caio is still to confirm");
@@ -9523,10 +9523,18 @@ const postMeta = (id, payload, secret, badSig) => {
       const nums = (await http.get("/crm/recovery/reread", asUser(uTok))).data;
       assert(nums.length === 1 && nums[0].id === qr.id, `numbers to read again ${JSON.stringify(nums)}`);
       assert((await http.post("/crm/recovery/reread", { whatsappId: qr.id }, asUser(otherTok))).status === 403, "another consultant read again a number that is not theirs");
+      // the real case of 26/11: "Ler de novo" after the daily count of readings was used up. The conversations of the phone are read all the
+      // same (only the spending caps stop them), without anyone pressing "Ler tudo agora", and they do not count in the day
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      for (const [k, v] of [["readings_day", today], ["readings_count", "300"]]) sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('${k}', '${v}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
       const reread = (await http.post("/crm/recovery/reread", { whatsappId: qr.id }, asUser(uTok))).data;
       assert(reread.queued >= 6 && sql(`SELECT COUNT(*) FROM ConversationReadings WHERE ticketId=${H.t}`) === "0", `read again ${JSON.stringify(reread)}`);
       await waitFor(() => sql(`SELECT COUNT(*) FROM ConversationReadings r JOIN Tickets t ON t.id=r.ticketId WHERE t.whatsappId=${qr.id} AND r.kind='importacao' AND r.status IN ('pendente','reservada')`) === "0", 20000, "the reading again did not finish");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${b[0]} AND automationKey='confirm-enroll-${b[0]}'`)) === 1, "reading again doubled the task of Bia");
+      assert(sql(`SELECT value FROM Settings WHERE key='readings_count'`) === "300", "the copied conversations counted in the daily count");
+      const afterReread = (await http.get("/crm/recovery", auth())).data.reading;
+      assert(afterReread && afterReread.stopped === null && afterReread.total >= afterReread.done && afterReread.total > 0, `the progress after reading again ${JSON.stringify(afterReread)}`);
+      sql(`DELETE FROM Settings WHERE key IN ('readings_day', 'readings_count')`);
       // OpenBot: with it reading, the system's AI leaves the new reading waiting; the token takes it masked and answers
       assert((await http.put("/readings/settings", { provider: "openbot", waitHours: 6 }, asUser(uTok))).status === 403, "a consultant changed who reads");
       // only the administrator, not the coordination, turns the readings on or off and runs a round (the audit of #205)
