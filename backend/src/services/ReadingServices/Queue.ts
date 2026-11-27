@@ -169,28 +169,42 @@ export interface LocalRun { read: number; skipped: number; failed: number; stopp
 // cheapest model of the key it has; stops at the first spending-cap refusal (the rest waits for the next round)
 // ignoreDailyLimit: "Ler tudo agora" of the administrator (Recuperação): the whole queue now, past the daily limit (the spending caps
 // of the AI still stop it); the readings still count in the day
+// a round of the system's own reading is going on (the progress in Recuperação says "Lendo…")
+let readingNow = 0;
+export const isReadingNow = (): boolean => readingNow > 0;
 export const runLocalReadings = async (opts: { limit?: number; only?: ReadingKind; ignoreDailyLimit?: boolean } = {}): Promise<LocalRun> => {
+  readingNow += 1;
+  try {
+    return await runLocalReadingsOnce(opts);
+  } finally {
+    readingNow -= 1;
+  }
+};
+const runLocalReadingsOnce = async (opts: { limit?: number; only?: ReadingKind; ignoreDailyLimit?: boolean }): Promise<LocalRun> => {
   const run: LocalRun = { read: 0, skipped: 0, failed: 0, stoppedByBudget: false };
   const cfg = await readingSettings();
   if (!cfg.enabled) return { ...run, reason: "disabled" };
   const today = todayInAppTz();
   const used = (await getSetting("readings_day", "")) === today ? Number(await getSetting("readings_count", "0")) || 0 : 0;
   const left = opts.ignoreDailyLimit ? Math.max(0, Math.min(opts.limit ?? 2000, 2000)) : Math.max(0, Math.min(opts.limit ?? cfg.maxPerDay, cfg.maxPerDay - used));
-  if (!left) {
-    await setSetting("readings_last_stop", `daily_limit:${today}`);
-    return { ...run, reason: "daily_limit" };
-  }
+  // the conversations copied from a phone just connected are read all at once, past the daily count (only the spending caps stop them):
+  // the consultant connects the WhatsApp and the CRM is ready, without anyone pressing "Ler tudo agora". The daily count is for the rest.
+  const importLeft = opts.only && opts.only !== "importacao" ? 0 : Math.max(0, Math.min(opts.limit ?? 2000, 2000));
   const waited = cfg.provider === "openbot" ? new Date(Date.now() - cfg.waitHours * 3600000) : new Date();
   const now = new Date();
-  const list = await ConversationReading.findAll({
-    where: {
-      [Op.or]: [{ status: "pendente" }, { status: "reservada", claimedUntil: { [Op.lt]: now } }],
-      createdAt: { [Op.lte]: waited },
-      ...(opts.only ? { kind: opts.only } : {})
-    } as any,
-    order: [["createdAt", "ASC"]],
-    limit: left
-  });
+  const open = { [Op.or]: [{ status: "pendente" }, { status: "reservada", claimedUntil: { [Op.lt]: now } }], createdAt: { [Op.lte]: waited } };
+  const imports = importLeft ? await ConversationReading.findAll({ where: { ...open, kind: "importacao" } as any, order: [["createdAt", "ASC"]], limit: importLeft }) : [];
+  const others = left && opts.only !== "importacao"
+    ? await ConversationReading.findAll({ where: { ...open, kind: opts.only ? opts.only : { [Op.ne]: "importacao" } } as any, order: [["createdAt", "ASC"]], limit: left })
+    : [];
+  if (!left && !imports.length && opts.only !== "importacao") {
+    const waiting = await ConversationReading.count({ where: { ...open, kind: { [Op.ne]: "importacao" } } as any });
+    if (waiting) {
+      await setSetting("readings_last_stop", `daily_limit:${today}`);
+      return { ...run, reason: "daily_limit" };
+    }
+  }
+  const list = [...imports, ...others];
   if (!list.length) return run;
   const { auditorAccess } = await import("../TutoriaServices/Issues");
   const access = await auditorAccess();
@@ -211,7 +225,7 @@ export const runLocalReadings = async (opts: { limit?: number; only?: ReadingKin
       // eslint-disable-next-line no-await-in-loop
       const answer = await askOnce(access.agent, access.apiKey, input.system, input.text, 600, { kind: "reading", ticketId: r.ticketId });
       const tokens = Number(answer.usage?.total_tokens || (answer.usage?.input_tokens || 0) + (answer.usage?.output_tokens || 0) || 0);
-      spent += 1;
+      if (r.kind !== "importacao") spent += 1;
       // eslint-disable-next-line no-await-in-loop
       await completeReading(r.id, answer.text, { who: "sistema", model: access.agent.model, tokens });
       run.read += 1;

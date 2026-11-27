@@ -53,9 +53,13 @@ const readingStatus = async (sequelize: any): Promise<any> => {
   const [lastStop, day] = String(await getSetting("readings_last_stop", "")).split(":");
   const queued = by("pendente") + by("reservada");
   const stopped = !cfg.enabled ? "disabled" : !hasKey && cfg.provider !== "openbot" ? "no_api_key"
-    : queued && day === todayInAppTz() && (lastStop === "daily_limit" || lastStop === "budget") ? lastStop : null;
+    // the copied conversations are no longer held by the daily count (services/ReadingServices/Queue): only the spending cap stops them
+    : queued && day === todayInAppTz() && lastStop === "budget" ? lastStop : null;
+  const { isReadingNow } = await import("../services/ReadingServices/Queue");
   return {
     done: by("feita"), queued: by("pendente") + by("reservada"), failed: by("falhou"),
+    // the progress: what is already read (or failed) of everything copied, and whether a round is reading right now
+    total: by("feita") + by("pendente") + by("reservada") + by("falhou"), readingNow: isReadingNow(),
     numbers: Number(qr?.total || 0), numbersWithoutOwner: Number(qr?.noOwner || 0),
     stopped, readingAll: readingAllNow
   };
@@ -115,7 +119,12 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     { replacements: { ownerId, since: new Date(Date.now() - 90 * 864e5), confirm: CONFIRM_STAGE, stalled: STALLED }, type: QueryTypes.SELECT }
   )) as any[];
   // the picture of the contact like on WhatsApp (the address the browser opens) and the number the conversation came through
-  const all = rows.map(({ picture, ...r }) => ({ ...r, profilePicUrl: publicPicUrl(picture), objectionLabel: r.objection ? OBJECTION_LABEL[r.objection] || r.objection : null }));
+  // the reason is grouped in a few labels (the chips on top); what the reading wrote in its own words goes in the row as the detail
+  const groupOf = (r: any): string => (r.reason === STALLED ? STALLED : r.lostReason || (r.stageType === "lost" ? "Desistiu" : r.reason ? "Outro" : "Sem motivo"));
+  const all = rows.map(({ picture, ...r }) => ({
+    ...r, reasonDetail: r.reason && r.reason !== groupOf(r) ? r.reason : null, reason: groupOf(r),
+    profilePicUrl: publicPicUrl(picture), objectionLabel: r.objection ? OBJECTION_LABEL[r.objection] || r.objection : null
+  }));
   const toRecover = all.filter(r => r.tab !== "confirmar");
   // the counts by reason are of the whole list (the filters only narrow the rows shown)
   const byReason = new Map<string, number>();

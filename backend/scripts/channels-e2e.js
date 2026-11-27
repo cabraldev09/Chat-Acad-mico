@@ -9396,9 +9396,13 @@ const postMeta = (id, payload, secret, badSig) => {
       const stage1 = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
       const leadA = sql(`INSERT INTO Leads (name, phone, stageId, contactId, ownerId, source, isHistorical, createdAt, updatedAt) VALUES ('Ana Andamento Leitura', '5569955550001', ${stage1}, ${A.c}, ${u.id}, 'WhatsApp', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       assert((await http.get("/crm/triage", asUser(uTok))).data.items.some(i => String(i.id) === leadA), "the lead of the catch-up should be waiting before the reading");
-      sql(`DELETE FROM Settings WHERE key IN ('readings_day', 'readings_count')`);
+      // the daily count of readings already used up today: the conversations of a phone just copied are read all the same (only the
+      // spending caps stop them), so nobody has to press "Ler tudo agora" after connecting
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      for (const [k, v] of [["readings_day", today], ["readings_count", "300"]]) sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('${k}', '${v}', NOW(), NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
       const run = (await http.post("/readings/run", {}, auth())).data;
-      assert(run.read >= 6, `readings ${JSON.stringify(run)}`);
+      assert(run.read >= 6, `the copied conversations stopped at the daily count ${JSON.stringify(run)}`);
+      assert(sql(`SELECT value FROM Settings WHERE key='readings_count'`) === "300", "the copied conversations counted in the daily count");
       // what went to the model is masked: no name, no RGM, no phone
       const sent = (anthropic.readingTexts || []).join(" ");
       assert(!/7654321|Bia Matriculada|Dani Desistiu|5569955550/.test(sent), "personal data went to the model");
@@ -9434,7 +9438,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // Recuperação: the consultant sees Dani with the reason and the objection; another consultant does not
       const rec = (await http.get("/crm/recovery", asUser(uTok))).data;
       const item = rec.items.find(i => String(i.id) === d[0]);
-      assert(item && item.reason === "Achou a mensalidade alta" && item.objection === "preco" && rec.reasons.length >= 1, `recovery ${JSON.stringify(rec).slice(0, 400)}`);
+      assert(item && item.reason === "Preço / mensalidade" && item.reasonDetail === "Achou a mensalidade alta" && item.objection === "preco" && rec.reasons.length >= 1, `recovery ${JSON.stringify(rec).slice(0, 400)}`);
       // like on WhatsApp: the number the conversation came through and the picture of the contact (null when it has none)
       assert(item.connectionName === sql(`SELECT w.name FROM Tickets t JOIN Whatsapps w ON w.id=t.whatsappId WHERE t.contactId=${D.c} ORDER BY t.updatedAt DESC LIMIT 1`) && "profilePicUrl" in item && !("picture" in item), `the connection or the picture of Dani ${JSON.stringify(item)}`);
       assert(item.tab === "desistiram" && item.serviceTip === "Apresentar a bolsa antes do valor cheio" && item.recoveryStage === "Depois de saber o valor" && /Mostrar a bolsa/.test(item.recoveryPending), `the fields of the reading ${JSON.stringify(item)}`);
@@ -9445,7 +9449,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(bia && bia.tab === "confirmar" && bia.rgmSuggested === "7654321" && rec.tabs.confirmar >= 2, `Bia is not to confirm ${JSON.stringify(bia)}`);
       assert(rec.reading === null, "a consultant saw the status of the reading");
       const st = (await http.get("/crm/recovery", auth())).data.reading;
-      assert(st && st.done >= 6 && st.stopped === null, `reading status ${JSON.stringify(st)}`);
+      assert(st && st.done >= 6 && st.stopped === null && st.total >= st.done && st.readingNow === false, `reading status ${JSON.stringify(st)}`);
       // "Não é matrícula": Caio back to the funnel, the suggestion cleared
       assert((await http.post(`/leads/${c[0]}/recovery`, { action: "nao_matricula" }, asUser(uTok))).status === 200, "not an enrollment");
       assert(leadOf(C.c)[1] !== "Matrícula a confirmar" && !(await http.get("/crm/recovery", asUser(uTok))).data.items.some(i => String(i.id) === c[0]), "Caio is still to confirm");

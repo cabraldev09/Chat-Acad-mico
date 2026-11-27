@@ -1,6 +1,6 @@
 import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
-import { Button, Checkbox, MenuItem, TextField, makeStyles } from "@material-ui/core";
+import { Button, Checkbox, LinearProgress, MenuItem, TextField, makeStyles } from "@material-ui/core";
 import { RefreshCw } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -19,7 +19,10 @@ import { BoardHead, EmptyNote, GlowPanel, Person } from "../../components/peak";
 // RECUPERAÇÃO: the leads that stopped answering or gave up, with the reason and the objection, to be tried again. The consultant sees their
 // own; the management sees the ones of its polos (and can narrow to one consultant).
 const useStyles = makeStyles((theme) => ({
-  scroll: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: theme.spacing(1, 1, 3), ...theme.scrollbarStyles },
+  scroll: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: theme.spacing(1, 1, 3), ...theme.scrollbarStyles, "& .gv-tag": { border: "1px solid currentColor" } },
+  progress: { flexBasis: "100%", display: "flex", alignItems: "center", gap: 10 },
+  bar: { flex: 1, height: 8, borderRadius: 999 },
+  why: { display: "block", marginTop: 2, fontSize: 13, color: "var(--text-1)", whiteSpace: "normal", overflowWrap: "anywhere" },
   filters: { display: "flex", flexWrap: "wrap", gap: theme.spacing(1), margin: theme.spacing(1, 1, 0), "& > *": { minWidth: 170 }, [theme.breakpoints.down("xs")]: { "& > *": { width: "100%" } } },
   reasons: { display: "flex", flexWrap: "wrap", gap: 6, margin: theme.spacing(1, 1, 1) },
   reason: {
@@ -119,7 +122,7 @@ const Recovery = () => {
   useEffect(() => { load(); }, [load]);
   // while "Ler tudo agora" reads, the lists and the counts refresh by themselves
   const [polling, setPolling] = useState(false);
-  useEffect(() => { setPolling(!!(data && data.reading && data.reading.readingAll)); }, [data]);
+  useEffect(() => { setPolling(!!(data && data.reading && (data.reading.readingAll || data.reading.readingNow))); }, [data]);
   useEffect(() => {
     if (!polling && !readingAll) return undefined;
     const t = setInterval(() => { load(); }, 20000);
@@ -203,7 +206,8 @@ const Recovery = () => {
       {reading && (
         <div className={`${classes.status} ${reading.stopped ? classes.statusWarn : ""}`} role="status">
           <span>
-            Leitura das conversas copiadas: {reading.done} lidas, {reading.queued} na fila{reading.failed ? `, ${reading.failed} com falha` : ""}
+            {reading.readingAll || reading.readingNow ? "Lendo as conversas copiadas" : "Leitura das conversas copiadas"}: {reading.done} de {reading.total || reading.done + reading.queued} lidas
+            {reading.queued ? ` · faltam ${reading.queued}` : " · tudo lido"}{reading.failed ? ` · ${reading.failed} com falha` : ""}
             {reading.stopped ? ` · ${STOP[reading.stopped] || "parada"}` : ""}
             {reading.numbersWithoutOwner ? ` · ${reading.numbersWithoutOwner} ${reading.numbersWithoutOwner === 1 ? "número sem dono não é lido" : "números sem dono não são lidos"} (defina o dono em Conexões)` : ""}
           </span>
@@ -212,6 +216,12 @@ const Recovery = () => {
             <Button size="small" variant="contained" color="primary" disableElevation disabled={readingAll || reading.readingAll} onClick={readAll}>
               {reading.readingAll ? "Lendo as conversas…" : readingAll ? "Iniciando…" : "Ler tudo agora"}
             </Button>
+          )}
+          {(reading.total || 0) > 0 && (
+            <div className={classes.progress}>
+              <LinearProgress className={classes.bar} variant="determinate" value={Math.round(((reading.done + (reading.failed || 0)) / reading.total) * 100)} aria-label="Progresso da leitura das conversas" />
+              <b>{Math.round(((reading.done + (reading.failed || 0)) / reading.total) * 100)}%</b>
+            </div>
           )}
         </div>
       )}
@@ -271,6 +281,7 @@ const Recovery = () => {
                     </b>
                     <small>
                       {[l.courseName, manager ? l.ownerName : null, viaOf(l), l.lastContactAt ? `último contato ${when(l.lastContactAt)} (${ago(l.lastContactAt)})` : null].filter(Boolean).join(" · ")}
+                      {l.reasonDetail && <span className={classes.why}>Motivo: {l.reasonDetail}</span>}
                       {l.summary && <span className={classes.summary}>{l.summary}</span>}
                       {l.tab === "confirmar" && (
                         <span className={classes.detail}>
