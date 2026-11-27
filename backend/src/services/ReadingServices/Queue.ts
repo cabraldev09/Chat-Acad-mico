@@ -11,7 +11,7 @@ import { MAX_MESSAGES, reviewTranscript } from "../AnalyticsServices/ConsultantR
 import { IMPORT_SYSTEM, OUTCOME_SYSTEM, ReadingKind, importHints, maskLabelledNames, maskLongNumbers, parseImportAnswer, parseOutcomeAnswer } from "./Kinds";
 
 // THE QUEUE OF READINGS. Each conversation to be read waits here. Who reads it is a setting:
-//  - "sistema": the system's own AI, with the cheapest model of the key it has (300 tokens of answer), within the daily spending caps;
+//  - "sistema": the system's own AI, with the cheapest model of the key it has (up to 900 tokens of answer: the reading and the evaluation), within the daily spending caps;
 //  - "openbot": an outside worker takes the readings through the API v1 (GET /api/v1/leituras), answers them (POST /api/v1/leituras/:id) and
 //    the system's AI reads only what is left waiting for more than N hours. The text leaves masked: no name, phone, CPF, e-mail or number.
 // The conversation text is built when the reading is taken; only the codes of the answer are kept (in `result`).
@@ -223,7 +223,7 @@ const runLocalReadingsOnce = async (opts: { limit?: number; only?: ReadingKind; 
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      const answer = await askOnce(access.agent, access.apiKey, input.system, input.text, 600, { kind: "reading", ticketId: r.ticketId });
+      const answer = await askOnce(access.agent, access.apiKey, input.system, input.text, 900, { kind: "reading", ticketId: r.ticketId });
       const tokens = Number(answer.usage?.total_tokens || (answer.usage?.input_tokens || 0) + (answer.usage?.output_tokens || 0) || 0);
       if (r.kind !== "importacao") spent += 1;
       // eslint-disable-next-line no-await-in-loop

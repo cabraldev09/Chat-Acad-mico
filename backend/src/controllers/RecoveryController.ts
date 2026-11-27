@@ -130,6 +130,10 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const byReason = new Map<string, number>();
   toRecover.forEach(r => byReason.set(r.reason || "Sem motivo", (byReason.get(r.reason || "Sem motivo") || 0) + 1));
   const items = all.filter(r => r.tab === "confirmar" || ((!reason || (r.reason || "Sem motivo") === reason) && (!objection || r.objection === objection)));
+  // the points to improve the reading of the conversation found (small labels beside "Melhorar no atendimento")
+  const { improveLabelsOf } = await import("../services/ReadingServices/Coaching");
+  const labels = await improveLabelsOf(items.map(r => Number(r.id)));
+  items.forEach(r => { (r as any).improveLabels = labels.get(Number(r.id)) || []; });
   return res.json({
     items,
     total: toRecover.length,

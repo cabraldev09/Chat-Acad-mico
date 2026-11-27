@@ -112,6 +112,37 @@ O que vira no CRM:
   de IA, desligada) e quantos números não têm dono. Sem chave de IA, a gestão recebe um aviso por dia no sino.
 - **Um aviso só** ao dono do número e à gestão do polo, quando a leitura termina: "Leitura do WhatsApp: 40 leads, 6 matrículas a confirmar, 9 para recuperar".
 
+### A avaliação do consultor (na mesma leitura)
+A mesma resposta da leitura traz `avaliacao`, uma avaliação de como o consultor atendeu. Não há uma segunda chamada à IA. Vale só para leads; colega, amigo e conversa curta não são avaliados.
+- **Notas de 0 a 10** (inteiras; `null` quando a conversa não mostra o ponto, e então ficam fora da média):
+  - técnica: vínculo, perguntas para entender a pessoa, uma pergunta por vez, conduzir ao próximo passo;
+  - persuasão: valor do curso, benefícios, prova e o prazo real da turma;
+  - negociação: bolsa, resposta às objeções, proposta e fechamento;
+  - escrita (`ortografia`): escrita correta e clara, sem abreviações;
+  - agilidade: rapidez nas respostas e no retorno, pelo que a conversa mostra.
+- **Sim, não ou sem evidência:** enviou a grade, apresentou a proposta, fez o retorno. Na transferência, segunda graduação ou aproveitamento
+  (`transferencia`): apresentou a previsão de conclusão e as disciplinas aproveitadas. Fora disso, os dois ficam `null`.
+- **Por que não converteu:** até 160 caracteres, vazio quando matriculou.
+- **O que melhorar:** até 3 códigos de uma lista fixa (`IMPROVE` em `services/ReadingServices/Kinds.ts`, cada um com o nome e o "como fazer"
+  que a tela mostra). Código fora da lista é descartado. A frase livre "melhorar" continua indo para o lead (`serviceTip`).
+- A resposta é conferida no código (`parseEvaluation`): nota fora de 0 a 10 é limitada, texto não vira nota e o texto passa pela mesma
+  limpeza de dados pessoais. Fica guardada em `ConversationReadings.result` (campo `evaluation`); nada novo em Leads.
+
+Onde aparece (`GET /analytics/reading-coaching?from&to&userId`, padrão: últimos 90 dias pela última mensagem da conversa; `services/ReadingServices/Coaching.ts`):
+- **Meu desempenho**, bloco "Como você atende (leitura das conversas)": as notas em barras, as porcentagens, os 3 pontos a melhorar com o que
+  fazer e os leads de exemplo, e os motivos de não ter convertido (agrupados como na Recuperação). O consultor só recebe os próprios números,
+  seja qual for o `userId` pedido.
+- **Estatísticas › Treinamento**, "Como cada consultor atende": uma linha por consultor, com ordenação por coluna (no celular, um cartão por
+  consultor); um clique abre os detalhes. A administração vê todos; a coordenação, só os consultores dos seus polos (a mesma regra de
+  Estatísticas). Consultor fora dos polos da coordenação dá 403.
+- **Recuperação:** os pontos a melhorar da última leitura do lead aparecem como etiquetas ao lado de "Melhorar no atendimento".
+- **Conversas lidas antes da avaliação** contam como lidas, não como avaliadas. A tela diz "X de Y conversas já avaliadas" e indica o "Ler de
+  novo" da Recuperação. Nada é lido de novo sozinho (custo).
+- **Custo:** a instrução da leitura ficou cerca de 600 tokens maior e a resposta cerca de 150 a 200 tokens maior (o limite da resposta subiu de
+  600 para 900 tokens). Com o modelo mais barato (gpt-4o-mini, US$ 0,15 por milhão de entrada e 0,60 de saída), são uns US$ 0,0002 a mais
+  por conversa, e a leitura inteira fica em torno de US$ 0,0008 por conversa (mil conversas: menos de US$ 1). Com o OpenBot lendo, o
+  custo é dele.
+
 Uma vez por dia, a conversa de cada lead que se matriculou ou se perdeu nos últimos 30 dias também é lida.
 - Estatísticas, Comercial, mostra "Por que perdemos" e "O que vendeu", com a comparação entre matrículas e perdas.
 - As ideias saem das contas, sem IA.

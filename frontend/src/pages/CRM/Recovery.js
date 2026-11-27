@@ -291,6 +291,7 @@ const Recovery = () => {
                       {l.tab !== "confirmar" && l.recoveryStage && <span className={classes.detail}>Parou em: {l.recoveryStage}</span>}
                       {l.tab !== "confirmar" && l.recoveryPending && <span className={classes.detail}>Pendente: {l.recoveryPending}</span>}
                       {l.serviceTip && <span className={classes.detail}>Melhorar no atendimento: {l.serviceTip}</span>}
+                      {(l.improveLabels || []).length > 0 && <span className={classes.detail} style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>{l.improveLabels.map((t) => <span key={t} className="gv-tag" data-tone="warn">{t}</span>)}</span>}
                     </small>
                   </div>
                   <div className={classes.actions}>

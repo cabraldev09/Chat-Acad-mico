@@ -137,6 +137,9 @@ r.get("/analytics/commercial", isAuth, analyticsInstitution, Analytics.commercia
 r.get("/analytics/coaching", isAuth, analyticsInstitution, isManager, Analytics.coaching);
 r.post("/analytics/coaching/text", isAuth, isManager, Analytics.coachingText);
 r.post("/analytics/coaching/run", isAuth, isAdmin, Analytics.coachingRun);
+// how the consultant attends, from the readings of the copied conversations: everyone logged in; a consultant only their own, the management
+// the consultants it may see (decided in the controller)
+r.get("/analytics/reading-coaching", isAuth, analyticsInstitution, Analytics.readingCoaching);
 // the tutoring: the management sees every tutor, a tutor only their own students (decided in the controller)
 r.get("/analytics/tutoria", isAuth, analyticsInstitution, Analytics.tutoria);
 r.get("/analytics/insights", isAuth, analyticsInstitution, Analytics.insights);
