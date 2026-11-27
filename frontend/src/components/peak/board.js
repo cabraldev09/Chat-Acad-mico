@@ -497,8 +497,13 @@ export const PriorityList = ({ items, action = "Resolver" }) => (
 );
 
 /** The initials of a person on their colour (a name that is only a phone number shows a neutral mark). */
-export const Person = ({ name, size = 34 }) => {
+// `src`: the profile picture (like on WhatsApp); without it, or when it does not load, the initials
+export const Person = ({ name, size = 34, src }) => {
+  const [broken, setBroken] = React.useState(false);
   const numeric = /^[+\d\s()-]+$/.test(String(name || ""));
+  if (src && !broken) {
+    return <img className="gv-av" src={src} alt="" width={size} height={size} loading="lazy" style={{ width: size, height: size, objectFit: "cover" }} onError={() => setBroken(true)} />;
+  }
   return (
     <span className="gv-av" style={{ width: size, height: size, background: numeric ? "var(--surface-3)" : colorOf(name), color: numeric ? "var(--text-2)" : "#fff", fontSize: size * 0.36 }} aria-hidden="true">
       {numeric ? "#" : initialsOf(name)}
